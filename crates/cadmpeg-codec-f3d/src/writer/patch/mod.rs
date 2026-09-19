@@ -18,7 +18,7 @@ use crate::writer::primitives::{
 use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
-pub(crate) mod geometry;
+pub(super) mod geometry;
 pub(crate) mod records;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
@@ -61,7 +61,7 @@ use records::{
 /// this binary, which is the only setting in which
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
-pub fn write_semantic(
+pub(crate) fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,

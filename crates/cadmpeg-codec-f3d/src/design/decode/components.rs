@@ -16,7 +16,7 @@ const BASE_FRAME_LENGTH: usize = 229;
 const PLACED_FRAME_LENGTH: usize = 357;
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
-pub fn decode_component_occurrences(
+pub(crate) fn decode_component_occurrences(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignComponentOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
@@ -42,7 +42,7 @@ pub fn decode_component_occurrences(
 
 /// Decode one fixed component-occurrence carrier. The class tag is a per-file
 /// dynamic value, so the fixed frame identifies the carrier.
-pub(crate) fn exact_component_occurrence(
+fn exact_component_occurrence(
     bytes: &[u8],
     start: usize,
     stream: &str,

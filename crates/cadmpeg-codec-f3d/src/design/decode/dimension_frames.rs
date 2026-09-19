@@ -38,7 +38,7 @@ use std::num::NonZeroU32;
 /// Record slices every dimension-record decode pass reads: the container scan
 /// plus the parameter, owner, companion, scope, record-header, and sketch
 /// geometry tables that locate each dimension's owning companion and geometry.
-pub struct DimensionDecodeInputs<'a> {
+pub(crate) struct DimensionDecodeInputs<'a> {
     pub(crate) scan: &'a ContainerScan<'a>,
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) parameters: &'a [DesignParameter],
@@ -52,7 +52,7 @@ pub struct DimensionDecodeInputs<'a> {
 
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
-pub fn decode_dimension_recipe_records(
+pub(crate) fn decode_dimension_recipe_records(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -345,7 +345,7 @@ fn decode_grouped_recipe_references(
     }
 }
 
-pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
+pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
     View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) == Some(2)
         && !decode_recipe_references(prefix, 0).is_empty()
 }
@@ -474,7 +474,7 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
 }
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
-pub fn bind_dimension_recipe_reference_candidates(
+pub(crate) fn bind_dimension_recipe_reference_candidates(
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
 ) {
@@ -533,7 +533,7 @@ pub(crate) fn bind_recipe_reference_candidates(
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
-pub fn bind_dimension_recipe_edge_operands(
+pub(crate) fn bind_dimension_recipe_edge_operands(
     records: &mut [DesignDimensionRecipeRecord],
     operands: &[DesignEdgeOperand],
 ) {
@@ -572,7 +572,7 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ids
 }
 
-pub(crate) fn recipe_record_prefix(
+pub(super) fn recipe_record_prefix(
     bytes: &[u8],
     record_offset: usize,
     family_name_offset: usize,
@@ -587,7 +587,7 @@ pub(crate) fn recipe_record_prefix(
     Some((prefix_offset, prefix.to_vec()))
 }
 
-pub(crate) fn indexed_record_containing(
+fn indexed_record_containing(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -613,7 +613,7 @@ pub(crate) fn indexed_record_containing(
     containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
 }
 
-pub(crate) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
+pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
     let mut view = View::over_retained(bytes).child(start, end)?;
     if view.remaining() == 0 || !view.remaining().is_multiple_of(4) {
         return None;
@@ -623,7 +623,7 @@ pub(crate) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> 
 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
-pub fn decode_dimension_locus_pairs(
+pub(crate) fn decode_dimension_locus_pairs(
     inputs: &DimensionDecodeInputs<'_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
@@ -751,7 +751,7 @@ pub(crate) fn following_dimension_companion_record_index<'a>(
         .then_some(owner.companion_record_index())
 }
 
-pub(crate) fn find_dimension_locus_pair(
+fn find_dimension_locus_pair(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -779,7 +779,7 @@ pub(crate) fn find_dimension_locus_pair(
     Some(pair.clone())
 }
 
-pub(crate) fn parse_dimension_locus_pair(
+fn parse_dimension_locus_pair(
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
@@ -852,7 +852,7 @@ pub(crate) fn parse_dimension_locus_pair(
 
 /// Decode dimension frames whose ordered operand run contains a null record
 /// reference followed by one typed sketch-geometry reference.
-pub fn decode_dimension_null_locus_pairs(
+pub(crate) fn decode_dimension_null_locus_pairs(
     inputs: &DimensionDecodeInputs<'_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -965,7 +965,7 @@ pub fn decode_dimension_null_locus_pairs(
     Ok(out)
 }
 
-pub(crate) fn find_dimension_null_locus_pair(
+fn find_dimension_null_locus_pair(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -995,7 +995,7 @@ pub(crate) fn find_dimension_null_locus_pair(
     Some(pair.clone())
 }
 
-pub(crate) fn parse_dimension_null_locus_pair(
+fn parse_dimension_null_locus_pair(
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
@@ -1060,7 +1060,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
 
 /// Decode paired `EntityGenesis` dimensional frames carrying annotation data
 /// and a direct backlink to the governed parameter owner.
-pub fn decode_dimension_annotation_frames(
+pub(crate) fn decode_dimension_annotation_frames(
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
@@ -1216,7 +1216,7 @@ pub fn decode_dimension_annotation_frames(
     Ok(out)
 }
 
-pub(crate) fn parse_dimension_annotation_frame(
+fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
     companion_record_index: Option<u32>,
@@ -1409,7 +1409,7 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 /// Decode direct presentation frames that precede a dimension parameter's
 /// owner. The type table selects the primary and paired classes; no numeric
 /// class tag is treated as a cross-stream type identity.
-pub fn decode_dimension_presentation_frames(
+pub(crate) fn decode_dimension_presentation_frames(
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
@@ -1541,7 +1541,7 @@ pub fn decode_dimension_presentation_frames(
     Ok(out)
 }
 
-pub(crate) fn parse_dimension_presentation_frame(
+fn parse_dimension_presentation_frame(
     bytes: &[u8],
     start: usize,
     primary_type_guid: &str,
@@ -1627,7 +1627,7 @@ pub(crate) fn parse_dimension_presentation_frame(
 
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
-pub fn decode_dimension_locus_groups(
+pub(crate) fn decode_dimension_locus_groups(
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
@@ -1721,7 +1721,7 @@ pub fn decode_dimension_locus_groups(
     Ok(out)
 }
 
-pub(crate) fn find_dimension_locus_groups(
+fn find_dimension_locus_groups(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -1755,7 +1755,7 @@ pub(crate) fn find_dimension_locus_groups(
     candidates
 }
 
-pub(crate) fn companion_owned_interval<'a>(
+pub(super) fn companion_owned_interval<'a>(
     companion: &DesignParameterCompanion,
     parameters: impl IntoIterator<Item = &'a DesignParameter>,
     owners: &[DesignParameterOwner],
@@ -1822,7 +1822,7 @@ pub(crate) fn companion_owned_interval<'a>(
     (start <= end && end <= stream_length).then_some((start, end))
 }
 
-pub(crate) fn parse_dimension_locus_group(
+fn parse_dimension_locus_group(
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,

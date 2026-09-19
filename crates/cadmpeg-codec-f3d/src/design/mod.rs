@@ -5,20 +5,20 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
-pub mod assembly;
+pub(crate) mod assembly;
 pub(crate) mod body;
-pub mod components;
-pub mod configurations;
-pub mod constraints;
-pub mod decode;
-pub mod dimensions;
-pub mod edge_resolve;
-pub mod face_resolve;
-pub mod feature_project;
-pub mod geometry;
+pub(crate) mod components;
+pub(crate) mod configurations;
+pub(crate) mod constraints;
+pub(crate) mod decode;
+pub(crate) mod dimensions;
+pub(crate) mod edge_resolve;
+pub(crate) mod face_resolve;
+pub(crate) mod feature_project;
+pub(crate) mod geometry;
 pub(crate) mod presentation;
-pub mod profile_select;
-pub mod sketch_project;
+pub(crate) mod profile_select;
+pub(crate) mod sketch_project;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
@@ -140,7 +140,7 @@ pub(crate) fn design_feature_family(
 ///
 /// Canonical Fillet and Chamfer scopes require every selection to use a
 /// counted construction-operand group. Their localized spellings do not.
-pub(crate) fn is_localized_edge_treatment_kind(
+fn is_localized_edge_treatment_kind(
     kind: &crate::records::feature::scope::DesignFeatureKind,
 ) -> bool {
     use crate::records::feature::scope::DesignFeatureKind as Kind;
@@ -150,7 +150,7 @@ pub(crate) fn is_localized_edge_treatment_kind(
     ) && !matches!(kind, Kind::Fillet | Kind::Chamfer)
 }
 
-pub(crate) const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
+const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"body_recipe_data", ConstructionRecipeKind::Body),
     (b"face_recipe_data", ConstructionRecipeKind::Face),
     (

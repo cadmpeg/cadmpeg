@@ -79,7 +79,7 @@ use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode edge-recipe operand frames named by edge-selecting feature scopes.
-pub fn decode_edge_operands(
+pub(crate) fn decode_edge_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -203,7 +203,7 @@ pub fn decode_edge_operands(
 }
 
 /// Decode vertex-recipe members retained inside edge-treatment groups.
-pub fn decode_edge_treatment_vertex_operands(
+pub(crate) fn decode_edge_treatment_vertex_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -285,7 +285,7 @@ pub fn decode_edge_treatment_vertex_operands(
 }
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
-pub fn bind_work_point_input_carriers(
+pub(crate) fn bind_work_point_input_carriers(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -472,7 +472,7 @@ pub fn bind_work_point_input_carriers(
 }
 
 /// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
-pub fn bind_work_plane_constructions(
+pub(crate) fn bind_work_plane_constructions(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -565,7 +565,7 @@ pub fn bind_work_plane_constructions(
 }
 
 /// Bind persistent subentity candidates carried by decoded vertex recipes.
-pub fn bind_vertex_recipe_candidates(
+pub(crate) fn bind_vertex_recipe_candidates(
     scopes: &mut [DesignParameterScope],
     tags: &[PersistentSubentityTag],
 ) {
@@ -588,7 +588,7 @@ pub fn bind_vertex_recipe_candidates(
 }
 
 /// Bind active fallback candidates for edge-treatment corner recipes.
-pub fn bind_edge_treatment_vertex_candidates(
+pub(crate) fn bind_edge_treatment_vertex_candidates(
     operands: &mut [DesignEdgeTreatmentVertexOperand],
     tags: &[PersistentSubentityTag],
 ) {
@@ -636,7 +636,7 @@ pub(crate) fn edge_recipe_terminal_delta(
 }
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
-pub fn decode_edge_identity_operands(
+pub(crate) fn decode_edge_identity_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -726,7 +726,7 @@ pub fn decode_edge_identity_operands(
 }
 
 /// Decode face-recipe operand frames named by grouped and direct feature references.
-pub fn decode_face_operands(
+pub(crate) fn decode_face_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -985,7 +985,7 @@ pub fn decode_face_operands(
 /// Decode the ordered persistent source identities carried by admitted `Face`
 /// source envelopes. The source envelope is distinct from a face-regeneration
 /// recipe: its members can name curves and vertices in one operation.
-pub fn decode_face_source_groups(
+pub(crate) fn decode_face_source_groups(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
@@ -1210,7 +1210,7 @@ fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
 }
 
 /// Join each face recipe's persistent Design reference to active solved faces.
-pub fn bind_face_operand_candidates(
+pub(crate) fn bind_face_operand_candidates(
     operands: &mut [DesignFaceOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
@@ -1276,7 +1276,7 @@ pub fn bind_face_operand_candidates(
 }
 
 /// Join each edge recipe's persistent Design reference to active solved faces.
-pub fn bind_edge_operand_candidates(
+pub(crate) fn bind_edge_operand_candidates(
     operands: &mut [DesignEdgeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
@@ -1327,7 +1327,7 @@ pub(crate) fn edge_operand_candidate_faces(
 }
 
 /// Resolve the unique sketch-profile frame named by profile-based scopes.
-pub fn bind_sketch_profiles(
+pub(crate) fn bind_sketch_profiles(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1394,7 +1394,7 @@ pub fn bind_sketch_profiles(
 }
 
 /// Decode the counted selection group named by each Extrude scope.
-pub fn decode_extrude_selection_groups(
+pub(crate) fn decode_extrude_selection_groups(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1439,7 +1439,7 @@ pub fn decode_extrude_selection_groups(
 /// A scope reference member whose record opens the group grammar but does not
 /// close it is recorded on the owning scope, so a group the grammar cannot read
 /// is distinguishable from a reference member that is not a group at all.
-pub fn decode_construction_operand_groups(
+pub(crate) fn decode_construction_operand_groups(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1533,7 +1533,7 @@ pub fn decode_construction_operand_groups(
 /// Decode the fixed role-less body carrier used by the legacy Boolean-Loft
 /// envelopes. The ordinary role-`0x8` body group is admitted only when this
 /// exact carrier is present at scope-reference ordinal zero.
-pub fn decode_loft_legacy_body_carriers(
+pub(crate) fn decode_loft_legacy_body_carriers(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -1582,7 +1582,7 @@ pub fn decode_loft_legacy_body_carriers(
 }
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
-pub(crate) fn parse_loft_legacy_body_carrier(
+fn parse_loft_legacy_body_carrier(
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
@@ -1719,7 +1719,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     })
 }
 
-pub(crate) fn assign_extrude_face_roles(
+pub(in crate::design) fn assign_extrude_face_roles(
     scope: &DesignParameterScope,
     groups: &mut [DesignConstructionOperandGroup],
 ) {
@@ -1749,7 +1749,7 @@ pub(crate) fn assign_extrude_face_roles(
 }
 
 /// Pair Fillet construction-operand groups with their radius inputs.
-pub fn decode_fillet_radius_groups(
+pub(crate) fn decode_fillet_radius_groups(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     owners: &[DesignParameterOwner],
@@ -1968,7 +1968,7 @@ pub fn decode_fillet_radius_groups(
 }
 
 /// Remove fixed Fillet interpretations of frames that are indexed parameter owners.
-pub fn disambiguate_fixed_fillet_parameters(
+pub(crate) fn disambiguate_fixed_fillet_parameters(
     scopes: &mut [DesignParameterScope],
     owners: &[DesignParameterOwner],
 ) {
@@ -1999,7 +1999,7 @@ pub fn disambiguate_fixed_fillet_parameters(
 }
 
 /// Outcome of reading a scope reference member as a construction-operand group.
-pub(crate) enum ConstructionOperandGroupParse {
+pub(super) enum ConstructionOperandGroupParse {
     /// The record does not open a construction-operand group.
     NotAGroup,
     /// The record opens a group the grammar does not close.
@@ -2077,10 +2077,10 @@ fn extrude_operand_role(
 
 /// Indexed frame identity and stream position.
 #[derive(Clone, Debug)]
-pub(crate) struct RecordFrame {
-    pub(crate) record_index: u32,
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) byte_offset: u64,
+pub(super) struct RecordFrame {
+    pub(super) record_index: u32,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
+    pub(super) byte_offset: u64,
 }
 
 impl From<&DesignRecordHeader> for RecordFrame {
@@ -2110,7 +2110,7 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
-pub(crate) fn parse_construction_operand_group(
+pub(super) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -2424,7 +2424,7 @@ fn legacy_body_group_tail(
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.
-pub fn bind_construction_operand_trailing_records(
+pub(crate) fn bind_construction_operand_trailing_records(
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2486,7 +2486,7 @@ pub fn bind_construction_operand_trailing_records(
     Ok(())
 }
 
-pub(crate) fn parse_construction_operand_flag(
+fn parse_construction_operand_flag(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandFlag> {
@@ -2514,7 +2514,7 @@ pub(crate) fn parse_construction_operand_flag(
 }
 
 /// Bind exact persistent-entity path records selected by construction groups.
-pub fn bind_construction_operand_paths(
+pub(crate) fn bind_construction_operand_paths(
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2555,7 +2555,7 @@ pub fn bind_construction_operand_paths(
     Ok(())
 }
 
-pub(crate) fn parse_construction_operand_path(
+fn parse_construction_operand_path(
     bytes: &[u8],
     expected_scope_record_index: u32,
     header: &DesignRecordHeader,
@@ -2628,7 +2628,7 @@ pub(crate) fn parse_construction_operand_path(
     .ok()
 }
 
-pub(crate) fn parse_construction_operand_transform(
+fn parse_construction_operand_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandTransform> {
@@ -2662,7 +2662,7 @@ pub(crate) fn parse_construction_operand_transform(
     .ok()
 }
 
-pub(crate) fn parse_construction_operand_dual_transform(
+fn parse_construction_operand_dual_transform(
     bytes: &[u8],
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandDualTransform> {
@@ -2711,7 +2711,7 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
 }
 
 /// Decode the persistent identity frame named by each construction-operand group.
-pub fn decode_construction_operand_identities(
+pub(crate) fn decode_construction_operand_identities(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2758,7 +2758,7 @@ pub fn decode_construction_operand_identities(
 
 /// Bind a contiguous unresolved-edge run to the construction group whose
 /// first identity wrapper terminates that run.
-pub fn bind_lost_edge_groups(
+pub(crate) fn bind_lost_edge_groups(
     groups: &mut [DesignConstructionOperandGroup],
     identities: &[DesignConstructionOperandIdentity],
     lost_edges: &[LostEdgeReference],
@@ -2837,7 +2837,7 @@ pub fn bind_lost_edge_groups(
     Ok(())
 }
 
-pub(crate) fn parse_construction_operand_identity(
+fn parse_construction_operand_identity(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
@@ -2931,7 +2931,7 @@ pub(crate) fn parse_construction_operand_identity(
     .ok()
 }
 
-pub(crate) fn parse_construction_tracking_path(
+fn parse_construction_tracking_path(
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_record_index: u32,
@@ -3022,7 +3022,7 @@ fn take_optional_tracking_identity(
     }
 }
 
-pub(crate) fn parse_extrude_selection_group(
+fn parse_extrude_selection_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -3102,7 +3102,7 @@ pub(crate) fn parse_extrude_selection_group(
 }
 
 /// Decode the fixed-width records named by Extrude selection groups.
-pub fn decode_extrude_selection_members(
+pub(crate) fn decode_extrude_selection_members(
     scan: &ContainerScan,
     groups: &[DesignExtrudeSelectionGroup],
     headers: &[DesignRecordHeader],
@@ -3146,7 +3146,7 @@ pub fn decode_extrude_selection_members(
 }
 
 /// Decode nested persistent-entity frames named by construction groups.
-pub fn decode_entity_selection_operands(
+pub(crate) fn decode_entity_selection_operands(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -3189,7 +3189,7 @@ pub fn decode_entity_selection_operands(
     Ok(out)
 }
 
-pub(crate) fn parse_entity_selection_operand(
+pub(super) fn parse_entity_selection_operand(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
@@ -3232,34 +3232,34 @@ pub(crate) fn parse_entity_selection_operand(
 /// Persistent identity payload shared by entity-selection consumers that do
 /// not belong to a construction-operand group.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EntitySelectionFrame {
-    pub(crate) record_index: u32,
-    pub(crate) byte_offset: u64,
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) asset_id: String,
-    pub(crate) asset_id_offset: u64,
-    pub(crate) context_id: String,
-    pub(crate) context_id_offset: u64,
-    pub(crate) identity_record_index: u32,
-    pub(crate) identity_record_offset: u64,
-    pub(crate) primary_identity: u64,
-    pub(crate) primary_identity_offset: u64,
-    pub(crate) secondary: Option<
+pub(in crate::design::decode) struct EntitySelectionFrame {
+    pub(super) record_index: u32,
+    pub(super) byte_offset: u64,
+    class_tag: crate::records::references::DesignClassTag,
+    pub(super) asset_id: String,
+    pub(super) asset_id_offset: u64,
+    pub(super) context_id: String,
+    pub(super) context_id_offset: u64,
+    pub(super) identity_record_index: u32,
+    pub(super) identity_record_offset: u64,
+    pub(super) primary_identity: u64,
+    pub(super) primary_identity_offset: u64,
+    pub(super) secondary: Option<
         crate::records::identity::DesignSecondaryIdentity<crate::records::identity::Located<u64>>,
     >,
-    pub(crate) next_record_index: u32,
-    pub(crate) next_byte_offset: u64,
+    pub(super) next_record_index: u32,
+    pub(super) next_byte_offset: u64,
 }
 
-pub(crate) struct EntitySelectionPrefix {
-    pub(crate) asset_id: String,
-    pub(crate) asset_id_offset: u64,
-    pub(crate) context_id: String,
-    pub(crate) context_id_offset: u64,
-    pub(crate) after_context_id: usize,
+pub(in crate::design::decode) struct EntitySelectionPrefix {
+    pub(super) asset_id: String,
+    pub(super) asset_id_offset: u64,
+    pub(super) context_id: String,
+    pub(super) context_id_offset: u64,
+    after_context_id: usize,
 }
 
-pub(crate) fn parse_entity_selection_prefix(
+pub(super) fn parse_entity_selection_prefix(
     bytes: &[u8],
     start: usize,
     record_index: u32,
@@ -3317,7 +3317,7 @@ pub(crate) fn parse_entity_selection_prefix(
 }
 
 /// Match the selected curve identity carried by a nested entity-selection frame.
-pub(crate) fn entity_selection_matches_curve(
+pub(in crate::design) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
@@ -3426,7 +3426,7 @@ fn parse_work_point_sketch_point_frame(
 }
 
 /// Parse the nested persistent-entity frame without assigning group ownership.
-pub(crate) fn parse_entity_selection_frame(
+pub(super) fn parse_entity_selection_frame(
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
@@ -3548,7 +3548,7 @@ pub(crate) fn parse_entity_selection_frame(
 }
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
-pub fn decode_body_recipe_operands(
+pub(crate) fn decode_body_recipe_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -3944,7 +3944,7 @@ fn parse_body_recipe_operand_frame_with_index(
 }
 
 /// Join body-recipe Design references to solved persistent face tags.
-pub fn bind_body_recipe_operand_candidates(
+pub(crate) fn bind_body_recipe_operand_candidates(
     operands: &mut [DesignBodyRecipeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
@@ -4009,7 +4009,7 @@ pub fn bind_body_recipe_operand_candidates(
 
 /// Resolve selection-member local identities against persistent point and
 /// curve identities owned by the Extrude scope's selected Sketch.
-pub fn bind_extrude_selection_geometry(
+pub(crate) fn bind_extrude_selection_geometry(
     members: &mut [DesignExtrudeSelectionMember],
     groups: &[DesignExtrudeSelectionGroup],
     scopes: &[DesignParameterScope],
@@ -4070,7 +4070,7 @@ pub fn bind_extrude_selection_geometry(
 
 /// Bind selection members to construction-operand identity chains that
 /// terminate at the same fixed persistent identity record.
-pub fn bind_extrude_selection_identities(
+pub(crate) fn bind_extrude_selection_identities(
     members: &mut [DesignExtrudeSelectionMember],
     identities: &[DesignConstructionOperandIdentity],
 ) {
@@ -4104,7 +4104,7 @@ pub fn bind_extrude_selection_identities(
     }
 }
 
-pub(crate) fn parse_extrude_selection_member(
+fn parse_extrude_selection_member(
     bytes: &[u8],
     group: &DesignExtrudeSelectionGroup,
     group_member_ordinal: u32,
@@ -4218,19 +4218,16 @@ fn parse_extrude_identity_member(
     })
 }
 
-pub(crate) struct ParsedEdgeIdentityMember {
-    pub(crate) layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout,
-    pub(crate) local_id: u64,
-    pub(crate) asset_id: String,
-    pub(crate) asset_id_offset: u64,
-    pub(crate) context_id: String,
-    pub(crate) context_id_offset: u64,
+struct ParsedEdgeIdentityMember {
+    layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout,
+    local_id: u64,
+    asset_id: String,
+    asset_id_offset: u64,
+    context_id: String,
+    context_id_offset: u64,
 }
 
-pub(crate) fn parse_edge_identity_member(
-    bytes: &[u8],
-    start: usize,
-) -> Option<ParsedEdgeIdentityMember> {
+fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeIdentityMember> {
     use crate::records::topology::edge_identity::DesignEdgeIdentityLayout;
     let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
         DesignEdgeIdentityLayout::Full
@@ -4266,7 +4263,7 @@ pub(crate) fn parse_edge_identity_member(
     })
 }
 
-pub(crate) fn parse_sketch_profile(
+pub(in crate::design) fn parse_sketch_profile(
     bytes: &[u8],
     stream: &str,
     scope_reference_ordinal: u32,
@@ -4546,7 +4543,7 @@ enum RecipeOperandTerminator {
 }
 
 /// Parse one exact persistent vertex-recipe envelope.
-pub(crate) fn parse_vertex_recipe(
+fn parse_vertex_recipe(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     stream: &str,
@@ -4703,7 +4700,7 @@ fn parse_recipe_operand(
     })
 }
 
-pub(crate) fn parse_edge_operand(
+fn parse_edge_operand(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -4888,7 +4885,7 @@ pub(crate) fn surface_patch_recipe_structure(
     )
 }
 
-pub(crate) fn edge_recipe_local_topology_references(
+fn edge_recipe_local_topology_references(
     structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
     reference_count: usize,
 ) -> Option<Vec<std::num::NonZeroU32>> {
@@ -5103,7 +5100,7 @@ fn topology_recipe_references(
         .collect()
 }
 
-pub(crate) fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
+fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
     let entries = words
         .chunks_exact(8)
         .map(|entry| {
@@ -5212,7 +5209,7 @@ fn face_recipe_next_boundary(
 // parse already required; bundling them would touch every caller for no
 // structural gain.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn parse_face_operand(
+pub(super) fn parse_face_operand(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -5366,7 +5363,7 @@ pub(crate) fn parse_face_operand(
     .ok()
 }
 
-pub(crate) fn has_typed_edge_treatment_group(
+pub(in crate::design) fn has_typed_edge_treatment_group(
     kind: &crate::records::feature::scope::DesignFeatureKind,
 ) -> bool {
     matches!(

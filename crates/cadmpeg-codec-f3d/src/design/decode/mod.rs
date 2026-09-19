@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design metadata and bulk-stream byte frames by domain.
 
-pub(crate) mod assembly;
-pub mod body;
-pub mod canvas;
-pub mod components;
-pub mod decal;
-pub mod dimension_frames;
-pub(crate) mod image;
-pub mod mesh;
-pub mod meta;
-pub mod operands;
-pub mod parameters;
-pub mod patch;
-pub mod presentation;
-pub mod scopes;
-pub mod sketch;
+mod assembly;
+pub(crate) mod body;
+pub(crate) mod canvas;
+pub(crate) mod components;
+pub(crate) mod decal;
+pub(crate) mod dimension_frames;
+mod image;
+pub(crate) mod mesh;
+pub(crate) mod meta;
+pub(crate) mod operands;
+pub(crate) mod parameters;
+mod patch;
+pub(crate) mod presentation;
+pub(crate) mod scopes;
+pub(crate) mod sketch;
 pub(crate) mod surface_trim;
-pub mod units;
+pub(crate) mod units;

@@ -24,18 +24,18 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Kernel arenas are flattened at the top level for [`retain_root_entities`].
 #[derive(Default, Serialize, Deserialize)]
-pub struct Brep {
+pub(crate) struct Brep {
     /// The format-independent ASM graph.
     #[serde(flatten)]
-    pub asm: AsmBrep,
+    pub(crate) asm: AsmBrep,
     /// Typed sketch-curve provenance links.
-    pub sketch_curve_links: Vec<SketchCurveLink>,
+    pub(crate) sketch_curve_links: Vec<SketchCurveLink>,
     /// Persistent design identifiers attached to solved entities.
-    pub persistent_design_links: Vec<PersistentDesignLink>,
+    pub(crate) persistent_design_links: Vec<PersistentDesignLink>,
     /// Variable-width persistent tag groups attached to solved faces and edges.
-    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
+    pub(crate) persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Original authoring times attached to solved entities.
-    pub creation_timestamps: Vec<CreationTimestamp>,
+    pub(crate) creation_timestamps: Vec<CreationTimestamp>,
 }
 
 impl Brep {
@@ -71,7 +71,7 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub fn body_selectors(&self) -> HashMap<BodyId, u64> {
+    pub(crate) fn body_selectors(&self) -> HashMap<BodyId, u64> {
         let ordinal_mode = self
             .asm
             .body_native_keys
@@ -116,7 +116,7 @@ impl Brep {
 
     /// Retain the connected entity graph rooted at the body-map keys selected
     /// for one BREP blob.
-    pub fn retain_body_keys(
+    pub(crate) fn retain_body_keys(
         &mut self,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_core::CodecError> {
@@ -194,7 +194,7 @@ impl Brep {
 
     /// Qualify every entity owned by this graph so several BREP blobs can
     /// coexist in one document model without record-index collisions.
-    pub fn qualify_ids(
+    pub(crate) fn qualify_ids(
         &mut self,
         format: IdFormat,
         namespace: &str,
@@ -234,7 +234,7 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub fn append(&mut self, mut other: Self) {
+    pub(crate) fn append(&mut self, mut other: Self) {
         self.asm.append(other.asm);
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
@@ -254,7 +254,7 @@ impl Brep {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-pub fn decode(
+pub(crate) fn decode(
     records: &[Record],
     bytes: &[u8],
     stream: &str,
@@ -275,7 +275,7 @@ pub fn decode(
 /// binary centimetre convention, so the shared decode path runs unchanged.
 /// The header comes from the stream's ASCII header lines rather than a binary
 /// header parse of `bytes`.
-pub fn decode_text(
+pub(crate) fn decode_text(
     stream: &cadmpeg_asm::sat::TextStream,
     bytes: &[u8],
     entry: &str,
@@ -401,7 +401,7 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
     }
 }
 
-pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
+fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     let family = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "sketch_attrib_def"),
     )?;
@@ -417,7 +417,7 @@ pub(crate) fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCur
     })
 }
 
-pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignLink> {
+fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignLink> {
     let AttributeTarget::Body(_) = &attribute.target else {
         return Vec::new();
     };
@@ -468,9 +468,7 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
         .collect()
 }
 
-pub(crate) fn persistent_subentity_tags(
-    attribute: &SourceAttribute,
-) -> Vec<PersistentSubentityTag> {
+fn persistent_subentity_tags(attribute: &SourceAttribute) -> Vec<PersistentSubentityTag> {
     if !matches!(
         attribute.target,
         AttributeTarget::Face(_) | AttributeTarget::Edge(_)
@@ -590,7 +588,7 @@ fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<Strin
     }
 }
 
-pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
     let family = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "Timestamp_attrib_def"),
     )?;

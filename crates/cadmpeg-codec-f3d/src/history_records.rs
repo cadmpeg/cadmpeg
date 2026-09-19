@@ -9,20 +9,20 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// Stream-size and history-entry-count pair from an ASM history preamble.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AsmPreamble {
-    pub stream_size: i64,
-    pub history_entry_count: i64,
+    pub(crate) stream_size: i64,
+    pub(crate) history_entry_count: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmHistorySerde", into = "AsmHistorySerde")]
 pub(crate) struct AsmHistory {
-    pub id: String,
-    pub byte_offset: u64,
-    pub preamble: Option<AsmPreamble>,
+    pub(crate) id: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
     /// state-by-record work estimate exceeded the decoder safety budget.
-    pub record_table_binding_budget_exceeded: bool,
-    pub states: Vec<AsmDeltaState>,
+    pub(crate) record_table_binding_budget_exceeded: bool,
+    pub(crate) states: Vec<AsmDeltaState>,
 }
 
 impl AsmHistory {
@@ -112,33 +112,33 @@ impl From<AsmHistory> for AsmHistorySerde {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmDeltaStateWire", into = "AsmDeltaStateWire")]
 pub(crate) struct AsmDeltaState {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub state_id: i64,
-    pub version_flag: i64,
-    pub state_flag: i64,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) state_id: i64,
+    pub(crate) version_flag: i64,
+    pub(crate) state_flag: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_ref: Option<i64>,
+    pub(crate) previous_ref: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_ref: Option<i64>,
-    pub node_index: i64,
+    pub(crate) next_ref: Option<i64>,
+    pub(crate) node_index: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub partner_ref: Option<i64>,
-    pub owner_ref: i64,
+    pub(crate) partner_ref: Option<i64>,
+    pub(crate) owner_ref: i64,
     #[serde(default)]
-    pub bulletin_boards: Vec<AsmBulletinBoard>,
+    pub(crate) bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
-    pub records: Vec<AsmHistoryRecord>,
+    pub(crate) records: Vec<AsmHistoryRecord>,
     /// Topology-entity slot to record-revision map at this state. The decoder
     /// retains this compact map for late persistent-selection binding after
     /// projection caches are finalized.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entity_versions: Vec<AsmEntityVersion>,
-    pub topology_cache: AsmTopologyCache,
+    pub(crate) entity_versions: Vec<AsmEntityVersion>,
+    pub(crate) topology_cache: AsmTopologyCache,
     /// Forward change from the state reached by `next_ref` to this state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transition: Option<AsmHistoricalTransition>,
+    pub(crate) transition: Option<AsmHistoricalTransition>,
 }
 
 /// Historical topology retained for projection or for late identity resolution.
@@ -204,7 +204,7 @@ impl AsmDeltaState {
     }
 
     /// The state's complete projection snapshot was released at finalization.
-    pub(crate) fn projection_released(&self) -> bool {
+    fn projection_released(&self) -> bool {
         matches!(
             self.topology_cache,
             AsmTopologyCache::Retained(_) | AsmTopologyCache::Released
@@ -347,174 +347,174 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
 /// Record revision occupying one stable entity slot at an ASM history state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmEntityVersion {
-    pub entity_ref: i64,
-    pub record_ref: i64,
+    pub(crate) entity_ref: i64,
+    pub(crate) record_ref: i64,
 }
 
 /// Stable entity-slot membership of one re-derived historical B-rep.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopology {
-    pub bodies: Vec<i64>,
-    pub regions: Vec<i64>,
-    pub shells: Vec<i64>,
-    pub faces: Vec<i64>,
-    pub loops: Vec<i64>,
-    pub coedges: Vec<i64>,
-    pub edges: Vec<i64>,
-    pub vertices: Vec<i64>,
-    pub points: Vec<i64>,
-    pub surfaces: Vec<i64>,
+    pub(crate) bodies: Vec<i64>,
+    pub(crate) regions: Vec<i64>,
+    pub(crate) shells: Vec<i64>,
+    pub(crate) faces: Vec<i64>,
+    pub(crate) loops: Vec<i64>,
+    pub(crate) coedges: Vec<i64>,
+    pub(crate) edges: Vec<i64>,
+    pub(crate) vertices: Vec<i64>,
+    pub(crate) points: Vec<i64>,
+    pub(crate) surfaces: Vec<i64>,
     /// Characteristic radii of analytic or constant-radius blend carriers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
+    pub(crate) surface_radii: Vec<AsmHistoricalSurfaceRadius>,
     /// Exact right-circular cylinder carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_cylinders: Vec<AsmHistoricalCylinder>,
+    pub(crate) surface_cylinders: Vec<AsmHistoricalCylinder>,
     /// Exact plane carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_planes: Vec<AsmHistoricalPlane>,
+    pub(crate) surface_planes: Vec<AsmHistoricalPlane>,
     /// Model-space axes of axis-bearing analytic surface carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub surface_axes: Vec<AsmHistoricalSurfaceAxis>,
-    pub curves: Vec<i64>,
+    pub(crate) surface_axes: Vec<AsmHistoricalSurfaceAxis>,
+    pub(crate) curves: Vec<i64>,
     /// Model-space axes of axis-bearing curve carriers in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub curve_axes: Vec<AsmHistoricalCurveAxis>,
-    pub pcurves: Vec<i64>,
+    pub(crate) curve_axes: Vec<AsmHistoricalCurveAxis>,
+    pub(crate) pcurves: Vec<i64>,
     /// Persistent tag groups attached to face and edge revisions in this state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
+    pub(crate) persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub body_regions: Vec<AsmHistoricalRelation>,
+    pub(crate) body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub region_shells: Vec<AsmHistoricalRelation>,
+    pub(crate) region_shells: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_faces: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_faces: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_wire_edges: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_wire_edges: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub shell_free_vertices: Vec<AsmHistoricalRelation>,
+    pub(crate) shell_free_vertices: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub face_loops: Vec<AsmHistoricalRelation>,
+    pub(crate) face_loops: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub loop_coedges: Vec<AsmHistoricalRelation>,
+    pub(crate) loop_coedges: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coedge_topology: Vec<AsmHistoricalCoedge>,
+    pub(crate) coedge_topology: Vec<AsmHistoricalCoedge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edge_vertices: Vec<AsmHistoricalEdge>,
+    pub(crate) edge_vertices: Vec<AsmHistoricalEdge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub face_surfaces: Vec<AsmHistoricalCarrierBinding>,
+    pub(crate) face_surfaces: Vec<AsmHistoricalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    pub(crate) edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    pub(crate) coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vertex_points: Vec<AsmHistoricalCarrierBinding>,
+    pub(crate) vertex_points: Vec<AsmHistoricalCarrierBinding>,
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub point_positions: Vec<AsmHistoricalPoint>,
+    pub(crate) point_positions: Vec<AsmHistoricalPoint>,
 }
 
 /// One persistent tag group attached to a historical face or edge revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
-    pub entity_kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
-    pub entity_ref: i64,
-    pub selector: i64,
-    pub token: String,
-    pub design_references: Vec<i64>,
-    pub ordinal: u32,
+    pub(crate) entity_kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
+    pub(crate) entity_ref: i64,
+    pub(crate) selector: i64,
+    pub(crate) token: String,
+    pub(crate) design_references: Vec<i64>,
+    pub(crate) ordinal: u32,
 }
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCurveAxis {
-    pub curve: i64,
-    pub origin: Point3,
-    pub direction: Vector3,
+    pub(crate) curve: i64,
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
 }
 
 /// Stable axis line of one cylinder, cone, or torus carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalSurfaceAxis {
-    pub surface: i64,
-    pub origin: Point3,
-    pub direction: Vector3,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) direction: Vector3,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalSurfaceRadius {
-    pub surface: i64,
-    pub radius: f64,
+    pub(crate) surface: i64,
+    pub(crate) radius: f64,
 }
 
 /// Stable geometry of one right-circular cylinder carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCylinder {
-    pub surface: i64,
-    pub origin: Point3,
-    pub axis: Vector3,
-    pub radius: f64,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) axis: Vector3,
+    pub(crate) radius: f64,
 }
 
 /// Stable geometry of one plane carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPlane {
-    pub surface: i64,
-    pub origin: Point3,
-    pub normal: Vector3,
+    pub(crate) surface: i64,
+    pub(crate) origin: Point3,
+    pub(crate) normal: Vector3,
 }
 
 /// Stable point-carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalPoint {
-    pub point: i64,
-    pub position: Point3,
+    pub(crate) point: i64,
+    pub(crate) position: Point3,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalRelation {
-    pub owner_ref: i64,
-    pub member_refs: Vec<i64>,
+    pub(crate) owner_ref: i64,
+    pub(crate) member_refs: Vec<i64>,
 }
 
 /// Stable topology links of one historical coedge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCoedge {
-    pub coedge: i64,
-    pub owner_loop: i64,
-    pub edge: i64,
-    pub next: i64,
-    pub previous: i64,
-    pub radial_next: i64,
+    pub(crate) coedge: i64,
+    pub(crate) owner_loop: i64,
+    pub(crate) edge: i64,
+    pub(crate) next: i64,
+    pub(crate) previous: i64,
+    pub(crate) radial_next: i64,
 }
 
 /// Ordered endpoint links of one historical edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEdge {
-    pub edge: i64,
-    pub start_vertex: i64,
-    pub end_vertex: i64,
+    pub(crate) edge: i64,
+    pub(crate) start_vertex: i64,
+    pub(crate) end_vertex: i64,
 }
 
 /// Stable binding from a topology entity to its required geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalCarrierBinding {
-    pub entity: i64,
-    pub carrier: i64,
+    pub(crate) entity: i64,
+    pub(crate) carrier: i64,
 }
 
 /// Stable binding from a topology entity to its optional geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalOptionalCarrierBinding {
-    pub entity: i64,
+    pub(crate) entity: i64,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_carrier"
     )]
-    pub carrier: Option<i64>,
+    pub(crate) carrier: Option<i64>,
 }
 
 /// Forward stable-slot changes from an older ASM state to a newer state.
@@ -526,50 +526,50 @@ pub(crate) struct AsmHistoricalTransition {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_previous_state_id"
     )]
-    pub previous_state_id: Option<i64>,
+    pub(crate) previous_state_id: Option<i64>,
     /// Changes across the complete normalized `RecordTable`.
-    pub records: AsmHistoricalEntityDelta,
+    pub(crate) records: AsmHistoricalEntityDelta,
     /// Changes restricted to each normalized topology family.
-    pub topology: AsmHistoricalTopologyDelta,
+    pub(crate) topology: AsmHistoricalTopologyDelta,
 }
 
 /// Stable entity slots inserted, deleted, or assigned a different record revision.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalEntityDelta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inserted: Vec<i64>,
+    pub(crate) inserted: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub deleted: Vec<i64>,
+    pub(crate) deleted: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub updated: Vec<i64>,
+    pub(crate) updated: Vec<i64>,
 }
 
 /// Per-family topology changes between two complete historical states.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AsmHistoricalTopologyDelta {
-    pub bodies: AsmHistoricalEntityDelta,
-    pub regions: AsmHistoricalEntityDelta,
-    pub shells: AsmHistoricalEntityDelta,
-    pub faces: AsmHistoricalEntityDelta,
-    pub loops: AsmHistoricalEntityDelta,
-    pub coedges: AsmHistoricalEntityDelta,
-    pub edges: AsmHistoricalEntityDelta,
-    pub vertices: AsmHistoricalEntityDelta,
-    pub points: AsmHistoricalEntityDelta,
-    pub surfaces: AsmHistoricalEntityDelta,
-    pub curves: AsmHistoricalEntityDelta,
-    pub pcurves: AsmHistoricalEntityDelta,
+    pub(crate) bodies: AsmHistoricalEntityDelta,
+    pub(crate) regions: AsmHistoricalEntityDelta,
+    pub(crate) shells: AsmHistoricalEntityDelta,
+    pub(crate) faces: AsmHistoricalEntityDelta,
+    pub(crate) loops: AsmHistoricalEntityDelta,
+    pub(crate) coedges: AsmHistoricalEntityDelta,
+    pub(crate) edges: AsmHistoricalEntityDelta,
+    pub(crate) vertices: AsmHistoricalEntityDelta,
+    pub(crate) points: AsmHistoricalEntityDelta,
+    pub(crate) surfaces: AsmHistoricalEntityDelta,
+    pub(crate) curves: AsmHistoricalEntityDelta,
+    pub(crate) pcurves: AsmHistoricalEntityDelta,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmHistoryRecordWire", into = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
-    pub id: String,
-    pub parent: String,
-    pub revision_id: Option<i64>,
-    pub byte_offset: u64,
-    pub framing: AsmHistoryRecordFraming,
-    pub raw_bytes: Vec<u8>,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) revision_id: Option<i64>,
+    pub(crate) byte_offset: u64,
+    pub(crate) framing: AsmHistoryRecordFraming,
+    pub(crate) raw_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -585,14 +585,14 @@ pub(crate) enum AsmHistoryRecordFraming {
 }
 
 impl AsmHistoryRecord {
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match &self.framing {
             AsmHistoryRecordFraming::Framed { name, .. } => name,
             AsmHistoryRecordFraming::Opaque { .. } => "opaque_history_payload",
         }
     }
 
-    pub fn framing_error(&self) -> Option<&str> {
+    pub(crate) fn framing_error(&self) -> Option<&str> {
         match &self.framing {
             AsmHistoryRecordFraming::Framed { .. } => None,
             AsmHistoryRecordFraming::Opaque { error } => Some(error),
@@ -692,21 +692,21 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AsmBulletinBoard {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub owner_ref: i64,
-    pub number: i64,
-    pub changes: Vec<AsmEntityChange>,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) owner_ref: i64,
+    pub(crate) number: i64,
+    pub(crate) changes: Vec<AsmEntityChange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AsmEntityChangeSerde", into = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
-    pub id: String,
-    pub parent: String,
-    pub byte_offset: u64,
-    pub kind: AsmEntityChangeKind,
+    pub(crate) id: String,
+    pub(crate) parent: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) kind: AsmEntityChangeKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

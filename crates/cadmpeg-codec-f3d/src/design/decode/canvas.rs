@@ -25,7 +25,7 @@ use cadmpeg_ir::math::Point2;
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
-pub fn decode_canvas_images(
+pub(crate) fn decode_canvas_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
@@ -54,7 +54,7 @@ pub fn decode_canvas_images(
 
 /// Project uniquely bound Canvas images into neutral raster resources and
 /// model-space reference-image features.
-pub fn project_canvas_images(
+pub(crate) fn project_canvas_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     images: &[DesignCanvasImage],

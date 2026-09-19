@@ -359,7 +359,7 @@ fn emit_asm_history_records(
     namespace.set_arena_from(row.arena, records)
 }
 
-pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
+const F3D_FAMILIES: &[F3dFamilyRow] = &[
     F3dFamilyRow {
         arena: "act_entities",
         exactness: (),
@@ -1069,229 +1069,229 @@ const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespa
 
 /// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct F3dNative {
+pub(crate) struct F3dNative {
     /// Fusion ACT change-tracking table entities.
     #[serde(default)]
-    pub act_entities: Vec<ActEntity>,
+    pub(crate) act_entities: Vec<ActEntity>,
     /// Fusion ACT stream-wide asset/change-version GUID pool.
     #[serde(default)]
-    pub act_guids: Vec<ActGuid>,
+    pub(crate) act_guids: Vec<ActGuid>,
     /// Fusion ACT stream-wide named channel registry.
     #[serde(default)]
-    pub act_registry_channels: Vec<ActRegistryChannel>,
+    pub(crate) act_registry_channels: Vec<ActRegistryChannel>,
     /// Fusion ACT document-root-to-registry links.
     #[serde(default)]
-    pub act_root_components: Vec<ActRootComponent>,
+    pub(crate) act_root_components: Vec<ActRootComponent>,
     /// Fusion ACT table references between the GUID pool and channel registry.
     #[serde(default)]
-    pub act_table_references: Vec<ActTableReference>,
+    pub(crate) act_table_references: Vec<ActTableReference>,
     /// Native Design-join keys stored on ASM bodies.
     #[serde(default)]
-    pub body_native_keys: Vec<BodyNativeKey>,
+    pub(crate) body_native_keys: Vec<BodyNativeKey>,
     /// Design browser-node visibility joined to solved ASM bodies.
     #[serde(default)]
-    pub body_visibilities: Vec<BodyVisibility>,
+    pub(crate) body_visibilities: Vec<BodyVisibility>,
     /// Design `MetaStream` type-table entries.
     #[serde(default)]
-    pub design_types: Vec<SegmentType>,
+    pub(crate) design_types: Vec<SegmentType>,
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
-    pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    pub(crate) design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
     /// Exact role-less body carriers paired with legacy Boolean-Loft groups.
     #[serde(default)]
-    pub design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
+    pub(crate) design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
-    pub design_canvas_images: Vec<DesignCanvasImage>,
+    pub(crate) design_canvas_images: Vec<DesignCanvasImage>,
     /// Exact image and target bindings owned by Decal timeline objects.
     #[serde(default)]
-    pub design_decal_images: Vec<DesignDecalImage>,
+    pub(crate) design_decal_images: Vec<DesignDecalImage>,
     /// Complete typed `Base Mesh Feature` Design graphs.
     #[serde(default)]
-    pub design_mesh_features: Vec<DesignMeshFeature>,
+    pub(crate) design_mesh_features: Vec<DesignMeshFeature>,
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
-    pub design_component_occurrences: Vec<DesignComponentOccurrence>,
+    pub(crate) design_component_occurrences: Vec<DesignComponentOccurrence>,
     /// Component-local entity naming spaces selected by context UUID.
     #[serde(default)]
-    pub design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
+    pub(crate) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
-    pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
+    pub(crate) design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
     /// Fusion presentation frames governing parameter companions.
     #[serde(default)]
-    pub design_dimension_presentation_frames: Vec<DesignDimensionPresentationFrame>,
+    pub(crate) design_dimension_presentation_frames: Vec<DesignDimensionPresentationFrame>,
     /// Typed paired loci recovered from dimensional companion graphs.
     #[serde(default)]
-    pub design_dimension_locus_pairs: DesignDimensionLocusPairs,
+    pub(crate) design_dimension_locus_pairs: DesignDimensionLocusPairs,
     /// Counted typed loci recovered from dimensional companion graphs.
     #[serde(default)]
-    pub design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
+    pub(crate) design_dimension_locus_groups: Vec<DesignDimensionLocusGroup>,
     /// Null-plus-typed loci recovered from dimensional companion graphs.
     #[serde(default)]
-    pub design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs,
+    pub(crate) design_dimension_null_locus_pairs: DesignDimensionNullLocusPairs,
     /// Indexed records containing dimension-owned construction recipes.
     #[serde(default)]
-    pub design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
+    pub(crate) design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
     /// Edge-selection operands recovered from Fillet and Chamfer scopes.
     #[serde(default)]
-    pub design_edge_operands: Vec<DesignEdgeOperand>,
+    pub(crate) design_edge_operands: Vec<DesignEdgeOperand>,
     /// Corner-vertex operands recovered from edge-treatment groups.
     #[serde(default)]
-    pub design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
+    pub(crate) design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     /// Persistent selection identities recovered from Fillet and Chamfer groups.
     #[serde(default)]
-    pub design_edge_identity_operands: Vec<DesignEdgeIdentityOperand>,
+    pub(crate) design_edge_identity_operands: Vec<DesignEdgeIdentityOperand>,
     /// Face-selection operands recovered from Extrude construction groups.
     #[serde(default)]
-    pub design_face_operands: Vec<DesignFaceOperand>,
+    pub(crate) design_face_operands: Vec<DesignFaceOperand>,
     /// Ordered persistent source identities recovered from Face operations.
     #[serde(default)]
-    pub design_face_source_groups: Vec<DesignFaceSourceGroup>,
+    pub(crate) design_face_source_groups: Vec<DesignFaceSourceGroup>,
     /// Counted Design scope lists in authored feature order.
     #[serde(default)]
-    pub design_feature_timelines: Vec<DesignFeatureTimeline>,
+    pub(crate) design_feature_timelines: Vec<DesignFeatureTimeline>,
     /// Counted construction-operand groups owned by feature parameter scopes.
     #[serde(default)]
-    pub design_construction_operand_groups: Vec<DesignConstructionOperandGroup>,
+    pub(crate) design_construction_operand_groups: Vec<DesignConstructionOperandGroup>,
     /// Persistent identity frames named by construction-operand groups.
     #[serde(default)]
-    pub design_construction_operand_identities: Vec<DesignConstructionOperandIdentity>,
+    pub(crate) design_construction_operand_identities: Vec<DesignConstructionOperandIdentity>,
     /// Counted selection groups owned by Extrude parameter scopes.
     #[serde(default)]
-    pub design_extrude_selection_groups: Vec<DesignExtrudeSelectionGroup>,
+    pub(crate) design_extrude_selection_groups: Vec<DesignExtrudeSelectionGroup>,
     /// Fixed-width members named by Extrude selection groups.
     #[serde(default)]
-    pub design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
+    pub(crate) design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
     /// Nested persistent-entity operands named by counted construction groups.
     #[serde(default)]
-    pub design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
+    pub(crate) design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
     /// Radius parameters paired with counted Fillet edge groups.
     #[serde(default)]
-    pub design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
+    pub(crate) design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
-    pub design_parameter_companions: Vec<DesignParameterCompanion>,
+    pub(crate) design_parameter_companions: Vec<DesignParameterCompanion>,
     /// Same-index-delimited owner frames for indexed Design parameters.
     #[serde(default)]
-    pub design_parameter_owners: Vec<DesignParameterOwner>,
+    pub(crate) design_parameter_owners: Vec<DesignParameterOwner>,
     /// Sketch and construction-operation records that scope parameters.
     #[serde(default)]
-    pub design_parameter_scopes: Vec<DesignParameterScope>,
+    pub(crate) design_parameter_scopes: Vec<DesignParameterScope>,
     /// Exact BRep-cell carriers owned by `SurfaceTrim` operations.
     #[serde(default)]
-    pub design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
+    pub(crate) design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     /// Indexed Design parameter and expression records.
     #[serde(default)]
-    pub design_parameters: Vec<DesignParameter>,
+    pub(crate) design_parameters: Vec<DesignParameter>,
     /// Local-to-model placement frames for Design sketches.
     #[serde(default)]
-    pub design_sketch_placements: Vec<DesignSketchPlacement>,
+    pub(crate) design_sketch_placements: Vec<DesignSketchPlacement>,
     /// Self-validating per-entity headers from the Design `BulkStream`.
     #[serde(default)]
-    pub design_entity_headers: Vec<DesignEntityHeader>,
+    pub(crate) design_entity_headers: Vec<DesignEntityHeader>,
     /// Indexed dynamic-class record headers from the Design `BulkStream`.
     #[serde(default)]
-    pub design_record_headers: Vec<DesignRecordHeader>,
+    pub(crate) design_record_headers: Vec<DesignRecordHeader>,
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
-    pub design_body_members: Vec<DesignBodyMember>,
+    pub(crate) design_body_members: Vec<DesignBodyMember>,
     /// Ordered BREP body-map pairs from Design streams.
     #[serde(default)]
-    pub design_body_bindings: Vec<DesignBodyBinding>,
+    pub(crate) design_body_bindings: Vec<DesignBodyBinding>,
     /// Triplicated axis-aligned bounds cached by Design body containers.
     #[serde(default)]
-    pub design_body_bounds: Vec<DesignBodyBounds>,
+    pub(crate) design_body_bounds: Vec<DesignBodyBounds>,
     /// Design configuration tables and rules with complete JSON payloads.
     #[serde(default)]
-    pub design_configurations: Vec<DesignConfiguration>,
+    pub(crate) design_configurations: Vec<DesignConfiguration>,
     /// Design entity-to-material assignment records.
     #[serde(default)]
-    pub design_material_assignments: Vec<DesignMaterialAssignment>,
+    pub(crate) design_material_assignments: Vec<DesignMaterialAssignment>,
     /// Kernel continuity classifications stored on solved ASM edges.
     #[serde(default)]
-    pub edge_continuities: Vec<EdgeContinuity>,
+    pub(crate) edge_continuities: Vec<EdgeContinuity>,
     /// Native owner-coedge selectors stored on ASM edges.
     #[serde(default)]
-    pub edge_ownerships: Vec<EdgeOwnership>,
+    pub(crate) edge_ownerships: Vec<EdgeOwnership>,
     /// Native single/double-sided classifications stored on ASM faces.
     #[serde(default)]
-    pub face_sidedness: Vec<FaceSidedness>,
+    pub(crate) face_sidedness: Vec<FaceSidedness>,
     /// Native Design-join keys stored on solved ASM faces.
     #[serde(default)]
-    pub face_native_keys: Vec<FaceNativeKey>,
+    pub(crate) face_native_keys: Vec<FaceNativeKey>,
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
-    pub construction_recipes: Vec<ConstructionRecipe>,
+    pub(crate) construction_recipes: Vec<ConstructionRecipe>,
     /// Original authoring times attached to solved entities.
     #[serde(default)]
-    pub creation_timestamps: Vec<CreationTimestamp>,
+    pub(crate) creation_timestamps: Vec<CreationTimestamp>,
     /// Persistent Fusion design identifiers attached to solved B-rep entities.
     #[serde(default)]
-    pub persistent_design_links: Vec<PersistentDesignLink>,
+    pub(crate) persistent_design_links: Vec<PersistentDesignLink>,
     /// Persistent point/curve references from Design construction records.
     #[serde(default)]
-    pub persistent_references: Vec<PersistentReference>,
+    pub(crate) persistent_references: Vec<PersistentReference>,
     /// Variable-width persistent tag groups attached to solved faces and edges.
     #[serde(default)]
-    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
+    pub(crate) persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Provenance links from sketch curves to generated B-rep coedges.
     #[serde(default)]
-    pub sketch_curve_links: Vec<SketchCurveLink>,
+    pub(crate) sketch_curve_links: Vec<SketchCurveLink>,
     /// Bidirectional relations owned by sketch containers.
     #[serde(default)]
-    pub sketch_relations: Vec<SketchRelation>,
+    pub(crate) sketch_relations: Vec<SketchRelation>,
     /// Persistent source sketch points.
     #[serde(default)]
-    pub sketch_points: Vec<SketchPoint>,
+    pub(crate) sketch_points: Vec<SketchPoint>,
     /// Persistent identity pairs attached to source sketch-curve records.
     #[serde(default)]
-    pub sketch_curve_identities: Vec<SketchCurveIdentity>,
+    pub(crate) sketch_curve_identities: Vec<SketchCurveIdentity>,
     /// Persistent tensor-product surfaces owned by spatial sketches.
     #[serde(default)]
-    pub sketch_surfaces: Vec<SketchSurface>,
+    pub(crate) sketch_surfaces: Vec<SketchSurface>,
     /// Persistent text entities owned by planar sketches.
     #[serde(default)]
-    pub sketch_texts: Vec<SketchText>,
+    pub(crate) sketch_texts: Vec<SketchText>,
     /// Construction-history edge selections that Fusion could not re-resolve.
     #[serde(default)]
-    pub lost_edge_references: Vec<LostEdgeReference>,
+    pub(crate) lost_edge_references: Vec<LostEdgeReference>,
     /// Zero-payload ASM mesh-surface sentinels linked to unknown exact surfaces.
     #[serde(default)]
-    pub mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
+    pub(crate) mesh_surface_sentinels: Vec<MeshSurfaceSentinel>,
     /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
     #[serde(default)]
-    pub vertex_ownerships: Vec<VertexOwnership>,
+    pub(crate) vertex_ownerships: Vec<VertexOwnership>,
     /// Native parameter intervals stored on tolerant ASM coedges.
     #[serde(default)]
-    pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    pub(crate) tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     /// Native trailing LONG slots stored on tolerant ASM edges.
     #[serde(default)]
-    pub tolerant_edge_tails: Vec<TolerantEdgeTail>,
+    pub(crate) tolerant_edge_tails: Vec<TolerantEdgeTail>,
     /// Native trailing f32 slots stored on tolerant ASM vertices.
     #[serde(default)]
-    pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
+    pub(crate) tolerant_vertex_tails: Vec<TolerantVertexTail>,
     /// Native transform rotation/reflection/shear classifications.
     #[serde(default)]
-    pub transform_hints: Vec<TransformHints>,
+    pub(crate) transform_hints: Vec<TransformHints>,
     /// Native wire records and their side classifications.
     #[serde(default)]
-    pub wire_topologies: Vec<WireTopology>,
+    pub(crate) wire_topologies: Vec<WireTopology>,
     /// Container external-reference design entries
     /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
     #[serde(default)]
-    pub xref_designs: Vec<XrefDesign>,
+    pub(crate) xref_designs: Vec<XrefDesign>,
     /// Container outgoing XREF placements
     /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
     #[serde(default)]
-    pub xref_references: Vec<XrefReference>,
+    pub(crate) xref_references: Vec<XrefReference>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
-    pub asm_histories: Vec<AsmHistory>,
+    pub(crate) asm_histories: Vec<AsmHistory>,
 }
 
 impl F3dNative {
-    pub fn load(
+    pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         #[cfg(test)]
@@ -1444,7 +1444,7 @@ impl F3dNative {
         Ok(native)
     }
 
-    pub fn store(
+    pub(crate) fn store(
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {

@@ -74,7 +74,7 @@ const PRESENTATION_MIN_LINE_LENGTH: f64 = 1.0e-12;
 /// Record slices shared by every dimension-constraint projection: the sketch
 /// placements, parameter and companion tables, the locus/group/annotation
 /// dimension records, and the sketch geometry the loci reference.
-pub struct DimensionConstraintInputs<'a> {
+pub(crate) struct DimensionConstraintInputs<'a> {
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) parameters: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
@@ -169,7 +169,7 @@ pub(crate) fn container_only_dimension_companions(
 /// constraints. Solved linear measurements use the source kernel's absolute
 /// resolution. Two-locus dimensions have neutral semantics; aggregate and
 /// role-dependent forms remain explicit native constraints.
-pub fn project_dimension_constraints(
+pub(crate) fn project_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
@@ -1606,7 +1606,7 @@ fn explicit_linear_dimension_definition(
 
 /// Resolve an angular parameter from the unique two-line point incidence
 /// serialized before the parameter in its owning sketch.
-pub(crate) fn preceding_incident_angular_dimension_definition(
+fn preceding_incident_angular_dimension_definition(
     scope: &str,
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -1696,7 +1696,7 @@ pub(crate) fn preceding_incident_angular_dimension_definition(
 
 /// Resolve an angular parameter when exactly one unordered line pair in its
 /// owning sketch has the evaluated supporting-line angle.
-pub(crate) fn owner_scoped_angular_dimension_definition(
+fn owner_scoped_angular_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -1747,7 +1747,7 @@ pub(crate) fn owner_scoped_angular_dimension_definition(
 
 /// Bind an angular parameter to the common direction of one exact parallel
 /// relation carried by the same dimension companion.
-pub(crate) fn parallel_group_axis_angle_definition(
+fn parallel_group_axis_angle_definition(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
@@ -1789,7 +1789,7 @@ pub(crate) fn parallel_group_axis_angle_definition(
 
 /// Resolve one or more disjoint owner-scoped concentric-circle separations
 /// controlled by one linear parameter.
-pub(crate) fn concentric_circle_dimension_definition(
+fn concentric_circle_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -1860,7 +1860,7 @@ pub(crate) fn concentric_circle_dimension_definition(
 
 /// Resolve an owner-scoped linear dimension when exactly one point-line pair
 /// has the evaluated perpendicular separation.
-pub(crate) fn unique_point_line_dimension_definition(
+fn unique_point_line_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -1919,7 +1919,7 @@ pub(crate) fn unique_point_line_dimension_definition(
 
 /// Resolve an owner-scoped linear dimension when exactly one parallel-line
 /// pair has the evaluated supporting-line separation.
-pub(crate) fn unique_parallel_line_dimension_definition(
+fn unique_parallel_line_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -1968,7 +1968,7 @@ pub(crate) fn unique_parallel_line_dimension_definition(
 }
 
 /// Resolve an owner-scoped distance between fragmented parallel line carriers.
-pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
+fn owner_scoped_parallel_line_set_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -2065,7 +2065,7 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
 }
 
 /// Resolve the owner-scoped line lengths governed by one linear parameter.
-pub(crate) fn owner_scoped_line_length_dimension_definition(
+fn owner_scoped_line_length_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -2122,7 +2122,7 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
 }
 
 /// Resolve the unique owner-scoped distance between solved point loci.
-pub(crate) fn unique_point_class_dimension_definition(
+fn unique_point_class_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -2232,7 +2232,7 @@ pub(crate) fn unique_point_class_dimension_definition(
 
 /// Resolve the owner-scoped circular measurements governed by one radial
 /// parameter.
-pub(crate) fn owner_scoped_radial_dimension_definition(
+fn owner_scoped_radial_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: &DesignParameter,
@@ -2493,7 +2493,7 @@ pub(crate) fn bind_offset_dimension_parameters(
 
 /// Project dimensions owned by model-space sketches without assigning them
 /// planar relation semantics.
-pub fn project_spatial_dimension_constraints(
+pub(crate) fn project_spatial_dimension_constraints(
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
@@ -2828,7 +2828,7 @@ pub fn project_spatial_dimension_constraints(
     projected
 }
 
-pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
+fn owner_scoped_spatial_line_length_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
@@ -2881,7 +2881,7 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
     }
 }
 
-pub(crate) fn unique_spatial_parallel_line_dimension_definition(
+fn unique_spatial_parallel_line_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
@@ -2932,7 +2932,7 @@ pub(crate) fn unique_spatial_parallel_line_dimension_definition(
     })
 }
 
-pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
+fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
@@ -2996,7 +2996,7 @@ pub(crate) fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     })
 }
 
-pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
+fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     parameter: &DesignParameter,
@@ -3182,7 +3182,7 @@ fn spatial_reflection_symmetry(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn spatial_counted_offset_dimension_definition(
+fn spatial_counted_offset_dimension_definition(
     native_kind: &str,
     native_state: Option<u64>,
     operands: &[cadmpeg_ir::sketches::SketchNativeOperand],
@@ -3331,7 +3331,7 @@ fn spatial_curve(geometry: &cadmpeg_ir::sketches::SpatialSketchGeometry) -> bool
     )
 }
 
-pub(crate) fn spatial_point_distance_matches(
+fn spatial_point_distance_matches(
     first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     expected: f64,
@@ -3355,7 +3355,7 @@ pub(crate) fn spatial_point_distance_matches(
             <= EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9 * scale
 }
 
-pub(crate) fn spatial_parallel_line_distance_matches(
+fn spatial_parallel_line_distance_matches(
     first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
     expected: f64,
@@ -3430,7 +3430,7 @@ fn spatial_parallel_line_span_distance(
     (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
-pub(crate) fn repeated_linear_dimension(
+fn repeated_linear_dimension(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     parameter: cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
@@ -3500,7 +3500,7 @@ fn locus_entity_id(
     }
 }
 
-pub(crate) fn null_locus_dimension_definition(
+pub(super) fn null_locus_dimension_definition(
     pair: &DesignDimensionLocusPair,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
@@ -3546,7 +3546,7 @@ pub(crate) fn null_locus_dimension_definition(
     })
 }
 
-pub(crate) fn radial_dimension_definition(
+fn radial_dimension_definition(
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
@@ -3612,7 +3612,7 @@ fn radial_dimension_definition_at_tolerance(
 /// secondary identity, and the annotation's evaluated parameter selects the
 /// parallel or concentric offset. Requiring all three facts avoids assigning
 /// an arbitrary offset when the sketch contains several generated curves.
-pub(crate) fn annotation_offset_dimension_definition(
+fn annotation_offset_dimension_definition(
     frame: &DesignDimensionAnnotationFrame,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
@@ -3747,7 +3747,7 @@ pub(crate) fn annotation_offset_dimension_definition(
 
 /// Resolve a radial locus group from its selected circular entity or from a
 /// selected center point that uniquely identifies a measured circle or arc.
-pub(crate) fn radial_locus_dimension_definition(
+fn radial_locus_dimension_definition(
     loci: &[&cadmpeg_ir::sketches::SketchEntity],
     all_entities: &[cadmpeg_ir::sketches::SketchEntity],
     source_kind: &str,
@@ -3850,7 +3850,7 @@ pub(crate) fn radial_locus_dimension_definition(
 /// Identify a point-and-line radial annotation whose point lies on the
 /// line's infinite carrier. The pair locates a virtual sharp corner and does
 /// not itself identify the governed circular entity.
-pub(crate) fn radial_extension_annotation_group(
+fn radial_extension_annotation_group(
     loci: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: &DesignParameter,
 ) -> bool {
@@ -3892,7 +3892,7 @@ pub(crate) fn radial_extension_annotation_group(
 
 /// Remove generic relation parses whose exact stream position is owned by a
 /// typed dimension frame.
-pub fn remove_dimension_frame_relations(
+pub(crate) fn remove_dimension_frame_relations(
     relations: &mut Vec<SketchRelation>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -3921,7 +3921,7 @@ pub fn remove_dimension_frame_relations(
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
 #[allow(clippy::too_many_arguments)]
-pub fn bind_dimension_loci(
+pub(crate) fn bind_dimension_loci(
     placements: &[DesignSketchPlacement],
     owners: &[DesignParameterOwner],
     pairs: &[DesignDimensionLocusPair],
@@ -4068,7 +4068,7 @@ fn insert_dimension_binding(
     Ok(())
 }
 
-pub(crate) fn exact_atomic_constraint(
+pub(super) fn exact_atomic_constraint(
     kind: SketchConstraintKind,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
@@ -4263,7 +4263,7 @@ pub(crate) fn exact_atomic_constraint(
     }
 }
 
-pub(crate) fn exact_coincident_loci(
+pub(super) fn exact_coincident_loci(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
@@ -4369,7 +4369,7 @@ fn midpoint_constraint(
         })
 }
 
-pub(crate) fn indirect_angular_lines(
+fn indirect_angular_lines(
     scope: &str,
     operands: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_value: f64,
@@ -4431,7 +4431,7 @@ pub(crate) fn indirect_angular_lines(
     })
 }
 
-pub(crate) fn directional_point_dimension(
+fn directional_point_dimension(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_mm: f64,
     parameter: cadmpeg_ir::features::ParameterId,
@@ -4483,7 +4483,7 @@ pub(crate) fn directional_point_dimension(
     }
 }
 
-pub(crate) fn recipe_linear_dimension_candidates(
+fn recipe_linear_dimension_candidates(
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
     evaluated_mm: f64,
@@ -4574,7 +4574,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
     candidates
 }
 
-pub(crate) fn recipe_dimension_candidate_entities(
+fn recipe_dimension_candidate_entities(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
 ) -> Vec<cadmpeg_ir::sketches::SketchEntityId> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
@@ -4607,7 +4607,7 @@ pub(crate) fn recipe_dimension_candidate_entities(
 /// Resolve an ambiguous recipe-backed directional distance through one
 /// detached point on the extension of an axis-aligned bounded line. The other
 /// measured point must be an endpoint of that same line.
-pub(crate) fn recipe_extension_point_dimension(
+fn recipe_extension_point_dimension(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinitionInput],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     sketch: &cadmpeg_ir::sketches::SketchId,
@@ -4700,7 +4700,7 @@ pub(crate) fn recipe_extension_point_dimension(
     matched
 }
 
-pub(crate) fn parallel_line_separation(
+fn parallel_line_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
@@ -4717,7 +4717,7 @@ pub(crate) fn parallel_line_separation(
 /// A nonzero role on both parallel line loci selects a width dimension: the
 /// stored value is twice the perpendicular carrier separation. Zero roles use
 /// the ordinary direct separation rules in `exact_definition`.
-pub(crate) fn symmetric_parallel_line_dimension_definition(
+fn symmetric_parallel_line_dimension_definition(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     first_role: u32,
@@ -4806,7 +4806,7 @@ fn parallel_line_span_distance(
     (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance).then_some(distance)
 }
 
-pub(crate) fn concentric_circle_separation(
+fn concentric_circle_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
@@ -4839,7 +4839,7 @@ pub(crate) fn concentric_circle_separation(
     measured > 0.0 && linear_measurement_matches(measured, evaluated_mm, linear_tolerance)
 }
 
-pub(crate) fn point_line_separation(
+fn point_line_separation(
     first: &cadmpeg_ir::sketches::SketchEntity,
     second: &cadmpeg_ir::sketches::SketchEntity,
     evaluated_mm: f64,
@@ -4882,7 +4882,7 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
         <= linear_tolerance.max(EPS_DIMENSIONS_LINEAR_MEASUREMENT_MATCHES_E9 * scale)
 }
 
-pub(crate) fn two_locus_distance_dimension(
+fn two_locus_distance_dimension(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     parameter: cadmpeg_ir::features::ParameterId,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
@@ -4906,7 +4906,7 @@ pub(crate) fn counted_role_relation(
     )
 }
 
-pub(crate) fn counted_role_relation_at_tolerance(
+fn counted_role_relation_at_tolerance(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_kinds: &[SketchConstraintKind],
     linear_tolerance: f64,
@@ -5244,7 +5244,7 @@ fn exact_centered_entity_relation(
     })
 }
 
-pub(crate) fn exact_counted_dimension_relation(
+fn exact_counted_dimension_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
     use cadmpeg_ir::sketches::{
@@ -5342,7 +5342,7 @@ pub(crate) fn exact_counted_dimension_relation(
     })
 }
 
-pub(crate) fn point_lies_on_sketch_geometry(
+pub(super) fn point_lies_on_sketch_geometry(
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
 ) -> bool {
@@ -5495,12 +5495,12 @@ pub(crate) fn point_lies_on_sketch_geometry(
     }
 }
 
-pub(crate) struct CountedOffset {
-    pub pairs: Vec<cadmpeg_ir::sketches::SketchOffsetPair>,
-    pub distance: cadmpeg_ir::scalar::Length,
+struct CountedOffset {
+    pairs: Vec<cadmpeg_ir::sketches::SketchOffsetPair>,
+    distance: cadmpeg_ir::scalar::Length,
 }
 
-pub(crate) fn exact_counted_offset(
+fn exact_counted_offset(
     loci: &[crate::records::dimensions::DesignDimensionLocus],
     entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
     secondary_ids: &HashMap<u32, u64>,
@@ -5576,7 +5576,7 @@ pub(crate) fn exact_counted_offset(
     })
 }
 
-pub(crate) fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Option<f64> {
+fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Option<f64> {
     let scale = 1.0 + distance.abs().max(parameter_value.abs());
     (distance.is_finite()
         && parameter_value.is_finite()
@@ -5591,7 +5591,7 @@ pub(crate) fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Op
         })
 }
 
-pub(crate) fn line_angle_matches(
+fn line_angle_matches(
     first: &cadmpeg_ir::sketches::SketchGeometry,
     second: &cadmpeg_ir::sketches::SketchGeometry,
     expected: f64,
@@ -5628,7 +5628,7 @@ pub(crate) fn line_angle_matches(
         || (supplementary - expected).abs() <= scale * EPS_DIMENSIONS_LINE_ANGLE_MATCHES_E9
 }
 
-pub(crate) fn exact_offset_constraint(
+pub(super) fn exact_offset_constraint(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
@@ -6105,7 +6105,7 @@ fn sketch_points_close(first: Point2, second: Point2) -> bool {
         && (first.v - second.v).abs() <= scale * EPS_DIMENSIONS_SKETCH_POINTS_CLOSE_E9
 }
 
-pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
+pub(super) fn relation_kind_name(relation: &SketchRelation) -> String {
     let mut names = relation
         .constraint_kinds()
         .iter()
@@ -6138,18 +6138,18 @@ pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
     names.join("+")
 }
 
-pub(crate) fn planar_point(point: &Point3) -> bool {
+pub(super) fn planar_point(point: &Point3) -> bool {
     point.is_finite() && point.z.abs() <= EPS_DIMENSIONS_PLANAR_POINT_E9
 }
 
-pub(crate) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
+pub(super) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
     (normal.x.abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9
         && normal.y.abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9
         && (normal.z.abs() - 1.0).abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9)
         .then_some(normal.z.signum())
 }
 
-pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
+pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
     let identifier_character = |character: char| {
         character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ')
     };

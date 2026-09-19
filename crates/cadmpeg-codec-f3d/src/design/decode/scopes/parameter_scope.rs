@@ -66,7 +66,7 @@ use std::collections::HashMap;
 
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
-pub fn decode_parameter_scopes(
+pub(crate) fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
     types: &[crate::records::entity_header::SegmentType],
@@ -572,7 +572,11 @@ fn strip_scope_variant_provenance(value: &mut serde_json::Value, top_level: bool
 /// Skip the payload prologue at `at`: a leading-block presence byte, a property
 /// presence byte, and the property block that byte gates. The leading-block
 /// byte belongs to classes that write one, so this reader only steps over it.
-pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+pub(in crate::design::decode) fn payload_prologue(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+) -> Option<usize> {
     let mut cursor = at.checked_add(1)?;
     let present = *bytes.get(cursor)?;
     cursor += 1;
@@ -603,7 +607,7 @@ pub(crate) fn payload_prologue(bytes: &[u8], at: usize, end: usize) -> Option<us
 /// Every indexed-record header that can open a parameter scope: a scope is
 /// delimited by two headers carrying its record index, so the last header of an
 /// index opens nothing.
-pub(crate) fn parameter_scope_candidate_headers(
+pub(super) fn parameter_scope_candidate_headers(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
 ) -> Vec<RecordFrame> {
@@ -675,7 +679,7 @@ fn parameter_scope_previous_history_offset_for_form(
     }
 }
 
-pub(crate) fn parse_parameter_scope(
+pub(in crate::design::decode) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,

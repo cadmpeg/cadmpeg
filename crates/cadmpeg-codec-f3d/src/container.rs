@@ -37,14 +37,15 @@ pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
 
 /// The f3d marker substrings used for confident detection from a byte prefix
 /// (ZIP local file headers store entry names in cleartext near the start).
-pub const DETECT_MARKERS: &[&[u8]] = &[
+pub(crate) const DETECT_MARKERS: &[&[u8]] = &[
     b"Breps.BlobParts",
     b"FusionAssetName",
     b"FusionDocType",
     b".smbh",
 ];
 /// Marker names that distinguish a multi-document F3Z archive from a generic ZIP.
-pub const F3Z_DETECT_MARKERS: &[&[u8]] = &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
+pub(crate) const F3Z_DETECT_MARKERS: &[&[u8]] =
+    &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
 
 pub(crate) fn read_entry_bounded(
     entry: &mut impl Read,
@@ -82,7 +83,7 @@ pub(crate) fn read_entry_bounded(
 }
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#6-geometry-carriers)).
-pub fn classify(name: &str) -> ContainerRole {
+pub(crate) fn classify(name: &str) -> ContainerRole {
     if name.ends_with('/') {
         return ContainerRole::Directory;
     }
@@ -129,7 +130,7 @@ pub fn classify(name: &str) -> ContainerRole {
 
 /// Owned kernel framing for one BREP stream.
 #[derive(Debug, Clone)]
-pub enum KernelFraming {
+pub(crate) enum KernelFraming {
     /// Autodesk Shape Manager binary framing.
     Asm {
         /// Parsed ASM header.
@@ -197,20 +198,20 @@ impl KernelFraming {
 /// One decoded BREP stream's header facts, kept for the summary and decode
 /// metadata.
 #[derive(Debug, Clone)]
-pub struct BrepFacts {
+pub(crate) struct BrepFacts {
     /// Entry name.
-    pub name: String,
+    pub(crate) name: String,
     /// Uncompressed byte length.
-    pub uncompressed_len: u64,
+    pub(crate) uncompressed_len: u64,
     /// Parsed ASM or ACIS framing, when either header matched.
-    pub kernel: Option<KernelFraming>,
+    pub(crate) kernel: Option<KernelFraming>,
     /// SHA-256 (lowercase hex) of the decompressed stream.
-    pub sha256: Sha256Digest,
+    pub(crate) sha256: Sha256Digest,
 }
 
 /// The manifest-level kind of a scanned Fusion archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum F3dContainerKind {
+pub(crate) enum F3dContainerKind {
     /// One F3D document whose manifests select one Design asset folder.
     Document {
         /// Exact archive folder of the Design asset.
@@ -241,15 +242,15 @@ impl F3dContainerKind {
 /// The `'a` lifetime is the session's root address space: stored entries are
 /// views borrowing the root without copying, and compressed entries are arena-backed views the
 /// platform expander produced, so both live for the decode's duration.
-pub struct ContainerScan<'a> {
+pub(crate) struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
-    pub source_image: &'a [u8],
+    pub(crate) source_image: &'a [u8],
     /// Enumerated entries with classification.
-    pub entries: Vec<ContainerEntry>,
+    pub(crate) entries: Vec<ContainerEntry>,
     /// Decoded BREP stream facts, in archive order.
-    pub breps: Vec<BrepFacts>,
+    pub(crate) breps: Vec<BrepFacts>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
-    pub kind: F3dContainerKind,
+    pub(crate) kind: F3dContainerKind,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Entry indices per native scope key, in entry order.
@@ -262,7 +263,7 @@ pub struct ContainerScan<'a> {
 
 impl<'a> ContainerScan<'a> {
     /// Returns an entry payload retained during the single archive scan.
-    pub fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
+    pub(crate) fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
         self.entry_view(name)
             .map(View::window)
             .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))
@@ -305,7 +306,7 @@ impl<'a> ContainerScan<'a> {
 
     /// Exact archive folder of the manifest-selected Design asset. An outer
     /// F3Z archive has no folder of its own; each member has one.
-    pub fn design_asset_folder(&self) -> Option<&str> {
+    pub(crate) fn design_asset_folder(&self) -> Option<&str> {
         match &self.kind {
             F3dContainerKind::Document {
                 design_asset_folder,
@@ -376,7 +377,10 @@ fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
 ///
 /// Every entry is registered as a slice when stored or a decompressed space
 /// when compressed.
-pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
+pub(crate) fn scan<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
     let archive = ArchiveSnapshot::new(root)?;
 
@@ -529,7 +533,7 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP
 /// extension. Design body bindings perform the model selection during decode.
-pub fn summarize(
+pub(crate) fn summarize(
     scan: &ContainerScan<'_>,
     dialects: cadmpeg_core::dialect::DialectLayers,
 ) -> ContainerSummary {
@@ -621,7 +625,9 @@ pub(crate) fn is_f3d_name(name: &str) -> bool {
 
 /// Iterate over every BREP whose parsed header sets the history-partition bit.
 /// The extension is not used as a semantic substitute for the header flag.
-pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
+pub(crate) fn history_breps<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s BrepFacts> + 's {
     design_breps(scan).filter(|brep| {
         brep.kernel
             .as_ref()
@@ -631,14 +637,14 @@ pub fn history_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'
 }
 
 /// Return the history-bearing BREP only when the header relation is unique.
-pub fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
+pub(crate) fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
     let mut candidates = history_breps(scan);
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
 }
 
 /// Return one unambiguous BREP for compatibility metadata and reporting.
-pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
+pub(crate) fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
     if let Some(history) = select_history_brep(scan) {
         return Some(history);
     }
@@ -649,7 +655,9 @@ pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepF
 
 /// Iterate over binary ASM BREP entries inside the manifest-selected Design
 /// asset.
-pub fn design_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s BrepFacts> + 's {
+pub(crate) fn design_breps<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s BrepFacts> + 's {
     scan.breps
         .iter()
         .filter(|brep| scan.belongs_to_design_asset(&brep.name))
@@ -662,7 +670,7 @@ pub fn design_breps<'s>(scan: &'s ContainerScan<'_>) -> impl Iterator<Item = &'s
 /// header. A caller that reports on geometry must still count them: a document
 /// whose only carrier is text has a carrier that is present and not read, which
 /// is a different finding from a document that declares no carrier.
-pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
+pub(crate) fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
     scan.entries
         .iter()
         .filter(|entry| {

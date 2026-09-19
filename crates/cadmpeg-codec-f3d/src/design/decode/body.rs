@@ -26,7 +26,9 @@ use std::collections::{HashMap, HashSet};
 /// suffix and flags. The decode is rejected (no members returned for that
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
-pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>, CodecError> {
+pub(crate) fn decode_body_members(
+    scan: &ContainerScan,
+) -> Result<Vec<DesignBodyMember>, CodecError> {
     let mut out = Vec::new();
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&10u32.to_le_bytes());
@@ -88,7 +90,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
 
 /// Decode the three consecutive indexed records that cache each Design body's
 /// axis-aligned model-space bounds.
-pub fn decode_body_bounds(
+pub(crate) fn decode_body_bounds(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignBodyBounds>, CodecError> {
@@ -219,7 +221,7 @@ fn indexed_headers_in(
     })
 }
 
-pub(crate) fn body_bound_candidates(
+fn body_bound_candidates(
     bytes: &[u8],
     start: usize,
     end: usize,
@@ -243,7 +245,7 @@ pub(crate) fn body_bound_candidates(
     })
 }
 
-pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {
+pub(super) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) {
     let mut counters: HashMap<(ConstructionRecipeKind, Option<String>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
@@ -347,16 +349,16 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
 /// suffix's byte offset for native patching.
 pub(crate) struct BodyBinding {
     /// The referenced ASM body key.
-    pub asm_key: u64,
+    pub(crate) asm_key: u64,
     /// Byte offset of `asm_key` within the stream.
-    pub asm_key_offset: usize,
+    pub(crate) asm_key_offset: usize,
     /// The body's design-entity suffix.
-    pub entity_suffix: u64,
+    pub(crate) entity_suffix: u64,
 }
 
 impl BodyBinding {
     /// Byte offset of `entity_suffix`, which follows `asm_key` in the pair.
-    pub fn entity_suffix_offset(&self) -> usize {
+    pub(crate) fn entity_suffix_offset(&self) -> usize {
         self.asm_key_offset + 8
     }
 }
@@ -366,11 +368,11 @@ impl BodyBinding {
 /// The record owns the blob name and its location, and its ordered `bindings`
 /// are the map's pairs: a binding's ordinal is its index and the pair count is
 /// `bindings.len()`.
-pub(crate) struct BodyMapRecord {
-    pub blob_name: String,
+struct BodyMapRecord {
+    blob_name: String,
     /// Byte offset of the BREP blob name's UTF-16LE code units.
-    pub blob_name_offset: usize,
-    pub bindings: Vec<BodyBinding>,
+    blob_name_offset: usize,
+    bindings: Vec<BodyBinding>,
 }
 
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
@@ -470,7 +472,7 @@ fn reference_has_type(
 
 /// Parse every exactly framed sibling body-map record that binds an `.smb`
 /// snapshot. The carrier uses a bare entity header in every serializer band.
-pub(crate) fn snapshot_body_map_records(
+fn snapshot_body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyMapRecord>, CodecError> {
@@ -979,7 +981,7 @@ fn is_brep_blob_basename(value: &str) -> bool {
 
 /// Decode every ordered Design BREP body-map pair and resolve each pair in its
 /// named blob's body-selector namespace.
-pub fn decode_design_body_bindings(
+pub(crate) fn decode_design_body_bindings(
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
     body_keys: &[BodyNativeKey],
@@ -1036,7 +1038,7 @@ pub fn decode_design_body_bindings(
 
 /// Bind each body cache to every BREP map pair carrying the same Design entity
 /// suffix in the same stream.
-pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyBinding]) {
+pub(crate) fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyBinding]) {
     for bounds in bounds {
         let Some(stream) = native_stream(&bounds.id) else {
             continue;
@@ -1066,11 +1068,11 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
 /// bodies without records are absent.
 #[derive(Debug, Clone)]
 pub(crate) struct DecodedBodyVisibility {
-    pub stream: String,
-    pub byte_offset: u64,
-    pub asm_body_key_offset: u64,
-    pub entity_suffix: u64,
-    pub visible: bool,
+    pub(crate) stream: String,
+    pub(crate) byte_offset: u64,
+    pub(crate) asm_body_key_offset: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) visible: bool,
 }
 
 pub(crate) fn decode_all_body_visibility(

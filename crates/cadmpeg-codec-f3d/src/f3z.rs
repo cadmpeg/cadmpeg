@@ -48,7 +48,7 @@ pub(crate) fn inspect<'a>(
 }
 
 /// Decodes a scanned `.f3z` archive into one occurrence-scoped document.
-pub fn decode<'a>(
+pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<Decoded, CodecError> {

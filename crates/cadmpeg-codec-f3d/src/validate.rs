@@ -718,7 +718,7 @@ impl<'a> Ctx<'a> {
 }
 
 /// Validate Fusion native design-record relationships and exact sketch frames.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Vec::new();
     };

@@ -24,7 +24,7 @@ const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
 
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.
-pub fn project_sketch_constraints(
+pub(crate) fn project_sketch_constraints(
     placements: &[DesignSketchPlacement],
     parameters: &[DesignParameter],
     points: &[SketchPoint],
@@ -287,7 +287,7 @@ enum RectangularPatternDistanceForm {
     SeedToFinalSpan,
 }
 
-pub(crate) fn exact_rectangular_pattern(
+fn exact_rectangular_pattern(
     relation: &SketchRelation,
     scope: &str,
     parameters: &[DesignParameter],
@@ -478,7 +478,7 @@ fn exact_rectangular_pattern_instances(
     )
 }
 
-pub(crate) fn exact_text_relation(
+fn exact_text_relation(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
@@ -589,7 +589,7 @@ pub(crate) fn exact_text_relation(
     }
 }
 
-pub(crate) fn exact_circular_pattern(
+fn exact_circular_pattern(
     relation: &SketchRelation,
     scope: &str,
     parameters: &[DesignParameter],
@@ -846,14 +846,14 @@ fn rotated_sketch_geometry_matches(
     }
 }
 
-pub(crate) fn scalar_close(first: f64, second: f64) -> bool {
+pub(super) fn scalar_close(first: f64, second: f64) -> bool {
     first.is_finite()
         && second.is_finite()
         && (first - second).abs()
             <= EPS_CONSTRAINTS_SCALAR_CLOSE_E9 * (1.0 + first.abs().max(second.abs()))
 }
 
-pub(crate) fn translated_sketch_geometry_matches(
+fn translated_sketch_geometry_matches(
     source: &cadmpeg_ir::sketches::SketchGeometry,
     result: &cadmpeg_ir::sketches::SketchGeometry,
     translation: Point2,

@@ -77,7 +77,7 @@ const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
 /// operand records and the sketch placements and body bindings each feature
 /// scope resolves against.
-pub struct ProjectInputs<'a> {
+pub(crate) struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) scopes: &'a [DesignParameterScope],
@@ -101,7 +101,7 @@ pub struct ProjectInputs<'a> {
 
 /// Authored construction ordinal of every parameter scope represented by a
 /// neutral top-level feature. All input scopes must share one Design stream.
-pub(crate) fn authored_scope_ordinals<'a>(
+fn authored_scope_ordinals<'a>(
     scopes: &'a [DesignParameterScope],
     timelines: &[DesignFeatureTimeline],
 ) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
@@ -531,7 +531,7 @@ fn ensure_feature_dependencies_precede(
 // edge-identity and body-binding tables and forwards through the bundle.
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub fn project_parameter_design(
+pub(crate) fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
@@ -598,7 +598,7 @@ pub fn project_parameter_design(
 }
 
 /// Project Design parameters and feature scopes, including fixed edge identities.
-pub fn project_parameter_design_with_edge_identities(
+pub(crate) fn project_parameter_design_with_edge_identities(
     inputs: &ProjectInputs<'_>,
 ) -> Result<
     (
@@ -1692,7 +1692,7 @@ fn work_point_edge_operand<'a>(
     matching.next().is_none().then_some(operand)
 }
 
-pub(crate) fn work_point_input_history_state_id(
+fn work_point_input_history_state_id(
     scope: &DesignParameterScope,
     input: &crate::records::feature::work_geometry::DesignWorkPointInput,
     edge_operands: &[DesignEdgeOperand],
@@ -1906,7 +1906,7 @@ fn project_work_plane(
     FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points })
 }
 
-pub(crate) fn project_combine(
+pub(super) fn project_combine(
     scope: &DesignParameterScope,
     native_scope: &str,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -2397,7 +2397,7 @@ fn design_body_selection(
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
-pub fn bind_sketch_feature_geometry(
+pub(crate) fn bind_sketch_feature_geometry(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     placements: &[DesignSketchPlacement],
@@ -2658,7 +2658,7 @@ pub fn bind_sketch_feature_geometry(
 /// have been projected. The Design selection identifies a native point record;
 /// the neutral point identity depends on whether that record belongs to a
 /// planar or model-space sketch.
-pub fn bind_work_point_sketch_point_constructions(
+pub(crate) fn bind_work_point_sketch_point_constructions(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -2804,7 +2804,7 @@ fn project_surface_offset(
 ///
 /// F3D does not store a second outward bit. Keeping this rule in one helper
 /// makes every Draft projection branch use the same convention.
-pub(crate) const fn draft_outward(angle: f64) -> bool {
+const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
@@ -3229,7 +3229,7 @@ fn single_operand_group<'a>(
     Some(*group)
 }
 
-pub(crate) fn project_offset_faces(
+pub(super) fn project_offset_faces(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     operands: &[DesignFaceOperand],
@@ -3275,7 +3275,7 @@ pub(crate) fn project_offset_faces(
     }))
 }
 
-pub(crate) fn project_thicken(
+pub(super) fn project_thicken(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
@@ -3319,7 +3319,7 @@ pub(crate) fn project_thicken(
     }))
 }
 
-pub(crate) fn project_shell(
+pub(super) fn project_shell(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
@@ -3379,7 +3379,7 @@ fn project_move(
     }))
 }
 
-pub(crate) fn project_remove_body(
+pub(super) fn project_remove_body(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -3450,7 +3450,7 @@ fn project_base_flange(
 /// radius. Owner parameters supply the height, angle, and width. A to-object
 /// height resolves its target entity to a known neutral construction feature;
 /// otherwise the source selection remains explicit in the neutral height law.
-pub(crate) fn project_edge_flange(
+fn project_edge_flange(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -3699,7 +3699,7 @@ pub(crate) fn project_edge_flange(
 /// shared gap-and-length layout. Fold direction is recovered from the signed
 /// placement of the inserted bend carriers against the preceding source face;
 /// an incomplete transition keeps it unresolved.
-pub(crate) fn project_hem(
+fn project_hem(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -3858,7 +3858,7 @@ pub(crate) fn project_hem(
     ))
 }
 
-pub(crate) fn project_surface_stitch(
+pub(super) fn project_surface_stitch(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -3910,7 +3910,7 @@ pub(crate) fn project_surface_stitch(
     ))
 }
 
-pub(crate) fn project_ruled_surface(
+fn project_ruled_surface(
     scope: &DesignParameterScope,
     owners: &[crate::records::parameters::DesignParameterOwner],
     parameters: &[DesignParameter],
@@ -4072,9 +4072,7 @@ fn merge_edge_selections(
     EdgeSelection::Native(scope.id.clone())
 }
 
-pub(crate) fn matrix_axis_angle(
-    transform: &[[f64; 4]; 4],
-) -> Option<cadmpeg_ir::features::AxisAngle> {
+fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
     use cadmpeg_ir::features::AxisAngle;
     use cadmpeg_ir::scalar::Angle;
 
@@ -5293,7 +5291,7 @@ fn design_positive_length(
     cadmpeg_ir::scalar::PositiveLength::new(design_length(parameter)?.get())
 }
 
-pub(crate) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
+pub(super) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
     let value = parameter.evaluated_value() * 10.0;
     (parameter
         .unit()
@@ -5306,11 +5304,11 @@ pub(crate) fn design_length_unit(unit: &str) -> bool {
     matches!(unit, "mm" | "cm" | "m" | "in" | "ft")
 }
 
-pub(crate) fn design_angle_unit(unit: &str) -> bool {
+pub(super) fn design_angle_unit(unit: &str) -> bool {
     matches!(unit, "deg" | "rad")
 }
 
-pub(crate) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
+pub(super) fn design_dimension_unit(parameter: &DesignParameter) -> bool {
     let unit = parameter.unit().map(|field| field.value.as_str());
     if parameter.source_kind().starts_with("Linear Dimension")
         || parameter.source_kind().starts_with("Radius Dimension")
@@ -5371,7 +5369,7 @@ fn project_variable_fillet(
     }))
 }
 
-pub(crate) fn variable_fillet_law(
+fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<(
     cadmpeg_ir::features::VariableRadii,
@@ -5752,7 +5750,7 @@ fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::fea
     }
 }
 
-pub(crate) fn project_fixed_revolve_with_entities(
+pub(super) fn project_fixed_revolve_with_entities(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -6186,7 +6184,7 @@ fn resolve_sketch_axis_selection(
     )
 }
 
-pub(crate) fn project_fixed_loft(
+pub(super) fn project_fixed_loft(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     legacy_body_carriers: &[DesignLoftLegacyBodyCarrier],
@@ -6522,7 +6520,7 @@ fn resolved_surface_patch_path(
     PathRef::Native(scope.id.clone())
 }
 
-pub(crate) fn loft_path_from_edge_selection(
+fn loft_path_from_edge_selection(
     native: &str,
     selection: cadmpeg_ir::features::EdgeSelection,
 ) -> cadmpeg_ir::features::PathRef {
@@ -6549,7 +6547,7 @@ pub(crate) fn loft_path_from_edge_selection(
     }
 }
 
-pub(crate) fn project_circular_pattern(
+fn project_circular_pattern(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -6752,7 +6750,7 @@ fn project_rectangular_pattern_scalars(
     }))
 }
 
-pub(crate) fn project_mirror(
+fn project_mirror(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -6865,7 +6863,7 @@ pub(crate) fn project_mirror(
     }))
 }
 
-pub(crate) fn project_fixed_sweep(
+pub(super) fn project_fixed_sweep(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -7253,7 +7251,7 @@ fn surface_patch_boundary_continuity(
 ///
 /// A missing or unknown component condition makes the complete per-boundary
 /// vector unavailable. The caller can still retain the native scope.
-pub(crate) fn surface_patch_boundary_continuities(
+fn surface_patch_boundary_continuities(
     scope: &DesignParameterScope,
 ) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
     scope
@@ -7264,7 +7262,7 @@ pub(crate) fn surface_patch_boundary_continuities(
         .unwrap_or_default()
 }
 
-pub(crate) fn project_surface_patch(
+fn project_surface_patch(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -7431,7 +7429,7 @@ pub(crate) fn project_surface_patch(
     ))
 }
 
-pub(crate) fn project_boundary_fill(
+fn project_boundary_fill(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -7675,7 +7673,7 @@ fn project_replace_face(
 /// the trimming path as a role-`0x21` entity-selection group. The cell table
 /// that selects the cells to remove is decoded separately and bound to the
 /// projected operation after the source selections have been resolved.
-pub(crate) fn project_surface_trim(
+fn project_surface_trim(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
@@ -7779,7 +7777,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
     }
 }
 
-pub(crate) fn project_split(
+pub(super) fn project_split(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
@@ -8065,7 +8063,7 @@ fn project_delete_face(
     }))
 }
 
-pub(crate) fn project_extrude(
+fn project_extrude(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
@@ -8620,7 +8618,7 @@ pub(crate) fn project_extrude(
     }))
 }
 
-pub(crate) fn spatial_sketch_entity_endpoints(
+fn spatial_sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SpatialSketchEntity,
 ) -> Option<[Point3; 2]> {
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
@@ -8670,7 +8668,7 @@ pub(crate) fn spatial_sketch_entity_endpoints(
     }
 }
 
-pub(crate) fn closed_spatial_sketch_profiles(
+pub(super) fn closed_spatial_sketch_profiles(
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     tolerance: f64,

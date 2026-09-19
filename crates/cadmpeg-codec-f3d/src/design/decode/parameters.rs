@@ -32,7 +32,7 @@ use std::collections::{HashMap, HashSet};
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
-pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
+pub(crate) fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -46,7 +46,7 @@ pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, C
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
-pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, CodecError> {
+pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -79,33 +79,36 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
 }
 
 /// Design parameter parsed in frame-relative coordinates.
-pub(crate) struct ParsedDesignParameter {
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) record_index: u32,
-    pub(crate) source_ordinal: u32,
-    pub(crate) source_kind: String,
-    pub(crate) owner_record_index: Option<u32>,
-    pub(crate) family_discriminator:
-        Option<crate::records::parameters::DesignParameterDiscriminator>,
-    pub(crate) expression: String,
-    pub(crate) expression_offset: FrameRelative,
-    pub(crate) source_kind_offset: FrameRelative,
-    pub(crate) unit: Option<ParsedParameterUnit>,
-    pub(crate) name: String,
-    pub(crate) name_offset: FrameRelative,
-    pub(crate) evaluated_value: f64,
-    pub(crate) evaluated_value_offset: FrameRelative,
+pub(in crate::design) struct ParsedDesignParameter {
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    source_ordinal: u32,
+    source_kind: String,
+    owner_record_index: Option<u32>,
+    family_discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
+    expression: String,
+    expression_offset: FrameRelative,
+    source_kind_offset: FrameRelative,
+    unit: Option<ParsedParameterUnit>,
+    name: String,
+    name_offset: FrameRelative,
+    evaluated_value: f64,
+    evaluated_value_offset: FrameRelative,
 }
 
 /// Unit token parsed in frame-relative coordinates.
-pub(crate) struct ParsedParameterUnit {
-    pub(crate) value: String,
-    pub(crate) offset: FrameRelative,
+struct ParsedParameterUnit {
+    value: String,
+    offset: FrameRelative,
 }
 
 impl ParsedDesignParameter {
     /// Locate this parameter in its containing stream.
-    pub(crate) fn into_record(self, stream: &str, frame_start: u64) -> Option<DesignParameter> {
+    pub(in crate::design) fn into_record(
+        self,
+        stream: &str,
+        frame_start: u64,
+    ) -> Option<DesignParameter> {
         let family_discriminator = match self.family_discriminator {
             Some(value) => Some(crate::records::identity::Located {
                 value,
@@ -177,7 +180,7 @@ fn locate_design_parameter(
     })
 }
 
-pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParameter> {
+pub(in crate::design) fn parse_design_parameter(payload: &[u8]) -> Option<ParsedDesignParameter> {
     let (class_tag, after_tag) = lp_ascii_filtered(payload, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != 7 || payload.get(11..22) != Some(&[0; 11]) {
@@ -470,7 +473,7 @@ fn valid_design_parameter_family(
 
 /// Decode the exact same-index-delimited owner frame for every owned Design
 /// parameter.
-pub fn decode_parameter_owners(
+pub(crate) fn decode_parameter_owners(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
@@ -574,7 +577,7 @@ pub fn decode_parameter_owners(
 
 /// Byte offset measured from an indexed frame start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FrameRelative(pub(crate) i128);
+pub(super) struct FrameRelative(pub(crate) i128);
 
 impl FrameRelative {
     fn between(offset: u64, frame_start: u64) -> Self {
@@ -582,29 +585,29 @@ impl FrameRelative {
     }
 
     /// Convert this offset to a stream-absolute position.
-    pub(crate) fn absolute(self, frame_start: u64) -> Option<u64> {
+    pub(super) fn absolute(self, frame_start: u64) -> Option<u64> {
         u64::try_from(i128::from(frame_start).checked_add(self.0)?).ok()
     }
 }
 
 /// Parameter owner parsed in frame-relative coordinates.
-pub(crate) struct ParsedParameterOwner {
-    pub(crate) frame_length: u64,
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) record_index: u32,
-    pub(crate) scope_record_index: u32,
-    pub(crate) local_ordinal: u32,
-    pub(crate) evaluated_value: f64,
-    pub(crate) evaluated_value_offset: FrameRelative,
-    pub(crate) parameter_record_index: u32,
-    pub(crate) owned_ordinal: u32,
-    pub(crate) variant: Option<u8>,
-    pub(crate) companion_record_index: u32,
+pub(in crate::design) struct ParsedParameterOwner {
+    pub(super) frame_length: u64,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
+    pub(super) record_index: u32,
+    pub(super) scope_record_index: u32,
+    pub(super) local_ordinal: u32,
+    pub(super) evaluated_value: f64,
+    pub(super) evaluated_value_offset: FrameRelative,
+    pub(super) parameter_record_index: u32,
+    pub(super) owned_ordinal: u32,
+    variant: Option<u8>,
+    pub(super) companion_record_index: u32,
 }
 
 impl ParsedParameterOwner {
     /// Locate this owner in its containing stream.
-    pub(crate) fn into_record(
+    pub(in crate::design) fn into_record(
         self,
         stream: &str,
         frame_start: u64,
@@ -630,7 +633,7 @@ impl ParsedParameterOwner {
     }
 }
 
-pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
+pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
@@ -748,7 +751,7 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner
 ///
 /// The class admission is intentional. A short frame is not enough to select
 /// this grammar because older class tags also occur on modern owner records.
-pub(crate) fn parse_legacy_parameter_owner_68(
+fn parse_legacy_parameter_owner_68(
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
@@ -798,7 +801,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
 
 /// Parse the legacy owner envelope whose scope is repeated in the suffix but
 /// whose scalar and local-ordinal lanes are absent.
-pub(crate) fn parse_legacy_parameter_owner_88(
+fn parse_legacy_parameter_owner_88(
     frame: &[u8],
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
@@ -860,7 +863,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
 
 /// Decode the fixed prefix of every indexed record paired with a parameter
 /// owner. Record-specific payload after the prefix is decoded independently.
-pub fn decode_parameter_companions(
+pub(crate) fn decode_parameter_companions(
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
@@ -907,23 +910,19 @@ pub fn decode_parameter_companions(
 }
 
 /// Parameter companion prefix parsed in frame-relative coordinates.
-pub(crate) struct ParsedParameterCompanion {
-    pub(crate) class_tag: crate::records::references::DesignClassTag,
-    pub(crate) record_index: u32,
-    pub(crate) owner_record_index: u32,
-    pub(crate) timestamp_micros: std::num::NonZeroU64,
-    pub(crate) timestamp_micros_offset: FrameRelative,
+struct ParsedParameterCompanion {
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+    owner_record_index: u32,
+    timestamp_micros: std::num::NonZeroU64,
+    timestamp_micros_offset: FrameRelative,
 }
 
 impl ParsedParameterCompanion {
     /// Locate this companion prefix in its containing stream. The owned payload
     /// extent and recipes are bound afterward by
     /// `bind_parameter_companion_payloads`.
-    pub(crate) fn into_record(
-        self,
-        stream: &str,
-        frame_start: u64,
-    ) -> Option<DesignParameterCompanion> {
+    fn into_record(self, stream: &str, frame_start: u64) -> Option<DesignParameterCompanion> {
         Some(DesignParameterCompanion::unbound(
             ids::native_design_parameter_companion_id(stream, frame_start),
             frame_start,
@@ -936,7 +935,7 @@ impl ParsedParameterCompanion {
     }
 }
 
-pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
+fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
     let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
@@ -962,27 +961,27 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameter
 }
 
 /// Records a companion payload is resolved against.
-pub struct ParameterCompanionInputs<'a, S: std::hash::BuildHasher> {
+pub(crate) struct ParameterCompanionInputs<'a, S: std::hash::BuildHasher> {
     /// Indexed parameter records.
-    pub parameters: &'a [DesignParameter],
+    pub(crate) parameters: &'a [DesignParameter],
     /// Parameter owner frames.
-    pub owners: &'a [DesignParameterOwner],
+    pub(crate) owners: &'a [DesignParameterOwner],
     /// Parameter scope records.
-    pub scopes: &'a [DesignParameterScope],
+    pub(crate) scopes: &'a [DesignParameterScope],
     /// Design entity headers.
-    pub entities: &'a [DesignEntityHeader],
+    pub(crate) entities: &'a [DesignEntityHeader],
     /// Indexed Design record headers.
-    pub headers: &'a [DesignRecordHeader],
+    pub(crate) headers: &'a [DesignRecordHeader],
     /// Construction recipes.
-    pub recipes: &'a [ConstructionRecipe],
+    pub(crate) recipes: &'a [ConstructionRecipe],
     /// Byte length of each Design `BulkStream`, by scope.
-    pub stream_lengths: &'a HashMap<String, usize, S>,
+    pub(crate) stream_lengths: &'a HashMap<String, usize, S>,
 }
 
 /// Bind each companion to its exact owned byte interval and the construction
 /// recipes nested in that interval. A companion whose payload cannot be
 /// resolved is returned unbound.
-pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
+pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Vec<DesignParameterCompanion> {

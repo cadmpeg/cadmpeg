@@ -10,7 +10,7 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_copy_paste_bodies_operation(
+pub(super) fn exact_copy_paste_bodies_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
