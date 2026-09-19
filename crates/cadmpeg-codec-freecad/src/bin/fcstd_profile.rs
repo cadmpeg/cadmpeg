@@ -1297,7 +1297,7 @@ fn gate(level: &str, assertions: Vec<Assertion>) -> Gate {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{assertion, gate, serialize_gates};
 
     #[test]
     fn gate_wire_passed_is_cumulative_without_changing_assertions() {

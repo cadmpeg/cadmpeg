@@ -123,7 +123,9 @@ impl From<TextTriangulation> for TextTriangulationWire {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+
+    use super::{TextTriangulation, TextTriangulationWire};
 
     #[test]
     fn rejects_invalid_wire_triangle_indices() {

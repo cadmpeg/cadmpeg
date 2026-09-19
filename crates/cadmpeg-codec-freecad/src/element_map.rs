@@ -1150,7 +1150,11 @@ fn next_u64<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        node_text_bytes, owning_property, parse, parse_element_map, parse_string_table,
+        validate_string_hasher_framing,
+    };
+    use crate::native::{EntryRecord, PropertyRecord};
     use crate::test_support::test_archive::{
         archive, archive_entries, assert_valid_document, GEOMETRY,
     };

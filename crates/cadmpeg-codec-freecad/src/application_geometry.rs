@@ -371,7 +371,8 @@ impl<'a> Reader<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
+    use super::{ByteOrder, Reader};
+    use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
     use crate::test_support::test_archive::archive_entries;
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
