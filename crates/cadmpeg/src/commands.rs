@@ -600,8 +600,11 @@ pub fn diff(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{inspect, inspect_io_error};
     use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_registry::InputCatalog;
+    use std::io;
+    use std::path::Path;
 
     #[test]
     fn inspect_open_errors_name_the_path() {

@@ -349,7 +349,8 @@ pub(crate) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::item::ArenaTarget;
+    use super::{CadirDocument, RecordSelection, RequestedIds};
     use serde_json::json;
 
     #[test]

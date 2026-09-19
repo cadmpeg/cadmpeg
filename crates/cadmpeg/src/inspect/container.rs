@@ -308,7 +308,9 @@ pub fn render(listing: &Listing) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{extract, list, shell_quote, Listing};
+    use cadmpeg_container::compound::CompoundEntry;
+    use cadmpeg_core::decode::ResourceLimits;
     use cadmpeg_test_support::compound::compound_fixture;
 
     #[test]

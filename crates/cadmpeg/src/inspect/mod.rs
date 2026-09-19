@@ -833,8 +833,8 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use clap::FromArgMatches;
+    use super::ExtractArgs;
+    use clap::{Args, FromArgMatches};
 
     #[test]
     fn inspect_rejects_cadir_at_argument_admission() {

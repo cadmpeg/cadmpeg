@@ -283,7 +283,12 @@ pub fn escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::pattern::Pattern;
+    use super::{
+        ascii_pattern, escape, extract_strings, find_all, parse_pattern, utf16le_pattern,
+        StringScan,
+    };
+    use std::num::NonZeroUsize;
 
     #[test]
     fn parses_patterns_with_and_without_wildcards() {

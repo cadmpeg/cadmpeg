@@ -88,9 +88,12 @@ pub fn load_artifact(
 #[cfg(test)]
 #[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
-    use super::*;
+    use super::load_artifact;
     use crate::application::document::LoadOrigin;
+    use cadmpeg_ir::codec::DecodeOptions;
+    use cadmpeg_ir::CadIr;
     use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
+    use cadmpeg_registry::{ForcedInput, InputCatalog};
 
     #[test]
     fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {

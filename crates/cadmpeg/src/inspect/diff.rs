@@ -128,7 +128,7 @@ pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{compare, DiffRun};
 
     fn run(start: u64, len: u64) -> DiffRun {
         let mut run = DiffRun::single(start);

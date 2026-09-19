@@ -280,8 +280,9 @@ fn canonical_key(value: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{join_records, JoinMode, JoinSpec};
     use serde_json::json;
+    use serde_json::Value;
 
     fn spec<'a>(
         left: &'a [Value],

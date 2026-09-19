@@ -744,7 +744,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{field_cell, ArenaTarget};
 
     #[test]
     fn arena_target_parses_shorthand_and_dotted() {
