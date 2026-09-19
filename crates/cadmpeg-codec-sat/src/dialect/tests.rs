@@ -4,7 +4,10 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::*;
+use super::{
+    classify, dialect_loss, layers, Family, RecordStreamStart, StreamEvidence, TextEvidence,
+    DECLARED_ENCODING, DECLARED_TERMINATOR,
+};
 use crate::loss::SatLossCode;
 use crate::test_support::test_streams::{
     acis_text_sphere_stream, binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
@@ -13,8 +16,10 @@ use crate::test_support::test_streams::{
 use crate::SatCodec;
 use crate::FORMAT;
 use cadmpeg_asm::dialect::{DECLARED_SAVE_FORMAT_MAJOR, DECLARED_SAVE_FORMAT_MINOR};
+use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
+use cadmpeg_asm::sat;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_core::dialect::{Admission, Grammar};
+use cadmpeg_core::dialect::{Admission, DialectId, Grammar};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
