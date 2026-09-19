@@ -333,12 +333,7 @@ fn transform_surface(
                     }
                     Ok(())
                 })
-                .map_err(|error| match error {
-                    GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
-                    error @ GeometryLayoutError::Layout { .. } => {
-                        CodecError::malformed(error.to_string())
-                    }
-                })?;
+                .map_err(CodecError::malformed)?;
         }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
@@ -421,12 +416,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                         Ok(())
                     })
                 })
-                .map_err(|error| match error {
-                    GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
-                    error @ GeometryLayoutError::Layout { .. } => {
-                        CodecError::malformed(error.to_string())
-                    }
-                })?;
+                .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
