@@ -2,7 +2,9 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+#[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;
 use cadmpeg_registry::Format;
 
@@ -232,6 +234,7 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
 /// The selection is an owned-string adapter and nothing else. The
 /// cross-format catalog default is owned by write resolution, so the command
 /// line does not decide it a second time.
+#[cfg(feature = "iges")]
 #[test]
 fn flag_absence_is_always_an_inherit_request() {
     assert_eq!(

@@ -6,27 +6,131 @@
 
 /// Cross-codec resource-budget classification contracts.
 mod budget {
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use std::io::Cursor;
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_codec_catia::CatiaCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_codec_creo::CreoCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_codec_freecad::FcstdCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_codec_nx::NxCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_codec_sldprt::SldprtCodec;
-    use cadmpeg_core::decode::{
-        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimits,
-    };
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
+    use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const CATIA: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/catia_container/standard_nested");
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const CATIA_WORK: &[u8] = include_bytes!("fixtures/catia_tetrahedron_topology.CATPart");
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const CREO: &[u8] = include_bytes!("../../cadmpeg-fuzz/seeds/creo_container/with_surface_rows");
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const FREECAD: &[u8] =
         include_bytes!("../../cadmpeg-fuzz/seeds/fcstd_container/core_design_product.FCStd");
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const NX: &[u8] = include_bytes!("fixtures/nx_topology_part.prt");
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     const SLDPRT: &[u8] = include_bytes!("fixtures/sldprt_triangle_body.sldprt");
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     #[derive(Clone, Copy)]
     enum Starvation {
         Entities,
@@ -37,6 +141,13 @@ mod budget {
         RetainedBytes,
     }
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     impl Starvation {
         fn apply(self, limits: &mut ResourceLimits) {
             match self {
@@ -64,6 +175,13 @@ mod budget {
         }
     }
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     struct Case {
         name: &'static str,
         codec: &'static dyn Codec,
@@ -71,12 +189,54 @@ mod budget {
         starvation: Starvation,
     }
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     static CATIA_CODEC: CatiaCodec = CatiaCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     static CREO_CODEC: CreoCodec = CreoCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     static FREECAD_CODEC: FcstdCodec = FcstdCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     static NX_CODEC: NxCodec = NxCodec;
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     static SLDPRT_CODEC: SldprtCodec = SldprtCodec;
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     fn cases() -> [Case; 10] {
         [
             Case {
@@ -142,6 +302,13 @@ mod budget {
         ]
     }
 
+    #[cfg(all(
+        feature = "catia",
+        feature = "creo",
+        feature = "fcstd",
+        feature = "nx",
+        feature = "sldprt"
+    ))]
     #[test]
     fn migrated_codec_paths_classify_starvation_identically_across_profiles() {
         for case in cases() {
@@ -207,6 +374,7 @@ mod budget {
 }
 
 /// Cross-codec product-structure regression tests.
+#[cfg(all(feature = "fcstd", feature = "step"))]
 mod product_roundtrip {
     #![allow(clippy::unwrap_used)]
 
