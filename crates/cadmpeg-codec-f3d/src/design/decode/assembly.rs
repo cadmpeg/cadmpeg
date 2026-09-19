@@ -32,14 +32,14 @@ use super::scopes::shared_frames::marked_record_reference;
 use super::scopes::shared_frames::rigid_transform_at;
 use super::sketch::IndexedRecordOffsets;
 
-pub(crate) struct LegacyAsBuilt421Alignment {
-    pub(crate) angle: f64,
-    pub(crate) offset: [f64; 3],
-    pub(crate) owners: Vec<crate::records::identity::Located<u32>>,
-    pub(crate) limits: DesignAssemblyLimits,
+pub(in crate::design::decode) struct LegacyAsBuilt421Alignment {
+    pub(super) angle: f64,
+    pub(super) offset: [f64; 3],
+    pub(super) owners: Vec<crate::records::identity::Located<u32>>,
+    pub(super) limits: DesignAssemblyLimits,
 }
 
-pub(crate) fn exact_legacy_as_built_421_alignment(
+pub(super) fn exact_legacy_as_built_421_alignment(
     bytes: &[u8],
     scope: &DesignParameterScope,
     lanes: &[&DesignParameterOwner],
@@ -159,7 +159,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     })
 }
 
-pub(crate) fn exact_legacy_as_built_421_solved_frame(
+pub(super) fn exact_legacy_as_built_421_solved_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -241,7 +241,7 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.
-pub(crate) fn exact_legacy_as_built_421_operands(
+pub(super) fn exact_legacy_as_built_421_operands(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

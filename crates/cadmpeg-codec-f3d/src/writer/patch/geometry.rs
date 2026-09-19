@@ -28,7 +28,7 @@ const EPS_ORTHONORMAL: f64 = 1.0e-9;
 #[cfg(test)]
 use cadmpeg_asm::asm_header::stream_ref_width;
 
-pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
+pub(super) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
     valid_edited_nurbs_direction(
         before.knots(),
         after.degree(),
@@ -37,7 +37,7 @@ pub(crate) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCur
     )
 }
 
-pub(crate) fn valid_edited_nurbs_direction(
+pub(super) fn valid_edited_nurbs_direction(
     before_knots: &[f64],
     after_degree: u32,
     after_knots: &[f64],
@@ -53,7 +53,7 @@ pub(crate) fn valid_edited_nurbs_direction(
         && knots_nondecreasing(after_knots)
 }
 
-pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
+pub(super) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
     first.is_finite()
         && second.is_finite()
         && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
@@ -68,32 +68,33 @@ pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
 /// validation through `patch_geometry` into `patch_framed_geometry`, so they
 /// are bundled rather than threaded positionally.
 #[derive(Clone, Copy)]
-pub(crate) struct GeometryEdits<'a> {
-    pub(crate) positions: &'a BTreeMap<String, Point3>,
-    pub(crate) lines: &'a BTreeMap<String, (Point3, Vector3)>,
-    pub(crate) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    pub(crate) degenerate_curves: &'a BTreeMap<String, Point3>,
-    pub(crate) planes: &'a BTreeMap<String, (Point3, Vector3, Vector3)>,
-    pub(crate) spheres: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
-    pub(crate) tori: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
-    pub(crate) cones: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
-    pub(crate) body_transforms: &'a BTreeMap<String, Transform>,
-    pub(crate) entity_colors: &'a BTreeMap<String, Color>,
-    pub(crate) edge_ranges: &'a BTreeMap<String, [f64; 2]>,
-    pub(crate) face_senses: &'a BTreeMap<String, Sense>,
-    pub(crate) coedge_senses: &'a BTreeMap<String, Sense>,
-    pub(crate) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
-    pub(crate) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
-    pub(crate) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
-    pub(crate) pcurves: &'a BTreeMap<String, PcurveEdit>,
-    pub(crate) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
-    pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
-    pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
-    pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
-    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
-    pub(crate) face_sidedness: &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
-    pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
-    pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
+pub(in crate::writer) struct GeometryEdits<'a> {
+    pub(in crate::writer) positions: &'a BTreeMap<String, Point3>,
+    pub(in crate::writer) lines: &'a BTreeMap<String, (Point3, Vector3)>,
+    pub(in crate::writer) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(in crate::writer) degenerate_curves: &'a BTreeMap<String, Point3>,
+    pub(in crate::writer) planes: &'a BTreeMap<String, (Point3, Vector3, Vector3)>,
+    pub(in crate::writer) spheres: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64)>,
+    pub(in crate::writer) tori: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,
+    pub(in crate::writer) cones: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64, f64)>,
+    pub(in crate::writer) body_transforms: &'a BTreeMap<String, Transform>,
+    pub(in crate::writer) entity_colors: &'a BTreeMap<String, Color>,
+    pub(in crate::writer) edge_ranges: &'a BTreeMap<String, [f64; 2]>,
+    pub(in crate::writer) face_senses: &'a BTreeMap<String, Sense>,
+    pub(in crate::writer) coedge_senses: &'a BTreeMap<String, Sense>,
+    pub(in crate::writer) procedural_surface_edits: &'a BTreeMap<String, ProceduralSurfaceEdit>,
+    pub(in crate::writer) nurbs_surfaces: &'a BTreeMap<String, NurbsSurfaceEdit>,
+    pub(in crate::writer) nurbs_curves: &'a BTreeMap<String, NurbsCurveEdit>,
+    pub(in crate::writer) pcurves: &'a BTreeMap<String, PcurveEdit>,
+    pub(in crate::writer) procedural_curve_edits: &'a BTreeMap<String, ProceduralCurveEdit>,
+    pub(in crate::writer) procedural_surface_fits: &'a BTreeMap<String, f64>,
+    pub(in crate::writer) creation_timestamps: &'a BTreeMap<usize, f64>,
+    pub(in crate::writer) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
+    pub(in crate::writer) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
+    pub(in crate::writer) face_sidedness:
+        &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
+    pub(in crate::writer) tolerant_edges: &'a BTreeMap<usize, f64>,
+    pub(in crate::writer) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
 }
 
 fn asm_nurbs_surface_edit(edit: &NurbsSurfaceEdit) -> AsmNurbsSurfaceEdit<'_> {
@@ -135,7 +136,7 @@ fn asm_pcurve_edit(edit: &PcurveEdit) -> AsmPcurveEdit<'_> {
     }
 }
 
-pub(crate) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
+pub(super) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<(), CodecError> {
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         patch_asm_geometry(bytes, asm_edits, edits)
     })
