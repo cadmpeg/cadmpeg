@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn shape_representation_with_parameters_uses_inherited_attributes() {
         let record = RawRecord {
-            partials: crate::parse::RecordPartials::single(PartialRecord {
+            partials: crate::parse::partials::RecordPartials::single(PartialRecord {
                 name: "SHAPE_REPRESENTATION_WITH_PARAMETERS".into(),
                 parameters: vec![
                     Value::String(b"datum target".to_vec()),

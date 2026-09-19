@@ -69,9 +69,7 @@ pub(crate) struct PartialRecord {
     pub(crate) parameters: Vec<Value>,
 }
 
-pub(crate) use partials::RecordPartials;
-
-mod partials {
+pub(crate) mod partials {
     use super::PartialRecord;
 
     /// The nonempty partial population of one entity instance.
@@ -137,7 +135,7 @@ mod partials {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawRecord {
     /// One leaf for a simple instance or all leaves for a complex instance.
-    pub(crate) partials: RecordPartials,
+    pub(crate) partials: partials::RecordPartials,
     /// Half-open byte range from instance name through semicolon.
     pub(crate) span: Range<usize>,
 }
@@ -1109,7 +1107,7 @@ impl Parser<'_, '_, '_> {
         self.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = RecordPartials::single(self.partial()?);
+            let mut parts = partials::RecordPartials::single(self.partial()?);
             while !self.peek(&TokenKind::RParen) {
                 parts.push(self.partial()?);
             }
@@ -1145,7 +1143,7 @@ impl Parser<'_, '_, '_> {
             }
             parts
         } else {
-            RecordPartials::single(self.partial()?)
+            partials::RecordPartials::single(self.partial()?)
         };
         self.charge_retained(partials.compact_storage(), "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
