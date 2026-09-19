@@ -4617,7 +4617,9 @@ fn native_conic_interval_curve(
 
 #[cfg(test)]
 mod native_interval_curve_tests {
-    use super::*;
+    use super::{native_interval_curve, native_spline_field_curve};
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_GENERATED_CURVE: f64 = 1.0e-12;
 
@@ -5903,8 +5905,11 @@ fn native_support_pcurve_for_range(
 
 #[cfg(test)]
 mod pcurve_chart_tests {
-    use super::*;
+    use super::native_support_pcurve;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::{Point3, Vector3};
 
     #[test]
     fn generated_spring_refuses_overflowing_pcurve_poles_before_writing() {
@@ -6895,7 +6900,8 @@ fn native_nurbs_knots(bytes: &mut Vec<u8>, knots: &[f64]) -> Result<(), CodecErr
 
 #[cfg(test)]
 mod revision_surface_tail_tests {
-    use super::*;
+    use super::{native_revision_tail_discontinuities, native_revision_tail_head};
+    use crate::writer::primitives::native_bool;
 
     /// The writer's form-`2` tail head and discontinuity block are what the
     /// decoder reads back: the U parameter interval, the V parameter interval,
@@ -6977,7 +6983,8 @@ fn legacy_extension_flag_run(flags: cadmpeg_ir::geometry::LegacyExtensionFlags) 
 
 #[cfg(test)]
 mod null_law_token_tests {
-    use super::*;
+    use super::{native_law_expression, native_law_formula, NULL_LAW_TOKEN};
+    use cadmpeg_ir::document::CadIr;
 
     /// The native null law is stated by the variant. A `Named` law whose name
     /// is the native token would read back as `Null`, so the writer refuses

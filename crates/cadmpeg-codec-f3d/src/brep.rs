@@ -614,10 +614,19 @@ pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<Creation
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{persistent_design_links, persistent_subentity_tags, Brep};
+    use crate::records::recipes::CreationTimestamp;
+    use crate::records::sketch_links::{
+        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    };
     use cadmpeg_asm::brep::annotations::AnnotationRecord;
+    use cadmpeg_asm::brep::records::BodyNativeKey;
+    use cadmpeg_asm::brep::AsmBrep;
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::ids::{FaceId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
+    use std::collections::{HashMap, HashSet};
 
     fn generic_tag_attribute(
         target: AttributeTarget,

@@ -407,7 +407,24 @@ fn exact_class_363_identity_guids(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
+    use super::{
+        exact_class_264_record_frame, exact_class_307_joint_origin, exact_class_363_identity_frame,
+        exact_class_363_identity_guids, CarrierFrame,
+    };
+    use crate::bytes::lp_utf16_bounded;
+    use crate::design::decode::sketch::IndexedRecordOffsets;
+    use crate::layout::{
+        assembly_class_307_264_joint_origin_scope as class_307_joint_origin,
+        assembly_class_363_264_frame_388_identity as class_363_identity,
+        assembly_class_363_264_frame_388_identity_extended as class_363_identity_extended,
+        assembly_class_363_264_frame_388_identity_reduced_490 as class_363_identity_reduced_490,
+        assembly_class_363_264_frame_388_identity_reduced_501 as class_363_identity_reduced_501,
+        assembly_class_363_264_frame_388_identity_short as class_363_identity_short,
+    };
+    use crate::records::feature::assembly::{
+        DesignAssemblyOperandFrame, DesignAssemblyOperandQualifier,
+    };
     use crate::test_support::write_marked_reference;
 
     fn write_header(bytes: &mut [u8], at: usize, class_tag: [u8; 3], record_index: u32) {

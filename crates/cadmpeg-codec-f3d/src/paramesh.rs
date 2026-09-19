@@ -1954,7 +1954,20 @@ fn registry_texture_ids(attributes: &[MeshAttribute]) -> Result<Option<Vec<u32>>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        decode_index_positions, decode_mesh_container, decode_packed_direction, decode_triangles,
+        inflate_stream, message_pack_name_table, protobuf_fields, require_version_2_descriptor,
+        stream_descriptor, MeshAttributeAddressing, MeshAttributeDomain, MeshContainer,
+        MeshElements, MeshStream, StreamDescriptorValue, CHANNEL_GROUP, CHANNEL_RESOURCE,
+        CHANNEL_ROLE, CHANNEL_STREAMS, CHUNK_NAME_TABLE, CHUNK_STREAM, ELEMENT_PACKED_DIRECTION,
+        ELEMENT_PAIR, ELEMENT_QUAD, ELEMENT_TRIANGLE_DELTA, FEATURE_EDGE_STREAM, GROUP_GUID,
+        GROUP_KEY, LZMA_DICTIONARY_LOG, LZMA_PROPERTIES, MAGIC, PROPERTY_KEY, PROPERTY_STREAM,
+        PROPERTY_TEXT, RAW_STREAM_MODE, REGISTRY_FACE_GROUP_COUNT, REGISTRY_FEATURE_EDGES,
+        REGISTRY_MESH_UUID, REGISTRY_PROPERTY, REGISTRY_TRIANGLES, REGISTRY_TRIANGLE_CHANNEL,
+        REGISTRY_VERTEX_CHANNEL, REGISTRY_VERTICES, STREAM_ELEMENT_CODE, STREAM_INDEX,
+        STREAM_VALUES, VERSION,
+    };
+    use cadmpeg_core::CodecError;
 
     /// The implicit starting index is the one that keeps the whole corner
     /// sequence inside the vertex domain, and a domain too small for the

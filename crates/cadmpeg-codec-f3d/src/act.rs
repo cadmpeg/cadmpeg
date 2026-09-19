@@ -665,8 +665,11 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decode_channel_group, merge_entities, ChannelGroup, RecordFrame, TableEntry};
+    use crate::records::act::ActTableRow;
+    use crate::records::identity::Located;
     use crate::test_support::{lp_ascii, lp_utf16};
+    use std::collections::BTreeMap;
 
     fn table_entry(entity_id: &str) -> TableEntry {
         TableEntry {

@@ -2231,7 +2231,19 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
+        effective_historical_face_slots, extrude_start_plane_geometry_candidates,
+        extrude_target_plane_candidate, legacy_face_recipe_reference_candidates,
+        loft_edge_profile_face_slot, resolve_surface_delete_face_history_set,
+        resolved_explicit_bounded_face_group, resolved_extrude_profile_face_group,
+        resolved_face_group, resolved_historical_split_face_target_group_with_updated_faces,
+        retain_face_operand_resolution, stable_face_support_set, ExtrudeFaceResolution,
+    };
+    use crate::design::edge_resolve::feature_input_topology_id;
+    use crate::ids::neutral_feature_id;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    use crate::records::topology::face::DesignFaceOperand;
     use crate::records::{
         dimensions::DesignRecipeReference,
         feature::scope::DesignParameterScope,

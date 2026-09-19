@@ -86,8 +86,9 @@ pub(crate) fn build_inspection_summary(scan: &ContainerScan<'_>) -> ContainerSum
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    use super::*;
+    use super::{build_decode_report, classify_document, ReportScope};
     use crate::test_support::zip_test::synthetic_f3d;
+    use std::collections::BTreeMap;
 
     #[test]
     fn decode_report_includes_a_kernel_identity_collision_loss() {
