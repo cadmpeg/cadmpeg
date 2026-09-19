@@ -26,7 +26,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 /// string form (via [`InventorLossCode::code`]) is the stable contract.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum InventorLossCode {
+pub(crate) enum InventorLossCode {
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -96,7 +96,7 @@ pub enum InventorLossCode {
 impl InventorLossCode {
     /// Every code, in declaration order.
     #[allow(dead_code)] // Catalog for crate tests and harness oracles.
-    pub const ALL: &'static [InventorLossCode] = &[
+    const ALL: &'static [InventorLossCode] = &[
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
@@ -133,7 +133,7 @@ impl InventorLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
@@ -174,7 +174,7 @@ impl InventorLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryKernelCarrierNotTransferred => Severity::Blocking,
             _ => Severity::Warning,
@@ -224,7 +224,7 @@ impl InventorLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
                 match cadmpeg_ir::report::LossNamespace::new("inventor") {
@@ -242,7 +242,7 @@ impl InventorLossCode {
     /// The structured code is `inventor/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
