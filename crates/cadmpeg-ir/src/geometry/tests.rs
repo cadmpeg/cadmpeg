@@ -672,6 +672,8 @@ mod revision_compound_loft;
 
 mod revision_compound_loft_tail;
 
+mod revision_g2_blend;
+
 mod loft_path;
 
 mod loft_profile_member;

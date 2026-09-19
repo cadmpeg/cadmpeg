@@ -421,7 +421,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 );
             }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
-                for side in construction.sides.iter() {
+                for side in construction.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.surface.as_str());
                     }
@@ -429,7 +429,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         curves.insert(curve.curve.as_str());
                     }
                 }
-                curves.insert(construction.center.as_str());
+                curves.insert(construction.center().as_str());
             }
             ProceduralSurfaceDefinition::VertexBlend(definition_payload) => {
                 let construction = definition_payload.construction();

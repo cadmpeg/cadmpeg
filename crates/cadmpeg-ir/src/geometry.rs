@@ -3979,6 +3979,18 @@ pub struct RollingBallSupportSurface<S = SurfaceId> {
     pub parameter_ranges: [[Option<f64>; 2]; 2],
 }
 
+impl<S> RollingBallSupportSurface<S> {
+    /// Whether every stored parameter endpoint is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameter_ranges
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|value| value.is_finite())
+    }
+}
+
 /// A present rolling-ball side curve and its native parameter bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3988,6 +4000,17 @@ pub struct RollingBallSupportCurve<C = CurveId> {
     pub curve: C,
     /// Optional native parameter endpoints.
     pub parameter_range: [Option<f64>; 2],
+}
+
+impl<C> RollingBallSupportCurve<C> {
+    /// Whether every stored parameter endpoint is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameter_range
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+    }
 }
 
 /// The optional rolling-ball extension clause.
@@ -4048,6 +4071,23 @@ pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry> {
         deserialize_with = "deserialize_rolling_ball_side_extension"
     )]
     pub extension: Option<RollingBallSideExtension<P>>,
+}
+
+impl RollingBallSide {
+    /// Whether every scalar this support side carries is finite. The three
+    /// pcurve fields are finite by their own type: every `PcurveGeometry`
+    /// variant is a checked payload.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.surface
+            .as_ref()
+            .is_none_or(RollingBallSupportSurface::values_are_finite)
+            && self
+                .curve
+                .as_ref()
+                .is_none_or(RollingBallSupportCurve::values_are_finite)
+            && self.location.is_finite()
+    }
 }
 
 /// Third support graph appended by `sss_blend_spl_sur`.
@@ -4676,8 +4716,37 @@ pub struct VariableBlendConstruction {
 /// layout and ends with the shared revision-gated surface tail.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RevisionG2BlendConstructionWire")]
 pub struct RevisionG2BlendConstruction {
+    revision: i64,
+    leading_parameters: [f64; 2],
+    sides: Box<[RollingBallSide; 2]>,
+    center: CurveId,
+    #[serde(default)]
+    center_range: [Option<f64>; 2],
+    radii: [f64; 2],
+    radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
+    u_range: [Option<f64>; 2],
+    v_range: [Option<f64>; 2],
+    shape_prefix: i64,
+    shape_parameter: f64,
+    shape_length: f64,
+    shape_tail: i64,
+    cache: RevisionCacheForm,
+    #[serde(default)]
+    discontinuities: [Vec<f64>; 6],
+    tail_flag: bool,
+    tail_extensions: [i64; 3],
+}
+
+/// Stored fields of a revision-gated `g2_blend_spl_sur` construction before
+/// admission. This is the wire shape the deserializer reads and the only
+/// input `RevisionG2BlendConstruction::admit` accepts.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "RevisionG2BlendConstruction"))]
+#[serde(deny_unknown_fields)]
+pub struct RevisionG2BlendConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
     /// Two native scalars following the revision integer.
@@ -4714,6 +4783,173 @@ pub struct RevisionG2BlendConstruction {
     pub tail_flag: bool,
     /// Three ASM integers following the shared tail.
     pub tail_extensions: [i64; 3],
+}
+
+impl RevisionG2BlendConstruction {
+    /// Admit stored fields whose scalars are all finite. This is the
+    /// admission of the `revision_g2_blend` procedural surface: a decoder
+    /// that reads the fields admits them here, and the deserializer runs the
+    /// same walk. The fields are private, so this and the deserializer are
+    /// the only routes to a value.
+    pub fn admit(wire: RevisionG2BlendConstructionWire) -> Result<Self, ProceduralGeometryError> {
+        let construction = Self {
+            revision: wire.revision,
+            leading_parameters: wire.leading_parameters,
+            sides: wire.sides,
+            center: wire.center,
+            center_range: wire.center_range,
+            radii: wire.radii,
+            radius_selector: wire.radius_selector,
+            u_range: wire.u_range,
+            v_range: wire.v_range,
+            shape_prefix: wire.shape_prefix,
+            shape_parameter: wire.shape_parameter,
+            shape_length: wire.shape_length,
+            shape_tail: wire.shape_tail,
+            cache: wire.cache,
+            discontinuities: wire.discontinuities,
+            tail_flag: wire.tail_flag,
+            tail_extensions: wire.tail_extensions,
+        };
+        if construction.values_are_finite() {
+            Ok(construction)
+        } else {
+            Err(ProceduralGeometryError::Payload(
+                "revision g2 blend construction payload is invalid",
+            ))
+        }
+    }
+
+    /// Return the positive serializer-revision integer.
+    #[must_use]
+    pub const fn revision(&self) -> i64 {
+        self.revision
+    }
+
+    /// Return the two native scalars following the revision integer.
+    #[must_use]
+    pub const fn leading_parameters(&self) -> [f64; 2] {
+        self.leading_parameters
+    }
+
+    /// Return the two ordered support-side graphs.
+    #[must_use]
+    pub const fn sides(&self) -> &[RollingBallSide; 2] {
+        &self.sides
+    }
+
+    /// Return the stored center curve.
+    #[must_use]
+    pub const fn center(&self) -> &CurveId {
+        &self.center
+    }
+
+    /// Return the optional center-curve parameter endpoints.
+    #[must_use]
+    pub const fn center_range(&self) -> [Option<f64>; 2] {
+        self.center_range
+    }
+
+    /// Return the two signed blend radii.
+    #[must_use]
+    pub const fn radii(&self) -> [f64; 2] {
+        self.radii
+    }
+
+    /// Return the optional-radius selector.
+    #[must_use]
+    pub const fn radius_selector(&self) -> &RollingBallRadiusSelector<RevisionG2RadiusValue> {
+        &self.radius_selector
+    }
+
+    /// Return the optional U interval endpoints.
+    #[must_use]
+    pub const fn u_range(&self) -> [Option<f64>; 2] {
+        self.u_range
+    }
+
+    /// Return the optional V interval endpoints.
+    #[must_use]
+    pub const fn v_range(&self) -> [Option<f64>; 2] {
+        self.v_range
+    }
+
+    /// Return the integer before the solved shape.
+    #[must_use]
+    pub const fn shape_prefix(&self) -> i64 {
+        self.shape_prefix
+    }
+
+    /// Return the scalar before the solved shape.
+    #[must_use]
+    pub const fn shape_parameter(&self) -> f64 {
+        self.shape_parameter
+    }
+
+    /// Return the length before the solved shape.
+    #[must_use]
+    pub const fn shape_length(&self) -> f64 {
+        self.shape_length
+    }
+
+    /// Return the integer immediately before the shared tail.
+    #[must_use]
+    pub const fn shape_tail(&self) -> i64 {
+        self.shape_tail
+    }
+
+    /// Return the approximation-cache form.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm {
+        &self.cache
+    }
+
+    /// Return the six ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the Boolean terminating the shared tail.
+    #[must_use]
+    pub const fn tail_flag(&self) -> bool {
+        self.tail_flag
+    }
+
+    /// Return the three ASM integers following the shared tail.
+    #[must_use]
+    pub const fn tail_extensions(&self) -> [i64; 3] {
+        self.tail_extensions
+    }
+
+    /// Whether every scalar this construction carries is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.leading_parameters
+            .iter()
+            .chain(self.radii.iter())
+            .chain(std::iter::once(&self.shape_parameter))
+            .chain(std::iter::once(&self.shape_length))
+            .chain(self.discontinuities.iter().flatten())
+            .all(|value| value.is_finite())
+            && self
+                .center_range
+                .iter()
+                .chain(self.u_range.iter())
+                .chain(self.v_range.iter())
+                .flatten()
+                .all(|value| value.is_finite())
+            && self.sides.iter().all(RollingBallSide::values_are_finite)
+            && self.cache.values_are_finite()
+    }
+}
+
+impl TryFrom<RevisionG2BlendConstructionWire> for RevisionG2BlendConstruction {
+    type Error = ProceduralGeometryError;
+
+    fn try_from(wire: RevisionG2BlendConstructionWire) -> Result<Self, Self::Error> {
+        Self::admit(wire)
+    }
 }
 
 /// Complete native revision-gated `cl_loft_spl_sur` construction. The

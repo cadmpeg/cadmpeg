@@ -2189,7 +2189,7 @@ fn native_cacheless_procedural_surface_definition(
         }
     }
     if let ProceduralSurfaceDefinition::RevisionG2Blend { construction } = procedural.definition() {
-        if construction.cache.parameterization().is_some() {
+        if construction.cache().parameterization().is_some() {
             encode_native_revision_g2_blend(bytes, target, construction, None)?;
             return Ok(true);
         }
@@ -3849,7 +3849,7 @@ fn encode_native_revision_g2_blend(
     construction: &cadmpeg_ir::geometry::RevisionG2BlendConstruction,
     solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
-    if construction.revision <= 0 {
+    if construction.revision() <= 0 {
         return Err(CodecError::Malformed(
             "revision-gated g2_blend_spl_sur requires a positive revision".into(),
         ));
@@ -3857,44 +3857,44 @@ fn encode_native_revision_g2_blend(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "g2_blend_spl_sur")?;
-    native_i64(bytes, construction.revision);
-    for parameter in construction.leading_parameters {
+    native_i64(bytes, construction.revision());
+    for parameter in construction.leading_parameters() {
         native_f64(bytes, parameter);
     }
-    for side in construction.sides.iter() {
+    for side in construction.sides() {
         native_rolling_ball_side(bytes, target, side)?;
     }
-    let center_range = match construction.center_range {
+    let center_range = match construction.center_range() {
         [Some(lower), Some(upper)] => Some([lower, upper]),
         _ => None,
     };
-    let center = native_loft_curve(target, &construction.center, center_range)?;
+    let center = native_loft_curve(target, construction.center(), center_range)?;
     native_nurbs_curve(bytes, &center)?;
-    for endpoint in construction.center_range {
+    for endpoint in construction.center_range() {
         native_optional_f64(bytes, endpoint);
     }
-    for radius in construction.radii {
+    for radius in construction.radii() {
         native_f64(bytes, radius / LEN_TO_MM);
     }
-    match construction.radius_selector {
+    match construction.radius_selector() {
         cadmpeg_ir::geometry::RollingBallRadiusSelector::None {} => native_enum(bytes, -1),
         cadmpeg_ir::geometry::RollingBallRadiusSelector::Value { value } => {
             native_enum(bytes, value.get());
         }
     }
-    for range in [construction.u_range, construction.v_range] {
+    for range in [construction.u_range(), construction.v_range()] {
         for endpoint in range {
             native_optional_f64(bytes, endpoint);
         }
     }
-    native_i64(bytes, construction.shape_prefix);
-    native_f64(bytes, construction.shape_parameter);
-    native_f64(bytes, construction.shape_length / LEN_TO_MM);
-    native_i64(bytes, construction.shape_tail);
-    native_revision_tail_head(bytes, "G2 blend", &construction.cache, solved_cache)?;
-    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
-    bytes.push(native_bool(construction.tail_flag));
-    for extension in construction.tail_extensions {
+    native_i64(bytes, construction.shape_prefix());
+    native_f64(bytes, construction.shape_parameter());
+    native_f64(bytes, construction.shape_length() / LEN_TO_MM);
+    native_i64(bytes, construction.shape_tail());
+    native_revision_tail_head(bytes, "G2 blend", construction.cache(), solved_cache)?;
+    native_revision_tail_discontinuities(bytes, construction.discontinuities())?;
+    bytes.push(native_bool(construction.tail_flag()));
+    for extension in construction.tail_extensions() {
         native_i64(bytes, extension);
     }
     bytes.push(0x10);
