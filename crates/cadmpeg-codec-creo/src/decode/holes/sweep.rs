@@ -26,7 +26,7 @@ const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 const EPS_OFFSET_NONZERO: f64 = 1.0e-12;
 const EPS_EXTENT_AGREEMENT: f64 = 1.0e-9;
 
-pub fn simple_hole_geometry<'a>(
+pub(in crate::decode) fn simple_hole_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<SimpleHoleGeometry<'a>> {
@@ -100,7 +100,7 @@ fn has_exact_materialized_surface_roster(
         && table.surface_ids().iter().copied().collect::<BTreeSet<_>>() == expected_set
 }
 
-pub fn compact_simple_hole_cylinder_id(
+pub(in crate::decode) fn compact_simple_hole_cylinder_id(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
@@ -210,7 +210,7 @@ pub fn compact_simple_hole_cylinder_id(
     Some(*cylinder_id)
 }
 
-pub fn compact_simple_hole_geometry<'a>(
+pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<SimpleHoleGeometry<'a>> {
@@ -245,7 +245,7 @@ pub fn compact_simple_hole_geometry<'a>(
     })
 }
 
-pub fn circular_sweep_cylinder_from_cap_outlines(
+pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     planes: [FeatureOutlinePlane; 2],
     outlines: impl IntoIterator<Item = CapOutline>,
 ) -> Option<HoleCylinder> {
@@ -282,15 +282,15 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CircularSweepGeometry<'a> {
-    pub cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
-    pub section_definition_id: Option<u32>,
-    pub direction: [f64; 3],
-    pub extent: ExtrudeExtent,
-    pub geometry: HoleCylinder,
+pub(in crate::decode) struct CircularSweepGeometry<'a> {
+    pub(in crate::decode) cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
+    pub(in crate::decode) section_definition_id: Option<u32>,
+    pub(in crate::decode) direction: [f64; 3],
+    pub(in crate::decode) extent: ExtrudeExtent,
+    pub(in crate::decode) geometry: HoleCylinder,
 }
 
-pub fn single_cap_circular_sweep_geometry<'a>(
+pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<CircularSweepGeometry<'a>> {
@@ -380,7 +380,7 @@ pub fn single_cap_circular_sweep_geometry<'a>(
     })
 }
 
-pub fn circular_sweep_feature_definition(
+pub(in crate::decode) fn circular_sweep_feature_definition(
     profile: ProfileRef,
     sweep: &CircularSweepGeometry<'_>,
     op: BooleanOp,
@@ -411,7 +411,7 @@ pub fn circular_sweep_feature_definition(
     })
 }
 
-pub fn circular_sweep_geometry<'a>(
+pub(in crate::decode) fn circular_sweep_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<CircularSweepGeometry<'a>> {
@@ -419,7 +419,7 @@ pub fn circular_sweep_geometry<'a>(
         .or_else(|| single_cap_circular_sweep_geometry(scan, feature_id))
 }
 
-pub fn two_cap_circular_sweep_geometry<'a>(
+pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<CircularSweepGeometry<'a>> {
@@ -511,7 +511,7 @@ pub fn two_cap_circular_sweep_geometry<'a>(
     })
 }
 
-pub fn extrusion_span(
+pub(in crate::decode) fn extrusion_span(
     profile_origin: [f64; 3],
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -575,7 +575,7 @@ pub fn extrusion_span(
     }
 }
 
-pub fn extrusion_extent_and_direction(
+pub(in crate::decode) fn extrusion_extent_and_direction(
     profile_origin: [f64; 3],
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -611,7 +611,7 @@ pub fn extrusion_extent_and_direction(
     Some((extent, direction))
 }
 
-pub fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
+pub(in crate::decode) fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
     Some(ExtrudeSide {
         termination: LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,

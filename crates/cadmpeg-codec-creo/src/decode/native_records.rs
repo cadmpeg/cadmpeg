@@ -6,14 +6,14 @@ use serde::Serialize;
 use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes, ScalarLane};
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSectionPoint {
-    pub(crate) point_id: u32,
+pub(super) struct CreoSketchSectionPoint {
+    pub(super) point_id: u32,
     #[serde(flatten, serialize_with = "serialize_section_point_state")]
-    pub(crate) state: CreoSketchPointState,
+    pub(super) state: CreoSketchPointState,
 }
 
 /// Reconciled section-point coordinate state.
-pub(crate) enum CreoSketchPointState {
+pub(super) enum CreoSketchPointState {
     Conflicting,
     Resolved([f64; 2]),
     PartialU(f64),
@@ -41,15 +41,15 @@ fn serialize_section_point_state<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchTableHeader {
+pub(super) struct CreoSketchTableHeader {
     #[serde(flatten, serialize_with = "serialize_sketch_table_kind")]
-    pub(crate) kind: CreoSketchTableKind,
-    pub(crate) row_count: usize,
-    pub(crate) offset: usize,
+    pub(super) kind: CreoSketchTableKind,
+    pub(super) row_count: usize,
+    pub(super) offset: usize,
 }
 
 /// Sketch table kind and its header fields.
-pub(crate) enum CreoSketchTableKind {
+pub(super) enum CreoSketchTableKind {
     Variables {
         declared_count: u32,
         entity_ref: Option<u32>,
@@ -213,11 +213,11 @@ fn serialize_sketch_table_kind<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchBucketHeader {
+pub(super) struct CreoSketchBucketHeader {
     /// Zero-based bucket index.
-    pub(crate) index: u32,
+    pub(super) index: u32,
     /// Number of entries the bucket array opener declares.
-    pub(crate) declared_entry_count: u32,
+    pub(super) declared_entry_count: u32,
     /// Number of structurally complete entries decoded within the bucket
     /// frame.
     ///
@@ -230,21 +230,21 @@ pub(crate) struct CreoSketchBucketHeader {
     /// frame and answers `None` from `u32::try_from` when that count passes
     /// the stored width. `FeatureTrimBucket::is_complete` is the reader that
     /// acts on it, and `None` is not complete.
-    pub(crate) decoded_entry_count: Option<u32>,
+    pub(super) decoded_entry_count: Option<u32>,
     /// Byte offset of the stored bucket index.
-    pub(crate) offset: usize,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSection3d {
-    pub(crate) sketch_plane_entity_id: Option<u32>,
-    pub(crate) sketch_plane_flip: Option<bool>,
+pub(super) struct CreoSketchSection3d {
+    pub(super) sketch_plane_entity_id: Option<u32>,
+    pub(super) sketch_plane_flip: Option<bool>,
     #[serde(flatten, serialize_with = "serialize_reference_planes")]
-    pub(crate) reference_planes: ReferencePlanes,
-    pub(crate) reference_plane_datum_geometry_id: Option<u32>,
-    pub(crate) orientation: CreoSketchSectionOrientation,
-    pub(crate) dimension_ids: Vec<u32>,
-    pub(crate) offset: usize,
+    pub(super) reference_planes: ReferencePlanes,
+    pub(super) reference_plane_datum_geometry_id: Option<u32>,
+    pub(super) orientation: CreoSketchSectionOrientation,
+    pub(super) dimension_ids: Vec<u32>,
+    pub(super) offset: usize,
 }
 
 fn serialize_reference_planes<S: serde::Serializer>(
@@ -276,68 +276,68 @@ fn serialize_reference_planes<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchReferencePlane {
-    pub(crate) plane_entity_id: u32,
-    pub(crate) reference_type: Option<u32>,
-    pub(crate) external_reference_id: Option<u32>,
-    pub(crate) segment_id: Option<u32>,
-    pub(crate) sub_index: Option<u32>,
-    pub(crate) reference_flip: Option<bool>,
+struct CreoSketchReferencePlane {
+    plane_entity_id: u32,
+    reference_type: Option<u32>,
+    external_reference_id: Option<u32>,
+    segment_id: Option<u32>,
+    sub_index: Option<u32>,
+    reference_flip: Option<bool>,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSectionOrientation {
-    pub(crate) section_flip: Option<bool>,
-    pub(crate) reference_type: Option<u32>,
-    pub(crate) segment_id: Option<u32>,
-    pub(crate) reference_flip: Option<bool>,
+pub(super) struct CreoSketchSectionOrientation {
+    pub(super) section_flip: Option<bool>,
+    pub(super) reference_type: Option<u32>,
+    pub(super) segment_id: Option<u32>,
+    pub(super) reference_flip: Option<bool>,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFeatureParameterFrame {
-    pub(crate) kind: &'static str,
-    pub(crate) body: Vec<u8>,
-    pub(crate) decoded_values: Option<[f64; 12]>,
-    pub(crate) offset: usize,
+pub(super) struct CreoFeatureParameterFrame {
+    pub(super) kind: &'static str,
+    pub(super) body: Vec<u8>,
+    pub(super) decoded_values: Option<[f64; 12]>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFeatureOutline {
-    pub(crate) phase: &'static str,
-    pub(crate) local_values: Vec<Option<f64>>,
-    pub(crate) local_value_bodies: Vec<Vec<u8>>,
-    pub(crate) offset: usize,
+pub(super) struct CreoFeatureOutline {
+    pub(super) phase: &'static str,
+    pub(super) local_values: Vec<Option<f64>>,
+    pub(super) local_value_bodies: Vec<Vec<u8>>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchTrimEntity {
-    pub(crate) external_id: u32,
-    pub(crate) mode: Option<u32>,
-    pub(crate) vertices: [u32; 2],
-    pub(crate) center_vertex: Option<u32>,
-    pub(crate) kind: &'static str,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchTrimEntity {
+    pub(super) external_id: u32,
+    pub(super) mode: Option<u32>,
+    pub(super) vertices: [u32; 2],
+    pub(super) center_vertex: Option<u32>,
+    pub(super) kind: &'static str,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchTrimVertex {
-    pub(crate) vertex_id: u32,
-    pub(crate) entities: Vec<u32>,
-    pub(crate) section_coordinates: Option<[f64; 2]>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchTrimVertex {
+    pub(super) vertex_id: u32,
+    pub(super) entities: Vec<u32>,
+    pub(super) section_coordinates: Option<[f64; 2]>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchOrderRow {
-    pub(crate) external_id: u32,
-    pub(crate) internal_id: u32,
-    pub(crate) bitmask: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchOrderRow {
+    pub(super) external_id: u32,
+    pub(super) internal_id: u32,
+    pub(super) bitmask: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum CreoSketchSavedEntity {
+pub(super) enum CreoSketchSavedEntity {
     Line {
         entity_id: u32,
         references: Vec<u32>,
@@ -403,7 +403,7 @@ fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
 }
 
 /// Optional spline endpoint tangents flattened as their value and body keys.
-pub(crate) struct SplineTangents(pub(crate) Option<DecodedField<[[f64; 3]; 2]>>);
+pub(super) struct SplineTangents(pub(crate) Option<DecodedField<[[f64; 3]; 2]>>);
 
 impl Serialize for SplineTangents {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -417,7 +417,7 @@ impl Serialize for SplineTangents {
 }
 
 /// Optional spline parameters flattened as their value and body keys.
-pub(crate) struct SplineParameters(pub(crate) Option<DecodedField<Vec<f64>>>);
+pub(super) struct SplineParameters(pub(crate) Option<DecodedField<Vec<f64>>>);
 
 impl Serialize for SplineParameters {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -439,21 +439,21 @@ fn serialize_dimension_value<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchVariable {
-    pub(crate) variable_type: u32,
-    pub(crate) key: u32,
+pub(super) struct CreoSketchVariable {
+    pub(super) variable_type: u32,
+    pub(super) key: u32,
     #[serde(flatten, serialize_with = "serialize_variable_value")]
-    pub(crate) value: ScalarLane,
-    pub(crate) value_body: Vec<u8>,
+    pub(super) value: ScalarLane,
+    pub(super) value_body: Vec<u8>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) resolved_value: Option<f64>,
+    pub(super) resolved_value: Option<f64>,
     #[serde(flatten, serialize_with = "serialize_variable_guess")]
-    pub(crate) guess: ScalarLane,
-    pub(crate) guess_body: Vec<u8>,
-    pub(crate) known: Option<u32>,
-    pub(crate) homogeneity: Option<u32>,
-    pub(crate) uvar_id: Option<u32>,
-    pub(crate) offset: usize,
+    pub(super) guess: ScalarLane,
+    pub(super) guess_body: Vec<u8>,
+    pub(super) known: Option<u32>,
+    pub(super) homogeneity: Option<u32>,
+    pub(super) uvar_id: Option<u32>,
+    pub(super) offset: usize,
 }
 
 fn serialize_variable_value<S: serde::Serializer>(
@@ -482,232 +482,232 @@ fn serialize_variable_guess<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchEquation {
-    pub(crate) equation_id: u32,
-    pub(crate) function_id: u32,
-    pub(crate) explicit_argument_count: Option<u32>,
-    pub(crate) arguments: Vec<Option<u32>>,
-    pub(crate) arguments_body: Vec<u8>,
-    pub(crate) auxiliary_body: Vec<u8>,
-    pub(crate) body: Vec<u8>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchEquation {
+    pub(super) equation_id: u32,
+    pub(super) function_id: u32,
+    pub(super) explicit_argument_count: Option<u32>,
+    pub(super) arguments: Vec<Option<u32>>,
+    pub(super) arguments_body: Vec<u8>,
+    pub(super) auxiliary_body: Vec<u8>,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSegment {
-    pub(crate) external_id: u32,
-    pub(crate) kind: &'static str,
-    pub(crate) point_ids: [u32; 2],
-    pub(crate) center_id: Option<u32>,
-    pub(crate) directions: [Option<u32>; 3],
-    pub(crate) arc_orientation: Option<u32>,
-    pub(crate) vertical_horizontal_constraint: Option<u32>,
-    pub(crate) radius_dimension_id: Option<u32>,
-    pub(crate) secondary_radius_dimension_id: Option<u32>,
-    pub(crate) body: Vec<u8>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchSegment {
+    pub(super) external_id: u32,
+    pub(super) kind: &'static str,
+    pub(super) point_ids: [u32; 2],
+    pub(super) center_id: Option<u32>,
+    pub(super) directions: [Option<u32>; 3],
+    pub(super) arc_orientation: Option<u32>,
+    pub(super) vertical_horizontal_constraint: Option<u32>,
+    pub(super) radius_dimension_id: Option<u32>,
+    pub(super) secondary_radius_dimension_id: Option<u32>,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchCircleSegment {
-    pub(crate) external_id: u32,
-    pub(crate) center_id: u32,
-    pub(crate) radius_dimension_id: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchCircleSegment {
+    pub(super) external_id: u32,
+    pub(super) center_id: u32,
+    pub(super) radius_dimension_id: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchPointSegment {
-    pub(crate) external_id: u32,
-    pub(crate) point_id: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchPointSegment {
+    pub(super) external_id: u32,
+    pub(super) point_id: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchCenteredLineSegment {
-    pub(crate) external_id: u32,
-    pub(crate) center_id: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchCenteredLineSegment {
+    pub(super) external_id: u32,
+    pub(super) center_id: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchReferenceLineSegment {
-    pub(crate) external_id: u32,
-    pub(crate) point_ids: [Option<u32>; 2],
-    pub(crate) directions: [Option<u32>; 3],
-    pub(crate) vertical_horizontal_constraint: Option<u32>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchReferenceLineSegment {
+    pub(super) external_id: u32,
+    pub(super) point_ids: [Option<u32>; 2],
+    pub(super) directions: [Option<u32>; 3],
+    pub(super) vertical_horizontal_constraint: Option<u32>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchBoundedCurveSegment {
-    pub(crate) external_id: u32,
-    pub(crate) point_ids: [u32; 2],
-    pub(crate) center_id: Option<u32>,
-    pub(crate) directions: [Option<u32>; 3],
-    pub(crate) arc_orientation: Option<u32>,
-    pub(crate) vertical_horizontal_constraint: Option<u32>,
-    pub(crate) radius_dimension_id: Option<u32>,
-    pub(crate) secondary_radius_dimension_id: Option<u32>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchBoundedCurveSegment {
+    pub(super) external_id: u32,
+    pub(super) point_ids: [u32; 2],
+    pub(super) center_id: Option<u32>,
+    pub(super) directions: [Option<u32>; 3],
+    pub(super) arc_orientation: Option<u32>,
+    pub(super) vertical_horizontal_constraint: Option<u32>,
+    pub(super) radius_dimension_id: Option<u32>,
+    pub(super) secondary_radius_dimension_id: Option<u32>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchConicSegment {
-    pub(crate) external_id: u32,
-    pub(crate) center_id: u32,
-    pub(crate) first_coefficient_ref: u32,
-    pub(crate) second_coefficient_ref: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchConicSegment {
+    pub(super) external_id: u32,
+    pub(super) center_id: u32,
+    pub(super) first_coefficient_ref: u32,
+    pub(super) second_coefficient_ref: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchOpaqueSegment {
-    pub(crate) external_id: u32,
-    pub(crate) kind: u32,
-    pub(crate) point_ids: [Option<u32>; 2],
-    pub(crate) center_id: Option<u32>,
-    pub(crate) directions: [Option<u32>; 3],
-    pub(crate) arc_orientation: Option<u32>,
-    pub(crate) vertical_horizontal_constraint: Option<u32>,
-    pub(crate) radius_dimension_id: Option<u32>,
-    pub(crate) secondary_radius_dimension_id: Option<u32>,
-    pub(crate) body: Vec<u8>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchOpaqueSegment {
+    pub(super) external_id: u32,
+    pub(super) kind: u32,
+    pub(super) point_ids: [Option<u32>; 2],
+    pub(super) center_id: Option<u32>,
+    pub(super) directions: [Option<u32>; 3],
+    pub(super) arc_orientation: Option<u32>,
+    pub(super) vertical_horizontal_constraint: Option<u32>,
+    pub(super) radius_dimension_id: Option<u32>,
+    pub(super) secondary_radius_dimension_id: Option<u32>,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchDimension {
-    pub(crate) external_id: u32,
-    pub(crate) dimension_type: u32,
+pub(super) struct CreoSketchDimension {
+    pub(super) external_id: u32,
+    pub(super) dimension_type: u32,
     #[serde(flatten, serialize_with = "serialize_dimension_value")]
-    pub(crate) value: DimensionValue,
-    pub(crate) value_body: Vec<u8>,
-    pub(crate) unit: &'static str,
-    pub(crate) direction_byte: u8,
-    pub(crate) auxiliary_value: Option<f64>,
-    pub(crate) auxiliary_body: Vec<u8>,
-    pub(crate) references: Option<CreoSketchDimensionReferenceTable>,
-    pub(crate) offset: usize,
+    pub(super) value: DimensionValue,
+    pub(super) value_body: Vec<u8>,
+    pub(super) unit: &'static str,
+    pub(super) direction_byte: u8,
+    pub(super) auxiliary_value: Option<f64>,
+    pub(super) auxiliary_body: Vec<u8>,
+    pub(super) references: Option<CreoSketchDimensionReferenceTable>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchDimensionReferenceTable {
-    pub(crate) declared_count: u32,
-    pub(crate) entity_ref: Option<u32>,
-    pub(crate) rows: Vec<CreoSketchDimensionReference>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchDimensionReferenceTable {
+    pub(super) declared_count: u32,
+    pub(super) entity_ref: Option<u32>,
+    pub(super) rows: Vec<CreoSketchDimensionReference>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchDimensionReference {
-    pub(crate) item_id: Option<u32>,
-    pub(crate) sense: Option<u32>,
-    pub(crate) point: [Option<u32>; 2],
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchDimensionReference {
+    pub(super) item_id: Option<u32>,
+    pub(super) sense: Option<u32>,
+    pub(super) point: [Option<u32>; 2],
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchRelation {
-    pub(crate) relation_id: u32,
-    pub(crate) used: u32,
-    pub(crate) operands: Vec<u8>,
-    pub(crate) operand_vectors: Option<[[Option<u32>; 4]; 3]>,
-    pub(crate) sign: u32,
-    pub(crate) dimension_id: u32,
-    pub(crate) relation_type: u32,
-    pub(crate) body: Vec<u8>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchRelation {
+    pub(super) relation_id: u32,
+    pub(super) used: u32,
+    pub(super) operands: Vec<u8>,
+    pub(super) operand_vectors: Option<[[Option<u32>; 4]; 3]>,
+    pub(super) sign: u32,
+    pub(super) dimension_id: u32,
+    pub(super) relation_type: u32,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSkamp {
-    pub(crate) id: u32,
-    pub(crate) kind: u32,
-    pub(crate) flags: u32,
-    pub(crate) status: u32,
-    pub(crate) items: Vec<CreoSketchSkampItem>,
-    pub(crate) offset: usize,
+pub(super) struct CreoSketchSkamp {
+    pub(super) id: u32,
+    pub(super) kind: u32,
+    pub(super) flags: u32,
+    pub(super) status: u32,
+    pub(super) items: Vec<CreoSketchSkampItem>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchSkampItem {
-    pub(crate) entity_id: u32,
-    pub(crate) sense: u32,
+pub(super) struct CreoSketchSkampItem {
+    pub(super) entity_id: u32,
+    pub(super) sense: u32,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoSketchRelationTriple {
+pub(super) struct CreoSketchRelationTriple {
     #[serde(rename = "relation_id")]
-    pub(crate) relation: Option<u32>,
+    pub(super) relation: Option<u32>,
     #[serde(rename = "equation_id")]
-    pub(crate) equation: Option<u32>,
+    pub(super) equation: Option<u32>,
     #[serde(rename = "skamp_id")]
-    pub(crate) skamp: Option<u32>,
-    pub(crate) offset: usize,
+    pub(super) skamp: Option<u32>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveExpressionLocalSystem {
-    pub(crate) dimensions: u32,
-    pub(crate) count: u32,
-    pub(crate) body: Vec<u8>,
-    pub(crate) explicit_slots: Option<[f64; 12]>,
-    pub(crate) offset: usize,
+pub(super) struct CreoCurveExpressionLocalSystem {
+    pub(super) dimensions: u32,
+    pub(super) count: u32,
+    pub(super) body: Vec<u8>,
+    pub(super) explicit_slots: Option<[f64; 12]>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveExpressionLine {
-    pub(crate) text: String,
-    pub(crate) offset: usize,
+pub(super) struct CreoCurveExpressionLine {
+    pub(super) text: String,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveExpressionAssignment {
-    pub(crate) target: crate::curve::CurveExpressionTarget,
-    pub(crate) expression: String,
-    pub(crate) dependencies: Vec<String>,
-    pub(crate) value: Option<crate::curve::CurveExpressionValue>,
-    pub(crate) activation: &'static str,
-    pub(crate) offset: usize,
+pub(super) struct CreoCurveExpressionAssignment {
+    pub(super) target: crate::curve::CurveExpressionTarget,
+    pub(super) expression: String,
+    pub(super) dependencies: Vec<String>,
+    pub(super) value: Option<crate::curve::CurveExpressionValue>,
+    pub(super) activation: &'static str,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveExpressionSolveBlock {
-    pub(crate) equations: Vec<CreoCurveExpressionEquation>,
-    pub(crate) assignments: Vec<CreoCurveExpressionAssignment>,
-    pub(crate) variables: Vec<String>,
-    pub(crate) solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
-    pub(crate) offset: usize,
-    pub(crate) for_offset: usize,
+pub(super) struct CreoCurveExpressionSolveBlock {
+    pub(super) equations: Vec<CreoCurveExpressionEquation>,
+    pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
+    pub(super) variables: Vec<String>,
+    pub(super) solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
+    pub(super) offset: usize,
+    pub(super) for_offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveExpressionEquation {
-    pub(crate) left: String,
-    pub(crate) right: String,
-    pub(crate) dependencies: Vec<String>,
-    pub(crate) offset: usize,
+pub(super) struct CreoCurveExpressionEquation {
+    pub(super) left: String,
+    pub(super) right: String,
+    pub(super) dependencies: Vec<String>,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFeatureOperationState {
-    pub(crate) id: String,
-    pub(crate) feature_id: u32,
-    pub(crate) state_ordinal: usize,
-    pub(crate) current: bool,
-    pub(crate) family: String,
+pub(super) struct CreoFeatureOperationState {
+    pub(super) id: String,
+    pub(super) feature_id: u32,
+    pub(super) state_ordinal: usize,
+    pub(super) current: bool,
+    pub(super) family: String,
     #[serde(flatten, serialize_with = "serialize_operation_name")]
-    pub(crate) name: crate::feature::operations::OperationName,
-    pub(crate) recipe: Option<&'static str>,
+    pub(super) name: crate::feature::operations::OperationName,
+    pub(super) recipe: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) recipe_conflict: Option<bool>,
+    pub(super) recipe_conflict: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) display_state_conflict: Option<bool>,
-    pub(crate) root_schema_class: Option<u32>,
-    pub(crate) parent_feature_id: Option<u32>,
-    pub(crate) offset: usize,
-    pub(crate) state_offset: usize,
+    pub(super) display_state_conflict: Option<bool>,
+    pub(super) root_schema_class: Option<u32>,
+    pub(super) parent_feature_id: Option<u32>,
+    pub(super) offset: usize,
+    pub(super) state_offset: usize,
 }
 
 fn serialize_operation_name<S: serde::Serializer>(
@@ -730,19 +730,19 @@ fn serialize_operation_name<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFeatureSurfaceReplayAssociation {
-    pub(crate) id: String,
-    pub(crate) owner_feature_id: u32,
-    pub(crate) visible_surface_id: u32,
-    pub(crate) replay_surface_id: u32,
-    pub(crate) replay_ordinal: usize,
-    pub(crate) surface_family: String,
-    pub(crate) table_offset: usize,
+pub(super) struct CreoFeatureSurfaceReplayAssociation {
+    pub(super) id: String,
+    pub(super) owner_feature_id: u32,
+    pub(super) visible_surface_id: u32,
+    pub(super) replay_surface_id: u32,
+    pub(super) replay_ordinal: usize,
+    pub(super) surface_family: String,
+    pub(super) table_offset: usize,
 }
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum CreoFeatureFieldValue {
+pub(super) enum CreoFeatureFieldValue {
     Empty,
     CompactInt {
         value: u32,
@@ -766,40 +766,40 @@ pub(crate) enum CreoFeatureFieldValue {
 }
 
 #[derive(Serialize, Clone)]
-pub(crate) struct CreoHalfEdgeRef {
-    pub(crate) curve_id: u32,
-    pub(crate) side: crate::topology::Side,
+pub(super) struct CreoHalfEdgeRef {
+    pub(super) curve_id: u32,
+    pub(super) side: crate::topology::Side,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFc05CircleRecord {
-    pub(crate) id: String,
-    pub(crate) curve_id: u32,
-    pub(crate) center_row_frame: [f64; 2],
-    pub(crate) radius_mm: f64,
-    pub(crate) sample_direction_row_frame: [f64; 2],
+pub(super) struct CreoFc05CircleRecord {
+    pub(super) id: String,
+    pub(super) curve_id: u32,
+    pub(super) center_row_frame: [f64; 2],
+    pub(super) radius_mm: f64,
+    pub(super) sample_direction_row_frame: [f64; 2],
     #[serde(flatten, serialize_with = "serialize_angle_parameter")]
-    pub(crate) angle_parameter: crate::curve::Fc05AngleParameterRelation,
-    pub(crate) cap_ordinate_row_frame: Option<f64>,
-    pub(crate) point_count: usize,
-    pub(crate) max_residual: f64,
-    pub(crate) offset: usize,
-    pub(crate) source_section: String,
+    pub(super) angle_parameter: crate::curve::Fc05AngleParameterRelation,
+    pub(super) cap_ordinate_row_frame: Option<f64>,
+    pub(super) point_count: usize,
+    pub(super) max_residual: f64,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFc05CylinderCapPairRecord {
-    pub(crate) id: String,
-    pub(crate) surface_id: u32,
+pub(super) struct CreoFc05CylinderCapPairRecord {
+    pub(super) id: String,
+    pub(super) surface_id: u32,
     #[serde(flatten, serialize_with = "serialize_cap_edges")]
-    pub(crate) cap_edges: Vec<crate::curve::Fc05CapEdge>,
-    pub(crate) center_row_frame: [f64; 2],
-    pub(crate) radius_mm: f64,
-    pub(crate) reference_direction_row_frame: [f64; 2],
-    pub(crate) parameter_sign: i8,
-    pub(crate) cap_ordinates_row_frame: Vec<f64>,
-    pub(crate) offset: usize,
-    pub(crate) source_section: String,
+    pub(super) cap_edges: Vec<crate::curve::Fc05CapEdge>,
+    pub(super) center_row_frame: [f64; 2],
+    pub(super) radius_mm: f64,
+    pub(super) reference_direction_row_frame: [f64; 2],
+    pub(super) parameter_sign: i8,
+    pub(super) cap_ordinates_row_frame: Vec<f64>,
+    pub(super) offset: usize,
+    pub(super) source_section: String,
 }
 
 fn serialize_cap_edges<S: serde::Serializer>(
@@ -831,7 +831,7 @@ fn serialize_cap_edges<S: serde::Serializer>(
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(crate) enum CreoPlaneEnvelope {
+pub(super) enum CreoPlaneEnvelope {
     Standard {
         bounds_2d: [[Option<f64>; 2]; 2],
         corners_3d: [[Option<f64>; 3]; 2],
@@ -843,90 +843,90 @@ pub(crate) enum CreoPlaneEnvelope {
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoTabulatedCylinderFrame {
-    pub(crate) values: [f64; 6],
-    pub(crate) prefixes: [u8; 6],
+pub(super) struct CreoTabulatedCylinderFrame {
+    pub(super) values: [f64; 6],
+    pub(super) prefixes: [u8; 6],
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoPositionalCylinderFrame {
-    pub(crate) origin: [f64; 3],
-    pub(crate) axis: [f64; 3],
-    pub(crate) ref_direction: [f64; 3],
-    pub(crate) radius: f64,
-    pub(crate) length: Option<f64>,
+pub(super) struct CreoPositionalCylinderFrame {
+    pub(super) origin: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) radius: f64,
+    pub(super) length: Option<f64>,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoPositionalConeFrame {
-    pub(crate) apex: [f64; 3],
-    pub(crate) axis: [f64; 3],
-    pub(crate) ref_direction: [f64; 3],
-    pub(crate) half_angle: f64,
+pub(super) struct CreoPositionalConeFrame {
+    pub(super) apex: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) half_angle: f64,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoPositionalTorusFrame {
-    pub(crate) center: [f64; 3],
-    pub(crate) axis: [f64; 3],
-    pub(crate) ref_direction: [f64; 3],
-    pub(crate) major_radius: f64,
-    pub(crate) minor_radius: f64,
+pub(super) struct CreoPositionalTorusFrame {
+    pub(super) center: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) major_radius: f64,
+    pub(super) minor_radius: f64,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoTorusOutlineFrame {
-    pub(crate) values: [f64; 6],
-    pub(crate) selector: u32,
-    pub(crate) offset: usize,
+pub(super) struct CreoTorusOutlineFrame {
+    pub(super) values: [f64; 6],
+    pub(super) selector: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoType26FiveCoordinateEnvelope {
-    pub(crate) values: [f64; 5],
-    pub(crate) offset: usize,
+pub(super) struct CreoType26FiveCoordinateEnvelope {
+    pub(super) values: [f64; 5],
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoType26SplitCoordinateEnvelope {
-    pub(crate) values: [f64; 4],
-    pub(crate) offset: usize,
+pub(super) struct CreoType26SplitCoordinateEnvelope {
+    pub(super) values: [f64; 4],
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoTorusRadiusOverrides {
-    pub(crate) radius1: f64,
-    pub(crate) radius2: f64,
-    pub(crate) radius2_encoding: &'static str,
-    pub(crate) offset: usize,
+pub(super) struct CreoTorusRadiusOverrides {
+    pub(super) radius1: f64,
+    pub(super) radius2: f64,
+    pub(super) radius2_encoding: &'static str,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoConeHalfAngleOverride {
-    pub(crate) radians: f64,
-    pub(crate) offset: usize,
+pub(super) struct CreoConeHalfAngleOverride {
+    pub(super) radians: f64,
+    pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveParameterScalar {
-    pub(crate) value: f64,
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
+pub(super) struct CreoCurveParameterScalar {
+    pub(super) value: f64,
+    pub(super) raw: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) length: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveParameterReference {
-    pub(crate) entity_id: u32,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
+pub(super) struct CreoCurveParameterReference {
+    pub(super) entity_id: u32,
+    pub(super) offset: usize,
+    pub(super) length: usize,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoCurveParameterOpaqueSpan {
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
+pub(super) struct CreoCurveParameterOpaqueSpan {
+    pub(super) raw: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) length: usize,
 }
 
 fn serialize_angle_parameter<S: serde::Serializer>(

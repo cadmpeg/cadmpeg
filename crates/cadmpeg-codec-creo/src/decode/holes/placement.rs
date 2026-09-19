@@ -15,12 +15,12 @@ const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ExtrusionSpan {
-    pub lower: f64,
-    pub upper: f64,
+pub(in crate::decode) struct ExtrusionSpan {
+    pub(in crate::decode) lower: f64,
+    pub(in crate::decode) upper: f64,
 }
 
-pub fn hole_extent_and_direction(
+pub(in crate::decode) fn hole_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Option<([f64; 3], LinearTermination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
@@ -60,7 +60,7 @@ pub fn hole_extent_and_direction(
     ))
 }
 
-pub fn hole_placement(
+pub(in crate::decode) fn hole_placement(
     planes: impl IntoIterator<Item = (u32, [f64; 3], [f64; 3])>,
 ) -> Option<(u32, [f64; 3], LinearTermination)> {
     let planes = planes.into_iter().collect::<Vec<_>>();
@@ -76,7 +76,9 @@ pub fn hole_placement(
     Some((*entry_id, direction, extent))
 }
 
-pub fn plane_envelope_corners(envelope: &crate::surface::PlaneEnvelope) -> Option<[[f64; 3]; 2]> {
+pub(in crate::decode) fn plane_envelope_corners(
+    envelope: &crate::surface::PlaneEnvelope,
+) -> Option<[[f64; 3]; 2]> {
     let corners = match envelope {
         crate::surface::PlaneEnvelope::Standard { corners_3d, .. }
         | crate::surface::PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
@@ -88,15 +90,15 @@ pub fn plane_envelope_corners(envelope: &crate::surface::PlaneEnvelope) -> Optio
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CapOutline {
-    pub surface_id: u32,
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub corners: [[f64; 3]; 2],
+pub(in crate::decode) struct CapOutline {
+    pub(in crate::decode) surface_id: u32,
+    pub(in crate::decode) origin: [f64; 3],
+    pub(in crate::decode) normal: [f64; 3],
+    pub(in crate::decode) corners: [[f64; 3]; 2],
 }
 
 /// The model axis a direction is aligned with, when it is aligned with one.
-pub fn axis_aligned_with(direction: [f64; 3], component_tolerance: f64) -> Option<Axis> {
+pub(super) fn axis_aligned_with(direction: [f64; 3], component_tolerance: f64) -> Option<Axis> {
     Axis::ALL.into_iter().find(|axis| {
         direction[axis.index()].abs() > 1.0 - EPS_AXIS_ALIGNMENT
             && axis
@@ -106,7 +108,10 @@ pub fn axis_aligned_with(direction: [f64; 3], component_tolerance: f64) -> Optio
     })
 }
 
-pub fn cap_square_center_radius(corners: [[f64; 3]; 2], axis: Axis) -> Option<([f64; 3], f64)> {
+pub(super) fn cap_square_center_radius(
+    corners: [[f64; 3]; 2],
+    axis: Axis,
+) -> Option<([f64; 3], f64)> {
     let axis_index = axis.index();
     let radial = axis.complement().map(Axis::index);
     let spans = [
@@ -130,7 +135,7 @@ pub fn cap_square_center_radius(corners: [[f64; 3]; 2], axis: Axis) -> Option<([
     ))
 }
 
-pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
+pub(in crate::decode) fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
     let axis = normalize(cap.normal)?;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
     let (center, radius) = cap_square_center_radius(cap.corners, aligned_axis)?;
@@ -144,7 +149,9 @@ pub fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder>
     })
 }
 
-pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCylinder> {
+pub(in crate::decode) fn hole_cylinder_from_cap_outlines(
+    caps: [CapOutline; 2],
+) -> Option<HoleCylinder> {
     let placement = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis = placement.1;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
@@ -179,7 +186,7 @@ pub fn hole_cylinder_from_cap_outlines(caps: [CapOutline; 2]) -> Option<HoleCyli
     })
 }
 
-pub fn cylinder_from_complementary_outline_bounds(
+pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     plane: &SurfaceGeometry,
     bounds: [[[f64; 2]; 2]; 2],
 ) -> Option<SurfaceGeometry> {
@@ -245,11 +252,11 @@ pub fn cylinder_from_complementary_outline_bounds(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HoleCylinder {
-    pub origin: Point3,
-    pub axis: Vector3,
-    pub ref_direction: Vector3,
-    pub radius: f64,
+pub(in crate::decode) struct HoleCylinder {
+    pub(in crate::decode) origin: Point3,
+    pub(in crate::decode) axis: Vector3,
+    pub(in crate::decode) ref_direction: Vector3,
+    pub(in crate::decode) radius: f64,
 }
 
 impl TryFrom<HoleCylinder> for SurfaceGeometry {
@@ -267,10 +274,10 @@ impl TryFrom<HoleCylinder> for SurfaceGeometry {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimpleHoleGeometry<'a> {
-    pub entry_surface_id: Option<u32>,
-    pub cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
-    pub direction: [f64; 3],
-    pub extent: LinearTermination,
-    pub geometry: HoleCylinder,
+pub(in crate::decode) struct SimpleHoleGeometry<'a> {
+    pub(in crate::decode) entry_surface_id: Option<u32>,
+    pub(in crate::decode) cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
+    pub(in crate::decode) direction: [f64; 3],
+    pub(in crate::decode) extent: LinearTermination,
+    pub(in crate::decode) geometry: HoleCylinder,
 }

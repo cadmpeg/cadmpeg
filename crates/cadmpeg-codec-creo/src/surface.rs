@@ -57,7 +57,7 @@ fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurfaceKind {
+pub(crate) enum SurfaceKind {
     /// `geom_type = 0x22`.
     Plane,
     /// `geom_type = 0x24`.
@@ -111,7 +111,7 @@ impl SurfaceKind {
 
 /// Encoding variant of an extrusion surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtrusionVariant {
+pub(crate) enum ExtrusionVariant {
     /// `geom_type = 0x2a`.
     Linear,
     /// `geom_type = 0x2c`.
@@ -120,7 +120,7 @@ pub enum ExtrusionVariant {
 
 /// Admitted surface-row boundary codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoundaryType {
+pub(crate) enum BoundaryType {
     Code00,
     Code01,
     Code06,
@@ -171,27 +171,27 @@ pub(crate) fn valid_right_handed_frame(first: [f64; 3], second: [f64; 3], third:
 
 /// One `srf_array` row whose fixed prefix passed the row grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SurfaceRow {
+pub(crate) struct SurfaceRow {
     /// The row's `geom_id`: the surface's identifier in the `srf_array`
     /// namespace, referenced by curve `F0`/`F1` face fields and by
     /// `next_surface` links.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The row's surface family, from `geom_type`.
-    pub kind: SurfaceKind,
+    pub(crate) kind: SurfaceKind,
     /// The `feat_id` compact integer: the feature that generated this
     /// surface, joining `AllFeatur`/`MdlStatus` feature rows.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// `true` when the row's orientation byte is `0xf6` (reversed), `false`
     /// when it is `0x01` (as-stored orientation).
-    pub reversed: bool,
+    pub(crate) reversed: bool,
     /// The row's `boundary_type` byte: one of `0x00`, `0x01`, `0x06`, `0x08`,
     /// or `0xf6`.
-    pub boundary_type: BoundaryType,
+    pub(crate) boundary_type: BoundaryType,
     /// The `next_geom_ptr` compact integer: the identifier of the next
     /// `srf_array` row in this namespace's link chain.
-    pub next_surface: u32,
+    pub(crate) next_surface: u32,
     /// Byte offset of the row's `geom_id` field in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Return the surface row for `id` only when the namespace contains one match.
@@ -214,7 +214,7 @@ pub(crate) fn uniquely_identified_rows(rows: &[SurfaceRow]) -> Vec<&SurfaceRow> 
 
 /// Named `srf_prim_ptr(<kind>)` prototype family.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SurfacePrototypeFamily {
+pub(crate) enum SurfacePrototypeFamily {
     /// Plane prototype.
     Plane,
     /// Cylinder prototype.
@@ -235,28 +235,28 @@ pub enum SurfacePrototypeFamily {
 
 /// Exact torus-family label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TorusLabel {
+pub(crate) enum TorusLabel {
     Torus,
     Sphere,
 }
 
 /// Exact spline-family label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SplineLabel {
+pub(crate) enum SplineLabel {
     Spline,
     Splsrf,
 }
 
 /// Exact fillet-family label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FilletLabel {
+pub(crate) enum FilletLabel {
     Fillet,
     FilletSrf,
 }
 
 /// Exact extrusion-family label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtrusionLabel {
+pub(crate) enum ExtrusionLabel {
     SurfaceOfExtrusion,
     Extrusion,
     TabulatedCylinder,
@@ -284,7 +284,7 @@ impl SurfacePrototypeFamily {
     }
 
     /// Exact family name inside `srf_prim_ptr(<family>)`.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match self {
             Self::Plane => "plane",
             Self::Cylinder => "cylinder",
@@ -306,7 +306,7 @@ impl SurfacePrototypeFamily {
 
 /// Typed wrapper carried by a named surface-prototype parameter.
 #[derive(Debug, Clone, PartialEq)]
-pub enum SurfaceNamedValue {
+pub(crate) enum SurfaceNamedValue {
     /// Present named field with an empty body.
     Empty,
     /// One compact integer.
@@ -327,33 +327,33 @@ pub enum SurfaceNamedValue {
 
 /// One selected named parameter inside a surface prototype.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfaceNamedParameter {
+pub(crate) struct SurfaceNamedParameter {
     /// Named-record field name.
-    pub name: String,
+    pub(crate) name: String,
     /// Typed interpretation of the field body.
-    pub value: SurfaceNamedValue,
+    pub(crate) value: SurfaceNamedValue,
     /// Exact field body bytes.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the named-record header.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first value byte.
-    pub value_offset: usize,
+    pub(crate) value_offset: usize,
 }
 
 /// Bounded `srf_prim_ptr(<kind>)` prototype and its named parameters.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfacePrototypeRecord {
+pub(crate) struct SurfacePrototypeRecord {
     /// Surface family named by the prototype label.
-    pub family: SurfacePrototypeFamily,
+    pub(crate) family: SurfacePrototypeFamily,
     /// Selected named parameters in byte order.
-    pub parameters: Vec<SurfaceNamedParameter>,
+    pub(crate) parameters: Vec<SurfaceNamedParameter>,
     /// Byte offset of the prototype label.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl SurfacePrototypeRecord {
     /// Return the unique selected parameter with `name`.
-    pub fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
+    pub(crate) fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
         let mut fields = self.parameters.iter().filter(|field| field.name == name);
         let field = fields.next()?;
         fields.next().is_none().then_some(field)
@@ -400,7 +400,7 @@ impl SurfacePrototypeRecord {
 
 /// Structural boundary that terminates a positional surface parameter body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurfaceBodyBoundary {
+pub(crate) enum SurfaceBodyBoundary {
     /// `e3` compound-close byte.
     CompoundClose,
     /// Start of the next validated positional surface row.
@@ -413,30 +413,30 @@ pub enum SurfaceBodyBoundary {
 
 /// Bounded analytic parameter body from one positional `srf_array` row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfaceParameterRecord {
+pub(crate) struct SurfaceParameterRecord {
     /// Owning `srf_array` geometry identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Exact bytes after `next_geom_ptr` and before the structural boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Decoded scalar tokens with byte spans relative to `body`.
-    pub scalar_tokens: Vec<SurfaceParameterScalar>,
+    pub(crate) scalar_tokens: Vec<SurfaceParameterScalar>,
     /// Exact byte spans not owned by a recognized scalar token.
-    pub opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
     /// Maximal contiguous scalar-token frames in byte order.
-    pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
+    pub(crate) scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Row kind and its decoded carrier, when available.
-    pub carrier: SurfaceParameterCarrier,
+    pub(crate) carrier: SurfaceParameterCarrier,
     /// Structural form that bounded the body.
-    pub boundary: SurfaceBodyBoundary,
+    pub(crate) boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
 }
 
 /// Decoded carrier or the declared kind of an unresolved parameter body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SurfaceParameterCarrier {
+pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
     Resolved(InlineSurfaceCarrier),
 }
@@ -668,7 +668,7 @@ fn parse_positional_spline_replay(
 }
 
 /// Return the final structural close of a complete positional spline replay.
-pub(crate) fn positional_spline_replay_body_end(
+fn positional_spline_replay_body_end(
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
@@ -697,29 +697,29 @@ pub(crate) fn decode_positional_spline_replay(
 /// One complete contour-chain entry following a positional `srf_array` row's
 /// envelope and local-system bodies.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfaceContourRecord {
+pub(crate) struct SurfaceContourRecord {
     /// Owning `srf_array` geometry identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Zero-based position in the owning contour chain.
-    pub chain_index: usize,
+    pub(crate) chain_index: usize,
     /// Two-byte compact reference carried by the contour header.
-    pub curve_header_id: u32,
+    pub(crate) curve_header_id: u32,
     /// Stored contour traversal byte.
-    pub trv: u8,
+    pub(crate) trv: u8,
     /// Four ordered parameter-space envelope slots. `None` retains a
     /// structurally framed unresolved slot.
-    pub parameter_envelope: [Option<f64>; 4],
+    pub(crate) parameter_envelope: [Option<f64>; 4],
     /// Optional canonical reference following this contour's close marker.
-    pub separator_reference: Option<u32>,
+    pub(crate) separator_reference: Option<u32>,
     /// Exact contour bytes from `curve_header_id` through its `e3` or `e1`
     /// close marker.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the contour header in the containing stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first parameter-space envelope scalar.
-    pub envelope_offset: usize,
+    pub(crate) envelope_offset: usize,
     /// Byte offset of the owning positional surface row.
-    pub surface_row_offset: usize,
+    pub(crate) surface_row_offset: usize,
 }
 
 /// Return the positional parameter record for `surface_id` only when exactly
@@ -737,14 +737,14 @@ pub(crate) fn unique_surface_parameter(
 
 /// Six-slot model-space envelope frame following a tabulated-cylinder marker.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TabulatedCylinderFrame {
+pub(crate) struct TabulatedCylinderFrame {
     values: [f64; 6],
     prefixes: [u8; 6],
 }
 
 impl TabulatedCylinderFrame {
     /// Admits six finite frame coordinates with their scalar prefixes.
-    pub fn new(values: [f64; 6], prefixes: [u8; 6]) -> Option<Self> {
+    pub(crate) fn new(values: [f64; 6], prefixes: [u8; 6]) -> Option<Self> {
         values
             .into_iter()
             .all(f64::is_finite)
@@ -752,12 +752,12 @@ impl TabulatedCylinderFrame {
     }
 
     /// Ordered frame coordinates.
-    pub fn values(&self) -> [f64; 6] {
+    pub(crate) fn values(&self) -> [f64; 6] {
         self.values
     }
 
     /// Scalar-lane prefix bytes in coordinate order.
-    pub fn prefixes(&self) -> [u8; 6] {
+    pub(crate) fn prefixes(&self) -> [u8; 6] {
         self.prefixes
     }
 }
@@ -797,7 +797,7 @@ impl PositionalFrame {
 
 /// Complete model-space carrier and optional axial extent from a positional cylinder row.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PositionalCylinderFrame {
+pub(crate) struct PositionalCylinderFrame {
     frame: PositionalFrame,
     /// Cylinder radius.
     radius: f64,
@@ -807,7 +807,7 @@ pub struct PositionalCylinderFrame {
 
 impl PositionalCylinderFrame {
     /// Admits a finite frame with valid directions and dimensions.
-    pub fn new(
+    pub(crate) fn new(
         origin: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
@@ -825,30 +825,30 @@ impl PositionalCylinderFrame {
         })
     }
     /// Returns the origin.
-    pub fn origin(&self) -> [f64; 3] {
+    pub(crate) fn origin(&self) -> [f64; 3] {
         self.frame.origin()
     }
     /// Returns the axis.
-    pub fn axis(&self) -> [f64; 3] {
+    pub(crate) fn axis(&self) -> [f64; 3] {
         self.frame.axis()
     }
     /// Returns the ref direction.
-    pub fn ref_direction(&self) -> [f64; 3] {
+    pub(crate) fn ref_direction(&self) -> [f64; 3] {
         self.frame.ref_direction()
     }
     /// Returns the radius.
-    pub fn radius(&self) -> f64 {
+    pub(crate) fn radius(&self) -> f64 {
         self.radius
     }
     /// Returns the length.
-    pub fn length(&self) -> Option<f64> {
+    pub(crate) fn length(&self) -> Option<f64> {
         self.length
     }
 }
 
 /// Complete model-space carrier decoded from a positional cone row.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PositionalConeFrame {
+pub(crate) struct PositionalConeFrame {
     frame: PositionalFrame,
     /// Positive cone half-angle in radians.
     half_angle: f64,
@@ -856,7 +856,7 @@ pub struct PositionalConeFrame {
 
 impl PositionalConeFrame {
     /// Admits a finite frame with valid directions and dimensions.
-    pub fn new(
+    pub(crate) fn new(
         apex: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
@@ -866,26 +866,26 @@ impl PositionalConeFrame {
         valid_half_angle(half_angle).then_some(Self { frame, half_angle })
     }
     /// Returns the apex.
-    pub fn apex(&self) -> [f64; 3] {
+    pub(crate) fn apex(&self) -> [f64; 3] {
         self.frame.origin()
     }
     /// Returns the axis.
-    pub fn axis(&self) -> [f64; 3] {
+    pub(crate) fn axis(&self) -> [f64; 3] {
         self.frame.axis()
     }
     /// Returns the ref direction.
-    pub fn ref_direction(&self) -> [f64; 3] {
+    pub(crate) fn ref_direction(&self) -> [f64; 3] {
         self.frame.ref_direction()
     }
     /// Returns the half angle.
-    pub fn half_angle(&self) -> f64 {
+    pub(crate) fn half_angle(&self) -> f64 {
         self.half_angle
     }
 }
 
 /// Complete model-space carrier decoded from a positional torus row.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PositionalTorusFrame {
+pub(crate) struct PositionalTorusFrame {
     frame: PositionalFrame,
     /// Non-negative major radius; zero selects the sphere form.
     major_radius: f64,
@@ -895,7 +895,7 @@ pub struct PositionalTorusFrame {
 
 impl PositionalTorusFrame {
     /// Admits a finite frame with valid directions and dimensions.
-    pub fn new(
+    pub(crate) fn new(
         center: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
@@ -914,72 +914,72 @@ impl PositionalTorusFrame {
             })
     }
     /// Returns the center.
-    pub fn center(&self) -> [f64; 3] {
+    pub(crate) fn center(&self) -> [f64; 3] {
         self.frame.origin()
     }
     /// Returns the axis.
-    pub fn axis(&self) -> [f64; 3] {
+    pub(crate) fn axis(&self) -> [f64; 3] {
         self.frame.axis()
     }
     /// Returns the ref direction.
-    pub fn ref_direction(&self) -> [f64; 3] {
+    pub(crate) fn ref_direction(&self) -> [f64; 3] {
         self.frame.ref_direction()
     }
     /// Returns the major radius.
-    pub fn major_radius(&self) -> f64 {
+    pub(crate) fn major_radius(&self) -> f64 {
         self.major_radius
     }
     /// Returns the minor radius.
-    pub fn minor_radius(&self) -> f64 {
+    pub(crate) fn minor_radius(&self) -> f64 {
         self.minor_radius
     }
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TorusOutlineFrame {
+pub(crate) struct TorusOutlineFrame {
     /// Ordered outline coordinates.
-    pub values: [f64; 6],
+    pub(crate) values: [f64; 6],
     /// Compact selector following the outline marker.
-    pub selector: u32,
+    pub(crate) selector: u32,
     /// Byte offset of the outline marker relative to the parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Five-coordinate endpoint envelope in an untagged type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Type26FiveCoordinateEnvelope {
+pub(crate) struct Type26FiveCoordinateEnvelope {
     /// Final five coordinates after the leading body-local scalar.
-    pub values: [f64; 5],
+    pub(crate) values: [f64; 5],
     /// Byte offset of the first retained coordinate relative to the body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Four coordinates separated by a body-local control payload in a type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Type26SplitCoordinateEnvelope {
+pub(crate) struct Type26SplitCoordinateEnvelope {
     /// Two coordinates before and two coordinates after the control payload.
-    pub values: [f64; 4],
+    pub(crate) values: [f64; 4],
     /// Byte offset of the first coordinate relative to the body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Tagged radius overrides in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TorusRadiusOverrides {
+pub(crate) struct TorusRadiusOverrides {
     /// Major torus radius, or zero for a sphere.
-    pub radius1: f64,
+    pub(crate) radius1: f64,
     /// Minor torus radius, or sphere radius.
-    pub radius2: f64,
+    pub(crate) radius2: f64,
     /// Whether the first stored scalar is `radius2` or `radius1 + radius2`.
-    pub radius2_encoding: TorusRadius2Encoding,
+    pub(crate) radius2_encoding: TorusRadius2Encoding,
     /// Byte offset of the `18 0d` radius trailer marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Interpretation of the first radial scalar in a tagged type-26 trailer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TorusRadius2Encoding {
+pub(crate) enum TorusRadius2Encoding {
     /// The scalar stores `radius2` directly.
     Direct,
     /// The scalar stores the outer ring radius `radius1 + radius2`.
@@ -988,11 +988,11 @@ pub enum TorusRadius2Encoding {
 
 /// Terminal half-angle override in a positional cone body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ConeHalfAngleOverride {
+pub(crate) struct ConeHalfAngleOverride {
     /// Cone half-angle in radians, strictly between zero and pi/2.
-    pub radians: f64,
+    pub(crate) radians: f64,
     /// Byte offset of the positive-DICT token relative to the parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1012,23 +1012,23 @@ struct TorusRadiusOverrideLayout {
 
 /// Diameter and model-space extent endpoints from a bounded type-24 round body.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Type24RoundEnvelope {
+pub(crate) struct Type24RoundEnvelope {
     /// Positive difference between the two stored diameter endpoints.
-    pub diameter: f64,
+    pub(crate) diameter: f64,
     /// Opposite model-space extent corners.
-    pub extent_endpoints: [[f64; 3]; 2],
+    pub(crate) extent_endpoints: [[f64; 3]; 2],
 }
 
 /// Axial parameters and model-space endpoint samples from a generated
 /// type-24 round edge.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Type24RoundEdgeEnvelope {
+pub(crate) struct Type24RoundEdgeEnvelope {
     /// The two stored edge parameters in source order.
-    pub parameter_interval: [f64; 2],
+    pub(crate) parameter_interval: [f64; 2],
     /// The two model-space edge endpoints in source order.
-    pub vertices: [[f64; 3]; 2],
+    pub(crate) vertices: [[f64; 3]; 2],
     /// Optional generated-entity reference following the endpoint samples.
-    pub generated_entity_reference: Option<u32>,
+    pub(crate) generated_entity_reference: Option<u32>,
 }
 
 fn perpendicular_round_edge_radius(envelope: Type24RoundEdgeEnvelope) -> Option<f64> {
@@ -1057,20 +1057,20 @@ fn perpendicular_round_edge_radius(envelope: Type24RoundEdgeEnvelope) -> Option<
 
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct SurfaceParameterScalarFrame {
+pub(crate) struct SurfaceParameterScalarFrame {
     /// Byte offset relative to the start of the parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Ordered scalar tokens occupying the frame.
-    pub slots: Vec<SurfaceParameterScalar>,
+    pub(crate) slots: Vec<SurfaceParameterScalar>,
 }
 
 /// One maximal unframed span inside a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfaceParameterOpaqueSpan {
+pub(crate) struct SurfaceParameterOpaqueSpan {
     /// Exact source bytes in the span.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl serde::Serialize for SurfaceParameterOpaqueSpan {
@@ -1086,14 +1086,14 @@ impl serde::Serialize for SurfaceParameterOpaqueSpan {
 
 /// One scalar token located within a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SurfaceParameterScalar {
+pub(crate) struct SurfaceParameterScalar {
     /// Decoded scalar value, or `None` for a structurally framed token whose
     /// numeric mapping is not defined.
-    pub value: Option<f64>,
+    pub(crate) value: Option<f64>,
     /// Exact source bytes occupied by the token.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl serde::Serialize for SurfaceParameterScalar {
@@ -1110,11 +1110,11 @@ impl serde::Serialize for SurfaceParameterScalar {
 
 /// Complete positional construction for a line-generated extrusion surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LineExtrusionFrame {
+pub(crate) struct LineExtrusionFrame {
     /// Stored model-space sweep direction.
-    pub direction: [f64; 3],
+    pub(crate) direction: [f64; 3],
     /// Two model-space points defining the straight directrix.
-    pub directrix: [[f64; 3]; 2],
+    pub(crate) directrix: [[f64; 3]; 2],
 }
 
 impl LineExtrusionFrame {
@@ -1147,44 +1147,44 @@ impl LineExtrusionFrame {
 /// One positional cubic B-spline replay bound to a following tabulated-
 /// cylinder surface row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TabulatedCylinderCurveReplay {
+pub(crate) struct TabulatedCylinderCurveReplay {
     /// Exact bytes from the replay curve identifier through the terminal
     /// `f6 e3` trailer.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Owning `geom_type = 2c` surface identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Replayed curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Raw curve-family discriminator.
-    pub curve_type: u8,
+    pub(crate) curve_type: u8,
     /// Stored curve flip byte.
-    pub flip: u8,
+    pub(crate) flip: u8,
     /// Stored tangent-condition byte.
-    pub tangent_condition: u8,
+    pub(crate) tangent_condition: u8,
     /// B-spline degree.
-    pub degree: u8,
+    pub(crate) degree: u8,
     /// Exact count-budgeted parameter body.
-    pub parameter_body: Vec<u8>,
+    pub(crate) parameter_body: Vec<u8>,
     /// Four contiguous control-point entity identifiers.
-    pub control_point_ids: [u32; 4],
+    pub(crate) control_point_ids: [u32; 4],
     /// Reference following the control-point-array header.
-    pub successor_reference: u32,
+    pub(crate) successor_reference: u32,
     /// Four individually bounded packed control-point bodies.
-    pub control_point_bodies: [Vec<u8>; 4],
+    pub(crate) control_point_bodies: [Vec<u8>; 4],
     /// Two-coordinate control points when both scalar tokens consume their
     /// complete packed bodies.
-    pub control_points: [Option<[f64; 2]>; 4],
+    pub(crate) control_points: [Option<[f64; 2]>; 4],
     /// Reference in the terminal control-point trailer.
-    pub terminal_reference: u32,
+    pub(crate) terminal_reference: u32,
     /// Byte offset of the replay curve identifier.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the owning surface row.
-    pub surface_row_offset: usize,
+    pub(crate) surface_row_offset: usize,
 }
 
 impl SurfaceParameterRecord {
     /// Declared surface family, retained even when no carrier is decoded.
-    pub fn kind(&self) -> SurfaceKind {
+    fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
@@ -1200,14 +1200,14 @@ impl SurfaceParameterRecord {
 
     /// Context-independent scalar values in body order.
     #[cfg(test)]
-    pub fn scalar_values(&self) -> Vec<f64> {
+    pub(crate) fn scalar_values(&self) -> Vec<f64> {
         self.scalar_tokens
             .iter()
             .filter_map(|token| token.value)
             .collect()
     }
 
-    pub fn positional_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
+    pub(crate) fn positional_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
         match self.carrier {
             SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cylinder { frame, .. }) => {
                 Some(frame)
@@ -1216,7 +1216,7 @@ impl SurfaceParameterRecord {
         }
     }
 
-    pub fn split_cylinder_outline_bounds(&self) -> Option<[[f64; 2]; 2]> {
+    pub(crate) fn split_cylinder_outline_bounds(&self) -> Option<[[f64; 2]; 2]> {
         match self.carrier {
             SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cylinder {
                 split_bounds,
@@ -1229,21 +1229,21 @@ impl SurfaceParameterRecord {
         }
     }
 
-    pub fn positional_cone_frame(&self) -> Option<PositionalConeFrame> {
+    pub(crate) fn positional_cone_frame(&self) -> Option<PositionalConeFrame> {
         match self.carrier {
             SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cone(frame)) => Some(frame),
             _ => None,
         }
     }
 
-    pub fn positional_torus_frame(&self) -> Option<PositionalTorusFrame> {
+    pub(crate) fn positional_torus_frame(&self) -> Option<PositionalTorusFrame> {
         match self.carrier {
             SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Torus(frame)) => Some(frame),
             _ => None,
         }
     }
 
-    pub fn tabulated_cylinder_frame(&self) -> Option<TabulatedCylinderFrame> {
+    pub(crate) fn tabulated_cylinder_frame(&self) -> Option<TabulatedCylinderFrame> {
         match self.carrier {
             SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Tabulated {
                 frame, ..
@@ -1301,7 +1301,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
     #[must_use]
-    pub fn cone_half_angle_override(&self) -> Option<ConeHalfAngleOverride> {
+    pub(crate) fn cone_half_angle_override(&self) -> Option<ConeHalfAngleOverride> {
         let kind = self.kind();
         if kind != SurfaceKind::Cone {
             return None;
@@ -1315,7 +1315,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the tagged radius trailer of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_radius_overrides(&self) -> Option<TorusRadiusOverrides> {
+    pub(crate) fn torus_radius_overrides(&self) -> Option<TorusRadiusOverrides> {
         let kind = self.kind();
         if kind != SurfaceKind::TorusOrSphere {
             return None;
@@ -1326,7 +1326,7 @@ impl SurfaceParameterRecord {
     /// Decode a type-26 row's terminal replay of its section prototype's
     /// minor radius.
     #[must_use]
-    pub fn type26_replayed_minor_radius(&self, prototype_minor_radius: f64) -> Option<f64> {
+    pub(crate) fn type26_replayed_minor_radius(&self, prototype_minor_radius: f64) -> Option<f64> {
         let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere
             && self.torus_radius_overrides().is_none()
@@ -1343,7 +1343,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_outline_frame(&self) -> Option<TorusOutlineFrame> {
+    pub(crate) fn torus_outline_frame(&self) -> Option<TorusOutlineFrame> {
         let kind = self.kind();
         if kind != SurfaceKind::TorusOrSphere {
             return None;
@@ -1381,7 +1381,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the bounded untagged five-coordinate type-26 envelope.
     #[must_use]
-    pub fn type26_five_coordinate_envelope(&self) -> Option<Type26FiveCoordinateEnvelope> {
+    pub(crate) fn type26_five_coordinate_envelope(&self) -> Option<Type26FiveCoordinateEnvelope> {
         let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere).then_some(())?;
         if self.body.ends_with(&[0xf7, 0x1c]) {
@@ -1489,7 +1489,7 @@ impl SurfaceParameterRecord {
     /// Decode the type-26 envelope whose final coordinate pair follows a
     /// six-byte body-local control payload.
     #[must_use]
-    pub fn type26_split_coordinate_envelope(&self) -> Option<Type26SplitCoordinateEnvelope> {
+    pub(crate) fn type26_split_coordinate_envelope(&self) -> Option<Type26SplitCoordinateEnvelope> {
         let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere
             && self.body.get(8..19)
@@ -1517,7 +1517,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the rolling radius repeated by a bounded type-24 round envelope.
     #[must_use]
-    pub fn type24_round_radius(&self) -> Option<f64> {
+    fn type24_round_radius(&self) -> Option<f64> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
@@ -1538,7 +1538,7 @@ impl SurfaceParameterRecord {
 
     /// Decode a type-24 radius in a class-913 generated-round context.
     #[must_use]
-    pub fn type24_generated_round_radius(&self) -> Option<f64> {
+    pub(crate) fn type24_generated_round_radius(&self) -> Option<f64> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let axial_candidates = self.type24_axial_interval_corner_candidates();
@@ -1576,7 +1576,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the diameter and extent envelope of a scalar-frame type-24 row.
     #[must_use]
-    pub fn type24_scalar_frame_round_envelope(&self) -> Option<Type24RoundEnvelope> {
+    pub(crate) fn type24_scalar_frame_round_envelope(&self) -> Option<Type24RoundEnvelope> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
@@ -1584,7 +1584,7 @@ impl SurfaceParameterRecord {
 
     /// Decode the final two three-coordinate corners of a type-24 patch.
     #[must_use]
-    pub fn type24_terminal_corner_envelope(&self) -> Option<[[f64; 3]; 2]> {
+    pub(crate) fn type24_terminal_corner_envelope(&self) -> Option<[[f64; 3]; 2]> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder && self.boundary == SurfaceBodyBoundary::CompoundClose)
             .then_some(())?;
@@ -1611,7 +1611,9 @@ impl SurfaceParameterRecord {
 
     /// Decode a source-bound selector-corner interval cylinder.
     #[must_use]
-    pub fn selector_corner_interval_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
+    pub(crate) fn selector_corner_interval_cylinder_frame(
+        &self,
+    ) -> Option<PositionalCylinderFrame> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let frame = decode_selector_corner_interval_cylinder_frame(
@@ -1626,7 +1628,7 @@ impl SurfaceParameterRecord {
     /// Decode every cylinder placement allowed by a type-24 axial-interval
     /// corner envelope whose control shell does not select a radial quadrant.
     #[must_use]
-    pub fn type24_axial_interval_corner_candidates(&self) -> Vec<PositionalCylinderFrame> {
+    pub(crate) fn type24_axial_interval_corner_candidates(&self) -> Vec<PositionalCylinderFrame> {
         let kind = self.kind();
         if kind != SurfaceKind::Cylinder {
             return Vec::new();
@@ -1643,7 +1645,7 @@ impl SurfaceParameterRecord {
     /// coordinates. A compound close may follow the optional generated-entity
     /// reference when the row continues with another bounded body.
     #[must_use]
-    pub fn type24_round_edge_envelope(&self) -> Option<Type24RoundEdgeEnvelope> {
+    pub(crate) fn type24_round_edge_envelope(&self) -> Option<Type24RoundEdgeEnvelope> {
         let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let cache = scalar::ScalarCache::default();
@@ -1707,7 +1709,7 @@ impl SurfaceParameterRecord {
 
     /// The maximal scalar-token frame ending at the body boundary.
     #[must_use]
-    pub fn terminal_scalar_frame(&self) -> Option<&SurfaceParameterScalarFrame> {
+    pub(crate) fn terminal_scalar_frame(&self) -> Option<&SurfaceParameterScalarFrame> {
         terminal_scalar_frame_of(&self.body, &self.scalar_frames)
     }
 
@@ -2216,7 +2218,7 @@ impl SurfaceParameterRecord {
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
-    pub fn extrusion_direction(&self) -> Option<[f64; 3]> {
+    pub(crate) fn extrusion_direction(&self) -> Option<[f64; 3]> {
         let kind = self.kind();
         if kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             return None;
@@ -2250,7 +2252,7 @@ impl SurfaceParameterRecord {
     /// coordinate form; callers must exclude rows owned by a cubic replay
     /// before using this result.
     #[must_use]
-    pub fn line_extrusion_frame(&self) -> Option<LineExtrusionFrame> {
+    pub(crate) fn line_extrusion_frame(&self) -> Option<LineExtrusionFrame> {
         if self.boundary != SurfaceBodyBoundary::CompoundClose {
             return None;
         }
@@ -2353,7 +2355,7 @@ fn type24_round_edge_separator_end(
 
 /// Structural classification of a plane-row local-system chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LocalSystemClassification {
+pub(crate) enum LocalSystemClassification {
     /// Compact byte-characterised local-system form.
     Simple,
     /// Structurally bounded chunk outside the compact form.
@@ -2362,21 +2364,21 @@ pub enum LocalSystemClassification {
 
 /// Inherited twelve-slot support frame following a plane-row envelope.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PlaneLocalSystem {
+pub(crate) struct PlaneLocalSystem {
     /// Owning plane surface identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Exact bytes between the envelope close and local-system close.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Twelve inherited `f9 04 03` scalar slots; unresolved slots remain `None`.
-    pub slots: [Option<f64>; 12],
+    pub(crate) slots: [Option<f64>; 12],
     /// Decoded support-frame layout, when the scalar carrier is complete.
-    pub layout: Option<scalar::PlaneSupportFrameLayout>,
+    pub(crate) layout: Option<scalar::PlaneSupportFrameLayout>,
     /// Compact versus raw-preserved chunk classification.
-    pub classification: LocalSystemClassification,
+    pub(crate) classification: LocalSystemClassification,
     /// Byte offset of the plane row in the original stream.
-    pub row_offset: usize,
+    pub(crate) row_offset: usize,
     /// Byte offset of the local-system chunk in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl PlaneLocalSystem {
@@ -2430,7 +2432,7 @@ pub(crate) fn uses_matrix_column_frame(frame: &PlaneLocalSystem) -> bool {
 
 /// Plane-specific positional envelope layout.
 #[derive(Debug, Clone, PartialEq)]
-pub enum PlaneEnvelope {
+pub(crate) enum PlaneEnvelope {
     /// Four 2D bound values followed by two 3D corner triples.
     Standard {
         /// Two parameter-space bound pairs.
@@ -2449,39 +2451,39 @@ pub enum PlaneEnvelope {
 
 /// Decoded positional envelope for one plane row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PlaneEnvelopeRecord {
+pub(crate) struct PlaneEnvelopeRecord {
     /// Owning plane surface identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Exact envelope bytes, including a compact-variant marker.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Plane-specific envelope layout.
-    pub envelope: PlaneEnvelope,
+    pub(crate) envelope: PlaneEnvelope,
     /// Per-coordinate equality of the two stored model-space corners. `None`
     /// means equality cannot be decided from the scalar token pair.
-    pub corner_coordinate_equal: [Option<bool>; 3],
+    pub(crate) corner_coordinate_equal: [Option<bool>; 3],
     /// Exact token bytes for each declared envelope scalar slot.
-    pub scalar_tokens: Vec<Vec<u8>>,
+    pub(crate) scalar_tokens: Vec<Vec<u8>>,
     /// Byte offset of the plane row in the original stream.
-    pub row_offset: usize,
+    pub(crate) row_offset: usize,
     /// Byte offset of the envelope body in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Axis-aligned model-space plane established by two outline corners with one
 /// and only one held coordinate.
 #[derive(Debug, Clone, PartialEq)]
-pub struct OutlinePlane {
+pub(crate) struct OutlinePlane {
     /// Owning `srf_array` surface identifier.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Model-space plane origin with only the held coordinate populated.
-    pub origin: [f64; 3],
+    pub(crate) origin: [f64; 3],
     /// Positive model-space basis normal of the held coordinate.
-    pub normal: [f64; 3],
+    pub(crate) normal: [f64; 3],
     /// Deterministic positive in-plane direction for carrier constructions.
     /// The outline does not define the surface parameter chart.
-    pub u_axis: [f64; 3],
+    pub(crate) u_axis: [f64; 3],
     /// Byte offset of the outline body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Return the outline plane for `surface_id` only when exactly one exists.
@@ -2496,7 +2498,7 @@ pub(crate) fn unique_outline_plane(
 
 /// Derive axis-aligned plane equations from complete, non-degenerate outline
 /// corner pairs. Ambiguous pairs with zero or multiple held axes are withheld.
-pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
+fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
     let mut result = Vec::new();
     for record in envelopes {
         let corners = match &record.envelope {
@@ -2543,7 +2545,7 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
 /// Derive axis-aligned plane equations from complete positional corner frames
 /// owned by uniquely identified plane rows.
 #[must_use]
-pub fn positional_frame_planes(
+pub(crate) fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
     rows: &[SurfaceRow],
 ) -> Vec<OutlinePlane> {
@@ -2709,7 +2711,7 @@ pub fn positional_frame_planes(
 /// Place axis-aligned plane outlines whose support frame selects one proven
 /// held coordinate even when other outline-coordinate relations are unresolved.
 #[must_use]
-pub fn frame_bound_outline_planes(
+pub(crate) fn frame_bound_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
 ) -> Vec<OutlinePlane> {
@@ -2782,7 +2784,7 @@ pub fn frame_bound_outline_planes(
 /// Derive outline plane equations and retain complete support-frame directions
 /// for carrier constructions when available.
 #[must_use]
-pub fn placed_outline_planes(
+pub(crate) fn placed_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
 ) -> Vec<OutlinePlane> {
@@ -2870,7 +2872,7 @@ fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
 /// retained even when their count does not equal the frame count. Consumers
 /// that require a complete frame use [`counted_row_bounds`] or
 /// [`complete_surface_array_bounds`].
-pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+pub(crate) fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, BOUNDARY_TYPES)
 }
 
@@ -2924,7 +2926,7 @@ pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 #[must_use]
-pub fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
+pub(crate) fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, &[BoundaryType::Code00, BoundaryType::Code06])
 }
 
@@ -3351,7 +3353,7 @@ fn parsed_named_surface_value(
 /// A named field whose bounded scalar body the decoder refuses is retained
 /// opaque and stated in `refusals`, against the prototype record and field
 /// that hold it.
-pub fn named_prototype_records(
+pub(crate) fn named_prototype_records(
     payload: &[u8],
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Vec<SurfacePrototypeRecord> {
@@ -3879,14 +3881,14 @@ fn named_record_boundary(
 }
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
-pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
+pub(crate) fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
     parameter_records_for_rows(payload, &rows(payload))
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
 #[must_use]
-pub fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
+pub(crate) fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
     parameter_records_for_rows(payload, &cross_section_rows(payload))
 }
 
@@ -3901,7 +3903,7 @@ struct InlineSurfaceEnvelope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum InlineSurfaceCarrier {
+pub(crate) enum InlineSurfaceCarrier {
     Cylinder {
         frame: PositionalCylinderFrame,
         split_bounds: Option<[[f64; 2]; 2]>,
@@ -4962,14 +4964,14 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
 
 /// Decode complete positional surface contour chains from the visible
 /// `srf_array` namespace.
-pub fn contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
+pub(crate) fn contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
     contour_records_for_rows(payload, &rows(payload))
 }
 
 /// Decode complete positional surface contour chains from a DEPDB
 /// cross-section namespace.
 #[must_use]
-pub fn cross_section_contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
+pub(crate) fn cross_section_contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
     contour_records_for_rows(payload, &cross_section_rows(payload))
 }
 
@@ -7102,7 +7104,7 @@ fn axis_aligned_cylinder_from_corners(
     PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))
 }
 
-pub(super) fn decode_tabulated_cylinder_frame(
+pub(crate) fn decode_tabulated_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<(TabulatedCylinderFrame, usize)> {
@@ -7133,7 +7135,9 @@ pub(super) fn decode_tabulated_cylinder_frame(
 
 /// Decode the cubic curve replay owned by the preceding positional
 /// `geom_type = 2c` tabulated-cylinder row.
-pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinderCurveReplay> {
+pub(crate) fn tabulated_cylinder_curve_replays(
+    payload: &[u8],
+) -> Vec<TabulatedCylinderCurveReplay> {
     const SIGNATURE: &[u8] = &[
         0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7,
     ];
@@ -7674,7 +7678,7 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 /// second, so a refusal names its instance instead of leaving only an opaque
 /// body behind.
 #[derive(Debug, Default)]
-pub(crate) struct ScalarBodyRefusal(Option<String>);
+struct ScalarBodyRefusal(Option<String>);
 
 impl ScalarBodyRefusal {
     fn state(&mut self, reason: String) {
@@ -7682,7 +7686,7 @@ impl ScalarBodyRefusal {
     }
 
     /// The stated reason, when the body was refused for one.
-    pub(crate) fn reason(&self) -> Option<&str> {
+    fn reason(&self) -> Option<&str> {
         self.0.as_deref()
     }
 }
@@ -8248,13 +8252,13 @@ fn complete_plane_local_system(
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
-pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+pub(crate) fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
     plane_local_systems_for_rows(payload, &rows(payload))
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
 #[must_use]
-pub fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+pub(crate) fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
     plane_local_systems_for_rows(payload, &cross_section_rows(payload))
 }
 
@@ -8352,13 +8356,13 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.
-pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+pub(crate) fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
     plane_envelopes_for_rows(payload, &rows(payload))
 }
 
 /// Decode plane envelopes from a DEPDB cross-section namespace.
 #[must_use]
-pub fn cross_section_plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+pub(crate) fn cross_section_plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
     plane_envelopes_for_rows(payload, &cross_section_rows(payload))
 }
 
@@ -8551,7 +8555,7 @@ fn complete_plane_compact_scalar_suffix(
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
-pub fn prototype_count(payload: &[u8]) -> usize {
+pub(crate) fn prototype_count(payload: &[u8]) -> usize {
     // This route re-reads the same payload to locate a span. The prototype
     // reader in `container` owns the refusal report for these records, so the
     // sink here is a local buffer and states nothing twice.

@@ -14,26 +14,26 @@ use super::schema::SchemaClass;
 
 /// One byte-bounded positional `AllFeatur` row for a known model feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRow {
+pub(crate) struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Root `FeatDefs` schema class from the fixed row prefix.
-    pub root_schema_class: Option<SchemaClass>,
+    pub(crate) root_schema_class: Option<SchemaClass>,
     /// Absolute offset of the containing `AllFeatur` section. Replay state is
     /// scoped to this stream.
-    pub stream_offset: usize,
+    pub(crate) stream_offset: usize,
     /// Row bytes after the compact feature identifier, ending before the next
     /// known feature row or at the end of the section.
-    pub body: FeatureRowBody,
+    pub(crate) body: FeatureRowBody,
     /// Byte offset of `body[0]` in the original stream.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
     /// Byte offset of the feature identifier in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Row bytes with a complete two-byte header.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRowBody(Vec<u8>);
+pub(crate) struct FeatureRowBody(Vec<u8>);
 
 impl TryFrom<Vec<u8>> for FeatureRowBody {
     type Error = &'static str;
@@ -56,7 +56,7 @@ impl std::ops::Deref for FeatureRowBody {
 
 impl FeatureRowBody {
     /// Two header bytes at the start of the row body.
-    pub fn header(&self) -> [u8; 2] {
+    pub(crate) fn header(&self) -> [u8; 2] {
         [self.0[0], self.0[1]]
     }
 }
@@ -69,31 +69,31 @@ pub(crate) struct FeatureRoundReplayScalar {
     /// Decoded short-form scalar value.
     pub(crate) value: f64,
     /// Absolute byte offset of the scalar in the source stream.
-    pub(crate) offset: usize,
+    pub(super) offset: usize,
     /// Absolute byte offset of the enclosing `cr_flags_xar` record.
-    pub(crate) record_offset: usize,
+    pub(super) record_offset: usize,
 }
 
 /// One labeled procedural-choice span inside a known feature row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureChoice {
+pub(crate) struct FeatureChoice {
     /// Owning feature row identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Procedural choice label without its NUL terminator.
-    pub label: String,
+    pub(crate) label: String,
     /// Named-record type byte when the label has an `e0` header.
-    pub type_byte: Option<u8>,
+    pub(crate) type_byte: Option<u8>,
     /// Exact bytes from the label terminator to the next choice span.
-    pub payload: Vec<u8>,
+    pub(crate) payload: Vec<u8>,
     /// Byte offset of `payload[0]` in the original stream.
-    pub payload_offset: usize,
+    pub(crate) payload_offset: usize,
     /// Byte offset of the choice header or bare label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Byte-declared wrapper around one procedural choice field value.
 #[derive(Debug, Clone, PartialEq)]
-pub enum FeatureFieldValue {
+pub(crate) enum FeatureFieldValue {
     /// No payload bytes follow the field header.
     Empty,
     /// One compact integer occupying the complete field payload.
@@ -125,24 +125,24 @@ pub enum FeatureFieldValue {
 
 /// One named field bounded inside a procedural choice span.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureChoiceField {
+pub(crate) struct FeatureChoiceField {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Owning procedural choice label.
-    pub choice_label: String,
+    pub(crate) choice_label: String,
     /// Field name from its named-record header.
-    pub name: String,
+    pub(crate) name: String,
     /// Named-record type byte.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// Structurally decoded field-value wrapper.
-    pub value: FeatureFieldValue,
+    pub(crate) value: FeatureFieldValue,
     /// Byte offset of the named-record header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Generated-geometry namespace declared inside a feature row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureGeometryTableKind {
+pub(crate) enum FeatureGeometryTableKind {
     /// `edg_id_tab_ptr` edge identifiers.
     EdgeIds,
     /// `lo_id_tab_ptr` loop identifiers.
@@ -158,7 +158,7 @@ pub enum FeatureGeometryTableKind {
 }
 
 impl FeatureGeometryTableKind {
-    pub fn datum_ids(&self) -> Option<&[u32]> {
+    pub(crate) fn datum_ids(&self) -> Option<&[u32]> {
         match self {
             Self::DatumIds(ids) => ids.as_deref(),
             _ => None,
@@ -168,22 +168,22 @@ impl FeatureGeometryTableKind {
 
 /// One typed generated-geometry table header owned by a feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureGeometryTable {
+pub(crate) struct FeatureGeometryTable {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Declared namespace kind.
-    pub kind: FeatureGeometryTableKind,
+    pub(crate) kind: FeatureGeometryTableKind,
     /// Declared entry count.
-    pub count: u32,
+    pub(crate) count: u32,
     /// Entity-class identifier following the `f7` marker.
-    pub entity_class: u32,
+    pub(crate) entity_class: u32,
     /// Byte offset of the field label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Namespace of IDs affected by a procedural feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AffectedIdKind {
+pub(crate) enum AffectedIdKind {
     /// `geoms_affected` geometry identifiers.
     Geometry,
     /// `edgs_affected` edge identifiers.
@@ -200,21 +200,21 @@ pub enum AffectedIdKind {
 
 /// One complete affected-ID array owned by a feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureAffectedIds {
+pub(crate) struct FeatureAffectedIds {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Affected namespace.
-    pub kind: AffectedIdKind,
+    pub(crate) kind: AffectedIdKind,
     /// Declared compact identifiers in stored order.
-    pub ids: Vec<u32>,
+    pub(crate) ids: Vec<u32>,
     /// Byte offset of the named field header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Whether an affected-array extent is present or inherited at its schema
 /// position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReplayExtentSource {
+pub(crate) enum ReplayExtentSource {
     /// An `f8 <count>` opener occurs at this position.
     Explicit,
     /// The position omits `f8` and reuses the preceding extent in this schema
@@ -224,45 +224,45 @@ pub enum ReplayExtentSource {
 
 /// Geometry and edge operands recovered from a class-913 positional replay.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureReplayAffectedIds {
+pub(crate) struct FeatureReplayAffectedIds {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Geometry identifiers at the first affected-array schema position.
-    pub geometry_ids: Vec<u32>,
+    pub(crate) geometry_ids: Vec<u32>,
     /// Edge identifiers at the second affected-array schema position.
-    pub edge_ids: Vec<u32>,
+    pub(crate) edge_ids: Vec<u32>,
     /// Encoding of the geometry-array extent.
-    pub geometry_extent: ReplayExtentSource,
+    pub(crate) geometry_extent: ReplayExtentSource,
     /// Encoding of the edge-array extent.
-    pub edge_extent: ReplayExtentSource,
+    pub(crate) edge_extent: ReplayExtentSource,
     /// Byte offset of the replay anchor in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Geometry, edge, and quilt operands recovered from a class-946 positional replay.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSurfaceMergeAffectedIds {
+pub(crate) struct FeatureSurfaceMergeAffectedIds {
     /// Owning surface-merge feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Geometry identifiers at the first affected-array schema position.
-    pub geometry_ids: Vec<u32>,
+    pub(crate) geometry_ids: Vec<u32>,
     /// Edge identifiers at the second affected-array schema position.
-    pub edge_ids: Vec<u32>,
+    pub(crate) edge_ids: Vec<u32>,
     /// Quilt identifiers at the third affected-array schema position.
-    pub quilt_ids: Vec<u32>,
+    pub(crate) quilt_ids: Vec<u32>,
     /// Encoding of the geometry-array extent.
-    pub geometry_extent: ReplayExtentSource,
+    pub(crate) geometry_extent: ReplayExtentSource,
     /// Encoding of the edge-array extent.
-    pub edge_extent: ReplayExtentSource,
+    pub(crate) edge_extent: ReplayExtentSource,
     /// Encoding of the quilt-array extent.
-    pub quilt_extent: ReplayExtentSource,
+    pub(crate) quilt_extent: ReplayExtentSource,
     /// Byte offset of the replay anchor in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Which named direction lane occurs in a loop-restoration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopRestoreDirectionLane {
+pub(crate) enum LoopRestoreDirectionLane {
     /// `direction`.
     Primary,
     /// `direction2`.
@@ -271,39 +271,39 @@ pub enum LoopRestoreDirectionLane {
 
 /// One named compact direction value in a loop-restoration record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureLoopRestoreDirection {
+pub(crate) struct FeatureLoopRestoreDirection {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Primary or secondary direction lane.
-    pub lane: LoopRestoreDirectionLane,
+    pub(crate) lane: LoopRestoreDirectionLane,
     /// Complete compact-integer value.
-    pub value: u32,
+    pub(crate) value: u32,
     /// Byte offset of the named field header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One ordered feature-local loop identity from a complete `lo_hist` roster.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureLoopHistoryEntry {
+pub(crate) struct FeatureLoopHistoryEntry {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Zero-based position in the feature's loop roster.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Feature-local loop identifier.
-    pub loop_id: u32,
+    pub(crate) loop_id: u32,
     /// Four required row fields, in stored order.
-    pub field_bytes: [Vec<u8>; 4],
+    pub(super) field_bytes: [Vec<u8>; 4],
     /// Stored row boundary form.
-    pub boundary: FeatureLoopHistoryBoundary,
+    pub(crate) boundary: FeatureLoopHistoryBoundary,
     /// Byte offset of the loop identifier in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset immediately after the row, excluding a following named header.
-    pub end_offset: usize,
+    pub(crate) end_offset: usize,
 }
 
 impl FeatureLoopHistoryEntry {
     /// Required fields followed by the optional named-boundary field.
-    pub fn fields(&self) -> impl Iterator<Item = &[u8]> {
+    pub(crate) fn fields(&self) -> impl Iterator<Item = &[u8]> {
         let trailing = match &self.boundary {
             FeatureLoopHistoryBoundary::NamedRecord { trailing } => trailing.as_ref(),
             _ => None,
@@ -314,7 +314,7 @@ impl FeatureLoopHistoryEntry {
 
 /// Boundary form terminating one `lo_hist` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeatureLoopHistoryBoundary {
+pub(crate) enum FeatureLoopHistoryBoundary {
     /// Bare `e3` terminator.
     CompoundClose,
     /// `f1 f7 <reference> e3` terminator.
@@ -329,11 +329,11 @@ pub enum FeatureLoopHistoryBoundary {
 ///
 /// The stored choice is a full turn; native CADIR still emits `kind: "full_turn"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRevolutionExtent {
+pub(crate) struct FeatureRevolutionExtent {
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Byte offset of the stored `angle_choice` value.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 const CHOICE_LABELS: &[&[u8]] = &[
@@ -428,7 +428,11 @@ fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<Sch
 
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
 /// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
-pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>, stream_offset: usize) -> Vec<FeatureRow> {
+pub(crate) fn rows(
+    payload: &[u8],
+    feature_ids: &BTreeSet<u32>,
+    stream_offset: usize,
+) -> Vec<FeatureRow> {
     row_spans(payload, feature_ids)
         .into_iter()
         .filter_map(|(start, end, feature_id)| {
@@ -541,7 +545,7 @@ fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usiz
 }
 
 /// Bound recognized procedural-choice labels within decoded feature rows.
-pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
+pub(crate) fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
     let mut result = Vec::new();
     for row in rows {
         let mut hits = Vec::new();
@@ -589,7 +593,7 @@ pub fn choices(rows: &[FeatureRow]) -> Vec<FeatureChoice> {
     result
 }
 
-pub(crate) fn field_value(payload: &[u8]) -> FeatureFieldValue {
+pub(super) fn field_value(payload: &[u8]) -> FeatureFieldValue {
     if payload.is_empty() {
         return FeatureFieldValue::Empty;
     }
@@ -654,7 +658,7 @@ pub(crate) fn field_value(payload: &[u8]) -> FeatureFieldValue {
 
 /// Decode named fields and their context-independent value wrappers inside
 /// procedural choice spans.
-pub fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField> {
+pub(crate) fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField> {
     let mut fields = Vec::new();
     for choice in choices {
         let mut headers = Vec::new();
@@ -699,7 +703,7 @@ pub fn choice_fields(choices: &[FeatureChoice]) -> Vec<FeatureChoiceField> {
 }
 
 /// Decode generated-geometry table headers from known feature rows.
-pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
+pub(crate) fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
     const FIELDS: &[(&[u8], FeatureGeometryTableKind)] = &[
         (b"edg_id_tab_ptr", FeatureGeometryTableKind::EdgeIds),
         (b"lo_id_tab_ptr", FeatureGeometryTableKind::LoopIds),
@@ -854,7 +858,7 @@ fn geometry_table_at(
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.
-pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
+pub(crate) fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
     const FIELDS: &[(&[u8], AffectedIdKind)] = &[
         (b"geoms_affected", AffectedIdKind::Geometry),
         (b"edgs_affected", AffectedIdKind::Edges),
@@ -1143,7 +1147,7 @@ fn unique_unanchored_replay_pair(
 /// Array extents are stateful within one `AllFeatur` stream and schema class.
 /// An omitted `f8` opener reuses the preceding extent at the same array
 /// position.
-pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
+pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds> {
     const ANCHOR_PREFIX: &[u8] = &[0xf1, 0xf7, 0x42];
     const ANCHOR_SUFFIX: &[u8] = &[0x80, 0x01, 0xe3];
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
@@ -1286,7 +1290,7 @@ fn positional_surface_merge_affected_ids(
 ///
 /// Positional rows inherit an omitted array extent from the preceding
 /// class-946 row in the same `AllFeatur` stream.
-pub fn surface_merge_replay_affected_ids(
+pub(crate) fn surface_merge_replay_affected_ids(
     rows: &[FeatureRow],
     named: &[FeatureAffectedIds],
 ) -> Vec<FeatureSurfaceMergeAffectedIds> {
@@ -1332,7 +1336,7 @@ pub fn surface_merge_replay_affected_ids(
 
 /// Decode named `direction` and `direction2` compact integers inside
 /// `lo_restore` records.
-pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDirection> {
+pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDirection> {
     const FIELDS: &[(&[u8], LoopRestoreDirectionLane)] = &[
         (b"direction", LoopRestoreDirectionLane::Primary),
         (b"direction2", LoopRestoreDirectionLane::Secondary),
@@ -1369,7 +1373,7 @@ pub fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRestoreDir
 }
 
 /// Decode complete ordered `lo_hist` rosters paired with named loop tables.
-pub fn loop_history_entries(
+pub(crate) fn loop_history_entries(
     rows: &[FeatureRow],
     geometry_tables: &[FeatureGeometryTable],
 ) -> Vec<FeatureLoopHistoryEntry> {
@@ -1430,7 +1434,7 @@ pub fn loop_history_entries(
     result
 }
 
-pub(crate) fn loop_history_roster(
+pub(super) fn loop_history_roster(
     body: &[u8],
     mut cursor: usize,
     count: usize,
@@ -1507,17 +1511,17 @@ pub(crate) fn loop_history_roster(
     Some(entries)
 }
 
-pub(crate) struct ParsedLoopHistoryEntry {
-    pub(crate) loop_id: u32,
-    pub(crate) field_bytes: [Vec<u8>; 4],
-    pub(crate) boundary: FeatureLoopHistoryBoundary,
-    pub(crate) offset: usize,
-    pub(crate) end_offset: usize,
+pub(in crate::feature) struct ParsedLoopHistoryEntry {
+    pub(super) loop_id: u32,
+    field_bytes: [Vec<u8>; 4],
+    pub(super) boundary: FeatureLoopHistoryBoundary,
+    pub(super) offset: usize,
+    pub(super) end_offset: usize,
 }
 
 /// Decode full-turn rotational termination from the positional
 /// `param_choice_ptr` body of section-sweep feature rows.
-pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
+pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
     const PARAMETER_CHOICE_PREFIX: &[u8] = &[0x83, 0xdf, 0xf6, 0xe3];
     const FULL_TURN_CHOICES: &[u8] = &[
         0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,

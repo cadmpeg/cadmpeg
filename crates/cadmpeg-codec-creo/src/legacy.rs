@@ -21,7 +21,7 @@ const LEGACY_LENGTH_UNIT_TYPE: i32 = 0;
 
 /// Active coordinate-unit system selected by a model-level persistence field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrincipalUnitSystem {
+pub(crate) enum PrincipalUnitSystem {
     /// Millimeter, Newton, second.
     MillimeterNewtonSecond,
     /// Millimeter, kilogram, second.
@@ -36,7 +36,7 @@ pub enum PrincipalUnitSystem {
 
 impl PrincipalUnitSystem {
     /// Stable source-metadata token.
-    pub fn token(self) -> String {
+    pub(crate) fn token(self) -> String {
         match self {
             Self::MillimeterNewtonSecond => "mmNs".to_string(),
             Self::MillimeterKilogramSecond => "mmKs".to_string(),
@@ -49,7 +49,7 @@ impl PrincipalUnitSystem {
     }
 
     /// Scale from stored coordinate lengths to canonical millimeters.
-    pub const fn length_scale_mm(self) -> Option<f64> {
+    pub(crate) const fn length_scale_mm(self) -> Option<f64> {
         match self {
             Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => Some(1.0),
             Self::InchPoundMassSecond => Some(LEGACY_INCH_TO_MM),
@@ -61,7 +61,7 @@ impl PrincipalUnitSystem {
 
 /// One finite legacy type-2 real, stored by its exact IEEE-754 bits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Real(u64);
+pub(crate) struct Real(u64);
 
 impl Real {
     /// Construct a real from its exact stored IEEE-754 bits.
@@ -71,7 +71,7 @@ impl Real {
     }
 
     /// Numeric value represented by the stored bits.
-    pub fn value(self) -> f64 {
+    pub(crate) fn value(self) -> f64 {
         f64::from_bits(self.0)
     }
 }
@@ -87,17 +87,17 @@ impl Serialize for Real {
 
 /// One run in a numeric legacy array.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct NumericRun<T> {
+pub(crate) struct NumericRun<T> {
     /// Number of consecutive array elements carrying `value`.
-    pub count: u32,
+    pub(crate) count: u32,
     /// Element value.
-    pub value: T,
+    pub(crate) value: T,
 }
 
 /// Complete semantic payload of one numeric legacy value row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-pub enum NumericPayload<T> {
+pub(crate) enum NumericPayload<T> {
     /// One scalar value.
     Scalar {
         /// Scalar value.
@@ -109,12 +109,12 @@ pub enum NumericPayload<T> {
 
 impl<T> NumericPayload<T> {
     /// Admits source runs whose count sum equals the extent product.
-    pub fn array(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<Self> {
+    pub(crate) fn array(dimensions: Vec<u32>, runs: Vec<NumericRun<T>>) -> Option<Self> {
         numeric_array::NumericArray::try_new(dimensions, runs).map(Self::Array)
     }
 
     /// Number of logical scalar elements represented by this payload.
-    pub fn element_count(&self) -> usize {
+    pub(crate) fn element_count(&self) -> usize {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array(array) => array.element_count(),
@@ -123,21 +123,21 @@ impl<T> NumericPayload<T> {
 }
 
 /// One typed legacy attribute value in the scoped object tree.
-pub struct ValueRecord<K: LegacyCode> {
+pub(crate) struct ValueRecord<K: LegacyCode> {
     /// Declared attribute name.
-    pub name: String,
+    pub(crate) name: String,
     /// Scope-local declaration identifier.
-    pub attribute_id: u32,
+    pub(crate) attribute_id: u32,
     /// Byte offset of the owning attribute-ID scope.
-    pub scope_offset: usize,
+    pub(crate) scope_offset: usize,
     /// Owning type-0 object node, when the depth tree supplies one.
-    pub parent: Option<usize>,
+    pub(crate) parent: Option<usize>,
     /// Object-tree nesting depth of the scalar or array header.
-    pub depth: u32,
+    pub(crate) depth: u32,
     /// Typed value payload.
-    pub payload: K::Payload,
+    pub(crate) payload: K::Payload,
     /// Byte offset of the scalar row or array header.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl<K: LegacyCode> std::fmt::Debug for ValueRecord<K>
@@ -194,37 +194,37 @@ impl<K: LegacyCode> Eq for ValueRecord<K> where K::Payload: Eq {}
 
 /// One run in a type-2 real array.
 #[cfg(test)]
-pub type RealRun = NumericRun<Real>;
+pub(crate) type RealRun = NumericRun<Real>;
 /// Complete semantic payload of one legacy type-2 value row.
 #[cfg(test)]
-pub type RealPayload = NumericPayload<Real>;
+pub(crate) type RealPayload = NumericPayload<Real>;
 /// One completely decoded legacy type-2 attribute value.
-pub type RealRecord = ValueRecord<RealCode>;
+pub(crate) type RealRecord = ValueRecord<RealCode>;
 /// One run in a type-1 integer array.
 #[cfg(test)]
-pub type IntegerRun = NumericRun<i32>;
+pub(crate) type IntegerRun = NumericRun<i32>;
 /// Complete semantic payload of one legacy type-1 value row.
 #[cfg(test)]
-pub type IntegerPayload = NumericPayload<i32>;
+pub(crate) type IntegerPayload = NumericPayload<i32>;
 /// One completely decoded legacy type-1 attribute value.
-pub type IntegerRecord = ValueRecord<IntegerCode>;
+pub(crate) type IntegerRecord = ValueRecord<IntegerCode>;
 /// Complete semantic payload of one unsigned-decimal legacy value.
 #[cfg(test)]
-pub type UnsignedPayload = NumericPayload<u32>;
+type UnsignedPayload = NumericPayload<u32>;
 /// One completely decoded legacy type-5 attribute value.
-pub type Type5Record = ValueRecord<Type5Code>;
+type Type5Record = ValueRecord<Type5Code>;
 /// One completely decoded legacy type-6 attribute value.
-pub type Type6Record = ValueRecord<Type6Code>;
+type Type6Record = ValueRecord<Type6Code>;
 /// One completely decoded legacy type-7 attribute value.
-pub type Type7Record = ValueRecord<Type7Code>;
+type Type7Record = ValueRecord<Type7Code>;
 /// One completely decoded legacy type-9 attribute value.
-pub type Type9Record = ValueRecord<Type9Code>;
+type Type9Record = ValueRecord<Type9Code>;
 /// One completely decoded legacy type-11 attribute value.
-pub type Type11Record = ValueRecord<Type11Code>;
+type Type11Record = ValueRecord<Type11Code>;
 
 /// Structural payload of one legacy type-0 object node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ObjectPayload {
+pub(crate) enum ObjectPayload {
     /// The `->` object token.
     Arrow,
     /// The empty inline-object payload.
@@ -247,7 +247,7 @@ pub enum ObjectPayload {
 
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         let Self::Array {
             dimensions,
             elements,
@@ -303,27 +303,27 @@ impl Serialize for ObjectPayload {
 
 /// One legacy type-0 object node in the depth-defined ownership tree.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ObjectRecord {
+pub(crate) struct ObjectRecord {
     /// Declared attribute name.
-    pub name: String,
+    pub(crate) name: String,
     /// Scope-local declaration identifier.
-    pub attribute_id: u32,
+    pub(crate) attribute_id: u32,
     /// Byte offset of the owning attribute-ID scope.
-    pub scope_offset: usize,
+    pub(crate) scope_offset: usize,
     /// Owning type-0 object node, when the depth tree supplies one.
-    pub parent: Option<usize>,
+    pub(crate) parent: Option<usize>,
     /// Object-tree nesting depth.
-    pub depth: u32,
+    pub(crate) depth: u32,
     /// Stored object form.
-    pub payload: ObjectPayload,
+    pub(crate) payload: ObjectPayload,
     /// Byte offset of the value row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One legacy byte string or null element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-pub enum StringValue {
+pub(crate) enum StringValue {
     /// The `NULL` token.
     Null,
     /// A byte string that is valid UTF-8.
@@ -340,14 +340,14 @@ pub enum StringValue {
 
 impl StringValue {
     /// Whether the exact bytes could not be decoded as UTF-8.
-    pub fn undecoded_encoding_count(&self) -> usize {
+    pub(crate) fn undecoded_encoding_count(&self) -> usize {
         usize::from(matches!(self, Self::Bytes { .. }))
     }
 }
 
 /// Semantic payload of one legacy byte-string value.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StringPayload {
+pub(crate) enum StringPayload {
     /// One string or null value.
     Scalar {
         /// Stored value.
@@ -399,7 +399,7 @@ impl Serialize for StringPayload {
 
 impl StringPayload {
     /// Whether every declared string row has a supported, complete value.
-    pub fn is_complete(&self) -> bool {
+    fn is_complete(&self) -> bool {
         let Self::Array {
             dimensions,
             values,
@@ -417,7 +417,7 @@ impl StringPayload {
     }
 
     /// Number of logical string elements represented by this payload.
-    pub fn element_count(&self) -> usize {
+    pub(crate) fn element_count(&self) -> usize {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array { values, .. } => values.iter().filter(|value| value.is_ok()).count(),
@@ -425,7 +425,7 @@ impl StringPayload {
     }
 
     /// Number of elements whose character encoding remains uninterpreted.
-    pub fn undecoded_encoding_count(&self) -> usize {
+    pub(crate) fn undecoded_encoding_count(&self) -> usize {
         match self {
             Self::Scalar { value } => value.undecoded_encoding_count(),
             Self::Array { values, .. } => values
@@ -438,71 +438,71 @@ impl StringPayload {
 }
 
 /// One decoded legacy byte-string value.
-pub type StringRecord = ValueRecord<StringCode>;
+pub(crate) type StringRecord = ValueRecord<StringCode>;
 /// One decoded legacy type-3 scalar byte-string value.
-pub type Type3Record = ValueRecord<Type3Code>;
+type Type3Record = ValueRecord<Type3Code>;
 /// One decoded legacy type-4 scalar byte-string value.
-pub type Type4Record = ValueRecord<Type4Code>;
+type Type4Record = ValueRecord<Type4Code>;
 
 /// One unique `@<name> <id> <type-code>` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttributeDeclaration {
+pub(crate) struct AttributeDeclaration {
     /// Attribute identifier referenced by value rows in the same scope.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Attribute name without the leading `@`.
-    pub name: String,
+    pub(crate) name: String,
     /// Stored numeric type code.
-    pub type_code: LegacyTypeCode,
+    pub(crate) type_code: LegacyTypeCode,
     /// Byte offset of the declaration line.
-    pub offset: usize,
+    offset: usize,
 }
 
 /// One `<depth> <attribute-id> <payload>` value row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AttributeValue {
+struct AttributeValue {
     /// Object-tree nesting depth.
-    pub depth: u32,
+    depth: u32,
     /// Identifier of the owning attribute declaration in the same scope.
-    pub attribute_id: u32,
+    attribute_id: u32,
     /// Byte offset of the value row.
-    pub offset: usize,
+    offset: usize,
     /// Byte range of the payload after the second field separator.
-    pub payload: Range<usize>,
+    payload: Range<usize>,
     /// Immediately following `$` rows, when present.
-    pub continuation: Option<Continuation>,
+    continuation: Option<Continuation>,
 }
 
 /// A nonempty sequence of continuation rows following one value.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Continuation {
+pub(crate) struct Continuation {
     /// Contiguous source range containing the rows.
-    pub rows: Range<usize>,
+    rows: Range<usize>,
     /// Number of rows in the source range.
-    pub count: NonZeroUsize,
+    count: NonZeroUsize,
 }
 
 /// Declarations and values owned by one outer object or named ASCII section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Scope {
+pub(crate) struct Scope {
     /// Complete byte extent scanned for this scope.
-    pub range: Range<usize>,
+    range: Range<usize>,
     /// First declaration for each identifier, in source order.
-    pub declarations: Vec<AttributeDeclaration>,
+    declarations: Vec<AttributeDeclaration>,
     /// Value rows whose declaration resolves uniquely in this scope.
-    pub values: Vec<AttributeValue>,
+    values: Vec<AttributeValue>,
     /// Numeric value rows whose identifier has no unique local declaration.
-    pub unresolved_value_count: usize,
+    unresolved_value_count: usize,
     /// Repeated local identifiers whose name or type code conflicts.
-    pub conflicting_declaration_count: usize,
+    conflicting_declaration_count: usize,
 }
 
 /// Parsed rows and unresolved-row count for one legacy declaration type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypedValues<T> {
+pub(crate) struct TypedValues<T> {
     /// Complete typed rows in source order.
-    pub rows: Vec<T>,
+    pub(crate) rows: Vec<T>,
     /// Source rows not represented by a complete typed value.
-    pub unresolved_count: usize,
+    pub(crate) unresolved_count: usize,
 }
 
 impl<T> Default for TypedValues<T> {
@@ -516,39 +516,39 @@ impl<T> Default for TypedValues<T> {
 
 /// Structurally resolved legacy ASCII persistence scopes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Persistence {
+pub(crate) struct Persistence {
     /// Outer persistence scope followed by each named ASCII section scope.
-    pub scopes: Vec<Scope>,
+    pub(crate) scopes: Vec<Scope>,
     /// Complete finite type-2 scalar and array values in source order.
-    pub real_values: TypedValues<RealRecord>,
+    pub(crate) real_values: TypedValues<RealRecord>,
     /// Complete type-1 signed-integer scalars and arrays in source order.
-    pub integer_values: TypedValues<IntegerRecord>,
+    pub(crate) integer_values: TypedValues<IntegerRecord>,
     /// Type-0 object nodes in source order.
-    pub objects: Vec<ObjectRecord>,
+    pub(crate) objects: Vec<ObjectRecord>,
     /// Type-0 arrays whose direct element count differs from their extents.
-    pub incomplete_object_array_count: usize,
+    pub(crate) incomplete_object_array_count: usize,
     /// Type-0 value rows outside the defined object forms.
-    pub unresolved_object_value_count: usize,
+    pub(crate) unresolved_object_value_count: usize,
     /// Type-10 byte-string scalars and arrays in source order.
-    pub string_values: Vec<StringRecord>,
+    pub(crate) string_values: Vec<StringRecord>,
     /// Type-10 arrays whose direct element count differs from the first extent.
-    pub incomplete_string_array_count: usize,
+    pub(crate) incomplete_string_array_count: usize,
     /// Type-10 rows that use an undefined continuation form.
-    pub unresolved_string_value_count: usize,
+    pub(crate) unresolved_string_value_count: usize,
     /// Type-3 nullable byte-string scalars in source order.
-    pub type_3_values: TypedValues<Type3Record>,
+    pub(crate) type_3_values: TypedValues<Type3Record>,
     /// Type-4 byte-string scalars in source order.
-    pub type_4_values: TypedValues<Type4Record>,
+    pub(crate) type_4_values: TypedValues<Type4Record>,
     /// Type-5 unsigned-decimal scalars and arrays in source order.
-    pub type_5_values: TypedValues<Type5Record>,
+    pub(crate) type_5_values: TypedValues<Type5Record>,
     /// Type-6 compact-real scalars and arrays in source order.
-    pub type_6_values: TypedValues<Type6Record>,
+    pub(crate) type_6_values: TypedValues<Type6Record>,
     /// Type-7 unsigned-decimal scalars and arrays in source order.
-    pub type_7_values: TypedValues<Type7Record>,
+    pub(crate) type_7_values: TypedValues<Type7Record>,
     /// Type-9 unsigned-decimal scalars and arrays in source order.
-    pub type_9_values: TypedValues<Type9Record>,
+    pub(crate) type_9_values: TypedValues<Type9Record>,
     /// Type-11 unsigned-decimal scalars and arrays in source order.
-    pub type_11_values: TypedValues<Type11Record>,
+    pub(crate) type_11_values: TypedValues<Type11Record>,
 }
 
 impl Persistence {
@@ -559,7 +559,7 @@ impl Persistence {
     /// non-empty value owned by a root `Solid` object. If that role is absent,
     /// accept one distinct non-empty value across the remaining rows; distinct
     /// identities remain unresolved.
-    pub fn model_name(&self) -> Option<(String, usize)> {
+    pub(crate) fn model_name(&self) -> Option<(String, usize)> {
         let objects = self
             .objects
             .iter()
@@ -605,7 +605,7 @@ impl Persistence {
     /// This is a source-identity fallback for legacy sections that contain
     /// several scoped model names. [`Self::model_name`] remains the resolver
     /// for relation evaluation and withholds conflicting identities.
-    pub fn first_source_model_name(&self) -> Option<(String, usize)> {
+    pub(crate) fn first_source_model_name(&self) -> Option<(String, usize)> {
         self.string_values
             .iter()
             .filter(|record| record.name == "model_name")
@@ -624,7 +624,7 @@ impl Persistence {
     }
 
     /// Number of unique local attribute declarations across all scopes.
-    pub fn declaration_count(&self) -> usize {
+    pub(crate) fn declaration_count(&self) -> usize {
         self.scopes
             .iter()
             .map(|scope| scope.declarations.len())
@@ -632,12 +632,12 @@ impl Persistence {
     }
 
     /// Number of structurally resolved value rows across all scopes.
-    pub fn value_count(&self) -> usize {
+    pub(crate) fn value_count(&self) -> usize {
         self.scopes.iter().map(|scope| scope.values.len()).sum()
     }
 
     /// Number of `$` continuation rows across all resolved values.
-    pub fn continuation_count(&self) -> usize {
+    pub(crate) fn continuation_count(&self) -> usize {
         self.scopes
             .iter()
             .flat_map(|scope| &scope.values)
@@ -651,7 +651,7 @@ impl Persistence {
     }
 
     /// Number of numeric rows without a unique declaration in their scope.
-    pub fn unresolved_value_count(&self) -> usize {
+    pub(crate) fn unresolved_value_count(&self) -> usize {
         self.scopes
             .iter()
             .map(|scope| scope.unresolved_value_count)
@@ -659,7 +659,7 @@ impl Persistence {
     }
 
     /// Number of conflicting declaration identifiers across all scopes.
-    pub fn conflicting_declaration_count(&self) -> usize {
+    pub(crate) fn conflicting_declaration_count(&self) -> usize {
         self.scopes
             .iter()
             .map(|scope| scope.conflicting_declaration_count)
@@ -667,7 +667,7 @@ impl Persistence {
     }
 
     /// Resolve one unambiguous legacy principal-unit string.
-    pub fn principal_unit_system(&self) -> Option<PrincipalUnitSystem> {
+    pub(crate) fn principal_unit_system(&self) -> Option<PrincipalUnitSystem> {
         let mut candidate = None;
         let mut found = false;
         for record in self
@@ -1495,7 +1495,7 @@ pub(crate) fn scan(
 
 impl<K: LegacyCode> ValueRecord<K> {
     /// Native identity derived from the source offset.
-    pub fn id(&self) -> String {
+    pub(crate) fn id(&self) -> String {
         format!(
             "creo:legacy_ascii:{}#{}",
             K::CODE.identity_token(),
@@ -1524,7 +1524,7 @@ where
 
 impl ObjectRecord {
     /// Native identity derived from the source offset.
-    pub fn id(&self) -> String {
+    pub(crate) fn id(&self) -> String {
         object_node_id(self.offset)
     }
 }
@@ -1545,7 +1545,7 @@ impl Serialize for ObjectRecord {
 }
 
 /// A legacy declaration code carried at the type level.
-pub trait LegacyCode: Copy + Eq + std::fmt::Debug {
+pub(crate) trait LegacyCode: Copy + Eq + std::fmt::Debug {
     /// The declaration code whose value rows carry this identity.
     const CODE: LegacyTypeCode;
     /// The payload shape stored by a value row of this code.
@@ -1556,7 +1556,7 @@ macro_rules! legacy_code {
     ($(#[$doc:meta])* $name:ident, $code:ident, $payload:ty) => {
         $(#[$doc])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct $name;
+        pub(crate) struct $name;
 
         impl LegacyCode for $name {
             const CODE: LegacyTypeCode = LegacyTypeCode::$code;
@@ -1608,7 +1608,7 @@ legacy_code!(
 
 /// Identity marker naming one legacy declaration code.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ValueKind<K>(std::marker::PhantomData<fn() -> K>);
+struct ValueKind<K>(std::marker::PhantomData<fn() -> K>);
 
 impl<K> Copy for ValueKind<K> {}
 
@@ -1629,47 +1629,47 @@ fn declaration_code<K: LegacyCode>(_kind: ValueKind<K>) -> LegacyTypeCode {
 
 impl ValueKind<IntegerCode> {
     /// Identity token for integer values.
-    pub const INTEGER: Self = Self::KIND;
+    const INTEGER: Self = Self::KIND;
 }
 
 impl ValueKind<RealCode> {
     /// Identity token for real values.
-    pub const REAL: Self = Self::KIND;
+    const REAL: Self = Self::KIND;
 }
 
 impl ValueKind<Type6Code> {
     /// Identity token for `type_6` values.
-    pub const TYPE6: Self = Self::KIND;
+    const TYPE6: Self = Self::KIND;
 }
 
 impl ValueKind<Type5Code> {
     /// Identity token for `type_5` values.
-    pub const TYPE5: Self = Self::KIND;
+    const TYPE5: Self = Self::KIND;
 }
 
 impl ValueKind<Type7Code> {
     /// Identity token for `type_7` values.
-    pub const TYPE7: Self = Self::KIND;
+    const TYPE7: Self = Self::KIND;
 }
 
 impl ValueKind<Type9Code> {
     /// Identity token for `type_9` values.
-    pub const TYPE9: Self = Self::KIND;
+    const TYPE9: Self = Self::KIND;
 }
 
 impl ValueKind<Type11Code> {
     /// Identity token for `type_11` values.
-    pub const TYPE11: Self = Self::KIND;
+    const TYPE11: Self = Self::KIND;
 }
 
 impl ValueKind<Type3Code> {
     /// Identity token for `type_3` values.
-    pub const TYPE3: Self = Self::KIND;
+    const TYPE3: Self = Self::KIND;
 }
 
 impl ValueKind<Type4Code> {
     /// Identity token for `type_4` values.
-    pub const TYPE4: Self = Self::KIND;
+    const TYPE4: Self = Self::KIND;
 }
 
 #[cfg(test)]

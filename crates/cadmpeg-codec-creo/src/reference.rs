@@ -18,7 +18,7 @@ const EPS_DIAMETER_PLANAR: f64 = 1.0e-10;
 
 /// Stored reference-line family.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ReferenceLineKind {
+pub(crate) enum ReferenceLineKind {
     /// Planar `entity(line)` record.
     Line,
     /// Spatial `line3d` record with a stored original length.
@@ -32,48 +32,48 @@ pub enum ReferenceLineKind {
 
 /// One finite model-space line entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceLine {
+pub(crate) struct ReferenceLine {
     /// Native entity family.
-    pub kind: ReferenceLineKind,
+    pub(crate) kind: ReferenceLineKind,
     /// First endpoint in model coordinates.
-    pub start: [f64; 3],
+    pub(crate) start: [f64; 3],
     /// Second endpoint in model coordinates.
-    pub end: [f64; 3],
+    pub(crate) end: [f64; 3],
     /// Byte offset of the positional row in its section.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One circular reference entity reconstructed from a positional row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceCircle {
+pub(crate) struct ReferenceCircle {
     /// Canonical entity identifier repeated across the row boundary.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Circle center in model coordinates.
-    pub center: [f64; 3],
+    pub(crate) center: [f64; 3],
     /// Whether the center is stored explicitly rather than derived as a midpoint.
-    pub center_stored: bool,
+    pub(crate) center_stored: bool,
     /// Positive circle radius.
-    pub radius: f64,
+    pub(crate) radius: f64,
     /// Unit circle-plane normal.
-    pub axis: [f64; 3],
+    pub(crate) axis: [f64; 3],
     /// First stored endpoint.
-    pub start: [f64; 3],
+    pub(crate) start: [f64; 3],
     /// Second stored endpoint.
-    pub end: [f64; 3],
+    pub(crate) end: [f64; 3],
     /// Byte offset of the positional row in its section.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Native conic discriminator, with the ellipse code classified explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConicType {
+pub(crate) enum ConicType {
     Ellipse,
     Other(OtherConicType),
 }
 
 /// A conic code other than the ellipse discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OtherConicType(u32);
+pub(crate) struct OtherConicType(u32);
 
 impl From<u32> for ConicType {
     fn from(value: u32) -> Self {
@@ -95,55 +95,55 @@ impl serde::Serialize for ConicType {
 
 /// One named model-reference conic record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceConic {
+pub(crate) struct ReferenceConic {
     /// Entity identifier in the conic list.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored conic type discriminator.
-    pub type_id: ConicType,
+    pub(crate) type_id: ConicType,
     /// Stored orientation selector.
-    pub flip: u32,
+    pub(crate) flip: u32,
     /// First stored endpoint in model coordinates.
-    pub start: [f64; 3],
+    pub(crate) start: [f64; 3],
     /// Second stored endpoint in model coordinates.
-    pub end: [f64; 3],
+    pub(crate) end: [f64; 3],
     /// First stored conic parameter, when its scalar form is defined.
-    pub parameter_start: Option<f64>,
+    pub(crate) parameter_start: Option<f64>,
     /// Second stored conic parameter, when its scalar form is defined.
-    pub parameter_end: Option<f64>,
+    pub(crate) parameter_end: Option<f64>,
     /// First stored conic coefficient.
-    pub coefficient_1: f64,
+    pub(crate) coefficient_1: f64,
     /// Second stored conic coefficient.
-    pub coefficient_2: f64,
+    pub(crate) coefficient_2: f64,
     /// Twelve decoded local-system slots, when the body is complete.
-    pub local_system: Option<[f64; 12]>,
+    pub(crate) local_system: Option<[f64; 12]>,
     /// Exact bytes from the `id` value through the local-system body.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the named conic list record.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Complete model-space ellipse derived from a conic record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ReferenceEllipse {
+pub(crate) struct ReferenceEllipse {
     /// Canonical identifier of the source conic entity.
-    pub source_entity_id: u32,
+    pub(crate) source_entity_id: u32,
     /// Ellipse center.
-    pub center: [f64; 3],
+    pub(crate) center: [f64; 3],
     /// Unit normal of the ellipse plane.
-    pub axis: [f64; 3],
+    pub(crate) axis: [f64; 3],
     /// Unit direction of the semi-major axis.
-    pub major_direction: [f64; 3],
+    pub(crate) major_direction: [f64; 3],
     /// Positive semi-major radius.
-    pub major_radius: f64,
+    pub(crate) major_radius: f64,
     /// Positive semi-minor radius.
-    pub minor_radius: f64,
+    pub(crate) minor_radius: f64,
     /// Source conic byte offset.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Derive every ellipse whose conic frame, radii, and endpoints independently
 /// satisfy one model-space equation.
-pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
+pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
     let mut result = Vec::new();
     for conic in conics {
         if conic.type_id != ConicType::Ellipse {
@@ -493,7 +493,7 @@ fn named_conic_local_system(
 /// The coefficients and parameter fields remain stored conic semantics; this
 /// function does not classify the record as an ellipse, parabola, or
 /// hyperbola.
-pub fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
     let cache = ScalarCache::from_section(payload);
@@ -738,7 +738,7 @@ fn positional_conic_body(
 }
 
 /// Decode complete positional rows following an `ent_list(conic)` schema.
-pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
+pub(crate) fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
     const LIST: &[u8] = b"ent_list(conic)\0";
     const NEXT_LIST: &[u8] = b"\xe0\x00ent_list(";
     let cache = ScalarCache::from_section(payload);
@@ -787,7 +787,7 @@ pub fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
 }
 
 /// Decode every complete positional `entity(line)` row.
-pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     const PROTOTYPE: &[u8] = b"ent_list(line)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
     const INSTANCE: &[u8] = b"\xe0\x00entity(line)\0";
@@ -906,7 +906,7 @@ fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals
 /// their stored original length.
-pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
+pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
     const PROTOTYPE: &[u8] = b"ent_list(line3d)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 
@@ -1062,7 +1062,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
 /// Decode complete positional `arc_z` rows whose stored center, radius, and
 /// endpoints satisfy the model-Z circle equation. Diameter-compressed rows
 /// derive the center from their endpoint midpoint.
-pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
+pub(crate) fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
     const PROTOTYPE: &[u8] = b"ent_list(arc_z)\0";
     const LIST: &[u8] = b"\xe0\x00ent_list(";
 

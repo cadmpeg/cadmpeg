@@ -54,7 +54,7 @@ use crate::topology::{
 };
 
 /// The PSB magic: every Creo `.prt` opens with this ASCII framing line.
-pub const MAGIC: &[u8] = b"#UGC:2";
+const MAGIC: &[u8] = b"#UGC:2";
 
 /// End of the UGC header block.
 const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
@@ -94,7 +94,7 @@ const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
 /// The persistence layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Layout {
+pub(crate) enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
     Nd,
     /// Sparse PSB views plus a persistence database (`DEPDB_DATA`, ~12 sections).
@@ -107,7 +107,7 @@ pub enum Layout {
 
 /// Why no verified Creo persistence layout matched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnknownLayout {
+pub(crate) enum UnknownLayout {
     /// `DEPDB_DATA` was present but did not start with its required root record.
     DepdbRootMissing,
     /// No DEPDB root, ND decoration, or complete legacy object was present.
@@ -116,21 +116,21 @@ pub enum UnknownLayout {
 
 /// Header metadata from a complete legacy ASCII `P_OBJECT` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LegacyAsciiFraming {
+pub(crate) struct LegacyAsciiFraming {
     /// Decimal persistence-schema token following `#P_OBJECT`.
-    pub schema: String,
+    pub(crate) schema: String,
     /// Product release token in a `Version` or `Release` banner form.
-    pub product_release: Option<String>,
+    pub(crate) product_release: Option<String>,
     /// Byte offset of the `#Pro/ENGINEER` banner and legacy TOC offset base.
-    pub banner_offset: usize,
+    banner_offset: usize,
     /// Byte offset of the header-adjacent `#P_OBJECT` line.
-    pub object_offset: usize,
+    object_offset: usize,
     /// Structurally resolved attribute declarations and value rows.
-    pub persistence: legacy::Persistence,
+    pub(crate) persistence: legacy::Persistence,
 }
 
 impl Layout {
-    pub fn legacy_ascii(&self) -> Option<&LegacyAsciiFraming> {
+    pub(crate) fn legacy_ascii(&self) -> Option<&LegacyAsciiFraming> {
         match self {
             Self::LegacyAscii(framing) => Some(framing),
             Self::Nd | Self::Depdb | Self::Unknown(_) => None,
@@ -138,7 +138,7 @@ impl Layout {
     }
 
     /// A short, stable token for human reports.
-    pub fn token(&self) -> &'static str {
+    pub(crate) fn token(&self) -> &'static str {
         match self {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
@@ -158,15 +158,15 @@ impl Layout {
 /// and its descendants does not compile and there is no spelling of a section
 /// whose extent the file does not hold.
 #[derive(Debug, Clone)]
-pub struct Section {
+pub(crate) struct Section {
     /// Raw name as it appeared in the header, when decorated.
-    pub raw_name: String,
+    pub(crate) raw_name: String,
     /// Byte offset of the section header within the file.
     offset: usize,
     /// Payload length in bytes (header to the next section, or EOF).
     length: usize,
     /// Expanded payload length from the TOC, excluding the section header.
-    pub expanded_length: Option<usize>,
+    expanded_length: Option<usize>,
 }
 
 /// One declared section together with the bytes it was admitted against.
@@ -181,7 +181,7 @@ pub(crate) struct ScannedSection<'a> {
     /// The declared section.
     pub(crate) section: Section,
     /// The section's payload bytes in the file the scan read it from.
-    pub(crate) region: &'a [u8],
+    region: &'a [u8],
 }
 
 impl Section {
@@ -208,12 +208,12 @@ impl Section {
     }
 
     /// Byte offset of the section header within the file.
-    pub fn offset(&self) -> usize {
+    pub(crate) fn offset(&self) -> usize {
         self.offset
     }
 
     /// Payload length in bytes.
-    pub fn length(&self) -> usize {
+    pub(crate) fn length(&self) -> usize {
         self.length
     }
 
@@ -221,30 +221,30 @@ impl Section {
     ///
     /// Plain `+`: [`Section::new`] admitted the sum, so it is a byte offset of
     /// the file the scan read.
-    pub fn end(&self) -> usize {
+    pub(crate) fn end(&self) -> usize {
         self.offset + self.length
     }
 
     /// Whether `offset` is a byte of the section: at or after its offset and
     /// before its end. This is the one range predicate over a section.
-    pub fn contains(&self, offset: usize) -> bool {
+    pub(crate) fn contains(&self, offset: usize) -> bool {
         (self.offset()..self.end()).contains(&offset)
     }
 
     /// Normalized section name.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         normalize_name(&self.raw_name)
     }
 
     /// Payload role derived from the section name.
-    pub fn role(&self) -> SectionRole {
+    pub(crate) fn role(&self) -> SectionRole {
         classify(self.name())
     }
 }
 
 /// The five payload roles admitted by a Creo section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SectionRole {
+pub(crate) enum SectionRole {
     PsbGeometry,
     ModelData,
     Thumbnail,
@@ -266,42 +266,42 @@ impl From<SectionRole> for ContainerRole {
 
 /// A section payload decoded from Unix `compress` framing.
 #[derive(Debug, Clone)]
-pub struct ExpandedSection {
+pub(crate) struct ExpandedSection {
     /// Normalized owning section name.
-    pub name: String,
+    pub(crate) name: String,
     /// Offset of the compressed payload in the source file.
-    pub source_offset: usize,
+    pub(crate) source_offset: usize,
     /// Number of compressed source bytes.
-    pub compressed_length: usize,
+    pub(crate) compressed_length: usize,
     /// Complete expanded PSB payload.
-    pub data: Vec<u8>,
+    pub(crate) data: Vec<u8>,
 }
 
 /// One counted model-level `double_xar` dictionary from an expanded section.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ModelDoubleXarTable {
+pub(crate) struct ModelDoubleXarTable {
     /// Normalized owning section name.
-    pub section_name: String,
+    pub(crate) section_name: String,
     /// Source-file offset of the compressed section payload.
-    pub section_source_offset: usize,
+    pub(crate) section_source_offset: usize,
     /// Offset of the table label in the expanded section.
-    pub expanded_offset: usize,
+    pub(crate) expanded_offset: usize,
     /// Entries in stored order.
-    pub entries: Vec<crate::scalar::DoubleXarSlot>,
+    pub(crate) entries: Vec<crate::scalar::DoubleXarSlot>,
 }
 
 /// The byte-backed count headers read from the visible-geometry section.
 #[derive(Debug, Clone, Default)]
-pub struct GeomCensus {
+pub(crate) struct GeomCensus {
     /// `srf_array\0 f8 <count>` surface-namespace count, when present.
-    pub srf_array_count: Option<u32>,
+    pub(crate) srf_array_count: Option<u32>,
     /// `crv_array\0 [f3] f8 <count>` curve-namespace count, when present.
-    pub crv_array_count: Option<u32>,
+    pub(crate) crv_array_count: Option<u32>,
 }
 
 /// Configuration family-table pointer carried by `FamilyInf`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FamilyTablePointer {
+pub(crate) enum FamilyTablePointer {
     /// Explicit `e1` null pointer.
     Null,
     /// Canonical `f7` entity reference to a driver table.
@@ -310,287 +310,288 @@ pub enum FamilyTablePointer {
 
 /// Typed `drv_tbl_ptr` field from `FamilyInf`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FamilyTableRecord {
+pub(crate) struct FamilyTableRecord {
     /// Null or referenced driver table.
-    pub pointer: FamilyTablePointer,
+    pub(crate) pointer: FamilyTablePointer,
     /// Byte offset of the pointer value.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Structural data read from one `.prt` file. Decoded products are grouped
 /// into per-domain sub-structs so each consumer names the domain it reads.
 /// `ContainerScan` is never serialized; grouping and field naming are internal
 /// and do not affect IR or JSON output.
-pub struct ContainerScan<'a> {
+pub(crate) struct ContainerScan<'a> {
     /// Container framing: raw bytes, header, TOC-enumerated sections, and
     /// model-level diagnostics.
-    pub framing: FramingScan<'a>,
+    pub(crate) framing: FramingScan<'a>,
     /// Named scalar and triangle-strip products from expanded primitive data.
-    pub primitives: PrimitiveScan,
+    pub(crate) primitives: PrimitiveScan,
     /// Model-space reference entities decoded from `MdlRefInfo`.
-    pub references: ReferenceScan,
+    pub(crate) references: ReferenceScan,
     /// Typed surface rows, parameter bodies, and prototypes across the model,
     /// non-visible, and cross-section namespaces.
-    pub surfaces: SurfaceScan,
+    pub(crate) surfaces: SurfaceScan,
     /// Plane support frames, envelopes, placed planes, and datum planes.
-    pub planes: PlaneScan,
+    pub(crate) planes: PlaneScan,
     /// Curve prototypes, parameter bodies, pcurves, and native curve rows.
-    pub curves: CurveScan,
+    pub(crate) curves: CurveScan,
     /// Native half-edge adjacency graph resolved from curve topology rows.
-    pub topology: TopologyScan,
+    pub(crate) topology: TopologyScan,
     /// Native `lo_array` frame headers and complete positional roster rows.
-    pub loop_arrays: LoopArrayScan,
+    pub(crate) loop_arrays: LoopArrayScan,
     /// Feature rows, definitions, operations, and the implicit entity graph.
-    pub features: FeatureScan,
+    pub(crate) features: FeatureScan,
 }
 
 /// Native model name and its source position.
-pub struct ModelName {
-    pub name: String,
-    pub offset: usize,
+pub(crate) struct ModelName {
+    pub(crate) name: String,
+    pub(crate) offset: usize,
 }
 
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
-pub struct FramingScan<'a> {
+pub(crate) struct FramingScan<'a> {
     /// Complete source bytes.
-    pub data: Cow<'a, [u8]>,
+    pub(crate) data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
-    pub version_line: String,
+    pub(crate) version_line: String,
     /// Native root model filename or name from `CMNM` or a binary
     /// `model_name` field.
-    pub model_name: Option<ModelName>,
+    pub(crate) model_name: Option<ModelName>,
     /// Enumerated sections in file order.
-    pub sections: Vec<Section>,
+    pub(crate) sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
-    pub expanded_sections: Vec<ExpandedSection>,
+    pub(crate) expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
-    pub layout: Layout,
+    pub(crate) layout: Layout,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
-    pub census: GeomCensus,
+    pub(crate) census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
     /// present and unambiguous.
-    pub principal_unit: Option<legacy::PrincipalUnitSystem>,
+    pub(crate) principal_unit: Option<legacy::PrincipalUnitSystem>,
     /// Configuration driver-table pointer from `FamilyInf`.
-    pub family_table: Option<FamilyTableRecord>,
+    pub(crate) family_table: Option<FamilyTableRecord>,
     /// Complete legacy ASCII family-table root and ordered rows, when joined.
-    pub legacy_family_table: Option<crate::legacy_family::FamilyTable>,
+    pub(crate) legacy_family_table: Option<crate::legacy_family::FamilyTable>,
     /// Declared `Geomlists.n_bodies` cardinality, when present.
-    pub declared_body_count: Option<u32>,
+    pub(crate) declared_body_count: Option<u32>,
     /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
     /// nonzero is a multi-quilt discriminator rather than a body count.
-    pub first_quilt_ptr: Option<u32>,
+    pub(crate) first_quilt_ptr: Option<u32>,
 }
 
 /// Named products from expanded primitive-data sections.
-pub struct PrimitiveScan {
+pub(crate) struct PrimitiveScan {
     /// Counted model-level scalar dictionaries from expanded sections.
-    pub double_xar_tables: Vec<ModelDoubleXarTable>,
+    pub(crate) double_xar_tables: Vec<ModelDoubleXarTable>,
     /// Complete named model-space scalar arrays from expanded primitive data.
-    pub scalar_arrays: Vec<PrimitiveScalarArray>,
+    pub(crate) scalar_arrays: Vec<PrimitiveScalarArray>,
     /// Complete named position-only triangle strips from expanded primitive data.
-    pub triangle_strips: Vec<PrimitiveTriangleStrip>,
+    pub(crate) triangle_strips: Vec<PrimitiveTriangleStrip>,
     /// Triangle-strip records whose complete position or normal representations disagree.
-    pub conflicting_triangle_strip_representation_count: usize,
+    pub(crate) conflicting_triangle_strip_representation_count: usize,
 }
 
 /// Model-space reference entities decoded from `MdlRefInfo`.
-pub struct ReferenceScan {
+pub(crate) struct ReferenceScan {
     /// Complete model-space line entities from `MdlRefInfo`.
-    pub lines: Vec<ReferenceLine>,
+    pub(crate) lines: Vec<ReferenceLine>,
     /// Complete model-Z circular entities from `MdlRefInfo` rows.
-    pub circles: Vec<ReferenceCircle>,
+    pub(crate) circles: Vec<ReferenceCircle>,
     /// Named conic entities from `MdlRefInfo` with complete defining fields.
-    pub conics: Vec<ReferenceConic>,
+    pub(crate) conics: Vec<ReferenceConic>,
     /// Conic records whose complete fields independently define an ellipse.
-    pub ellipses: Vec<ReferenceEllipse>,
+    pub(crate) ellipses: Vec<ReferenceEllipse>,
 }
 
 /// Typed surface rows, parameter bodies, and prototypes.
-pub struct SurfaceScan {
+pub(crate) struct SurfaceScan {
     /// Typed fixed-prefix surface rows from the selected material model
     /// geometry namespace. Parameter bodies are decoded separately.
-    pub rows: Vec<SurfaceRow>,
+    pub(crate) rows: Vec<SurfaceRow>,
     /// Typed fixed-prefix rows from the separate invisible and construction
     /// surface namespace.
-    pub nonvisible_rows: Vec<SurfaceRow>,
+    pub(crate) nonvisible_rows: Vec<SurfaceRow>,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
-    pub cross_section_rows: Vec<SurfaceRow>,
+    pub(crate) cross_section_rows: Vec<SurfaceRow>,
     /// Bounded scalar parameter bodies from positional surface rows.
-    pub parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from the separate invisible and
     /// construction surface namespace.
-    pub nonvisible_parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) nonvisible_parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
-    pub cross_section_parameters: Vec<SurfaceParameterRecord>,
+    pub(crate) cross_section_parameters: Vec<SurfaceParameterRecord>,
     /// Complete positional contour-chain entries from the selected material
     /// model geometry namespace.
-    pub contours: Vec<SurfaceContourRecord>,
+    pub(crate) contours: Vec<SurfaceContourRecord>,
     /// Complete positional contour-chain entries from the separate invisible
     /// and construction surface namespace.
-    pub nonvisible_contours: Vec<SurfaceContourRecord>,
+    pub(crate) nonvisible_contours: Vec<SurfaceContourRecord>,
     /// Complete positional contour-chain entries from DEPDB cross-section
     /// geometry.
-    pub cross_section_contours: Vec<SurfaceContourRecord>,
+    pub(crate) cross_section_contours: Vec<SurfaceContourRecord>,
     /// Count of labeled known-family prototypes plus unlabeled `geom_type` records.
-    pub prototype_count: usize,
+    pub(crate) prototype_count: usize,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
-    pub prototype_records: Vec<SurfacePrototypeRecord>,
+    pub(crate) prototype_records: Vec<SurfacePrototypeRecord>,
     /// Bounded named surface-prototype records from the separate invisible
     /// and construction geometry namespace.
-    pub nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
+    pub(crate) nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
     /// Named prototype fields whose bounded scalar body the decoder refused,
     /// each stating its record, field, declared slot count and the slot and
     /// byte it refused at. The field bytes are retained opaque.
-    pub prototype_field_refusals: Vec<String>,
+    pub(crate) prototype_field_refusals: Vec<String>,
     /// The same, for the separate invisible and construction geometry
     /// namespace.
-    pub nonvisible_prototype_field_refusals: Vec<String>,
+    pub(crate) nonvisible_prototype_field_refusals: Vec<String>,
     /// Complete analytic carriers from legacy visible surface prototypes.
-    pub legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
+    pub(crate) legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
 }
 
 /// Plane support frames, envelopes, placed planes, and datum planes.
-pub struct PlaneScan {
+pub(crate) struct PlaneScan {
     /// Inherited support frames following positional plane envelopes.
-    pub local_systems: Vec<PlaneLocalSystem>,
+    pub(crate) local_systems: Vec<PlaneLocalSystem>,
     /// Plane support frames from the DEPDB cross-section namespace.
-    pub cross_section_local_systems: Vec<PlaneLocalSystem>,
+    pub(crate) cross_section_local_systems: Vec<PlaneLocalSystem>,
     /// Plane-specific standard and compact positional envelopes.
-    pub envelopes: Vec<PlaneEnvelopeRecord>,
+    pub(crate) envelopes: Vec<PlaneEnvelopeRecord>,
     /// Plane envelopes from the DEPDB cross-section namespace.
-    pub cross_section_envelopes: Vec<PlaneEnvelopeRecord>,
+    pub(crate) cross_section_envelopes: Vec<PlaneEnvelopeRecord>,
     /// Axis-aligned placed planes derived from unambiguous outline corners.
-    pub outlines: Vec<OutlinePlane>,
+    pub(crate) outlines: Vec<OutlinePlane>,
     /// Axis-aligned planes from marker-bound six-scalar positional frames.
-    pub positional_frames: Vec<OutlinePlane>,
+    pub(crate) positional_frames: Vec<OutlinePlane>,
     /// Placed planes derived inside the DEPDB cross-section namespace.
-    pub cross_section_outlines: Vec<OutlinePlane>,
+    pub(crate) cross_section_outlines: Vec<OutlinePlane>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
-    pub datums: Vec<DatumPlaneRecord>,
+    pub(crate) datums: Vec<DatumPlaneRecord>,
     /// Complete model-space cylinder carriers decoded from active-datum
     /// surface rows.
-    pub datum_cylinders: Vec<DatumCylinder>,
+    pub(crate) datum_cylinders: Vec<DatumCylinder>,
 }
 
 /// Curve prototypes, parameter bodies, pcurves, and native curve rows.
-pub struct CurveScan {
+pub(crate) struct CurveScan {
     /// Cubic curve replay records bound to following tabulated-cylinder rows.
-    pub tabulated_cylinder_replays: Vec<TabulatedCylinderCurveReplay>,
+    pub(crate) tabulated_cylinder_replays: Vec<TabulatedCylinderCurveReplay>,
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
-    pub prototypes: Vec<CurvePrototype>,
+    pub(crate) prototypes: Vec<CurvePrototype>,
     /// Labeled curve prototypes from the separate invisible and construction
     /// geometry namespace.
-    pub nonvisible_prototypes: Vec<CurvePrototype>,
+    pub(crate) nonvisible_prototypes: Vec<CurvePrototype>,
     /// Labeled first curve rows from DEPDB cross-section namespaces.
-    pub cross_section_prototypes: Vec<CurvePrototype>,
+    pub(crate) cross_section_prototypes: Vec<CurvePrototype>,
     /// Source programs from curve-from-equation entity records.
-    pub expressions: Vec<CurveExpressionRecord>,
+    pub(crate) expressions: Vec<CurveExpressionRecord>,
     /// Bounded analytic parameter bodies from positional curve rows.
-    pub parameters: Vec<CurveParameterRecord>,
+    pub(crate) parameters: Vec<CurveParameterRecord>,
     /// Bounded curve parameter bodies from the separate invisible and
     /// construction geometry namespace.
-    pub nonvisible_parameters: Vec<CurveParameterRecord>,
+    pub(crate) nonvisible_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
-    pub pcurves: Vec<PcurveEndpoints>,
+    pub(crate) pcurves: Vec<PcurveEndpoints>,
     /// Ordered, pointwise-corresponding samples in both incident-face charts.
-    pub two_chart_pcurves: Vec<TwoChartPcurveSamples>,
+    pub(crate) two_chart_pcurves: Vec<TwoChartPcurveSamples>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
-    pub fc_coordinates: Vec<FcCurveCoordinates>,
+    pub(crate) fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
-    pub fc05_circles: Vec<Fc05Circle>,
+    pub(crate) fc05_circles: Vec<Fc05Circle>,
     /// Cylinder cap groups joined through typed curve-face topology. Their
     /// model-space feature frame remains required before IR transfer.
-    pub fc05_cylinder_cap_pairs: Vec<Fc05CylinderCapPair>,
+    pub(crate) fc05_cylinder_cap_pairs: Vec<Fc05CylinderCapPair>,
     /// Complete pcurve UV endpoints from labeled curve prototypes.
-    pub prototype_pcurves: Vec<PrototypePcurveEndpoints>,
+    pub(crate) prototype_pcurves: Vec<PrototypePcurveEndpoints>,
     /// Labeled face and next-edge references from curve prototypes.
-    pub prototype_topology: Vec<CurvePrototypeTopology>,
+    pub(crate) prototype_topology: Vec<CurvePrototypeTopology>,
     /// Prototype pcurve endpoints bound to their adjacent face identifiers.
-    pub bound_prototype_pcurves: Vec<BoundPrototypePcurve>,
+    pub(crate) bound_prototype_pcurves: Vec<BoundPrototypePcurve>,
     /// Curve rows with an unambiguous canonical four-reference topology
     /// suffix. These rows define the native half-edge adjacency graph.
-    pub topology_rows: Vec<CurveTopologyRow>,
+    pub(crate) topology_rows: Vec<CurveTopologyRow>,
     /// Curve rows from the separate invisible and construction geometry
     /// namespace. These rows do not participate in model topology.
-    pub nonvisible_topology_rows: Vec<CurveTopologyRow>,
+    pub(crate) nonvisible_topology_rows: Vec<CurveTopologyRow>,
     /// Complete one-sided curve rows from the DEPDB cross-section namespace.
-    pub cross_section_rows: Vec<DepdbCurveRow>,
+    pub(crate) cross_section_rows: Vec<DepdbCurveRow>,
 }
 
 /// Native half-edge adjacency graph resolved from curve topology rows.
-pub struct TopologyScan {
+pub(crate) struct TopologyScan {
     /// Resolved native half-edges and closed loops built from curve rows.
-    pub half_edges: Vec<HalfEdge>,
+    pub(crate) half_edges: Vec<HalfEdge>,
     /// Closed rings of half-edges, one per resolved face loop.
-    pub loops: Vec<Loop>,
+    pub(crate) loops: Vec<Loop>,
     /// Connected components of non-null face references in native curve
     /// topology. These are not emitted IR shells.
-    pub face_components: Vec<FaceComponent>,
+    pub(crate) face_components: Vec<FaceComponent>,
     /// Topological vertex identities derived from half-edge orbits.
-    pub vertices: Vec<TopologicalVertex>,
+    pub(crate) vertices: Vec<TopologicalVertex>,
     /// Start/end vertex binding for each decoded half-edge.
-    pub half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
+    pub(crate) half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
     /// The seed half-edge of every orbit past the one-based `u32` vertex
     /// identifier space. Each names an orbit that states no topological
     /// vertex, so its half-edges carry no incidence.
-    pub unstatable_vertex_orbits: Vec<crate::topology::HalfEdgeId>,
+    pub(crate) unstatable_vertex_orbits: Vec<crate::topology::HalfEdgeId>,
 }
 
 /// Feature rows, definitions, operations, and the implicit entity graph.
-pub struct FeatureScan {
+pub(crate) struct FeatureScan {
     /// Feature IDs that own decoded geometry rows.
-    pub ids: Vec<u32>,
+    pub(crate) ids: Vec<u32>,
     /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
-    pub rows: Vec<FeatureRow>,
+    pub(crate) rows: Vec<FeatureRow>,
     /// Short-form radius candidates from bounded class-913 round replays.
-    pub round_replay_scalars: Vec<crate::feature::rows::FeatureRoundReplayScalar>,
+    pub(crate) round_replay_scalars: Vec<crate::feature::rows::FeatureRoundReplayScalar>,
     /// Section-bounded procedural recipe rows synthesized from `DEPDB_DATA`.
-    pub depdb_recipe_rows: Vec<FeatureRow>,
+    pub(crate) depdb_recipe_rows: Vec<FeatureRow>,
     /// Labeled procedural-choice spans inside decoded feature rows.
-    pub choices: Vec<FeatureChoice>,
+    pub(crate) choices: Vec<FeatureChoice>,
     /// Named fields and typed wrappers inside procedural-choice spans.
-    pub choice_fields: Vec<FeatureChoiceField>,
+    pub(crate) choice_fields: Vec<FeatureChoiceField>,
     /// Generated-geometry namespace headers owned by decoded features.
-    pub geometry_tables: Vec<FeatureGeometryTable>,
+    pub(crate) geometry_tables: Vec<FeatureGeometryTable>,
     /// Ordered feature-local loop identities from complete `lo_hist` rosters.
-    pub loop_history_entries: Vec<FeatureLoopHistoryEntry>,
+    pub(crate) loop_history_entries: Vec<FeatureLoopHistoryEntry>,
     /// Complete named affected-ID arrays owned by decoded features.
-    pub affected_ids: Vec<FeatureAffectedIds>,
+    pub(crate) affected_ids: Vec<FeatureAffectedIds>,
     /// Affected-ID runs from unlabeled positional replay feature rows.
-    pub replay_affected_ids: Vec<FeatureReplayAffectedIds>,
+    pub(crate) replay_affected_ids: Vec<FeatureReplayAffectedIds>,
     /// Affected geometry, edge, and quilt arrays from class-946 replay rows.
-    pub surface_merge_replay_affected_ids: Vec<crate::feature::FeatureSurfaceMergeAffectedIds>,
+    pub(crate) surface_merge_replay_affected_ids:
+        Vec<crate::feature::FeatureSurfaceMergeAffectedIds>,
     /// Named compact direction values from loop-restoration records.
-    pub loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
+    pub(crate) loop_restore_directions: Vec<FeatureLoopRestoreDirection>,
     /// Resolved angular termination from rotational feature rows.
-    pub revolution_extents: Vec<FeatureRevolutionExtent>,
+    pub(crate) revolution_extents: Vec<FeatureRevolutionExtent>,
     /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
-    pub definitions: Vec<FeatureDefinition>,
+    pub(crate) definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
-    pub section_transforms: Vec<FeatureSectionTransform>,
+    pub(crate) section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
-    pub operation_states: Vec<FeatureOperationState>,
+    pub(crate) operation_states: Vec<FeatureOperationState>,
     /// Unambiguous or consensus feature-operation projection for each identifier.
-    pub operations: Vec<FeatureOperation>,
+    pub(crate) operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
-    pub reference_names: Vec<FeatureReferenceName>,
+    pub(crate) reference_names: Vec<FeatureReferenceName>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
-    pub entities: Vec<FeatureEntity>,
+    pub(crate) entities: Vec<FeatureEntity>,
     /// Canonical `f7` references between implicit `AllFeatur` entities.
-    pub entity_references: Vec<FeatureEntityReference>,
+    pub(crate) entity_references: Vec<FeatureEntityReference>,
     /// Mixed generated-entity tables from `AllFeatur`, with owner bindings
     /// retained only where their containing feature row is byte-bounded.
-    pub entity_tables: Vec<FeatureEntityTable>,
+    pub(crate) entity_tables: Vec<FeatureEntityTable>,
     /// Legacy ASCII round features joined to their dimensions and result edges.
-    pub legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
+    pub(crate) legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
 /// container signature ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Detection is magic-based, never
 /// extension-based, because `.prt` is shared with Siemens NX ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
-pub fn looks_like_creo(prefix: &[u8]) -> bool {
+pub(crate) fn looks_like_creo(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
 }
 
@@ -2307,7 +2308,9 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
 }
 
 /// Parse a whole `.prt` byte image.
-pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<ContainerScan<'a>, CodecError> {
+pub(crate) fn scan_bytes<'a>(
+    data: impl Into<Cow<'a, [u8]>>,
+) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
     let version_line = line_at(&data, 0);
     let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
@@ -2829,7 +2832,7 @@ pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan
 }
 
 /// Return whether a thumbnail section contains a JPEG start marker.
-pub fn has_thumbnail(scan: &ContainerScan) -> bool {
+pub(crate) fn has_thumbnail(scan: &ContainerScan) -> bool {
     for section in scan
         .framing
         .sections
@@ -2859,7 +2862,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
 }
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
-pub fn summarize(
+pub(crate) fn summarize(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> ContainerSummary {

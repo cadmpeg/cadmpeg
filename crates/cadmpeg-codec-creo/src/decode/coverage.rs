@@ -14,7 +14,7 @@ use crate::container::ContainerScan;
 use super::feature_history::link::surface_kind_for_geometry;
 use super::records::CreoSurfaceNamedParameterRecord;
 
-pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
+pub(super) fn source_section(scan: &ContainerScan, offset: usize) -> String {
     scan.framing
         .sections
         .iter()
@@ -35,7 +35,7 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
         .to_string()
 }
 
-pub(crate) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
+pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
     match kind {
         crate::surface::SurfaceKind::Plane => "plane",
         crate::surface::SurfaceKind::Cylinder => "cylinder",
@@ -47,7 +47,7 @@ pub(crate) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str 
     }
 }
 
-pub(crate) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
+pub(super) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
     crate::surface::SurfaceKind::Plane,
     crate::surface::SurfaceKind::Cylinder,
     crate::surface::SurfaceKind::Cone,
@@ -70,7 +70,7 @@ const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
 }
 
 #[derive(Default)]
-pub(crate) struct SurfaceTransferCoverage {
+pub(in crate::decode) struct SurfaceTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
     retained_unknown_rows: usize,
@@ -81,22 +81,22 @@ pub(crate) struct SurfaceTransferCoverage {
 
 impl SurfaceTransferCoverage {
     /// Recorded unique rows.
-    pub(crate) fn unique_rows(&self) -> usize {
+    pub(super) fn unique_rows(&self) -> usize {
         self.unique_rows
     }
 
     /// Recorded transferred rows.
-    pub(crate) fn transferred_rows(&self) -> usize {
+    pub(super) fn transferred_rows(&self) -> usize {
         self.transferred_rows
     }
 
     /// Recorded retained unknown rows.
-    pub(crate) fn retained_unknown_rows(&self) -> usize {
+    pub(super) fn retained_unknown_rows(&self) -> usize {
         self.retained_unknown_rows
     }
 
     /// Recorded ambiguous rows.
-    pub(crate) fn ambiguous_rows(&self) -> usize {
+    pub(super) fn ambiguous_rows(&self) -> usize {
         self.ambiguous_rows
     }
 
@@ -104,11 +104,11 @@ impl SurfaceTransferCoverage {
         self.ambiguous_rows += count;
     }
 
-    pub(crate) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
+    pub(super) fn family(&self, kind: crate::surface::SurfaceKind) -> (usize, usize) {
         self.by_family[surface_family_index(kind)]
     }
 
-    pub(crate) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
+    pub(super) fn unknown_family(&self, kind: crate::surface::SurfaceKind) -> usize {
         self.unknown_by_family[surface_family_index(kind)]
     }
 
@@ -129,7 +129,7 @@ impl SurfaceTransferCoverage {
 }
 
 #[derive(Default)]
-pub(crate) struct CurveTransferCoverage {
+pub(in crate::decode) struct CurveTransferCoverage {
     unique_rows: usize,
     transferred_rows: usize,
     retained_unknown_rows: usize,
@@ -140,22 +140,22 @@ pub(crate) struct CurveTransferCoverage {
 
 impl CurveTransferCoverage {
     /// Recorded unique rows.
-    pub(crate) fn unique_rows(&self) -> usize {
+    pub(super) fn unique_rows(&self) -> usize {
         self.unique_rows
     }
 
     /// Recorded transferred rows.
-    pub(crate) fn transferred_rows(&self) -> usize {
+    pub(super) fn transferred_rows(&self) -> usize {
         self.transferred_rows
     }
 
     /// Recorded retained unknown rows.
-    pub(crate) fn retained_unknown_rows(&self) -> usize {
+    pub(super) fn retained_unknown_rows(&self) -> usize {
         self.retained_unknown_rows
     }
 
     /// Recorded ambiguous rows.
-    pub(crate) fn ambiguous_rows(&self) -> usize {
+    pub(super) fn ambiguous_rows(&self) -> usize {
         self.ambiguous_rows
     }
 
@@ -180,18 +180,18 @@ impl CurveTransferCoverage {
     }
 
     /// Source and transferred counts by native curve type.
-    pub(crate) fn by_type(&self) -> &BTreeMap<u8, (usize, usize)> {
+    pub(super) fn by_type(&self) -> &BTreeMap<u8, (usize, usize)> {
         &self.by_type
     }
 
     /// Retained unknown counts by native curve type.
-    pub(crate) fn unknown_by_type(&self) -> &BTreeMap<u8, usize> {
+    pub(super) fn unknown_by_type(&self) -> &BTreeMap<u8, usize> {
         &self.unknown_by_type
     }
 }
 
 #[derive(Default)]
-pub(crate) struct SketchSegmentTransferCoverage {
+pub(super) struct SketchSegmentTransferCoverage {
     decoded_rows: usize,
     resolved_geometry: usize,
     missing_rows: usize,
@@ -200,13 +200,13 @@ pub(crate) struct SketchSegmentTransferCoverage {
 
 impl SketchSegmentTransferCoverage {
     /// Records decoded and missing rows for a segment table.
-    pub(crate) fn record_table_rows(&mut self, decoded: usize, expected: usize) {
+    pub(super) fn record_table_rows(&mut self, decoded: usize, expected: usize) {
         self.decoded_rows += decoded;
         self.missing_rows += expected.saturating_sub(decoded);
     }
 
     /// Records decoded rows in one segment family.
-    pub(crate) fn record_family_rows(
+    pub(super) fn record_family_rows(
         &mut self,
         family: crate::coverage::SketchSegmentFamily,
         count: usize,
@@ -215,12 +215,12 @@ impl SketchSegmentTransferCoverage {
     }
 
     /// Records resolved geometry instances.
-    pub(crate) fn record_resolved_geometry(&mut self, count: usize) {
+    pub(super) fn record_resolved_geometry(&mut self, count: usize) {
         self.resolved_geometry += count;
     }
 
     /// Records resolved rows in one segment family.
-    pub(crate) fn record_family_resolution(
+    pub(super) fn record_family_resolution(
         &mut self,
         family: crate::coverage::SketchSegmentFamily,
         count: usize,
@@ -229,21 +229,21 @@ impl SketchSegmentTransferCoverage {
     }
 
     /// Recorded decoded rows.
-    pub(crate) fn decoded_rows(&self) -> usize {
+    pub(super) fn decoded_rows(&self) -> usize {
         self.decoded_rows
     }
 
     /// Recorded resolved geometry.
-    pub(crate) fn resolved_geometry(&self) -> usize {
+    pub(super) fn resolved_geometry(&self) -> usize {
         self.resolved_geometry
     }
 
     /// Recorded missing rows.
-    pub(crate) fn missing_rows(&self) -> usize {
+    pub(super) fn missing_rows(&self) -> usize {
         self.missing_rows
     }
 
-    pub(crate) fn families(
+    pub(super) fn families(
         &self,
     ) -> impl Iterator<Item = (crate::coverage::SketchSegmentFamily, (usize, usize))> + '_ {
         crate::coverage::SketchSegmentFamily::ALL
@@ -258,26 +258,26 @@ impl SketchSegmentTransferCoverage {
 }
 
 #[derive(Default)]
-pub(crate) struct DesignConstraintTransferCoverage {
-    pub(crate) transferred: usize,
-    pub(crate) native: usize,
-    pub(crate) active: usize,
-    pub(crate) active_native: usize,
-    pub(crate) native_by_kind: BTreeMap<u32, usize>,
-    pub(crate) active_native_by_kind: BTreeMap<u32, usize>,
+pub(in crate::decode) struct DesignConstraintTransferCoverage {
+    pub(super) transferred: usize,
+    pub(super) native: usize,
+    pub(super) active: usize,
+    pub(super) active_native: usize,
+    pub(super) native_by_kind: BTreeMap<u32, usize>,
+    pub(super) active_native_by_kind: BTreeMap<u32, usize>,
 }
 
 impl DesignConstraintTransferCoverage {
-    pub(crate) fn typed(&self) -> usize {
+    pub(super) fn typed(&self) -> usize {
         self.transferred.saturating_sub(self.native)
     }
 
-    pub(crate) fn active_typed(&self) -> usize {
+    pub(super) fn active_typed(&self) -> usize {
         self.active.saturating_sub(self.active_native)
     }
 }
 
-pub(crate) fn design_constraint_transfer_coverage(
+pub(super) fn design_constraint_transfer_coverage(
     constraints: &[SketchConstraint],
     id_marker: &str,
     native_kind_prefix: &str,
@@ -323,7 +323,7 @@ pub(crate) fn design_constraint_transfer_coverage(
         )
 }
 
-pub(crate) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix: &str) -> String {
+pub(super) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix: &str) -> String {
     coverage
         .iter()
         .filter_map(|(key, count)| {
@@ -336,7 +336,7 @@ pub(crate) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix:
         .join(", ")
 }
 
-pub(crate) fn curve_transfer_coverage(
+pub(super) fn curve_transfer_coverage(
     rows: &[crate::curve::CurveTopologyRow],
     curves: &[Curve],
 ) -> CurveTransferCoverage {
@@ -395,7 +395,7 @@ pub(crate) fn curve_transfer_coverage(
     coverage
 }
 
-pub(crate) fn surface_transfer_coverage(
+pub(super) fn surface_transfer_coverage(
     rows: &[crate::surface::SurfaceRow],
     surfaces: &[Surface],
     procedural_surfaces: &[ProceduralSurface],
@@ -479,7 +479,7 @@ pub(crate) fn surface_transfer_coverage(
     coverage
 }
 
-pub(crate) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'static str> {
+pub(super) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'static str> {
     match kind {
         crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear) => {
             Some("ruled_surface")
@@ -491,7 +491,7 @@ pub(crate) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'sta
     }
 }
 
-pub(crate) fn surface_prototype_family_name(
+pub(super) fn surface_prototype_family_name(
     family: &crate::surface::SurfacePrototypeFamily,
 ) -> String {
     match family {

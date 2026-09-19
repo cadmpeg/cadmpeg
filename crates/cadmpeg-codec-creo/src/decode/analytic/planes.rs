@@ -39,7 +39,7 @@ const EPS_FC05_TANGENT_AXIS: f64 = 1.0e-10;
 const EPS_FC05_TANGENT_RESIDUAL: f64 = 1.0e-9;
 const EPS_FC05_CAP_AXIS: f64 = 1.0e-9;
 
-pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
+pub(in crate::decode) fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
         CarrierEquation::Plane(plane) => {
             let residual = dot(plane.normal, point) - dot(plane.normal, plane.origin);
@@ -92,7 +92,7 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     }
 }
 
-pub fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Option<[f64; 3]> {
+fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Option<[f64; 3]> {
     let delta: [f64; 3] = std::array::from_fn(|index| second.center[index] - first.center[index]);
     let distance = dot(delta, delta).sqrt();
     if distance <= EPS_NEAR_ZERO || first.radius <= 0.0 || second.radius <= 0.0 {
@@ -113,10 +113,7 @@ pub fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Op
     }))
 }
 
-pub fn tangent_plane_sphere_point(
-    plane: PlaneEquation,
-    sphere: SphereEquation,
-) -> Option<[f64; 3]> {
+fn tangent_plane_sphere_point(plane: PlaneEquation, sphere: SphereEquation) -> Option<[f64; 3]> {
     let normal = normalize(plane.normal)?;
     let signed_distance = dot(
         normal,
@@ -132,14 +129,14 @@ pub fn tangent_plane_sphere_point(
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct CarrierSolveDiagnostics {
-    pub pair_intersections: usize,
-    pub triple_intersections: usize,
-    pub valid_candidates: usize,
-    pub unique_solutions: usize,
+pub(super) struct CarrierSolveDiagnostics {
+    pub(super) pair_intersections: usize,
+    pub(super) triple_intersections: usize,
+    pub(super) valid_candidates: usize,
+    pub(super) unique_solutions: usize,
 }
 
-pub fn solve_carriers_with_diagnostics(
+pub(super) fn solve_carriers_with_diagnostics(
     carriers: &[CarrierEquation],
 ) -> (Option<[f64; 3]>, CarrierSolveDiagnostics) {
     let mut candidates = Vec::new();
@@ -320,11 +317,11 @@ pub fn solve_carriers_with_diagnostics(
 }
 
 #[cfg(test)]
-pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+pub(in crate::decode) fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
     solve_carriers_with_diagnostics(carriers).0
 }
 
-pub fn is_axis_aligned(vector: [f64; 3]) -> bool {
+pub(in crate::decode) fn is_axis_aligned(vector: [f64; 3]) -> bool {
     vector
         .iter()
         .filter(|value| value.abs() > EPS_AGREE)
@@ -332,7 +329,7 @@ pub fn is_axis_aligned(vector: [f64; 3]) -> bool {
         == 1
 }
 
-pub fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEquation> {
+pub(in crate::decode) fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEquation> {
     let mut normal = normalize(plane.normal)?;
     let mut distance = dot(normal, plane.origin);
     if !distance.is_finite() {
@@ -352,7 +349,7 @@ pub fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEquation> {
     })
 }
 
-pub fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
+pub(in crate::decode) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
     let planes = candidates
         .iter()
         .copied()
@@ -375,7 +372,7 @@ pub fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
         .then_some(first)
 }
 
-pub fn reconciled_model_plane(
+pub(in crate::decode) fn reconciled_model_plane(
     local_planes: &BTreeMap<u32, PlaneEquation>,
     ir: &CadIr,
     surface_id: u32,
@@ -412,20 +409,20 @@ pub fn reconciled_model_plane(
 }
 
 #[derive(Clone, Copy)]
-pub struct PlaneCandidate {
-    pub equation: PlaneEquation,
-    pub chart: Option<PlaneChart>,
-    pub offset: usize,
+pub(in crate::decode) struct PlaneCandidate {
+    pub(in crate::decode) equation: PlaneEquation,
+    pub(in crate::decode) chart: Option<PlaneChart>,
+    pub(in crate::decode) offset: usize,
 }
 
 #[derive(Clone, Copy)]
-pub struct PlaneChart {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub u_axis: [f64; 3],
+pub(in crate::decode) struct PlaneChart {
+    pub(in crate::decode) origin: [f64; 3],
+    pub(in crate::decode) normal: [f64; 3],
+    pub(in crate::decode) u_axis: [f64; 3],
 }
 
-pub fn agreed_plane_surface(
+pub(in crate::decode) fn agreed_plane_surface(
     candidates: &[PlaneCandidate],
 ) -> Option<(PlaneEquation, [f64; 3], usize)> {
     agreed_plane(
@@ -589,7 +586,7 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     (candidates.len() > 1).then_some(candidates)
 }
 
-pub(crate) fn stored_parameter_normal_candidates(
+pub(in crate::decode) fn stored_parameter_normal_candidates(
     frame: &crate::surface::PlaneLocalSystem,
 ) -> Option<Vec<PlaneCandidate>> {
     stored_parameter_normal_candidates_with_origin_branches(frame, false)
@@ -875,7 +872,7 @@ fn fc05_cylinder_branch_witnesses(
 /// Select an FC05 cylinder frame only when reference geometry improves the
 /// independent stored-plane tangency score. A validated cap pair remains the
 /// primary frame source; this witness does not turn an ID match into geometry.
-pub(crate) fn fc05_cylinder_model_witness(
+pub(in crate::decode) fn fc05_cylinder_model_witness(
     scan: &ContainerScan,
     cylinder_id: u32,
     legacy: super::equations::CylinderEquation,
@@ -1020,7 +1017,7 @@ fn plane_candidate_is_fc05_tangent(
         <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
 }
 
-pub(crate) fn plane_candidate_pcurve_lies_on_carrier(
+pub(in crate::decode) fn plane_candidate_pcurve_lies_on_carrier(
     candidate: PlaneCandidate,
     endpoints: [[f64; 2]; 2],
     carrier: CarrierEquation,
@@ -1312,7 +1309,7 @@ fn round_edge_endpoint_plane_score(
         .count()
 }
 
-pub(crate) fn unique_round_edge_origin_candidate(
+pub(in crate::decode) fn unique_round_edge_origin_candidate(
     candidates: &[PlaneCandidate],
     envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
 ) -> Option<PlaneCandidate> {
@@ -1406,7 +1403,9 @@ fn select_round_edge_origin_branches(
     }
 }
 
-pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+pub(in crate::decode) fn plane_candidates(
+    scan: &ContainerScan,
+) -> BTreeMap<u32, Vec<PlaneCandidate>> {
     let matrix_frame_ids = scan
         .planes
         .local_systems
@@ -1566,7 +1565,7 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         .collect()
 }
 
-pub fn frame_bound_outline_plane_candidate(
+pub(in crate::decode) fn frame_bound_outline_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     outline: &crate::surface::OutlinePlane,
 ) -> Option<PlaneCandidate> {
@@ -1596,7 +1595,7 @@ pub fn frame_bound_outline_plane_candidate(
     })
 }
 
-pub fn envelope_reconciled_plane_candidate(
+pub(in crate::decode) fn envelope_reconciled_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     equation: PlaneEquation,
 ) -> Option<PlaneCandidate> {
@@ -1660,7 +1659,7 @@ pub fn envelope_reconciled_plane_candidate(
     })
 }
 
-pub fn held_coordinate_plane(
+pub(in crate::decode) fn held_coordinate_plane(
     envelope: &crate::surface::PlaneEnvelopeRecord,
 ) -> Option<PlaneEquation> {
     let corners = plane_envelope_corners(&envelope.envelope)?;
@@ -1687,7 +1686,7 @@ pub fn held_coordinate_plane(
     })
 }
 
-pub fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
+pub(in crate::decode) fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
     plane_candidates(scan)
         .into_iter()
         .filter_map(|(id, candidates)| {
@@ -1702,7 +1701,7 @@ pub fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
         .collect()
 }
 
-pub fn placed_plane_surfaces(
+pub(in crate::decode) fn placed_plane_surfaces(
     scan: &ContainerScan,
 ) -> BTreeMap<u32, (PlaneEquation, [f64; 3], usize)> {
     plane_candidates(scan)
@@ -1713,7 +1712,9 @@ pub fn placed_plane_surfaces(
         .collect()
 }
 
-pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Option<PlaneEquation> {
+pub(in crate::decode) fn topology_bound_plane(
+    points: impl IntoIterator<Item = [f64; 3]>,
+) -> Option<PlaneEquation> {
     let mut points = points.into_iter().collect::<Vec<_>>();
     points.sort_by(|left, right| {
         left.iter()
@@ -1759,7 +1760,7 @@ pub fn topology_bound_plane(points: impl IntoIterator<Item = [f64; 3]>) -> Optio
         .then_some(PlaneEquation { origin, normal })
 }
 
-pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+pub(in crate::decode) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     let (origin, normal) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
@@ -1793,12 +1794,12 @@ pub fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BoundaryLine {
-    pub origin: [f64; 3],
-    pub direction: [f64; 3],
+pub(in crate::decode) struct BoundaryLine {
+    pub(in crate::decode) origin: [f64; 3],
+    pub(in crate::decode) direction: [f64; 3],
 }
 
-pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
+pub(in crate::decode) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
@@ -1842,7 +1843,7 @@ pub fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> 
     Some(BoundaryLine { origin, direction })
 }
 
-pub fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
+pub(in crate::decode) fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
     nurbs_intrinsic_parameter_range(nurbs)?;
     nurbs
         .weights()
@@ -1854,7 +1855,9 @@ pub fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
         .then_some(())
 }
 
-pub fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
+pub(in crate::decode) fn topology_bound_line_plane(
+    lines: &[BoundaryLine],
+) -> Option<PlaneEquation> {
     let mut candidate = None;
     'pairs: for first in 0..lines.len() {
         for second in first + 1..lines.len() {
@@ -1883,7 +1886,7 @@ pub fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation
         .then_some(canonical)
 }
 
-pub fn agreed_topology_bound_plane(
+pub(in crate::decode) fn agreed_topology_bound_plane(
     points: impl IntoIterator<Item = [f64; 3]>,
     curve_planes: impl IntoIterator<Item = PlaneEquation>,
     lines: impl IntoIterator<Item = BoundaryLine>,

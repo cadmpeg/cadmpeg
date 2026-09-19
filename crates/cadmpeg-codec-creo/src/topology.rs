@@ -25,7 +25,7 @@ pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveT
 
 /// One of the two native curve suffix sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Side {
+pub(crate) enum Side {
     /// The `F0`/`E0` suffix side.
     Zero,
     /// The `F1`/`E1` suffix side.
@@ -34,7 +34,7 @@ pub enum Side {
 
 impl Side {
     /// The opposite side of this curve.
-    pub const fn flip(self) -> Self {
+    pub(crate) const fn flip(self) -> Self {
         match self {
             Self::Zero => Self::One,
             Self::One => Self::Zero,
@@ -42,7 +42,7 @@ impl Side {
     }
 
     /// Index into the two-element face and successor arrays.
-    pub const fn index(self) -> usize {
+    pub(crate) const fn index(self) -> usize {
         match self {
             Self::Zero => 0,
             Self::One => 1,
@@ -67,36 +67,36 @@ impl serde::Serialize for Side {
 
 /// A curve identifier paired with one of its two native sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HalfEdgeId {
+pub(crate) struct HalfEdgeId {
     /// The owning curve's `crv_id` in the `crv_array` namespace.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// The half-edge side: `0` for the `F0`/`E0` suffix fields, `1` for
     /// `F1`/`E1`.
-    pub side: Side,
+    pub(crate) side: Side,
 }
 
 /// A native half-edge, its face, and its uniquely resolved successor.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HalfEdge {
+pub(crate) struct HalfEdge {
     /// This half-edge's curve and side.
-    pub id: HalfEdgeId,
+    pub(crate) id: HalfEdgeId,
     /// The `srf_array` face identifier this half-edge side bounds (the
     /// corresponding `F0`/`F1` suffix field).
-    pub face_id: Option<NonZeroU32>,
+    pub(crate) face_id: Option<NonZeroU32>,
     /// The next half-edge on the same face, when exactly one candidate
     /// successor matched the row's `E0`/`E1` next-edge field on that face.
     /// `None` when the successor is absent or ambiguous.
-    pub next: Option<HalfEdgeId>,
+    pub(crate) next: Option<HalfEdgeId>,
 }
 
 /// A closed ring of half-edges on one face.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Loop {
+pub(crate) struct Loop {
     /// The `srf_array` face identifier this loop bounds.
-    pub face_id: Option<NonZeroU32>,
+    pub(crate) face_id: Option<NonZeroU32>,
     /// The ring of half-edges in traversal order, starting from the first
     /// half-edge encountered for this face.
-    pub half_edges: Vec<HalfEdgeId>,
+    pub(crate) half_edges: Vec<HalfEdgeId>,
 }
 
 /// One connected component of non-null `srf_array` face references.
@@ -104,31 +104,31 @@ pub struct Loop {
 /// The component is native topology only. It is not an emitted shell because
 /// curve geometry, face carriers, and vertex bindings are independent layers.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FaceComponent {
+pub(crate) struct FaceComponent {
     /// Sorted nonzero face identifiers in the connected component.
-    pub face_ids: Vec<u32>,
+    pub(crate) face_ids: Vec<u32>,
     /// Sorted curve identifiers whose two sides connect component faces.
-    pub curve_ids: Vec<u32>,
+    pub(crate) curve_ids: Vec<u32>,
 }
 
 /// One topological vertex represented by its incident half-edge orbit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopologicalVertex {
+pub(crate) struct TopologicalVertex {
     /// Deterministic one-based vertex identifier.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Sorted half-edges sharing this start vertex.
-    pub half_edges: Vec<HalfEdgeId>,
+    pub(crate) half_edges: Vec<HalfEdgeId>,
 }
 
 /// Start/end vertex binding for one oriented half-edge.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HalfEdgeVertexIncidence {
+pub(crate) struct HalfEdgeVertexIncidence {
     /// Bound oriented half-edge.
-    pub half_edge: HalfEdgeId,
+    pub(crate) half_edge: HalfEdgeId,
     /// Vertex orbit containing this half-edge.
-    pub start_vertex_id: u32,
+    pub(crate) start_vertex_id: u32,
     /// Start vertex of the resolved successor half-edge.
-    pub end_vertex_id: Option<u32>,
+    pub(crate) end_vertex_id: Option<u32>,
 }
 
 /// Return each uniquely identified curve's two half-edge start vertices.
@@ -136,7 +136,9 @@ pub struct HalfEdgeVertexIncidence {
 /// Start vertices come from the vertex-orbit relation and remain available
 /// when one or both successor end relations are unresolved. Callers that need
 /// a complete oriented edge must use [`edge_vertex_pairs`] instead.
-pub fn edge_start_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
+pub(crate) fn edge_start_vertex_pairs(
+    incidence: &[HalfEdgeVertexIncidence],
+) -> BTreeMap<u32, [u32; 2]> {
     let mut by_curve = BTreeMap::<u32, [Vec<u32>; 2]>::new();
     for binding in incidence {
         by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
@@ -161,7 +163,7 @@ pub fn edge_start_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMa
 /// Each orbit member identifies an edge endpoint. Both half-edge sides of that
 /// edge contribute face carriers at the endpoint, even when only one side is a
 /// member of the outgoing orbit.
-pub fn vertex_incident_faces(
+pub(crate) fn vertex_incident_faces(
     vertices: &[TopologicalVertex],
     edges: &[HalfEdge],
 ) -> BTreeMap<u32, BTreeSet<u32>> {
@@ -195,7 +197,7 @@ pub fn vertex_incident_faces(
 /// Resolve a curve's side-0 start and side-1 start as its oriented endpoint
 /// pair when at least one face loop supplies the corresponding end relation.
 /// Any supplied relation must agree with the opposite side's start vertex.
-pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
+pub(crate) fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
     let mut by_curve = BTreeMap::<u32, [Vec<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
         by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
@@ -225,16 +227,16 @@ pub fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32,
 }
 
 /// What one half-edge set states about its topological vertices.
-pub struct VertexOrbits {
+pub(crate) struct VertexOrbits {
     /// Topological vertex identities, one per admitted half-edge orbit.
-    pub vertices: Vec<TopologicalVertex>,
+    pub(crate) vertices: Vec<TopologicalVertex>,
     /// Start and end vertex binding of every half-edge an admitted orbit holds.
-    pub incidence: Vec<HalfEdgeVertexIncidence>,
+    pub(crate) incidence: Vec<HalfEdgeVertexIncidence>,
     /// The seed half-edge of every orbit past the one-based `u32` vertex
     /// identifier space, in traversal order. Each names an orbit this scan
     /// states no vertex for; its half-edges carry no incidence, and the decode
     /// report names the lane and the first instance.
-    pub unstatable_orbits: Vec<HalfEdgeId>,
+    pub(crate) unstatable_orbits: Vec<HalfEdgeId>,
 }
 
 /// Build topological vertex orbits under `twin(previous(h))` and bind each
@@ -247,7 +249,7 @@ pub struct VertexOrbits {
 /// [`VertexOrbits::unstatable_orbits`] by its seed half-edge and refused at its
 /// own lane. The rest of
 /// the file's topology is unaffected, so it is not a whole-file refusal.
-pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
+pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
     let by_id = edges
         .iter()
         .map(|edge| (edge.id, edge))
@@ -348,7 +350,7 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
 /// topology rows.
 ///
 /// A curve contributes to a component when either of its sides names a face.
-pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
+pub(crate) fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     let rows = uniquely_identified_rows(rows);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
@@ -414,7 +416,7 @@ pub(crate) fn selected_body_count(
 /// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
-pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
+pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     let rows = uniquely_identified_rows(rows);
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {

@@ -5,7 +5,7 @@ use crate::{psb, scalar};
 
 /// Named scalar-array field in a primitive record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrimitiveArrayField {
+pub(crate) enum PrimitiveArrayField {
     /// First primitive point.
     P1,
     /// Second primitive point.
@@ -20,7 +20,7 @@ pub enum PrimitiveArrayField {
 
 impl PrimitiveArrayField {
     /// Stored field spelling.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::P1 => "p1",
             Self::P2 => "p2",
@@ -33,37 +33,37 @@ impl PrimitiveArrayField {
 
 /// One bounded, named scalar array in a primitive record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveScalarArray {
+pub(crate) struct PrimitiveScalarArray {
     /// Named field containing the array.
-    pub field: PrimitiveArrayField,
+    pub(crate) field: PrimitiveArrayField,
     /// Byte offset of the named-record header in the expanded section.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Completely decoded scalar values.
-    pub values: Vec<f64>,
+    pub(crate) values: Vec<f64>,
 }
 
 /// One complete triangle-strip primitive.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveTriangleStrip {
+pub(crate) struct PrimitiveTriangleStrip {
     /// Byte offset of `value(prim_tristripsetwithatt)` in the expanded section.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Consecutive model-space positions.
-    pub positions: Vec<[f64; 3]>,
+    pub(crate) positions: Vec<[f64; 3]>,
     /// Per-vertex normals when the primitive uses the interleaved normal and
     /// position lane. A primitive that carries only the position lane states
     /// an unshaded strip set and no normal lane at all.
-    pub normals: Option<Vec<[f64; 3]>>,
+    pub(crate) normals: Option<Vec<[f64; 3]>>,
     /// Vertex count of each consecutive triangle strip.
-    pub strip_lengths: Vec<u32>,
+    pub(crate) strip_lengths: Vec<u32>,
 }
 
 /// Complete triangle strips and conflicts found in one primitive-data stream.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveTriangleStripScan {
+pub(crate) struct PrimitiveTriangleStripScan {
     /// Triangle-strip records whose cumulative counts and geometry agree.
-    pub strips: Vec<PrimitiveTriangleStrip>,
+    pub(crate) strips: Vec<PrimitiveTriangleStrip>,
     /// Records with complete position or normal representations that disagree.
-    pub conflicting_representation_count: usize,
+    pub(crate) conflicting_representation_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,7 +156,7 @@ fn triangle_strip_geometry(
 }
 
 /// Decode named triangle-strip primitives and representation conflicts.
-pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
+pub(crate) fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
     const RECORD: &[u8] = b"value(prim_tristripsetwithatt)\0";
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
     let mut strips = Vec::new();
@@ -237,7 +237,7 @@ pub fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
 /// positive-Y unit vector, and signed four-byte values replace the IEEE-754
 /// high byte with a compact exponent byte. Only complete arrays whose declared
 /// count is satisfied are returned.
-pub fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
+pub(crate) fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
     const FIELDS: [PrimitiveArrayField; 5] = [
         PrimitiveArrayField::P1,
         PrimitiveArrayField::P2,

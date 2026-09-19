@@ -15,17 +15,17 @@
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
 macro_rules! loss_codes {
-    ($(#[$enum_attribute:meta])* pub enum $name:ident {
+    ($(#[$enum_attribute:meta])* pub(crate) enum $name:ident {
         $($(#[$variant_attribute:meta])* $variant:ident),* $(,)?
     }) => {
         $(#[$enum_attribute])*
-        pub enum $name {
+        pub(crate) enum $name {
             $($(#[$variant_attribute])* $variant),*
         }
 
         impl $name {
             /// Every code, in declaration order.
-            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+            const ALL: &'static [Self] = &[$(Self::$variant),*];
         }
     };
 }
@@ -36,7 +36,7 @@ loss_codes! {
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`CreoLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CreoLossCode {
+pub(crate) enum CreoLossCode {
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
     /// No persistence-layout discriminant matched, so no layout-specific
@@ -189,7 +189,7 @@ pub enum CreoLossCode {
 impl CreoLossCode {
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::ContainerCensus => "container.census",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -269,7 +269,7 @@ impl CreoLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
@@ -424,7 +424,7 @@ impl CreoLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
                 match cadmpeg_ir::report::LossNamespace::new("creo") {
@@ -442,7 +442,7 @@ impl CreoLossCode {
     /// The structured code is `creo/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }

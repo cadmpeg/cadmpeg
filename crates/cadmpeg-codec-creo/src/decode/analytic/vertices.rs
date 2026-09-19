@@ -34,7 +34,7 @@ fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
     exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
 }
 
-pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+pub(in crate::decode) fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     let scale = first
         .into_iter()
         .chain(second)
@@ -71,7 +71,10 @@ fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
     })
 }
 
-pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
+pub(in crate::decode) fn line_line_intersection(
+    first: &CurveGeometry,
+    second: &CurveGeometry,
+) -> Option<[f64; 3]> {
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
@@ -119,7 +122,10 @@ pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> 
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
-pub fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
+pub(in crate::decode) fn line_conic_intersections(
+    line: &CurveGeometry,
+    conic: &CurveGeometry,
+) -> Vec<[f64; 3]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();
     };
@@ -232,7 +238,7 @@ pub fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> 
         .collect()
 }
 
-pub fn restrict_planar_conic_to_chart(
+fn restrict_planar_conic_to_chart(
     conic: PlanarConicEquation,
     origin: [f64; 3],
     u_axis: [f64; 3],
@@ -264,7 +270,10 @@ pub fn restrict_planar_conic_to_chart(
     }
 }
 
-pub fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
+pub(in crate::decode) fn conic_conic_intersections(
+    first: &CurveGeometry,
+    second: &CurveGeometry,
+) -> Vec<[f64; 3]> {
     let Some(first_equation) = planar_conic_equation(first) else {
         return Vec::new();
     };
@@ -339,7 +348,9 @@ pub fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) 
         .collect()
 }
 
-pub fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
+pub(in crate::decode) fn incident_analytic_vertex_domain(
+    curves: &[&CurveGeometry],
+) -> Vec<[f64; 3]> {
     let mut candidates = Vec::new();
     for first in 0..curves.len() {
         for second in first + 1..curves.len() {
@@ -385,45 +396,45 @@ fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> CarrierFailureK
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CarrierVertexDiagnostic {
-    pub vertex_id: u32,
-    pub incident_face_ids: Vec<u32>,
-    pub carrier_kinds: Vec<&'static str>,
-    pub pair_intersections: usize,
-    pub triple_intersections: usize,
-    pub valid_candidates: usize,
+pub(in crate::decode) struct CarrierVertexDiagnostic {
+    pub(in crate::decode) vertex_id: u32,
+    pub(in crate::decode) incident_face_ids: Vec<u32>,
+    pub(in crate::decode) carrier_kinds: Vec<&'static str>,
+    pub(in crate::decode) pair_intersections: usize,
+    pub(in crate::decode) triple_intersections: usize,
+    pub(in crate::decode) valid_candidates: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct TopologicalVertexSolveDiagnostics {
-    pub topological_vertices: usize,
-    pub carrier_incident_vertices: usize,
-    pub carrier_pair_candidates: usize,
-    pub carrier_triple_candidates: usize,
-    pub carrier_valid_candidates: usize,
-    pub carrier_ambiguous_candidate_vertices: usize,
-    pub carrier_no_geometric_candidate_vertices: usize,
-    pub carrier_no_valid_candidate_vertices: usize,
-    pub carrier_rejection_samples: Vec<CarrierVertexDiagnostic>,
-    pub carrier_points: usize,
-    pub pcurve: PcurveEndpointDiagnostics,
-    pub pcurve_constraints: usize,
-    pub pcurve_fixed_endpoint_conflicts: usize,
-    pub pcurve_ambiguous_endpoint_vertices: usize,
-    pub directed_endpoint_assignments: usize,
-    pub directed_endpoint_conflicts: usize,
-    pub nurbs_endpoint_constraints: usize,
-    pub analytic_domain_vertices: usize,
-    pub solved_vertices: usize,
+pub(in crate::decode) struct TopologicalVertexSolveDiagnostics {
+    pub(in crate::decode) topological_vertices: usize,
+    pub(in crate::decode) carrier_incident_vertices: usize,
+    pub(in crate::decode) carrier_pair_candidates: usize,
+    pub(in crate::decode) carrier_triple_candidates: usize,
+    pub(in crate::decode) carrier_valid_candidates: usize,
+    pub(in crate::decode) carrier_ambiguous_candidate_vertices: usize,
+    pub(in crate::decode) carrier_no_geometric_candidate_vertices: usize,
+    pub(in crate::decode) carrier_no_valid_candidate_vertices: usize,
+    pub(in crate::decode) carrier_rejection_samples: Vec<CarrierVertexDiagnostic>,
+    pub(in crate::decode) carrier_points: usize,
+    pub(in crate::decode) pcurve: PcurveEndpointDiagnostics,
+    pub(in crate::decode) pcurve_constraints: usize,
+    pub(in crate::decode) pcurve_fixed_endpoint_conflicts: usize,
+    pub(in crate::decode) pcurve_ambiguous_endpoint_vertices: usize,
+    pub(in crate::decode) directed_endpoint_assignments: usize,
+    pub(in crate::decode) directed_endpoint_conflicts: usize,
+    pub(in crate::decode) nurbs_endpoint_constraints: usize,
+    pub(in crate::decode) analytic_domain_vertices: usize,
+    pub(in crate::decode) solved_vertices: usize,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct SolvedTopologicalVertices {
-    pub points: BTreeMap<u32, [f64; 3]>,
-    pub diagnostics: TopologicalVertexSolveDiagnostics,
+pub(in crate::decode) struct SolvedTopologicalVertices {
+    pub(in crate::decode) points: BTreeMap<u32, [f64; 3]>,
+    pub(in crate::decode) diagnostics: TopologicalVertexSolveDiagnostics,
 }
 
-pub fn solve_topological_vertices(
+pub(in crate::decode) fn solve_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
@@ -645,7 +656,7 @@ pub fn solve_topological_vertices(
     }
 }
 
-pub fn solved_topological_vertices(
+pub(in crate::decode) fn solved_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,

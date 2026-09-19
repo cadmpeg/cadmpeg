@@ -10,7 +10,7 @@ use crate::container::ContainerScan;
 use super::feature_history::outputs::owned_section_feature_id;
 use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoSketchTableKind};
 
-pub(crate) fn feature_definition_has_sketch_design(
+pub(super) fn feature_definition_has_sketch_design(
     definition: &crate::feature::FeatureDefinition,
 ) -> bool {
     definition.variables.is_some()
@@ -25,7 +25,7 @@ pub(crate) fn feature_definition_has_sketch_design(
         || definition.relations.is_some()
 }
 
-pub(crate) fn sketch_table_headers(
+pub(super) fn sketch_table_headers(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
@@ -170,14 +170,14 @@ pub(crate) fn sketch_table_headers(
     headers
 }
 
-pub(crate) fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {
+pub(super) fn binary_flag_value(flag: crate::feature::BinaryFlag) -> bool {
     match flag {
         crate::feature::BinaryFlag::Clear => false,
         crate::feature::BinaryFlag::Set => true,
     }
 }
 
-pub(crate) fn feature_definition_record_id(
+pub(super) fn feature_definition_record_id(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
 ) -> String {
@@ -203,7 +203,7 @@ pub(crate) fn feature_definition_record_id(
     }
 }
 
-pub(crate) fn feature_sketch_record_id_in_scan(
+pub(super) fn feature_sketch_record_id_in_scan(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
 ) -> String {
@@ -223,7 +223,7 @@ pub(crate) fn feature_sketch_record_id_in_scan(
     }
 }
 
-pub(crate) fn model_sketch_id(
+pub(super) fn model_sketch_id(
     scan: &ContainerScan,
     definition: &crate::feature::FeatureDefinition,
 ) -> Option<SketchId> {
@@ -235,18 +235,18 @@ pub(crate) fn model_sketch_id(
     ))
 }
 
-pub(crate) fn sketch_identity_scope(sketch: &SketchId) -> &str {
+pub(super) fn sketch_identity_scope(sketch: &SketchId) -> &str {
     sketch
         .as_str()
         .strip_prefix("creo:model:sketch#")
         .unwrap_or(sketch.as_str())
 }
 
-pub(crate) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
+pub(super) fn sketch_identity_key(sketch: &SketchId) -> Option<IdentityKey> {
     IdentityKey::try_new(sketch_identity_scope(sketch).to_owned()).ok()
 }
 
-pub(crate) fn sketch_entity_id(
+pub(super) fn sketch_entity_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchEntityId> {
@@ -256,7 +256,7 @@ pub(crate) fn sketch_entity_id(
     ))
 }
 
-pub(crate) fn sketch_constraint_id(
+pub(super) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<SketchConstraintId> {
@@ -266,18 +266,18 @@ pub(crate) fn sketch_constraint_id(
     ))
 }
 
-pub(crate) fn sketch_native_ref(sketch: &SketchId) -> String {
+pub(super) fn sketch_native_ref(sketch: &SketchId) -> String {
     format!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch))
 }
 
-pub(crate) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
+pub(super) fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
     format!(
         "creo:featdefs:section_curve#{}:{suffix}",
         sketch_identity_scope(sketch)
     )
 }
 
-pub(crate) fn typed_sketch_section_curve_id(
+pub(super) fn typed_sketch_section_curve_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
 ) -> Option<CurveId> {
@@ -288,18 +288,18 @@ pub(crate) fn typed_sketch_section_curve_id(
     ))
 }
 
-pub(crate) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
+pub(super) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
     format!("{}:point#{point}", sketch_native_ref(sketch))
 }
 
-pub(crate) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
+pub(super) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
     Some(IrFeatureId::compose(
         &crate::identity::MODEL_SKETCH_FEATURE,
         sketch_identity_key(sketch)?,
     ))
 }
 
-pub(crate) fn section_owner_feature_id(
+pub(super) fn section_owner_feature_id(
     scan: &ContainerScan,
     definition_id: u32,
     sketch: &SketchId,
@@ -315,7 +315,7 @@ pub(crate) fn section_owner_feature_id(
     )
 }
 
-pub(crate) fn owning_feature_definition_ref(
+pub(super) fn owning_feature_definition_ref(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<String> {

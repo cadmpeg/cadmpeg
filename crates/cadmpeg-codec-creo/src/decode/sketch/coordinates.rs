@@ -39,7 +39,7 @@ use crate::decode::sketch_transfer::loci::{
 const EPS_SECTION_COORDINATE: f64 = 1.0e-9;
 const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1.0e-12;
 
-pub(crate) fn saved_section_coordinate_witnesses(
+pub(in crate::decode) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, [f64; 2])> {
@@ -227,7 +227,7 @@ fn solve_section_coordinates_with_derived_constraints(
     solved_coordinates
 }
 
-pub(crate) fn resolved_section_coordinates(
+pub(in crate::decode) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
     let (points, ambiguous_point_ids) = match &definition.variables {
@@ -671,7 +671,7 @@ pub(crate) fn resolved_section_coordinates(
     solve_section_coordinate_equations(&equations, &stored_coordinates)
 }
 
-pub(crate) fn section_linear_distance_coordinate(
+pub(in crate::decode) fn section_linear_distance_coordinate(
     definition: &crate::feature::FeatureDefinition,
     segments: &[&crate::feature::FeatureSegment],
     first: u32,
@@ -787,7 +787,7 @@ pub(crate) fn section_linear_distance_coordinate(
     None
 }
 
-pub(crate) fn resolved_section_points(
+pub(in crate::decode) fn resolved_section_points(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, [f64; 2]> {
     resolved_section_coordinates(definition)

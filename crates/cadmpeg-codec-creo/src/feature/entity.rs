@@ -9,23 +9,23 @@ use super::rows::row_spans;
 
 /// One `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEntityTable {
+pub(crate) struct FeatureEntityTable {
     /// Owning feature of a bounded `AllFeatur` feature row.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Entity-class identifier following the table's `f7` marker.
-    pub table_class_id: u32,
+    pub(crate) table_class_id: u32,
     /// Structurally bounded records in their declared generated-entity order.
-    pub entries: Vec<FeatureEntityTableEntry>,
+    pub(crate) entries: Vec<FeatureEntityTableEntry>,
     /// Materialized `srf_array` identifiers among this table's entity ids.
     surface_ids: BTreeSet<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureEntityTable {
     /// Admits a table whose materialized identifiers are exactly the entries
     /// the model decoded as `srf_array` identifiers.
-    pub fn new(
+    pub(crate) fn new(
         feature_id: u32,
         table_class_id: u32,
         entries: Vec<FeatureEntityTableEntry>,
@@ -46,11 +46,11 @@ impl FeatureEntityTable {
         }
     }
 
-    pub fn entry_ids(&self) -> Vec<u32> {
+    pub(crate) fn entry_ids(&self) -> Vec<u32> {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
 
-    pub fn surface_ids(&self) -> Vec<u32> {
+    pub(crate) fn surface_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
@@ -58,7 +58,7 @@ impl FeatureEntityTable {
             .collect()
     }
 
-    pub fn non_surface_entity_ids(&self) -> Vec<u32> {
+    pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
@@ -113,7 +113,7 @@ pub(crate) fn dummy_table_entry(entity_id: u32) -> FeatureEntityTableEntry {
 
 /// Class-specific generated-entity payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryPayload {
+pub(crate) enum EntryPayload {
     /// Class `200` source-section identifier, present when the compact id parsed.
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
@@ -133,11 +133,11 @@ pub enum EntryPayload {
 /// A positional entry class that owns no payload of its own. Class `200`
 /// always carries a source identifier, so it is not one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PlainClass(u32);
+pub(crate) struct PlainClass(u32);
 
 impl PlainClass {
     /// Admits every entry class but `200`.
-    pub const fn new(class: u32) -> Option<Self> {
+    pub(crate) const fn new(class: u32) -> Option<Self> {
         match class {
             200 => None,
             class => Some(Self(class)),
@@ -145,14 +145,14 @@ impl PlainClass {
     }
 
     /// The positional entry class.
-    pub const fn get(self) -> u32 {
+    const fn get(self) -> u32 {
         self.0
     }
 }
 
 /// A generated-entity class that carries a related entity and its state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelatedClass {
+pub(crate) enum RelatedClass {
     Class210,
     Class214,
     Class219,
@@ -161,7 +161,7 @@ pub enum RelatedClass {
 
 impl RelatedClass {
     /// The related class for a positional entry class, when it is one.
-    pub(crate) fn from_class_id(class_id: u32) -> Option<Self> {
+    fn from_class_id(class_id: u32) -> Option<Self> {
         match class_id {
             210 => Some(Self::Class210),
             214 => Some(Self::Class214),
@@ -172,7 +172,7 @@ impl RelatedClass {
     }
 
     /// The positional entry class.
-    pub fn class_id(self) -> u32 {
+    fn class_id(self) -> u32 {
         match self {
             Self::Class210 => 210,
             Self::Class214 => 214,
@@ -184,7 +184,7 @@ impl RelatedClass {
 
 /// One-byte state following a related entity identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelatedState {
+pub(crate) enum RelatedState {
     Zero,
     One,
 }
@@ -199,7 +199,7 @@ impl RelatedState {
         }
     }
 
-    pub(crate) fn as_u8(self) -> u8 {
+    fn as_u8(self) -> u8 {
         match self {
             Self::Zero => 0,
             Self::One => 1,
@@ -242,24 +242,24 @@ pub(crate) fn entry_payload(
 
 /// One record in an `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEntityTableEntry {
+pub(crate) struct FeatureEntityTableEntry {
     /// Entity identifier at the start of the record body.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Payload of the positional entry class following the entity identifier.
-    pub payload: EntryPayload,
+    pub(crate) payload: EntryPayload,
     /// Whether the record starts with the `f7 1e` entry prefix.
-    pub prefixed: bool,
+    pub(crate) prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset immediately after the entry body. This follows the
     /// structural `e3`, or points at the enclosing `f2 f7` table separator
     /// when the final entry uses that separator as its terminator.
-    pub end_offset: usize,
+    pub(crate) end_offset: usize,
 }
 
 impl FeatureEntityTableEntry {
     /// The positional entry class following the entity identifier.
-    pub fn class_id(&self) -> u32 {
+    pub(crate) fn class_id(&self) -> u32 {
         match self.payload {
             EntryPayload::Source { .. } => 200,
             EntryPayload::Related { class, .. } => class.class_id(),
@@ -267,21 +267,21 @@ impl FeatureEntityTableEntry {
         }
     }
 
-    pub fn source_entity_id(&self) -> Option<u32> {
+    pub(crate) fn source_entity_id(&self) -> Option<u32> {
         match self.payload {
             EntryPayload::Source { entity } => entity,
             _ => None,
         }
     }
 
-    pub fn related_entity_id(&self) -> Option<u32> {
+    pub(crate) fn related_entity_id(&self) -> Option<u32> {
         match self.payload {
             EntryPayload::Related { entity, .. } => Some(entity),
             _ => None,
         }
     }
 
-    pub fn related_entity_state(&self) -> Option<u8> {
+    pub(crate) fn related_entity_state(&self) -> Option<u8> {
         match self.payload {
             EntryPayload::Related { state, .. } => Some(state.as_u8()),
             _ => None,
@@ -291,30 +291,30 @@ impl FeatureEntityTableEntry {
 
 /// One named record in the implicit `AllFeatur` walker-order entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEntity {
+pub(crate) struct FeatureEntity {
     /// Zero-based walker-order identifier used by `f7` references.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Named-record type byte.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// NUL-terminated named-record name.
-    pub name: String,
+    pub(crate) name: String,
     /// Byte offset of the `e0` header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One `f7 <id>` reference in `AllFeatur`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEntityReference {
+pub(crate) struct FeatureEntityReference {
     /// Walker-order entity containing this token, when one precedes it.
-    pub source_entity_id: Option<u32>,
+    pub(crate) source_entity_id: Option<u32>,
     /// Referenced walker-order entity identifier.
-    pub target_entity_id: u32,
+    pub(crate) target_entity_id: u32,
     /// Byte offset of the `f7` token in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Source section identifiers carried by class-200 generated entries.
-pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
+pub(super) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
     table
         .entries
         .iter()
@@ -324,7 +324,7 @@ pub(crate) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
 
 /// Decode the implicit named-record entity table and every canonical `f7`
 /// reference, preserving both source context and unresolved target IDs.
-pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
+pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
     let tokens = psb::tokens(payload);
     let Some(root) = tokens.first() else {
         return (Vec::new(), Vec::new());
@@ -378,7 +378,7 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
     (entities, references)
 }
 
-pub(crate) fn read_entries(
+pub(super) fn read_entries(
     payload: &[u8],
     body_start: usize,
     count: u32,
@@ -486,7 +486,7 @@ pub(crate) fn read_entries(
 ///
 /// `feature_ids` must come from byte-decoded geometry ownership; no owner is
 /// inferred from a table's neighbouring bytes or entity contents.
-pub fn entity_tables(
+pub(crate) fn entity_tables(
     payload: &[u8],
     feature_ids: &BTreeSet<u32>,
     surface_ids: &BTreeSet<u32>,

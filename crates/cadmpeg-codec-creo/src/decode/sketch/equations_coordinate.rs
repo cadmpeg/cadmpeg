@@ -37,13 +37,13 @@ enum SectionSixDistance {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionFunctionSixDistance {
-    pub(crate) first: u32,
-    pub(crate) second: u32,
-    pub(crate) radius: SectionScalarVariable,
+pub(in crate::decode) struct SectionFunctionSixDistance {
+    pub(in crate::decode) first: u32,
+    pub(in crate::decode) second: u32,
+    pub(in crate::decode) radius: SectionScalarVariable,
     distance: SectionSixDistance,
-    pub(crate) equation_id: u32,
-    pub(crate) offset: usize,
+    pub(in crate::decode) equation_id: u32,
+    pub(in crate::decode) offset: usize,
 }
 
 impl SectionFunctionSixDistance {
@@ -55,7 +55,7 @@ impl SectionFunctionSixDistance {
     }
 
     /// The distance for an equation with both endpoints resolved.
-    pub(crate) fn constraint_distance(self) -> Option<f64> {
+    pub(in crate::decode) fn constraint_distance(self) -> Option<f64> {
         match self.distance {
             SectionSixDistance::Measured(distance) => Some(distance.0),
             SectionSixDistance::Inactive(distance) => distance.map(|distance| distance.0),
@@ -64,12 +64,12 @@ impl SectionFunctionSixDistance {
     }
 
     /// Whether the equation is enabled.
-    pub(crate) fn active(self) -> bool {
+    pub(in crate::decode) fn active(self) -> bool {
         !matches!(self.distance, SectionSixDistance::Inactive(_))
     }
 }
 
-pub(crate) fn section_equation_function_six_distance_values(
+pub(super) fn section_equation_function_six_distance_values(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -80,7 +80,7 @@ pub(crate) fn section_equation_function_six_distance_values(
         .collect()
 }
 
-pub(crate) fn section_equation_function_six_distance_rows(
+pub(in crate::decode) fn section_equation_function_six_distance_rows(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -196,29 +196,29 @@ pub(crate) fn section_equation_function_six_distance_rows(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionUnsignedCoordinateDistance {
-    pub(crate) first: u32,
-    pub(crate) second: u32,
-    pub(crate) coordinate: SectionAxis,
-    pub(crate) scalar: SectionScalarVariable,
-    pub(crate) value: f64,
-    pub(crate) equation_id: u32,
-    pub(crate) offset: usize,
-    pub(crate) active: bool,
+pub(in crate::decode) struct SectionUnsignedCoordinateDistance {
+    pub(in crate::decode) first: u32,
+    pub(in crate::decode) second: u32,
+    pub(in crate::decode) coordinate: SectionAxis,
+    pub(in crate::decode) scalar: SectionScalarVariable,
+    pub(in crate::decode) value: f64,
+    pub(in crate::decode) equation_id: u32,
+    pub(in crate::decode) offset: usize,
+    pub(in crate::decode) active: bool,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionRadiusDimension {
-    pub(crate) radius_variable: SectionScalarVariable,
-    pub(crate) radius: u32,
-    pub(crate) scalar: SectionScalarVariable,
-    pub(crate) value: f64,
-    pub(crate) equation_id: u32,
-    pub(crate) offset: usize,
-    pub(crate) active: bool,
+pub(in crate::decode) struct SectionRadiusDimension {
+    pub(in crate::decode) radius_variable: SectionScalarVariable,
+    pub(in crate::decode) radius: u32,
+    pub(in crate::decode) scalar: SectionScalarVariable,
+    pub(in crate::decode) value: f64,
+    pub(in crate::decode) equation_id: u32,
+    pub(in crate::decode) offset: usize,
+    pub(in crate::decode) active: bool,
 }
 
-pub(crate) fn section_equation_dimension_scalar_value(
+fn section_equation_dimension_scalar_value(
     scalar: &crate::feature::FeatureVariableRow,
     equality_value: Option<f64>,
     dimension_value: f64,
@@ -243,7 +243,7 @@ pub(crate) fn section_equation_dimension_scalar_value(
     }
 }
 
-pub(crate) fn section_equation_unsigned_coordinate_distances(
+pub(super) fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionUnsignedCoordinateDistance> {
@@ -253,7 +253,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
         .collect()
 }
 
-pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
+pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionUnsignedCoordinateDistance> {
@@ -332,7 +332,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
         .collect()
 }
 
-pub(crate) fn section_equation_radius_dimensions(
+pub(in crate::decode) fn section_equation_radius_dimensions(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<SectionRadiusDimension> {
     let Some(variables) = definition
@@ -421,16 +421,16 @@ pub(crate) fn section_equation_radius_dimensions(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionPointOnLineConstraint {
-    pub(crate) target: u32,
-    pub(crate) first: u32,
-    pub(crate) second: u32,
-    pub(crate) equation_id: u32,
-    pub(crate) offset: usize,
-    pub(crate) active: bool,
+pub(in crate::decode) struct SectionPointOnLineConstraint {
+    pub(in crate::decode) target: u32,
+    pub(in crate::decode) first: u32,
+    pub(in crate::decode) second: u32,
+    pub(in crate::decode) equation_id: u32,
+    pub(in crate::decode) offset: usize,
+    pub(in crate::decode) active: bool,
 }
 
-pub(crate) fn section_equation_point_on_line_constraints(
+pub(super) fn section_equation_point_on_line_constraints(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, u32, u32)> {
@@ -441,7 +441,7 @@ pub(crate) fn section_equation_point_on_line_constraints(
         .collect()
 }
 
-pub(crate) fn section_equation_point_on_line_constraint_rows(
+pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionPointOnLineConstraint> {
@@ -539,15 +539,15 @@ pub(crate) fn section_equation_point_on_line_constraint_rows(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SectionEqualLengthConstraint {
-    pub(crate) first: [u32; 2],
-    pub(crate) second: [u32; 2],
-    pub(crate) equation_id: u32,
-    pub(crate) offset: usize,
-    pub(crate) active: bool,
+pub(in crate::decode) struct SectionEqualLengthConstraint {
+    pub(in crate::decode) first: [u32; 2],
+    pub(in crate::decode) second: [u32; 2],
+    pub(in crate::decode) equation_id: u32,
+    pub(in crate::decode) offset: usize,
+    pub(in crate::decode) active: bool,
 }
 
-pub(crate) fn section_equation_equal_length_constraints(
+pub(super) fn section_equation_equal_length_constraints(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionEqualLengthConstraint> {
@@ -557,7 +557,7 @@ pub(crate) fn section_equation_equal_length_constraints(
         .collect()
 }
 
-pub(crate) fn section_equation_equal_length_constraint_rows(
+pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionEqualLengthConstraint> {
@@ -635,23 +635,23 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
         .collect()
 }
 
-pub(crate) type SectionCoordinateVariable = (u32, SectionAxis);
+pub(super) type SectionCoordinateVariable = (u32, SectionAxis);
 
 #[derive(Clone, Default)]
-pub(crate) struct SectionCoordinateEquation {
-    pub(crate) terms: BTreeMap<SectionCoordinateVariable, f64>,
-    pub(crate) rhs: f64,
+pub(in crate::decode) struct SectionCoordinateEquation {
+    pub(super) terms: BTreeMap<SectionCoordinateVariable, f64>,
+    pub(in crate::decode) rhs: f64,
 }
 
 impl SectionCoordinateEquation {
-    pub(crate) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> Self {
+    pub(in crate::decode) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> Self {
         let mut equation = Self::default();
         equation.add_point(point, coordinate, 1.0);
         equation.rhs = value;
         equation
     }
 
-    pub(crate) fn point_difference(
+    pub(in crate::decode) fn point_difference(
         first: u32,
         second: u32,
         coordinate: SectionAxis,
@@ -664,7 +664,7 @@ impl SectionCoordinateEquation {
         equation
     }
 
-    pub(crate) fn source_difference(
+    pub(super) fn source_difference(
         first: SectionPointSource,
         second: SectionPointSource,
         coordinate: SectionAxis,
@@ -677,11 +677,16 @@ impl SectionCoordinateEquation {
         equation
     }
 
-    pub(crate) fn add_point(&mut self, point: u32, coordinate: SectionAxis, coefficient: f64) {
+    pub(in crate::decode) fn add_point(
+        &mut self,
+        point: u32,
+        coordinate: SectionAxis,
+        coefficient: f64,
+    ) {
         *self.terms.entry((point, coordinate)).or_default() += coefficient;
     }
 
-    pub(crate) fn add_source(
+    pub(super) fn add_source(
         &mut self,
         source: SectionPointSource,
         coordinate: SectionAxis,
@@ -694,7 +699,7 @@ impl SectionCoordinateEquation {
     }
 }
 
-pub(crate) fn solve_unsigned_dimension_coordinates(
+pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
     distances: &[(u32, u32, SectionAxis, f64)],
@@ -883,7 +888,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
     resolved
 }
 
-pub(crate) fn section_equal_length_coordinate_values(
+pub(super) fn section_equal_length_coordinate_values(
     constraints: &[SectionEqualLengthConstraint],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
@@ -982,7 +987,7 @@ pub(crate) fn section_equal_length_coordinate_values(
     candidates
 }
 
-pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) -> Vec<f64> {
+fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) -> Vec<f64> {
     let scale = quadratic
         .abs()
         .max(linear.abs())
@@ -1026,12 +1031,12 @@ pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) ->
     roots
 }
 
-pub(crate) fn approximately_equal(first: f64, second: f64) -> bool {
+pub(in crate::decode) fn approximately_equal(first: f64, second: f64) -> bool {
     let scale = first.abs().max(second.abs()).max(1.0);
     (first - second).abs() <= EPS_DISTANCE_AGREEMENT * scale
 }
 
-pub(crate) fn solve_section_coordinate_equations(
+pub(in crate::decode) fn solve_section_coordinate_equations(
     equations: &[SectionCoordinateEquation],
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
@@ -1133,12 +1138,12 @@ pub(crate) fn solve_section_coordinate_equations(
     points
 }
 
-pub(crate) struct SectionLinearRow {
-    pub(crate) coefficients: BTreeMap<usize, f64>,
-    pub(crate) rhs: f64,
+struct SectionLinearRow {
+    coefficients: BTreeMap<usize, f64>,
+    rhs: f64,
 }
 
-pub(crate) fn uniquely_solved_linear_variables(
+fn uniquely_solved_linear_variables(
     matrix: &mut [SectionLinearRow],
     variable_count: usize,
 ) -> Option<Vec<(usize, f64)>> {

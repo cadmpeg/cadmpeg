@@ -14,7 +14,7 @@ const EPS_ON_CONIC: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
-pub fn orient_line_edge_carrier(
+pub(in crate::decode) fn orient_line_edge_carrier(
     geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -35,7 +35,7 @@ pub fn orient_line_edge_carrier(
     Some([0.0, length])
 }
 
-pub fn exact_line_edge_parameter_range(
+pub(in crate::decode) fn exact_line_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -69,7 +69,7 @@ pub fn exact_line_edge_parameter_range(
         })
 }
 
-pub fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool; 2] {
+pub(super) fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool; 2] {
     let mismatch = |left: [f64; 3], right: [f64; 3]| {
         dot(
             std::array::from_fn(|index| left[index] - right[index]),
@@ -90,7 +90,7 @@ pub fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [b
     ]
 }
 
-pub fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
+pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
     let bounds = nurbs.control_points().iter().try_fold(
         [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
         |mut bounds, point| {
@@ -109,7 +109,7 @@ pub fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
     )
 }
 
-pub fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
+pub(in crate::decode) fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
     (nurbs_control_extent(nurbs).is_some()
         && nurbs.knots().iter().all(|knot| knot.is_finite())
@@ -122,7 +122,9 @@ pub fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
     (range[0] < range[1]).then_some(range)
 }
 
-pub fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f64; 3]; 2]> {
+pub(in crate::decode) fn nonperiodic_nurbs_endpoint_points(
+    geometry: &CurveGeometry,
+) -> Option<[[f64; 3]; 2]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return None;
     };
@@ -142,7 +144,7 @@ pub fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f
         .then_some([first, second])
 }
 
-pub fn nonperiodic_nurbs_edge_parameter_range(
+pub(in crate::decode) fn nonperiodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -195,7 +197,7 @@ pub fn nonperiodic_nurbs_edge_parameter_range(
 /// Edge parameter ranges are canonical and therefore increasing. When the
 /// native edge reverses the carrier direction, reverse the NURBS definition
 /// and keep the same geometric parameter domain.
-pub fn orient_nonperiodic_nurbs_edge_carrier(
+pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     geometry: &mut CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -273,7 +275,7 @@ fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<
     Some(())
 }
 
-pub fn full_periodic_nurbs_edge_parameter_range(
+pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],
 ) -> Option<[f64; 2]> {
@@ -306,7 +308,7 @@ pub fn full_periodic_nurbs_edge_parameter_range(
         .then_some(range)
 }
 
-pub fn degree_one_nurbs_point_parameter(
+fn degree_one_nurbs_point_parameter(
     geometry: &CurveGeometry,
     nurbs: &NurbsCurve,
     point: [f64; 3],
@@ -380,44 +382,44 @@ pub fn degree_one_nurbs_point_parameter(
 }
 
 #[derive(Clone, Copy)]
-pub struct PeriodicConicFrame {
-    pub center: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub radii: [f64; 2],
+pub(in crate::decode) struct PeriodicConicFrame {
+    pub(in crate::decode) center: [f64; 3],
+    pub(in crate::decode) normal: [f64; 3],
+    pub(in crate::decode) x_axis: [f64; 3],
+    pub(in crate::decode) y_axis: [f64; 3],
+    pub(in crate::decode) radii: [f64; 2],
 }
 
 #[derive(Clone, Copy)]
-pub struct PlanarConicEquation {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub quadratic: [f64; 2],
-    pub linear: [f64; 2],
-    pub constant: f64,
-    pub scale: f64,
+pub(super) struct PlanarConicEquation {
+    pub(super) origin: [f64; 3],
+    pub(super) normal: [f64; 3],
+    pub(super) x_axis: [f64; 3],
+    pub(super) y_axis: [f64; 3],
+    pub(super) quadratic: [f64; 2],
+    pub(super) linear: [f64; 2],
+    pub(super) constant: f64,
+    pub(super) scale: f64,
 }
 
 #[derive(Clone, Copy)]
-pub enum NonperiodicConicFamily {
+enum NonperiodicConicFamily {
     Parabola,
     Hyperbola,
 }
 
 #[derive(Clone, Copy)]
-pub struct NonperiodicConicFrame {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
-    pub x_axis: [f64; 3],
-    pub y_axis: [f64; 3],
-    pub x_scale: f64,
-    pub y_scale: f64,
-    pub family: NonperiodicConicFamily,
+struct NonperiodicConicFrame {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+    x_scale: f64,
+    y_scale: f64,
+    family: NonperiodicConicFamily,
 }
 
-pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEquation> {
+pub(super) fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEquation> {
     if let Some(frame) = periodic_conic_frame(geometry) {
         return Some(PlanarConicEquation {
             origin: frame.center,
@@ -459,7 +461,7 @@ pub fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarConicEqua
     })
 }
 
-pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
+fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex();
@@ -513,7 +515,9 @@ pub fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicCo
     })
 }
 
-pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
+pub(in crate::decode) fn periodic_conic_frame(
+    geometry: &CurveGeometry,
+) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
@@ -559,7 +563,10 @@ pub fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFra
     })
 }
 
-pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) -> Option<f64> {
+pub(in crate::decode) fn nonperiodic_conic_parameter(
+    geometry: &CurveGeometry,
+    point: [f64; 3],
+) -> Option<f64> {
     let NonperiodicConicFrame {
         origin,
         normal,
@@ -589,7 +596,7 @@ pub fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) ->
     (parameter.is_finite() && (x - expected_x).abs() <= EPS_ON_CONIC * scale).then_some(parameter)
 }
 
-pub fn nonperiodic_conic_edge_parameter_range(
+pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -606,7 +613,7 @@ pub fn nonperiodic_conic_edge_parameter_range(
     (parameters[1] - parameters[0] > EPS_NEAR_ZERO).then_some(parameters)
 }
 
-pub fn periodic_conic_edge_parameter_range(
+pub(in crate::decode) fn periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
     interior: [f64; 3],
@@ -668,7 +675,7 @@ pub fn periodic_conic_edge_parameter_range(
     (selected[1] - selected[0] > EPS_NEAR_ZERO).then_some(selected)
 }
 
-pub fn full_periodic_conic_edge_parameter_range(
+pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     point: [f64; 3],
 ) -> Option<[f64; 2]> {

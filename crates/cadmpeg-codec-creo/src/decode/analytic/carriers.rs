@@ -59,7 +59,7 @@ fn existing_plane_agrees_with_topology(
     }
 }
 
-pub fn transfer_topology_bound_planes(
+pub(in crate::decode) fn transfer_topology_bound_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -194,7 +194,7 @@ pub fn transfer_topology_bound_planes(
     Ok(transferred)
 }
 
-pub fn retain_unresolved_surface_carriers(
+pub(in crate::decode) fn retain_unresolved_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -294,7 +294,10 @@ pub fn retain_unresolved_surface_carriers(
     Ok(())
 }
 
-pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
+pub(in crate::decode) fn placed_carriers(
+    scan: &ContainerScan,
+    ir: &CadIr,
+) -> BTreeMap<u32, CarrierEquation> {
     let mut carriers = placed_planes(scan)
         .into_iter()
         .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
@@ -519,7 +522,10 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     }
 }
 
-pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<UnknownId> {
+pub(in crate::decode) fn geometry_section_record(
+    scan: &ContainerScan,
+    offset: usize,
+) -> Option<UnknownId> {
     scan.framing
         .sections
         .iter()
@@ -535,7 +541,7 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
 #[cfg(test)]
 mod tests;
 
-pub fn projected_loop_polygon(
+fn projected_loop_polygon(
     lp: &crate::topology::Loop,
     plane: PlaneEquation,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
@@ -574,7 +580,7 @@ pub fn projected_loop_polygon(
     (polygon.len() >= 3 && area_twice.abs() > EPS_NEAR_ZERO * scale * scale).then_some(polygon)
 }
 
-pub fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
+fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
     if polygon.len() < 3 {
         return false;
     }
@@ -713,7 +719,7 @@ fn ordered_contained_face_loops<'a>(
     Some(ordered)
 }
 
-pub fn ordered_planar_face_loops<'a>(
+pub(in crate::decode) fn ordered_planar_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     plane: PlaneEquation,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
@@ -729,7 +735,7 @@ pub fn ordered_planar_face_loops<'a>(
     ordered_contained_face_loops(loops, &polygons)
 }
 
-pub fn ordered_parameter_face_loops<'a>(
+pub(in crate::decode) fn ordered_parameter_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
 ) -> Option<Vec<&'a crate::topology::Loop>> {
@@ -739,7 +745,7 @@ pub fn ordered_parameter_face_loops<'a>(
     ordered_contained_face_loops(loops, polygons)
 }
 
-pub fn face_boundary_plane(
+fn face_boundary_plane(
     loops: &[&crate::topology::Loop],
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
@@ -752,7 +758,7 @@ pub fn face_boundary_plane(
     }))
 }
 
-pub fn ordered_face_loops<'a>(
+pub(in crate::decode) fn ordered_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     plane: Option<PlaneEquation>,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
@@ -769,7 +775,7 @@ pub fn ordered_face_loops<'a>(
     }
 }
 
-pub fn rowless_round_face_orientations(
+pub(in crate::decode) fn rowless_round_face_orientations(
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
@@ -791,7 +797,10 @@ pub fn rowless_round_face_orientations(
     orientations
 }
 
-pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, bool> {
+pub(in crate::decode) fn native_face_orientations(
+    scan: &ContainerScan,
+    ir: &CadIr,
+) -> BTreeMap<u32, bool> {
     let mut orientations = scan
         .surfaces
         .rows

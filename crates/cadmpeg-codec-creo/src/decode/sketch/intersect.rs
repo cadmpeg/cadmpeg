@@ -35,7 +35,7 @@ const EPS_DIRECTION_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
 const EPS_OFFSET_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 const EPS_ENDPOINT_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 
-pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
+fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             Some((*start, Point2::new(end.u - start.u, end.v - start.v)))
@@ -47,7 +47,7 @@ pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option
     }
 }
 
-pub(crate) fn intersect_section_lines(
+pub(in crate::decode) fn intersect_section_lines(
     first: &SketchGeometry,
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
@@ -92,7 +92,7 @@ pub(crate) fn intersect_section_lines(
     ])
 }
 
-pub(crate) fn intersect_section_line_arc(
+pub(in crate::decode) fn intersect_section_line_arc(
     first: &SketchGeometry,
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
@@ -165,7 +165,7 @@ pub(crate) fn intersect_section_line_arc(
     Some(candidates[*index])
 }
 
-pub(crate) fn intersect_tangent_section_arcs(
+pub(in crate::decode) fn intersect_tangent_section_arcs(
     first: &SketchGeometry,
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
@@ -216,10 +216,7 @@ pub(crate) fn intersect_tangent_section_arcs(
     ])
 }
 
-pub(crate) fn intersect_section_carriers(
-    first: &SketchGeometry,
-    second: &SketchGeometry,
-) -> Option<[f64; 2]> {
+fn intersect_section_carriers(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
     let line_arc_is_bounded = matches!(
         (first.definition(), second.definition()),
         (
@@ -239,7 +236,9 @@ pub(crate) fn intersect_section_carriers(
         .or_else(|| intersect_tangent_section_arcs(first, second))
 }
 
-pub(crate) fn intersect_incident_section_carriers(carriers: &[SketchGeometry]) -> Option<[f64; 2]> {
+pub(in crate::decode) fn intersect_incident_section_carriers(
+    carriers: &[SketchGeometry],
+) -> Option<[f64; 2]> {
     (carriers.len() >= 2).then_some(())?;
     let mut candidates = Vec::new();
     for first in 0..carriers.len() {
@@ -255,7 +254,7 @@ pub(crate) fn intersect_incident_section_carriers(carriers: &[SketchGeometry]) -
     coordinates.get(&0).copied()
 }
 
-pub(crate) fn resolved_trim_vertex_coordinates(
+pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
 ) -> BTreeMap<u32, [f64; 2]> {
@@ -509,7 +508,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
     coordinates
 }
 
-pub(crate) fn reconciled_section_coordinates(
+fn reconciled_section_coordinates(
     candidates: impl IntoIterator<Item = (u32, [f64; 2])>,
 ) -> (BTreeMap<u32, [f64; 2]>, BTreeSet<u32>) {
     let mut grouped = BTreeMap::<u32, Vec<[f64; 2]>>::new();
@@ -537,7 +536,7 @@ pub(crate) fn reconciled_section_coordinates(
     (coordinates, ambiguous)
 }
 
-pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
+pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
@@ -646,7 +645,7 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
     .ok()
 }
 
-pub(crate) fn section_point_in_model(
+pub(in crate::decode) fn section_point_in_model(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 2],
 ) -> [f64; 3] {
@@ -657,7 +656,7 @@ pub(crate) fn section_point_in_model(
     })
 }
 
-pub(crate) fn section_xyz_in_model(
+pub(in crate::decode) fn section_xyz_in_model(
     transform: &crate::placement::FeatureSectionTransform,
     point: [f64; 3],
 ) -> [f64; 3] {

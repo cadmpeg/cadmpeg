@@ -17,8 +17,8 @@ pub(crate) mod segment_rows;
 #[cfg(test)]
 mod tests;
 
-pub use definitions::equation_table;
-pub use definitions::{
+pub(crate) use definitions::equation_table;
+pub(crate) use definitions::{
     bind_definition_owners, bind_replay_definition_owners, bind_section_owners,
     bind_trimmed_definition_owners, definition_revolution_extents, definitions, depdb_definitions,
     depdb_section_definition, placement_instructions, positional_replay_definitions, BinaryFlag,
@@ -31,22 +31,22 @@ pub use definitions::{
     FeatureVariableRow, OutlinePhase, TrimEntityKind,
 };
 #[cfg(test)]
-pub use definitions::{
+pub(crate) use definitions::{
     FeatureOrderRow, FeatureParameterFrame, FeatureSavedCircle, FeatureSavedConic,
     FeatureSavedSection, FeatureSectionOrientation, FeatureSectionPoint,
     FeatureSectionReferencePlane, FeatureTrimBucket, FeatureTrimEntityTable, FeatureTrimVertex,
     FeatureTrimVertexTable,
 };
-pub use entity::{
+pub(crate) use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
     FeatureEntityTableEntry,
 };
-pub use operations::{
+pub(crate) use operations::{
     operation_states, operations, reference_names, FeatureOperation, FeatureOperationState,
     FeatureRecipe, FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName, OperationKind,
     RecipeResolution,
 };
-pub use rows::{
+pub(crate) use rows::{
     affected_ids, choice_fields, choices, geometry_tables, loop_history_entries,
     loop_restore_directions, replay_affected_ids, revolution_extents, rows,
     surface_merge_replay_affected_ids, AffectedIdKind, FeatureAffectedIds, FeatureChoice,
