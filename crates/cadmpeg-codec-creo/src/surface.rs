@@ -203,13 +203,7 @@ pub(crate) fn unique_surface_row(rows: &[SurfaceRow], id: u32) -> Option<&Surfac
 
 /// Return rows whose native surface identifier occurs exactly once.
 pub(crate) fn uniquely_identified_rows(rows: &[SurfaceRow]) -> Vec<&SurfaceRow> {
-    let mut counts = BTreeMap::<u32, usize>::new();
-    for row in rows {
-        *counts.entry(row.id).or_default() += 1;
-    }
-    rows.iter()
-        .filter(|row| counts.get(&row.id) == Some(&1))
-        .collect()
+    crate::identity::uniquely_identified_rows(rows, |row| row.id)
 }
 
 /// Named `srf_prim_ptr(<kind>)` prototype family.
