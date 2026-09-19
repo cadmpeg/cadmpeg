@@ -5033,7 +5033,7 @@ fn nurbs_degree_one_cache_lanes(
         let parameters = seed
             .and_then(|seed| nurbs_seeded_surface_projection(surface, *point, Some(seed)))
             .or_else(|| nurbs_seeded_surface_projection(surface, *point, None))?;
-        if !parameters.u.is_finite() || !parameters.v.is_finite() {
+        if !parameters.is_finite() {
             return None;
         }
         seed = Some(parameters);

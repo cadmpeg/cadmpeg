@@ -2455,7 +2455,7 @@ fn transform_sketch_block_direction(
     let transformed = transform.apply_vector(Vector3::new(direction.u, direction.v, 0.0))?;
     let v_axis = frame.normal.cross(frame.u_axis);
     let result = Point2::new(transformed.dot(frame.u_axis), transformed.dot(v_axis));
-    (result.u.is_finite() && result.v.is_finite()).then_some(result)
+    result.is_finite().then_some(result)
 }
 
 fn project_detached_legacy_config_sketches(

@@ -2320,11 +2320,7 @@ fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
 }
 
 fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
-    if !is_simple_polygon(polygon, tolerance)
-        || !polygon
-            .iter()
-            .all(|point| point.u.is_finite() && point.v.is_finite())
-    {
+    if !is_simple_polygon(polygon, tolerance) || !polygon.iter().all(Point2::is_finite) {
         return None;
     }
     let orientation = polygon_area_twice(polygon).signum();
