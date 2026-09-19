@@ -19,7 +19,7 @@ use crate::checked::{
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
-use crate::native::CatiaOwnerNumericTail;
+use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
