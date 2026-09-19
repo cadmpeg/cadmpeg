@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::report::{
     decode::{DecodeReport, DecodeTransfer, TransferLedger},
     export::{CensusBasis, EntityCensus, ExportReport},

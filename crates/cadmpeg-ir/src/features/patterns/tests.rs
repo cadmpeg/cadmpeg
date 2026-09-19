@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::math::{Point3, Vector3};
 use crate::{
     features::{

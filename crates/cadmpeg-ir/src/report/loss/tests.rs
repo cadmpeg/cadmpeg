@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
-
 use crate::report::{
     loss::{
         LossCategory, LossKind, LossNamespace, LossNamespaceError, LossNote, LossTaxonomy,
