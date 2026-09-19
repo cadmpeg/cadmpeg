@@ -18,7 +18,9 @@ crate::ids::id_type!(
 /// Admission error in a tessellation mesh or channel carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TessellationError {
-    /// A mesh or channel value the carrier cannot admit.
+    /// A mesh or channel value the carrier cannot admit. The carrier states
+    /// this case; an outside caller states only [`Self::EditRefused`].
+    #[non_exhaustive]
     Admission(String),
     /// An edit closure refused the value it was given, stating its own reason.
     EditRefused(String),
@@ -581,10 +583,23 @@ impl TessellationMesh {
     /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_positions(
         &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
+        edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         let mut candidate = self.clone();
-        match &mut candidate {
+        candidate.apply_positions(edit)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Edit every vertex position in place, keeping every accepted edit.
+    ///
+    /// A refusal leaves the mesh partly edited, so the caller owns the copy
+    /// that states the prior positions.
+    fn apply_positions(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
+    ) -> Result<(), TessellationError> {
+        match self {
             Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
                 for vertex in vertices.iter_mut() {
                     edit(vertex)?;
@@ -610,7 +625,6 @@ impl TessellationMesh {
                 }
             }
         }
-        *self = candidate;
         Ok(())
     }
 
@@ -620,10 +634,23 @@ impl TessellationMesh {
     /// closure states its own refusal, which discards the whole edit.
     pub fn edit_normals(
         &mut self,
-        mut edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
+        edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
     ) -> Result<bool, TessellationError> {
         let mut candidate = self.clone();
-        match &mut candidate {
+        let edited = candidate.apply_normals(edit)?;
+        *self = candidate;
+        Ok(edited)
+    }
+
+    /// Edit every shading normal in place, keeping every accepted edit.
+    ///
+    /// A refusal leaves the mesh partly edited, so the caller owns the copy
+    /// that states the prior normals.
+    fn apply_normals(
+        &mut self,
+        mut edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
+    ) -> Result<bool, TessellationError> {
+        match self {
             Self::List { .. } | Self::Strips { .. } => return Ok(false),
             Self::ShadedList { vertices, .. } => {
                 for vertex in vertices.iter_mut() {
@@ -645,7 +672,6 @@ impl TessellationMesh {
                 }
             }
         }
-        *self = candidate;
         Ok(true)
     }
 }
@@ -1046,7 +1072,7 @@ impl Tessellation {
         edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         let mut mesh = self.mesh.clone();
-        mesh.edit_positions(edit)?;
+        mesh.apply_positions(edit)?;
         require_finite_vertices(&mesh.vertices())?;
         self.mesh = mesh;
         Ok(())
@@ -1086,7 +1112,7 @@ impl Tessellation {
         edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         let mut mesh = self.mesh.clone();
-        if !mesh.edit_normals(edit)? {
+        if !mesh.apply_normals(edit)? {
             return Err(tessellation_error("mesh has no shading normals to edit"));
         }
         require_finite_normals(&mesh.vertex_normals())?;

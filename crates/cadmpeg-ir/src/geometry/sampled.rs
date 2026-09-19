@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 /// Structural error in a sampled polyline or polygonal carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GeometryLayoutError {
-    /// A sample or vertex layout the carrier cannot state.
+    /// A sample or vertex layout the carrier cannot state. The carrier states
+    /// this case; an outside caller states only [`Self::EditRefused`].
+    #[non_exhaustive]
     Layout(String),
     /// An edit closure refused the value it was given, stating its own reason.
     EditRefused(String),

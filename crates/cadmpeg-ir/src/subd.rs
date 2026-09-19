@@ -31,7 +31,9 @@ pub struct SubdSurface {
 /// Admission error in a subdivision control cage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubdError {
-    /// A cage value the carrier cannot admit.
+    /// A cage value the carrier cannot admit. The carrier states this case;
+    /// an outside caller states only [`Self::EditRefused`].
+    #[non_exhaustive]
     Admission(String),
     /// An edit closure refused the value it was given, stating its own reason.
     EditRefused(String),
