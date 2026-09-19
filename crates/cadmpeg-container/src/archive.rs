@@ -927,10 +927,11 @@ fn declared_storage(
 mod tests {
     use std::io::{Cursor, Write as _};
 
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use zip::write::SimpleFileOptions;
+    use zip::CompressionMethod;
 
-    use super::*;
+    use super::ArchiveSnapshot;
 
     fn archive_bytes() -> Vec<u8> {
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
