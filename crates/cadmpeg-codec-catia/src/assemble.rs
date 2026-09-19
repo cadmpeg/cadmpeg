@@ -24,7 +24,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashSet};
 
 use crate::container::ContainerScan;
-use crate::loss::CatiaLossCode;
+use crate::loss::{identity_statement, CatiaLossCode};
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
     cgm_source_key(kind, format!("{tag:06x}"))
@@ -218,22 +218,6 @@ pub(crate) fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<String>, Vec<String>) {
 pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     let (curves, surfaces) = unresolved_carrier_ids(ir);
     (curves.len(), surfaces.len())
-}
-
-/// Render an identity population for a loss note: every identity when the
-/// population is small, otherwise the leading identities and how many remain.
-fn identity_statement(ids: &[String]) -> String {
-    const LISTED: usize = 8;
-    let listed = ids
-        .iter()
-        .take(LISTED)
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .join(", ");
-    match ids.len().checked_sub(LISTED) {
-        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
-        _ => listed,
-    }
 }
 
 /// The sentence naming one carrier kind, or nothing when none is unresolved.

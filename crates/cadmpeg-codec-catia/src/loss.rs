@@ -23,6 +23,22 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
+/// Render an identity population for a loss note: every identity when the
+/// population is small, otherwise the leading identities and how many remain.
+pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> String {
+    const LISTED: usize = 8;
+    let listed = ids
+        .iter()
+        .take(LISTED)
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match ids.len().checked_sub(LISTED) {
+        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
+        _ => listed,
+    }
+}
+
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The

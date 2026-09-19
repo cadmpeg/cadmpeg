@@ -188,14 +188,14 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
             .role
             .as_ref()
             .map(|role| (&role.name, role.selector)),
-        Some((&crate::native::CatiaLegacyRoleName::Selector(0xa2), 4769))
+        Some((&crate::legacy_entity::LegacyRoleName::Selector(0xa2), 4769))
     );
     assert_eq!(
         native.legacy_entity_runs[0].text_fields[4]
             .role
             .as_ref()
             .map(|role| (&role.name, role.selector)),
-        Some((&crate::native::CatiaLegacyRoleName::Selector(0xcf), 4768))
+        Some((&crate::legacy_entity::LegacyRoleName::Selector(0xcf), 4768))
     );
 
     let mut invalid_relation_pair = native.clone();
@@ -211,7 +211,7 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].role_selectors[3].name =
-        crate::native::CatiaLegacyRoleName::Selector(0);
+        crate::legacy_entity::LegacyRoleName::Selector(0);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)

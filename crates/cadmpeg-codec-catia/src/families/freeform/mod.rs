@@ -31,7 +31,8 @@ use crate::families::b5::graph::controls::{
     B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl,
 };
 use crate::families::FamilyOutput;
-use crate::loss::CatiaLossCode;
+use crate::loss::{identity_statement, CatiaLossCode};
+use crate::math::distance;
 
 const EPS_TORUS_FRAME: f64 = 1.0e-12;
 const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
@@ -288,22 +289,6 @@ fn loop_metadata_counts<'a>(
 
 /// Object-stream class code of a `b5 03 5f` face record.
 const B5_FACE_CLASS: u8 = 0x5f;
-
-/// Render an object-id population for a loss note: every id when the population
-/// is small, otherwise the leading ids and how many remain.
-fn object_id_statement(ids: &[u32]) -> String {
-    const LISTED: usize = 8;
-    let listed = ids
-        .iter()
-        .take(LISTED)
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(", ");
-    match ids.len().checked_sub(LISTED) {
-        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
-        _ => listed,
-    }
-}
 
 pub(super) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -698,7 +683,7 @@ pub(super) fn try_decode_freeform_surfaces(
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
             b5_face_object_ids.len(),
-            object_id_statement(&b5_face_object_ids)
+            identity_statement(&b5_face_object_ids)
         ))]
     } else if topology_transferred {
         vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
@@ -707,9 +692,9 @@ pub(super) fn try_decode_freeform_surfaces(
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
              object id ({}): {}.",
             b5_face_object_ids.len(),
-            object_id_statement(&b5_face_object_ids),
+            identity_statement(&b5_face_object_ids),
             b5_loop_object_ids.len(),
-            object_id_statement(&b5_loop_object_ids)
+            identity_statement(&b5_loop_object_ids)
         ))]
     } else if object_stream_selection_exhausted {
         vec![
@@ -725,7 +710,7 @@ pub(super) fn try_decode_freeform_surfaces(
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
             census_face_object_ids.len(),
-            object_id_statement(&census_face_object_ids)
+            identity_statement(&census_face_object_ids)
         ))]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
@@ -2791,11 +2776,6 @@ fn pcurve_lift_reaches_endpoints(
     let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
         return false;
     };
-    let distance = |left: Point3, right: Point3| {
-        (left.x - right.x)
-            .hypot(left.y - right.y)
-            .hypot(left.z - right.z)
-    };
     let forward = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
     let reversed = distance(start, endpoints[1]).max(distance(end, endpoints[0]));
     forward.min(reversed) <= allowance
@@ -2806,12 +2786,7 @@ fn unique_endpoint_pair_match<T>(
     candidates: impl Iterator<Item = (T, [Point3; 2])>,
 ) -> Option<(T, bool)> {
     const TOLERANCE: f64 = 2e-3;
-    let close = |left: Point3, right: Point3| {
-        (left.x - right.x)
-            .hypot(left.y - right.y)
-            .hypot(left.z - right.z)
-            < TOLERANCE
-    };
+    let close = |left: Point3, right: Point3| distance(left, right) < TOLERANCE;
     let mut matches = candidates.filter_map(|(identity, endpoints)| {
         let forward = close(loci[0], endpoints[0]) && close(loci[1], endpoints[1]);
         let reversed = close(loci[0], endpoints[1]) && close(loci[1], endpoints[0]);

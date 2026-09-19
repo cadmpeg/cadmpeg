@@ -13,16 +13,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use crate::families::a5a8::records::{
-    a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
-};
+use crate::families::a5a8::records::{a5_surfaces_from_records, FreeformSurface};
 use crate::families::b2::records::{
     b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
     b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
     b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
     b2_edge_nodes_from_records, b2_edge_parameters_from_records,
     b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
-    b2_owner_identity_targets_from_records, b2_owner_packets_from_records, b2_pcurves_from_records,
+    b2_owner_identity_targets_from_records, b2_owner_packets_from_records,
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
     b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, B2Circle,
     B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
@@ -33,8 +31,9 @@ use crate::wire::bytes::{
     AllocationReferenceEncoding,
 };
 use crate::wire::records::{
-    consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
-    ConsolidatedPcurve, ConsolidatedRawFrame, ConsolidatedRecord,
+    consolidated_records, family_pcurves_from_records, records_are_contiguous,
+    scan_vertex_record_ranges, ConsolidatedFamily, ConsolidatedPcurve, ConsolidatedRawFrame,
+    ConsolidatedRecord,
 };
 
 const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
@@ -529,9 +528,13 @@ fn consolidated_edge_blocks_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<ConsolidatedEdgeBlock> {
-    let pcurves = a5_pcurves_from_records(data, records)
+    let pcurves = family_pcurves_from_records(data, records, ConsolidatedFamily::A)
         .into_iter()
-        .chain(b2_pcurves_from_records(data, records))
+        .chain(family_pcurves_from_records(
+            data,
+            records,
+            ConsolidatedFamily::B,
+        ))
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let parameters = b2_edge_parameters_from_records(data, records)
@@ -1275,7 +1278,9 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 let identity_count = identity_circles.len() + identity_embedded.len();
                 if identity_count == 0 {
                     for cylinder in &standalone {
-                        if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
+                        if pcurve_endpoints_match(pcurve, &points, |uv| {
+                            b2_cylinder_point(cylinder, uv)
+                        }) {
                             winners
                                 .push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
                         }
@@ -1284,7 +1289,9 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                         embedded
                             .iter()
                             .filter(|value| {
-                                pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points)
+                                pcurve_endpoints_match(pcurve, &points, |uv| {
+                                    b2_cylinder_point(&value.cylinder, uv)
+                                })
                             })
                             .map(|value| ConsolidatedSupportBinding::EmbeddedCylinder {
                                 pos: value.pos,
@@ -1310,7 +1317,13 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     winners.extend(
                         spheres
                             .iter()
-                            .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
+                            .filter(|sphere| {
+                                b2_sphere_geometry(sphere).is_some_and(|geometry| {
+                                    pcurve_endpoints_match(pcurve, &points, |[u, v]| {
+                                        cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                    })
+                                })
+                            })
                             .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
                     );
                     winners.extend(
@@ -1325,7 +1338,13 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     winners.extend(
                         planes
                             .iter()
-                            .filter(|plane| pcurve_endpoints_match_plane(pcurve, plane, &points))
+                            .filter(|plane| {
+                                b2_plane_geometry(plane).is_some_and(|geometry| {
+                                    pcurve_endpoints_match(pcurve, &points, |[u, v]| {
+                                        cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                    })
+                                })
+                            })
                             .map(|plane| ConsolidatedSupportBinding::Plane { pos: plane.pos }),
                     );
                 } else if identity_count > 1 {
@@ -1337,7 +1356,9 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                         ambiguous_family = true;
                     }
                 } else if let [value] = identity_embedded.as_slice() {
-                    if pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points) {
+                    if pcurve_endpoints_match(pcurve, &points, |uv| {
+                        b2_cylinder_point(&value.cylinder, uv)
+                    }) {
                         winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
                             pos: value.pos,
                             wrapper_pos: value.wrapper_pos,
@@ -1636,78 +1657,6 @@ fn pcurve_endpoints_match(
                 .iter()
                 .any(|vertex| distance(point, *vertex) < 2e-3)
         })
-    })
-}
-
-fn pcurve_endpoints_match_sphere(
-    pcurve: &ConsolidatedPcurve,
-    sphere: &B2Sphere,
-    vertices: &[Point3],
-) -> bool {
-    let (Some(first), Some(last)) = (
-        pcurve.sites.first().map(|site| site.point),
-        pcurve.sites.last().map(|site| site.point),
-    ) else {
-        return false;
-    };
-    let Some(geometry) = b2_sphere_geometry(sphere) else {
-        return false;
-    };
-    [first, last].into_iter().all(|[u, v]| {
-        cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
-            vertices
-                .iter()
-                .any(|vertex| distance(point, *vertex) < 2e-3)
-        })
-    })
-}
-
-fn pcurve_endpoints_match_plane(
-    pcurve: &ConsolidatedPcurve,
-    plane: &B2PlaneCarrier,
-    vertices: &[Point3],
-) -> bool {
-    let Some(geometry) = b2_plane_geometry(plane) else {
-        return false;
-    };
-    let (Some(first), Some(last)) = (
-        pcurve.sites.first().map(|site| site.point),
-        pcurve.sites.last().map(|site| site.point),
-    ) else {
-        return false;
-    };
-    [first, last].into_iter().all(|[u, v]| {
-        cadmpeg_ir::eval::surface_point(&geometry, u, v).is_some_and(|point| {
-            vertices
-                .iter()
-                .any(|vertex| distance(point, *vertex) < 2e-3)
-        })
-    })
-}
-
-fn pcurve_endpoints_match_vertices(
-    pcurve: &ConsolidatedPcurve,
-    cylinder: &B2Cylinder,
-    vertices: &[Point3],
-) -> bool {
-    let Some(first) = pcurve
-        .sites
-        .first()
-        .and_then(|site| b2_cylinder_point(cylinder, site.point))
-    else {
-        return false;
-    };
-    let Some(last) = pcurve
-        .sites
-        .last()
-        .and_then(|site| b2_cylinder_point(cylinder, site.point))
-    else {
-        return false;
-    };
-    [first, last].iter().all(|point| {
-        vertices
-            .iter()
-            .any(|vertex| distance(*point, *vertex) < 2e-3)
     })
 }
 

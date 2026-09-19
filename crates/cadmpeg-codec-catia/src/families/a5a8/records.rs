@@ -7,9 +7,11 @@ use super::knot_lane::{strictly_increasing_finite, A8KnotLane};
 use crate::math::distance;
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+#[cfg(test)]
+use crate::wire::records::ConsolidatedPcurve;
 use crate::wire::records::{
-    consolidated_records, family_frames_from_records, parse_consolidated_pcurve,
-    ConsolidatedFamily, ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
+    consolidated_records, family_frames_from_records, ConsolidatedFamily, ConsolidatedFrame,
+    ConsolidatedRecord,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
@@ -482,17 +484,7 @@ impl A8Pcurve {
 #[cfg(test)]
 pub(super) fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    a5_pcurves_from_records(data, &records)
-}
-
-pub(crate) fn a5_pcurves_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedPcurve> {
-    family_frames_from_records(records, ConsolidatedFamily::A, 0x20)
-        .into_iter()
-        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
-        .collect()
+    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::A)
 }
 
 /// One knot-site value in an `a5 03 32` rolling-ball program.

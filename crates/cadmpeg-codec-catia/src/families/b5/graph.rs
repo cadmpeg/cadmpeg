@@ -24,6 +24,7 @@ use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::math::unit_vector;
 use crate::wire;
+use crate::wire::bytes::{f64_le, read_f64_array};
 
 const EPS_B5_GRAPH_GEOMETRY: f64 = 1.0e-9;
 const EPS_B5_GRAPH_DEGENERATE: f64 = 1.0e-10;
@@ -1551,7 +1552,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
     let read_values = |position: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(knot_count);
         for _ in 0..knot_count {
-            values.push(scalar(payload, *position)?);
+            values.push(f64_le(payload, *position)?);
             *position = position.checked_add(8)?;
         }
         Some(values)
@@ -1595,10 +1596,10 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
     let extension_control = tail.get(34..36);
     (matches!(tail.len(), 36 | 38)
         && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
-        && scalar(tail, 2)? == 0.0
-        && scalar(tail, 10)? > 0.0
-        && scalar(tail, 18)? == 1.0
-        && scalar(tail, 26)? == 0.0
+        && f64_le(tail, 2)? == 0.0
+        && f64_le(tail, 10)? > 0.0
+        && f64_le(tail, 18)? == 1.0
+        && f64_le(tail, 26)? == 0.0
         && (tail.len() == 36
             || extension_control == Some(&[0x01, 0x11])
             || extension_control == Some(&[0x01, 0x19]))
@@ -1616,7 +1617,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         weights: None,
         parameter_range: Some(parameter_range),
         parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: Some(scalar(tail, 10)?),
+        class_21_suffix_scalar: Some(f64_le(tail, 10)?),
         lifted_endpoints: None,
     })
 }
@@ -2110,7 +2111,7 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     let mut parameters = Vec::with_capacity(count);
     let mut controls = Vec::with_capacity(count);
     for _ in 0..count {
-        let parameter = scalar(&record.payload, position)?;
+        let parameter = f64_le(&record.payload, position)?;
         if !parameter.is_finite() {
             return None;
         }
@@ -2530,24 +2531,24 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
     match record.class {
         0x0e => {
             (record.payload.len() == 73 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let direction = point(&record.payload, 25)?;
-            let parameter_range = [scalar(&record.payload, 57)?, scalar(&record.payload, 65)?];
+            let direction = read_f64_array::<3>(&record.payload, 25)?;
+            let parameter_range = [f64_le(&record.payload, 57)?, f64_le(&record.payload, 65)?];
             (direction_is_unit(direction)
-                && scalar(&record.payload, 49)? == 1.0
+                && f64_le(&record.payload, 49)? == 1.0
                 && parameter_range[0] < parameter_range[1])
                 .then_some(B5Profile::Line {
-                    point: point(&record.payload, 1)?,
+                    point: read_f64_array::<3>(&record.payload, 1)?,
                     direction,
                     parameter_range,
                 })
         }
         0x0f => {
             (record.payload.len() == 113 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let direction_x = point(&record.payload, 25)?;
-            let direction_y = point(&record.payload, 49)?;
-            let radius = scalar(&record.payload, 73)?;
-            let parameter_range = [scalar(&record.payload, 81)?, scalar(&record.payload, 89)?];
-            let chart_origin = scalar(&record.payload, 105)?;
+            let direction_x = read_f64_array::<3>(&record.payload, 25)?;
+            let direction_y = read_f64_array::<3>(&record.payload, 49)?;
+            let radius = f64_le(&record.payload, 73)?;
+            let parameter_range = [f64_le(&record.payload, 81)?, f64_le(&record.payload, 89)?];
+            let chart_origin = f64_le(&record.payload, 105)?;
             (radius > 0.0
                 && directions_are_unit_and_orthogonal(direction_x, direction_y)
                 && periodic_angular_range_is_valid(
@@ -2557,9 +2558,9 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
                         chart_origin / radius + std::f64::consts::TAU,
                     ],
                 )
-                && scalar(&record.payload, 97)? == 1.0)
+                && f64_le(&record.payload, 97)? == 1.0)
                 .then_some(B5Profile::Arc {
-                    center: point(&record.payload, 1)?,
+                    center: read_f64_array::<3>(&record.payload, 1)?,
                     direction_x,
                     direction_y,
                     radius,
@@ -2738,17 +2739,17 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     match record.class {
         0x27 => {
             (record.payload.len() == 121 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let direction_u = point(&record.payload, 25)?;
-            let direction_v = point(&record.payload, 49)?;
-            let u_range = [scalar(&record.payload, 89)?, scalar(&record.payload, 97)?];
-            let v_range = [scalar(&record.payload, 105)?, scalar(&record.payload, 113)?];
+            let direction_u = read_f64_array::<3>(&record.payload, 25)?;
+            let direction_v = read_f64_array::<3>(&record.payload, 49)?;
+            let u_range = [f64_le(&record.payload, 89)?, f64_le(&record.payload, 97)?];
+            let v_range = [f64_le(&record.payload, 105)?, f64_le(&record.payload, 113)?];
             (directions_are_unit_and_orthogonal(direction_u, direction_v)
-                && scalar(&record.payload, 73)? == 1.0
-                && scalar(&record.payload, 81)? == 1.0
+                && f64_le(&record.payload, 73)? == 1.0
+                && f64_le(&record.payload, 81)? == 1.0
                 && u_range[0] < u_range[1]
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Plane {
-                    origin: point(&record.payload, 1)?,
+                    origin: read_f64_array::<3>(&record.payload, 1)?,
                     direction_u,
                     direction_v,
                     u_range,
@@ -2757,13 +2758,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x28 => {
             (record.payload.len() == 137 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let stored_u = point(&record.payload, 25)?;
-            let stored_v = point(&record.payload, 49)?;
-            let radius = scalar(&record.payload, 73)?;
-            let u_range = [scalar(&record.payload, 81)?, scalar(&record.payload, 89)?];
-            let v_range = [scalar(&record.payload, 97)?, scalar(&record.payload, 105)?];
-            let angular_factor = scalar(&record.payload, 113)?;
-            let chart_origin = scalar(&record.payload, 129)?;
+            let stored_u = read_f64_array::<3>(&record.payload, 25)?;
+            let stored_v = read_f64_array::<3>(&record.payload, 49)?;
+            let radius = f64_le(&record.payload, 73)?;
+            let u_range = [f64_le(&record.payload, 81)?, f64_le(&record.payload, 89)?];
+            let v_range = [f64_le(&record.payload, 97)?, f64_le(&record.payload, 105)?];
+            let angular_factor = f64_le(&record.payload, 113)?;
+            let chart_origin = f64_le(&record.payload, 129)?;
             let angular_scale = radius / angular_factor;
             let chart_domain = [
                 chart_origin,
@@ -2781,13 +2782,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && directions_are_unit_and_orthogonal(stored_u, stored_v)
                 && angular_factor > 0.0
                 && angular_scale.is_finite()
-                && scalar(&record.payload, 121)? == 1.0
+                && f64_le(&record.payload, 121)? == 1.0
                 && u_range[0] < u_range[1]
                 && u_range[0] >= chart_domain[0] - chart_tolerance
                 && u_range[1] <= chart_domain[1] + chart_tolerance
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Cylinder {
-                    origin: point(&record.payload, 1)?,
+                    origin: read_f64_array::<3>(&record.payload, 1)?,
                     reference_x: unit_vector(stored_u)?,
                     axis: unit_vector(cross(stored_u, stored_v))?,
                     radius,
@@ -2799,21 +2800,21 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x29 => {
             (record.payload.len() == 185 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let apex = point(&record.payload, 1)?;
-            let direction_x = point(&record.payload, 25)?;
-            let direction_y = point(&record.payload, 49)?;
-            let axis = point(&record.payload, 73)?;
+            let apex = read_f64_array::<3>(&record.payload, 1)?;
+            let direction_x = read_f64_array::<3>(&record.payload, 25)?;
+            let direction_y = read_f64_array::<3>(&record.payload, 49)?;
+            let axis = read_f64_array::<3>(&record.payload, 73)?;
             let frame_cross = cross(direction_x, direction_y);
             let opposite_axis = [-axis[0], -axis[1], -axis[2]];
-            let half_angle = scalar(&record.payload, 97)?;
-            let reference_radius = scalar(&record.payload, 105)?;
-            let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
-            let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+            let half_angle = f64_le(&record.payload, 97)?;
+            let reference_radius = f64_le(&record.payload, 105)?;
+            let angular_range = [f64_le(&record.payload, 113)?, f64_le(&record.payload, 121)?];
+            let mut slant_range = [f64_le(&record.payload, 129)?, f64_le(&record.payload, 137)?];
             if slant_range[0].abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY {
                 slant_range[0] = 0.0;
             }
-            let angular_scale = scalar(&record.payload, 145)?;
-            let angular_domain = [scalar(&record.payload, 169)?, scalar(&record.payload, 177)?];
+            let angular_scale = f64_le(&record.payload, 145)?;
+            let angular_domain = [f64_le(&record.payload, 169)?, f64_le(&record.payload, 177)?];
             ((distance_squared(frame_cross, axis) <= 4e-24
                 || distance_squared(frame_cross, opposite_axis) <= 4e-24)
                 && directions_are_unit_and_orthogonal(direction_x, direction_y)
@@ -2823,8 +2824,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && slant_range[0] >= 0.0
                 && slant_range[0] < slant_range[1]
                 && angular_scale > 0.0
-                && scalar(&record.payload, 153)? == 1.0
-                && scalar(&record.payload, 161)? == 0.0)
+                && f64_le(&record.payload, 153)? == 1.0
+                && f64_le(&record.payload, 161)? == 0.0)
                 .then_some(B5Surface::Cone {
                     apex,
                     direction_x,
@@ -2840,11 +2841,11 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x2a => {
             (record.payload.len() == 153 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let center = point(&record.payload, 1)?;
-            let stored_x = point(&record.payload, 25)?;
-            let stored_y = point(&record.payload, 49)?;
-            let stored_axis = point(&record.payload, 73)?;
-            let radius = scalar(&record.payload, 97)?;
+            let center = read_f64_array::<3>(&record.payload, 1)?;
+            let stored_x = read_f64_array::<3>(&record.payload, 25)?;
+            let stored_y = read_f64_array::<3>(&record.payload, 49)?;
+            let stored_axis = read_f64_array::<3>(&record.payload, 73)?;
+            let radius = f64_le(&record.payload, 97)?;
             let [azimuth_lo, azimuth_hi, latitude_lo, latitude_hi, construction_radius, chart_origin] =
                 line_values::<6>(&record.payload, 105)?;
             let azimuth_range = [azimuth_lo, azimuth_hi];
@@ -2885,21 +2886,21 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && record.payload.first() == Some(&0x80)
                 && record.payload.get(193..201) == Some(&[0; 8]))
             .then_some(())?;
-            let direction_x = point(&record.payload, 25)?;
-            let direction_y = point(&record.payload, 49)?;
-            let axis = point(&record.payload, 73)?;
-            let major_radius = scalar(&record.payload, 97)?;
-            let minor_radius = scalar(&record.payload, 105)?;
+            let direction_x = read_f64_array::<3>(&record.payload, 25)?;
+            let direction_y = read_f64_array::<3>(&record.payload, 49)?;
+            let axis = read_f64_array::<3>(&record.payload, 73)?;
+            let major_radius = f64_le(&record.payload, 97)?;
+            let minor_radius = f64_le(&record.payload, 105)?;
             let major_angular_range =
-                [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
+                [f64_le(&record.payload, 113)?, f64_le(&record.payload, 121)?];
             let major_angular_domain =
-                [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+                [f64_le(&record.payload, 129)?, f64_le(&record.payload, 137)?];
             let minor_angular_range =
-                [scalar(&record.payload, 145)?, scalar(&record.payload, 153)?];
+                [f64_le(&record.payload, 145)?, f64_le(&record.payload, 153)?];
             let minor_angular_domain =
-                [scalar(&record.payload, 161)?, scalar(&record.payload, 169)?];
-            let major_scale = scalar(&record.payload, 177)?;
-            let minor_scale = scalar(&record.payload, 185)?;
+                [f64_le(&record.payload, 161)?, f64_le(&record.payload, 169)?];
+            let major_scale = f64_le(&record.payload, 177)?;
+            let minor_scale = f64_le(&record.payload, 185)?;
             (directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis)
                 && major_radius > 0.0
                 && minor_radius > 0.0
@@ -2909,7 +2910,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && minor_scale > 0.0)
                 .then_some(())?;
             Some(B5Surface::Torus {
-                center: point(&record.payload, 1)?,
+                center: read_f64_array::<3>(&record.payload, 1)?,
                 direction_x,
                 direction_y,
                 axis,
@@ -2930,18 +2931,18 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && record.payload.first() == Some(&0x81))
             .then_some(())?;
             let angular_range = [
-                scalar(&record.payload, position.checked_add(96)?)?,
-                scalar(&record.payload, position.checked_add(104)?)?,
+                f64_le(&record.payload, position.checked_add(96)?)?,
+                f64_le(&record.payload, position.checked_add(104)?)?,
             ];
             let profile_range = [
-                scalar(&record.payload, position.checked_add(112)?)?,
-                scalar(&record.payload, position.checked_add(120)?)?,
+                f64_le(&record.payload, position.checked_add(112)?)?,
+                f64_le(&record.payload, position.checked_add(120)?)?,
             ];
-            let angular_scale = scalar(&record.payload, position.checked_add(130)?)?;
-            let angular_half_turn = scalar(&record.payload, position.checked_add(163)?)?;
-            let reference_x = point(&record.payload, position.checked_add(24)?)?;
-            let reference_y = point(&record.payload, position.checked_add(48)?)?;
-            let axis_direction = point(&record.payload, position.checked_add(72)?)?;
+            let angular_scale = f64_le(&record.payload, position.checked_add(130)?)?;
+            let angular_half_turn = f64_le(&record.payload, position.checked_add(163)?)?;
+            let reference_x = read_f64_array::<3>(&record.payload, position.checked_add(24)?)?;
+            let reference_y = read_f64_array::<3>(&record.payload, position.checked_add(48)?)?;
+            let axis_direction = read_f64_array::<3>(&record.payload, position.checked_add(72)?)?;
             (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05])
                 && angular_scale > 0.0
                 && directions_form_right_handed_orthonormal_frame(
@@ -2954,14 +2955,14 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && angular_range[0] >= 0.0
                 && angular_range[1] <= 2.0 * angular_half_turn
                 && profile_range[0] < profile_range[1]
-                && scalar(&record.payload, position + 138)? == 1.0
-                && scalar(&record.payload, position + 146)? == 1.0
-                && scalar(&record.payload, position + 154)? == 0.0
+                && f64_le(&record.payload, position + 138)? == 1.0
+                && f64_le(&record.payload, position + 146)? == 1.0
+                && f64_le(&record.payload, position + 154)? == 0.0
                 && record.payload.get(position + 162) == Some(&0x01)
                 && angular_half_turn.to_bits() == (std::f64::consts::PI * angular_scale).to_bits())
             .then_some(B5Surface::Revolution {
                 profile_curve,
-                axis_origin: point(&record.payload, position)?,
+                axis_origin: read_f64_array::<3>(&record.payload, position)?,
                 reference_x,
                 reference_y,
                 axis_direction,
@@ -3015,7 +3016,7 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     let mut position = 1;
     let carrier_surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
     let source_surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-    let distance = scalar(&record.payload, position)?;
+    let distance = f64_le(&record.payload, position)?;
     position += 8;
     let carrier_kind = B5OffsetCarrierKind::from_byte(*record.payload.get(position)?)?;
     position += 1;
@@ -3626,7 +3627,7 @@ fn parse_extrusion_directrix(
     let tail = record.payload.len().checked_sub(25)?;
     (position < tail).then_some(())?;
     let parameter_range = line_values::<2>(&record.payload, tail)?;
-    let cache_fit_tolerance = scalar(&record.payload, tail + 16)?;
+    let cache_fit_tolerance = f64_le(&record.payload, tail + 16)?;
     if record.payload.get(tail + 24) != Some(&0x01)
         || parameter_range[0] >= parameter_range[1]
         || cache_fit_tolerance <= 0.0
@@ -3803,8 +3804,8 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
                 record.payload[position + 20],
                 record.payload[position + 21],
             ];
-            let construction_radius = scalar(&record.payload, position + 2)?;
-            let zero = scalar(&record.payload, position + 12)?;
+            let construction_radius = f64_le(&record.payload, position + 2)?;
+            let zero = f64_le(&record.payload, position + 12)?;
             (construction_radius > 0.0 && zero == 0.0).then_some(())?;
             B5SupportedSurfaceParameters::Radius {
                 controls,
@@ -3814,8 +3815,8 @@ fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
         0x3b => {
             let controls = record.payload[position..position + 6].try_into().ok()?;
             let scalars = [
-                scalar(&record.payload, position + 6)?,
-                scalar(&record.payload, position + 14)?,
+                f64_le(&record.payload, position + 6)?,
+                f64_le(&record.payload, position + 14)?,
             ];
             scalars.iter().all(|scalar| *scalar > 0.0).then_some(())?;
             B5SupportedSurfaceParameters::ScalarPair { controls, scalars }
@@ -4073,19 +4074,6 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
     )
 }
 
-fn scalar(bytes: &[u8], offset: usize) -> Option<f64> {
-    let value = View::f64_le_at(bytes, offset)?;
-    value.is_finite().then_some(value)
-}
-
-fn point(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
-    Some([
-        scalar(bytes, offset)?,
-        scalar(bytes, offset + 8)?,
-        scalar(bytes, offset + 16)?,
-    ])
-}
-
 fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
         return None;
@@ -4144,16 +4132,16 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     position = view.position();
     let tail = record.payload.get(position..)?;
-    let suffix_scalar = scalar(tail, 10)?;
+    let suffix_scalar = f64_le(tail, 10)?;
     let native_origin = *distinct_knots.first()?;
     let native_span = distinct_knots[1] - native_origin;
     if tail.len() != 36
         || tail.get(..2) != Some(&[0x05, 0x05])
-        || scalar(tail, 2)? != 0.0
+        || f64_le(tail, 2)? != 0.0
         || suffix_scalar <= 0.0
         || suffix_scalar.to_bits() != native_span.to_bits()
-        || scalar(tail, 18)? != 1.0
-        || scalar(tail, 26)? != 0.0
+        || f64_le(tail, 18)? != 1.0
+        || f64_le(tail, 26)? != 0.0
         || tail.get(34..) != Some(&[0x00, 0x07])
     {
         return None;

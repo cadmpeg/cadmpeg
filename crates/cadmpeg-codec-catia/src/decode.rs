@@ -579,7 +579,12 @@ fn finish_decode(
         .legacy_entity_runs
         .iter()
         .flat_map(|run| &run.role_selectors)
-        .filter(|role| matches!(&role.name, crate::native::CatiaLegacyRoleName::Selector(_)))
+        .filter(|role| {
+            matches!(
+                &role.name,
+                crate::legacy_entity::LegacyRoleName::Selector(_)
+            )
+        })
         .count();
     let legacy_role_field_binding_count = native
         .legacy_entity_runs
