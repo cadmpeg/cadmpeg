@@ -13,12 +13,12 @@ use crate::container::{self};
 use crate::SldprtCodec;
 
 use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
-use crate::test_support::make_block;
-use crate::test_support::outer_header;
-use crate::test_support::parasolid_with_body;
-use crate::test_support::sldprt_with_colliding_sites;
-use crate::test_support::synthetic_sldprt;
-use crate::test_support::triangle_body;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::container::synthetic_sldprt;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
 
 #[test]
 fn generic_compound_prefix_is_a_weak_container_signal() {

@@ -691,10 +691,12 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
 #[cfg(test)]
 mod tests {
     use super::{generated_feature_record_id, neutral_feature_id, sync_neutral_features};
-    use crate::test_support::{
-        make_block, plan_inherited_write, resolved_feature_classes_with_ids, sldprt_native,
-        sldprt_with_body, triangle_body,
-    };
+    use crate::test_support::container::make_block;
+    use crate::test_support::container::sldprt_with_body;
+    use crate::test_support::history::resolved_feature_classes_with_ids;
+    use crate::test_support::native::sldprt_native;
+    use crate::test_support::parasolid::triangle_body;
+    use crate::test_support::plan_inherited_write;
     use crate::SldprtCodec;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};

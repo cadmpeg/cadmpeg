@@ -7,13 +7,13 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::make_block;
-use crate::test_support::outer_header;
-use crate::test_support::owned_triangle;
-use crate::test_support::parasolid_with_body;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_colliding_sites;
-use crate::test_support::triangle_body;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::container::sldprt_with_colliding_sites;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]

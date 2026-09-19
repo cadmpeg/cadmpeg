@@ -208,8 +208,8 @@ fn malformed_reference_identity_returns_decode_loss() {
         encode_entity(&root, &mut payload);
         let parsed = parse_unique_root(&payload).unwrap();
         assert_eq!(parsed.annotations.references.first().unwrap().id, id);
-        let mut bytes = crate::test_support::synthetic_sldprt();
-        bytes.extend(crate::test_support::make_block(
+        let mut bytes = crate::test_support::container::synthetic_sldprt();
+        bytes.extend(crate::test_support::container::make_block(
             0x40,
             "SWIFT/Schema",
             &payload,

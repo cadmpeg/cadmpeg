@@ -8,21 +8,21 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::layout::visual_states_feature_appearance_prefix as feature_visual;
-use crate::test_support::add_solidworks_version;
-use crate::test_support::bridge_owned;
-use crate::test_support::entity51;
-use crate::test_support::entity53_color;
-use crate::test_support::face_color_definition;
-use crate::test_support::make_block;
-use crate::test_support::material_payload;
-use crate::test_support::outer_header;
-use crate::test_support::owned_triangle;
-use crate::test_support::plane_carrier;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_body_and_material;
+use crate::test_support::appearance::material_payload;
+use crate::test_support::appearance::sldprt_with_body_and_material;
+use crate::test_support::container::add_solidworks_version;
+use crate::test_support::container::make_block;
+use crate::test_support::container::outer_header;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::bridge_owned;
+use crate::test_support::parasolid::entity51;
+use crate::test_support::parasolid::entity53_color;
+use crate::test_support::parasolid::face_color_definition;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::plane_carrier;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
 use crate::test_support::tessellation::descriptor;
-use crate::test_support::triangle_body;
-use crate::test_support::FACE_COLOR_DEFINITION_ID;
 use crate::SldprtCodec;
 
 #[test]

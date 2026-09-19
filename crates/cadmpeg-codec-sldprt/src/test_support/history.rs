@@ -2,11 +2,22 @@
 //! Synthetic feature-history and `ResolvedFeatures` payload builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use super::{
-    arc_sketch_body, bridge, circular_sketch_body, coedge, edge_use, ellipse_carrier, loop_head,
-    make_block, nurbs_sketch_body, parasolid_with_body, plane_carrier, sldprt_with_body,
-    triangle_body, vertex_use, world_point, zlib,
-};
+use super::container::make_block;
+use super::container::sldprt_with_body;
+use super::container::zlib;
+use super::parasolid::arc_sketch_body;
+use super::parasolid::bridge;
+use super::parasolid::circular_sketch_body;
+use super::parasolid::coedge;
+use super::parasolid::edge_use;
+use super::parasolid::ellipse_carrier;
+use super::parasolid::loop_head;
+use super::parasolid::nurbs_sketch_body;
+use super::parasolid::parasolid_with_body;
+use super::parasolid::plane_carrier;
+use super::parasolid::triangle_body;
+use super::parasolid::vertex_use;
+use super::parasolid::world_point;
 
 pub(crate) fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
     let mut f = sldprt_with_body(body);

@@ -2,25 +2,25 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::display_list_payload;
-use crate::test_support::entity51;
-use crate::test_support::entity53_color;
-use crate::test_support::face_color_definition;
-use crate::test_support::make_block;
-use crate::test_support::owned_triangle;
-use crate::test_support::sldprt_native;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_body_and_display_list;
-use crate::test_support::sldprt_with_body_and_material;
-use crate::test_support::sldprt_with_compressed_nested_sketch_profile;
-use crate::test_support::sldprt_with_nested_arc_sketch;
-use crate::test_support::sldprt_with_nested_circular_sketch;
-use crate::test_support::sldprt_with_nested_elliptical_sketch;
-use crate::test_support::sldprt_with_nested_nurbs_sketches;
-use crate::test_support::sldprt_with_nested_sketch_profile;
-use crate::test_support::triangle_body;
-use crate::test_support::update_sldprt_native;
-use crate::test_support::FACE_COLOR_DEFINITION_ID;
+use crate::test_support::appearance::sldprt_with_body_and_material;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::sldprt_with_compressed_nested_sketch_profile;
+use crate::test_support::history::sldprt_with_nested_arc_sketch;
+use crate::test_support::history::sldprt_with_nested_circular_sketch;
+use crate::test_support::history::sldprt_with_nested_elliptical_sketch;
+use crate::test_support::history::sldprt_with_nested_nurbs_sketches;
+use crate::test_support::history::sldprt_with_nested_sketch_profile;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::entity51;
+use crate::test_support::parasolid::entity53_color;
+use crate::test_support::parasolid::face_color_definition;
+use crate::test_support::parasolid::owned_triangle;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
+use crate::test_support::tessellation::display_list_payload;
+use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
 
 use cadmpeg_ir::codec::write::EncodeInput;

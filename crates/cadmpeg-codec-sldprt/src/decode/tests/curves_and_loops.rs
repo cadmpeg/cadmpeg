@@ -6,18 +6,18 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::test_support::bridge;
-use crate::test_support::coedge;
-use crate::test_support::edge_use;
-use crate::test_support::line_carrier;
-use crate::test_support::loop_head;
-use crate::test_support::nurbs_curve_carrier;
-use crate::test_support::plane_carrier;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::triangle_body;
-use crate::test_support::typed_nurbs_curve_carrier;
-use crate::test_support::vertex_use;
-use crate::test_support::world_point;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::coedge;
+use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::line_carrier;
+use crate::test_support::parasolid::loop_head;
+use crate::test_support::parasolid::nurbs_curve_carrier;
+use crate::test_support::parasolid::plane_carrier;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::typed_nurbs_curve_carrier;
+use crate::test_support::parasolid::vertex_use;
+use crate::test_support::parasolid::world_point;
 use crate::SldprtCodec;
 
 #[test]

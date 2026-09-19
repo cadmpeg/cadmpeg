@@ -7,26 +7,26 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
-use crate::test_support::bridge;
-use crate::test_support::coedge;
-use crate::test_support::compact_counted_nurbs_surface_carrier;
-use crate::test_support::edge_use;
-use crate::test_support::line_carrier;
-use crate::test_support::loop_head;
-use crate::test_support::make_block;
-use crate::test_support::make_cache_cell;
-use crate::test_support::make_directory_entry;
-use crate::test_support::nurbs_curve_carrier;
-use crate::test_support::nurbs_surface_carrier_with_terminal_knot_slot;
-use crate::test_support::parasolid_with_body;
-use crate::test_support::sldprt_native;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::sldprt_with_body_and_history;
-use crate::test_support::triangle_body;
-use crate::test_support::update_sldprt_native;
-use crate::test_support::vertex_use;
-use crate::test_support::world_point;
-use crate::test_support::DIRTY_TERMINAL_KNOT;
+use crate::test_support::container::make_block;
+use crate::test_support::container::make_cache_cell;
+use crate::test_support::container::make_directory_entry;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::sldprt_with_body_and_history;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::coedge;
+use crate::test_support::parasolid::compact_counted_nurbs_surface_carrier;
+use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::line_carrier;
+use crate::test_support::parasolid::loop_head;
+use crate::test_support::parasolid::nurbs_curve_carrier;
+use crate::test_support::parasolid::nurbs_surface_carrier_with_terminal_knot_slot;
+use crate::test_support::parasolid::parasolid_with_body;
+use crate::test_support::parasolid::triangle_body;
+use crate::test_support::parasolid::vertex_use;
+use crate::test_support::parasolid::world_point;
+use crate::test_support::parasolid::DIRTY_TERMINAL_KNOT;
 use crate::SldprtCodec;
 
 #[test]
@@ -719,7 +719,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
 
     // The retained baseline carries a deltas site beside the partition the
     // patch route edits. Both sites join the baseline decode.
-    let mut image = crate::test_support::outer_header();
+    let mut image = crate::test_support::container::outer_header();
     image.extend(make_block(
         0x20,
         "Contents/Config-0-Partition",

@@ -17,7 +17,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::transform::Transform;
 
-use crate::test_support::{sldprt_with_body, triangle_body};
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {

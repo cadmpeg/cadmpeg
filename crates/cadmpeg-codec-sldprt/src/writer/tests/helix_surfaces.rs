@@ -3,12 +3,12 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::make_block;
-use crate::test_support::resolved_feature_classes_with_ids;
-use crate::test_support::sldprt_native;
-use crate::test_support::sldprt_with_body;
-use crate::test_support::triangle_body;
-use crate::test_support::update_sldprt_native;
+use crate::test_support::container::make_block;
+use crate::test_support::container::sldprt_with_body;
+use crate::test_support::history::resolved_feature_classes_with_ids;
+use crate::test_support::native::sldprt_native;
+use crate::test_support::native::update_sldprt_native;
+use crate::test_support::parasolid::triangle_body;
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use std::io::Cursor;
