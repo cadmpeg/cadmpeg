@@ -344,7 +344,8 @@ pub fn input_names() -> Result<Vec<&'static str>, crate::registry::RegistryLoadE
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{forced_input, input_names, FORMAT_DESCRIPTORS};
+    use crate::Format;
     use std::collections::BTreeSet;
 
     #[test]

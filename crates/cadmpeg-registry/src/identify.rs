@@ -174,8 +174,12 @@ fn read_prefix(source: &mut dyn ReadSeek, options: &InspectOptions) -> std::io::
 mod tests {
     use std::io::Cursor;
 
-    use super::*;
-    use cadmpeg_core::decode::ResourceLimits;
+    use cadmpeg_core::decode::{InspectOptions, ResourceLimits};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::{Confidence, FormatId};
+
+    use super::{identify, resolve_and_inspect_with, Identification, InspectError};
+    use crate::{InputCatalog, Selection};
 
     fn inspection() -> InspectOptions {
         InspectOptions {
@@ -295,7 +299,7 @@ mod tests {
     mod declared {
         use cadmpeg_core::dialect::DialectId;
 
-        use super::*;
+        use super::{inspection, run, Identification, InputCatalog};
 
         /// One fixture and the dialect its codec classifies.
         struct Case {

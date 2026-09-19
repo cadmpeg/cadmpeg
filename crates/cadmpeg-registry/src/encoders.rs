@@ -6,14 +6,7 @@
 //! `TargetRequest` carries it. Export-loss rejection is an application decision
 //! over the completed plan, not an encoder-construction option.
 
-#[cfg(test)]
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
-#[cfg(test)]
-use cadmpeg_ir::codec::write::TargetRequest;
-
-#[cfg(test)]
-use cadmpeg_ir::codec::FormatId;
 
 use crate::Format;
 
@@ -29,7 +22,12 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::write::TargetRequest;
+    use cadmpeg_ir::codec::FormatId;
+
+    use super::build_encoder;
+    use crate::Format;
 
     /// Every request an encoder catalog can be asked for, checked against the
     /// identity registry and against the catalog's own rules.

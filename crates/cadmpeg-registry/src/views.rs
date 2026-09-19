@@ -141,9 +141,12 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Dialec
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[cfg(feature = "rhino")]
-    use cadmpeg_core::dialect::DialectMatch;
+    use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
+
+    #[cfg(feature = "rhino")]
+    use super::dialect_provenance;
+    use super::dialect_table;
 
     #[cfg(feature = "rhino")]
     #[test]
