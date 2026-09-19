@@ -206,7 +206,9 @@ pub fn resolve_address(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        resolve_address, ByteRange, ResolvedAddress, SpaceDerivation, SpaceDescriptor, SpaceId,
+    };
     use crate::decode::SourceLocation;
 
     #[test]

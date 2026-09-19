@@ -479,7 +479,11 @@ impl std::error::Error for TargetRefusal {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind,
+        TargetToken,
+    };
+    use crate::dialect::DialectId;
 
     const NO_ALIASES: &[&str] = &[];
 

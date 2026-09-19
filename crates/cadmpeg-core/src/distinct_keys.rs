@@ -206,7 +206,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::{BTreeMap, HashMap};
+
+    use super::{btree_map, hash_map, json_object};
 
     #[test]
     fn open_json_objects_preserve_values_and_refuse_nested_duplicate_keys() {
