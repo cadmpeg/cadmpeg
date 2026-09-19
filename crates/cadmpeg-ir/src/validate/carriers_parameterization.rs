@@ -382,18 +382,19 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 );
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
-                for member in construction
-                    .base_profile
-                    .iter()
-                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
-                {
+                for member in construction.base_profile().iter().chain(
+                    construction
+                        .entries()
+                        .iter()
+                        .flat_map(|entry| &entry.profile),
+                ) {
                     curves.insert(member.profile.id.as_str());
                     if let Some(surface) = member.form.surface() {
                         surfaces.insert(surface.as_str());
                     }
                 }
-                for path in std::iter::once(&construction.base_path)
-                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                for path in std::iter::once(construction.base_path())
+                    .chain(construction.entries().iter().map(|entry| &entry.path))
                 {
                     if let Some(curve) = &path.path {
                         curves.insert(curve.id.as_str());
@@ -406,13 +407,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 curves.extend(
                     [
-                        match &construction.direction {
+                        match construction.direction() {
                             crate::geometry::CompoundLoftDirection::Vector { .. } => None,
                             crate::geometry::CompoundLoftDirection::Curve { curve, .. } => {
                                 Some(curve)
                             }
                         },
-                        construction.tail.curve(),
+                        construction.tail().curve(),
                     ]
                     .into_iter()
                     .flatten()
