@@ -5,6 +5,13 @@ pub(crate) mod admission;
 pub(crate) mod packet_role;
 mod version;
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::container::Container;
+use cadmpeg_core::CodecError;
+
 use super::hex::Sha256Hex;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
@@ -23,9 +30,6 @@ use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
 use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
 use crate::om::nonempty::NonEmpty;
-
-#[allow(clippy::wildcard_imports)]
-use super::*;
 
 /// Session-free `DisplayJT` inflate bound: 16 MiB plus 256× input, at most 2 GiB.
 const DISPLAY_JT_PROBE_INFLATE_BASE: usize = 16 * 1024 * 1024;

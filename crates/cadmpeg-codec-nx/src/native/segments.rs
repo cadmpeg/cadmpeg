@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Segment-index, stream-link, and body-lineage extractors and record types.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::container::Container;
+use crate::parasolid::Stream;
+
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
     FeatureOperationBodyOperand, FeatureOperationLabel,

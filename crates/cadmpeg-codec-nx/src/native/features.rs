@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::container::Container;
+
 pub(crate) mod delete;
 pub(crate) mod draft;
 pub(crate) mod extrude_32;
@@ -20,8 +26,6 @@ use crate::om::datum_csys::DatumCsysSlot;
 use crate::om::header_references::HeaderSlot;
 use reference::ConstructionReference;
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
 pub(crate) mod block_reference;
 pub(crate) mod body_scalar_triple;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;

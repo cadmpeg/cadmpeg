@@ -4,8 +4,13 @@
 #[cfg(test)]
 use crate::decode::feature_completeness;
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::container::Container;
+use cadmpeg_core::CodecError;
+
 use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;

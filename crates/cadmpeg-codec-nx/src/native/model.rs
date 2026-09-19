@@ -6,8 +6,160 @@
 //! inconsistent owners before attachment.
 
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
+use super::display_jt::{
+    display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
+    display_jt_geometric_transform_attributes, display_jt_group_node_data, display_jt_indices,
+    display_jt_initial_face_degree_symbols, display_jt_instance_nodes,
+    display_jt_material_attributes, display_jt_partition_nodes, display_jt_polygon_meshes,
+    display_jt_range_lod_nodes, display_jt_segments, display_jt_shape_lod_bindings,
+    display_jt_shape_lod_elements, display_jt_string_property_atoms,
+    display_jt_topology_packet_sequences, display_jt_tri_strip_lod_headers,
+    display_jt_tri_strip_shape_nodes, display_jt_vertex_colors, display_jt_vertex_coordinates,
+    display_jt_vertex_flags, display_jt_vertex_normals, display_jt_vertex_texture_coordinates,
+    DisplayJtBaseNodeData, DisplayJtCompressedVertexRecordsHeader,
+    DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
+    DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
+    DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
+    DisplayJtStringPropertyAtom, DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader,
+    DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
+    DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
+    DisplayJtVertexTextureCoordinates,
+};
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
+use super::features::{
+    data_block_object_frames, feature_block_construction_payloads,
+    feature_block_construction_references, feature_block_constructions, feature_block_dimensions,
+    feature_block_payload_named_records, feature_block_payload_names,
+    feature_block_payload_point_groups, feature_block_payload_points,
+    feature_block_payload_scalars, feature_body_data_block_uses,
+    feature_body_reference_occurrences, feature_body_references, feature_body_segment_uses,
+    feature_body_write_group_partition_uses, feature_boolean_operations,
+    feature_datum_csys_block_uses, feature_datum_csys_column_row_uses,
+    feature_datum_csys_constructions, feature_datum_csys_descriptors,
+    feature_datum_csys_payload_fixed_pairs, feature_datum_csys_payload_scalar_pairs,
+    feature_datum_csys_payload_scalars, feature_datum_csys_payloads,
+    feature_datum_plane_block_uses, feature_datum_plane_csys_identity_uses,
+    feature_datum_plane_descriptors, feature_datum_plane_payload_scalar_pairs,
+    feature_datum_plane_payloads, feature_extrude_32_constructions,
+    feature_extrude_construction_profiles, feature_extrude_payload_32_branches,
+    feature_extrude_payload_headers, feature_extrude_profile_references,
+    feature_input_block_identity_groups, feature_input_blocks, feature_input_column_row_uses,
+    feature_input_column_targets, feature_operation_body_11_continuations,
+    feature_operation_body_identity_segment_uses, feature_operation_body_image_segment_uses,
+    feature_operation_body_members, feature_operation_body_operands,
+    feature_operation_body_partition_uses, feature_operation_body_reference_lanes,
+    feature_operation_body_scalar_triples, feature_operation_body_writes,
+    feature_operation_common_frames, feature_operation_labels, feature_operation_object_references,
+    feature_operation_records, feature_operation_state_journal_uses,
+    feature_operation_terminal_discriminators, feature_operation_terminal_frames,
+    feature_parameter_bindings, feature_parameter_uses, feature_payload_strings,
+    feature_point_construction_headers, feature_point_construction_scalar_lanes,
+    feature_projected_curve_construction_payloads, feature_projected_curve_construction_strings,
+    feature_projected_curve_references, feature_sketch_construction_inputs,
+    feature_sketch_construction_payloads, feature_sketch_datum_csys_dependencies,
+    feature_sketch_fixed_points, feature_sketch_named_point_block_uses,
+    feature_sketch_payload_coordinate_pairs, feature_sketch_payload_fixed_pairs,
+    feature_sketch_payload_mixed_pairs, feature_sketch_payload_named_records,
+    feature_sketch_payload_names, feature_sketch_payload_scalar_lanes,
+    feature_sketch_payload_scalars, feature_sketch_point_groups, feature_sketch_point_uses,
+    feature_sketch_points, feature_sketch_preceding_named_point_uses, feature_sketch_records,
+    feature_sketch_references, feature_surface_construction_payloads,
+    feature_surface_construction_references, feature_surface_construction_scalar_pairs,
+    feature_surface_construction_strings, feature_swp104_leading_branches,
+    feature_thru_curve_construction_envelopes, feature_unlabeled_operation_body_writes,
+    feature_unlabeled_operation_records, offset_store_named_points, FeatureBlockConstruction,
+    FeatureBlockDimensions, FeatureBlockPayloadNamedRecord, FeatureBlockPayloadPoint,
+    FeatureBlockPayloadPointGroup, FeatureBodyDataBlockUse, FeatureBodyReference,
+    FeatureBodySegmentUse, FeatureBodyWriteGroupPartitionUse, FeatureBooleanOperation,
+    FeatureConstructionPayload, FeatureDatumCsysBlockUse, FeatureDatumCsysColumnRowUse,
+    FeatureDatumCsysConstruction, FeatureDatumCsysDescriptor, FeatureDatumCsysPayload,
+    FeatureDatumCsysPayloadFixedPair, FeatureDatumPlaneBlockUse, FeatureDatumPlaneCsysIdentityUse,
+    FeatureDatumPlaneDescriptor, FeatureDatumPlanePayload, FeatureExtrudeConstructionProfile,
+    FeatureExtrudePayloadHeader, FeatureExtrudeProfileReference, FeatureInputBlock,
+    FeatureInputBlockIdentityGroup, FeatureInputColumnRowUse, FeatureInputColumnTarget,
+    FeatureOperationBody11Continuation, FeatureOperationBodyIdentitySegmentUse,
+    FeatureOperationBodyImageSegmentUse, FeatureOperationBodyMember, FeatureOperationBodyOperand,
+    FeatureOperationBodyPartitionUse, FeatureOperationBodyReferenceLane, FeatureOperationBodyWrite,
+    FeatureOperationCommonFrame, FeatureOperationLabel, FeatureOperationObjectReference,
+    FeatureOperationStateJournalUse, FeatureOperationTerminalFrame, FeatureParameterBinding,
+    FeatureParameterUse, FeaturePayloadScalar, FeaturePayloadScalarPair, FeaturePayloadString,
+    FeaturePointConstructionHeader, FeatureProjectedCurveConstructionString,
+    FeatureProjectedCurveReference, FeatureSketchConstructionInputs,
+    FeatureSketchDatumCsysDependency, FeatureSketchFixedPoint, FeatureSketchNamedPointBlockUse,
+    FeatureSketchPayloadFixedPair, FeatureSketchPayloadMixedPair, FeatureSketchPayloadNamedRecord,
+    FeatureSketchPayloadScalarLane, FeatureSketchPoint, FeatureSketchPointGroup,
+    FeatureSketchPointUse, FeatureSketchPrecedingNamedPointUse, FeatureSketchRecord,
+    FeatureSketchReference, FeatureSurfaceConstructionPayload, FeatureSurfaceConstructionReference,
+    FeatureSurfaceConstructionString, FeatureThruCurveConstructionEnvelope, OffsetStoreNamedPoint,
+};
+use super::om::{
+    audit_trail_rows, class_definitions, configuration_attribute_uses, configurations,
+    data_block_column_index_tables, data_block_control_class_references, data_block_control_forms,
+    data_block_control_handle_pairs, data_block_control_index_values,
+    data_block_control_references, data_block_control_values, data_block_references, data_blocks,
+    expression_declarations, expressions, external_reference_empty_records,
+    external_reference_indexed_records, external_reference_record_children,
+    external_reference_record_string_uses, external_reference_records,
+    external_reference_tail_reference_pairs, external_references, field_definitions,
+    material_texture_catalog_entries, object_record_handle_pairs, object_records,
+    object_references, om_record_areas, operation_state_counters, operation_state_groups,
+    operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
+    operation_state_statuses, part_attributes, part_color_tables, persistent_handles,
+    rmfastload_object_id_table, store_headers, string_values, ClassDefinition, Configuration,
+    ConfigurationAttributeUse, DataBlock, DataBlockColumnIndexTable,
+    DataBlockControlClassReference, DataBlockControlForm, DataBlockControlHandlePair,
+    DataBlockControlIndexValue, DataBlockControlReference, DataBlockControlValue,
+    DataBlockReference, Expression, ExpressionDeclaration, ExternalReference,
+    ExternalReferenceEmptyRecord, ExternalReferenceIndexedRecord, ExternalReferenceRecord,
+    ExternalReferenceRecordChild, ExternalReferenceRecordStringUse,
+    ExternalReferenceTailReferencePair, FieldDefinition, MaterialTextureCatalogEntry, ObjectRecord,
+    ObjectRecordHandlePair, ObjectReference, OmAuditTrailRow, OmOperationStateCounter,
+    OmOperationStateMessage, OmRecordArea, PartAttribute, PartColorDefinition, PartColorTable,
+    PersistentHandle, RmFastLoadObjectId, RmFastLoadObjectIdTable, StoreHeader, StringValue,
+};
+use super::parasolid::{
+    parasolid_attribute_class_uses, parasolid_attribute_definitions,
+    parasolid_attribute_field_names, parasolid_attribute_field_uses, parasolid_blend_bound_records,
+    parasolid_blend_surface_records, parasolid_chart_records,
+    parasolid_deltas_events_with_censuses, parasolid_entity_51_numeric_uses,
+    parasolid_entity_51_records, parasolid_entity_51_string_uses,
+    parasolid_entity_51_structured_uses, parasolid_entity_value_records,
+    parasolid_field_names_records, parasolid_group_members, parasolid_group_records,
+    parasolid_intersection_records, parasolid_offset_surface_records, parasolid_support_uv_records,
+    parasolid_surface_curve_records, parasolid_term_use_records,
+    parasolid_topology_attribute_class_uses,
+    parasolid_topology_attribute_fields_have_untransferred_values,
+    parasolid_topology_attribute_list_references, parasolid_trimmed_curve_records,
+    ParasolidAttributeClassUse, ParasolidAttributeDefinition, ParasolidAttributeFieldNames,
+    ParasolidAttributeFieldUse, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
+    ParasolidChartRecord, ParasolidDeltasBodyRevision, ParasolidDeltasInlineBodyState,
+    ParasolidDeltasInlineSchemaDeclaration, ParasolidDeltasRecord,
+    ParasolidDeltasReferenceMarkerPacket, ParasolidDeltasReferenceStatePacket,
+    ParasolidDeltasReferenceTypeMap, ParasolidDeltasResidualSpan,
+    ParasolidDeltasSchemaReferencePreamble, ParasolidDeltasTaggedReferenceLane,
+    ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences,
+    ParasolidDeltasTombstone, ParasolidDeltasTransmitHeader, ParasolidDeltasType150StatePacket,
+    ParasolidEntity51NumericUse, ParasolidEntity51Record, ParasolidEntity51StringUse,
+    ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+    ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+    ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord, ParasolidFieldNamesRecord,
+    ParasolidGroupMember, ParasolidGroupRecord, ParasolidIntersectionRecord,
+    ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord,
+    ParasolidTermUseRecord, ParasolidTopologyAttributeClassUse,
+    ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+};
+use super::segments::{
+    segment_body_bindings, segment_body_lineage_statuses, segment_index_rows, segment_om_links,
+    segment_stream_links, SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow,
+    SegmentOmLink, SegmentStreamLink,
+};
+use super::structure::{
+    fast_load_component_object_groups, fast_load_component_roster, FastLoadComponentObjectGroup,
+    FastLoadComponentPrototype, FastLoadComponentUuid,
+};
+use super::substrate::{pair_stream_indices, ParsedStreams};
+use super::toggle::{saved_toggle_records, SavedToggleEntry, SavedToggleStream};
 use crate::container::Container;
 use crate::native::features::block_reference::FeatureBlockConstructionReference;
 use crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple;
@@ -57,12 +209,6 @@ use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;
 use std::collections::{BTreeMap, BTreeSet};
-
-#[allow(clippy::wildcard_imports)]
-use super::{
-    display_jt::*, features::*, om::*, parasolid::*, segments::*, structure::*, substrate::*,
-    toggle::*,
-};
 
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
