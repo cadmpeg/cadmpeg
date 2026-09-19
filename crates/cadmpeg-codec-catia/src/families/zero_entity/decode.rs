@@ -672,7 +672,7 @@ fn transfer_closed_wire_loops(
     Ok(counts)
 }
 
-pub(crate) fn try_decode_zero_entity(
+pub(in crate::families) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,

@@ -34,15 +34,15 @@ const MODEL_POINT_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
 
 /// Counts one complete geometry-derived zero-entity topology transfer.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ZeroEntityTopologyCounts {
-    pub(crate) bodies: usize,
-    pub(crate) faces: usize,
-    pub(crate) loops: usize,
-    pub(crate) coedges: usize,
-    pub(crate) edges: usize,
-    pub(crate) vertices: usize,
-    pub(crate) points: usize,
-    pub(crate) pcurves: usize,
+pub(in crate::families::zero_entity) struct ZeroEntityTopologyCounts {
+    pub(super) bodies: usize,
+    pub(super) faces: usize,
+    pub(super) loops: usize,
+    pub(super) coedges: usize,
+    pub(super) edges: usize,
+    pub(super) vertices: usize,
+    pub(super) points: usize,
+    pub(super) pcurves: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -78,18 +78,18 @@ struct OccurrencePcurve {
 /// root that orders them are one solved pool: a run resolves through all
 /// four or through none of them.
 #[derive(Clone, Copy)]
-pub(crate) struct ZeroEntityClosedTopology<'a> {
+pub(super) struct ZeroEntityClosedTopology<'a> {
     /// Support runs in record order.
-    pub(crate) support_runs: &'a [ZeroEntitySupportRun],
+    pub(super) support_runs: &'a [ZeroEntitySupportRun],
     /// Surface id emitted for each carrier position.
-    pub(crate) surface_ids_by_position: &'a HashMap<usize, SurfaceId>,
+    pub(super) surface_ids_by_position: &'a HashMap<usize, SurfaceId>,
     /// Curve id emitted for each support.
-    pub(crate) support_curve_ids: &'a HashMap<u32, CurveId>,
+    pub(super) support_curve_ids: &'a HashMap<u32, CurveId>,
     /// Ownership root ordering the face slots, when the source states one.
-    pub(crate) ownership_root: Option<&'a ZeroEntityOwnershipRoot>,
+    pub(super) ownership_root: Option<&'a ZeroEntityOwnershipRoot>,
 }
 
-pub(crate) fn transfer_closed_face_topology(
+pub(super) fn transfer_closed_face_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     solved: ZeroEntityClosedTopology<'_>,

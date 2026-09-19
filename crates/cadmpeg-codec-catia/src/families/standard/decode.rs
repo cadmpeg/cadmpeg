@@ -921,7 +921,7 @@ fn standard_extrusion_support_id(
 }
 
 /// Emit one resolved object-stream extrusion construction in the standard family.
-pub(crate) fn emit_standard_extrusion_definition(
+fn emit_standard_extrusion_definition(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     surfaces: &mut Vec<Surface>,
@@ -1173,7 +1173,7 @@ fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
 /// This path is exact: a geometric candidate is accepted only when the
 /// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
 /// and the wrapper's first reference names one supported E5 surface carrier.
-pub(crate) fn associate_standard_freeform_e5_surfaces(
+fn associate_standard_freeform_e5_surfaces(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1213,7 +1213,7 @@ pub(crate) fn associate_standard_freeform_e5_surfaces(
 /// The face and wrapper identities are the same strict join used by analytic
 /// E5 carriers; only the underlying carrier decoder differs. The carrier's
 /// signed sense must agree with the owning face orientation before admission.
-pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
+fn associate_standard_freeform_e5_rolling_ball_jets(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
 ) -> HashMap<u32, StandardSurfaceProcedure> {
@@ -1301,7 +1301,7 @@ fn standard_population_selections(
     ))
 }
 
-pub(crate) fn try_decode_standard(
+pub(in crate::families) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -2556,12 +2556,12 @@ fn try_decode_standard_population(
 }
 
 #[derive(Default)]
-pub(crate) struct StandardObjectEvidence {
-    pub(crate) surface_geometries: HashMap<u32, SurfaceGeometry>,
-    pub(crate) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
-    pub(crate) edge_owner_faces: HashMap<u32, HashSet<u32>>,
-    pub(crate) edge_supports: HashMap<u32, StandardEdgeSupport>,
-    pub(crate) limit_curves: Vec<NurbsCurve>,
+pub(in crate::families::standard) struct StandardObjectEvidence {
+    pub(super) surface_geometries: HashMap<u32, SurfaceGeometry>,
+    pub(super) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
+    pub(super) edge_owner_faces: HashMap<u32, HashSet<u32>>,
+    edge_supports: HashMap<u32, StandardEdgeSupport>,
+    limit_curves: Vec<NurbsCurve>,
 }
 
 #[derive(Default)]
@@ -2693,20 +2693,20 @@ fn retry_rejected_mesh_solution(
 
 #[derive(Clone, PartialEq)]
 /// Exact two-sided construction evidence keyed by a standard edge identity.
-pub(crate) struct StandardEdgeSupport {
+struct StandardEdgeSupport {
     /// Persistent support-surface identities in wrapper order.
-    pub(crate) surface_object_ids: [u32; 2],
+    surface_object_ids: [u32; 2],
     /// Exact neutral support carriers.
-    pub(crate) carriers: [crate::families::b5::transfer::ResolvedPcurveSurface; 2],
+    carriers: [crate::families::b5::transfer::ResolvedPcurveSurface; 2],
     /// Exact support pcurves in wrapper order.
-    pub(crate) pcurves: [PcurveGeometry; 2],
+    pcurves: [PcurveGeometry; 2],
     /// Shared native parameter interval.
-    pub(crate) parameter_range: [f64; 2],
+    parameter_range: [f64; 2],
 }
 
 #[derive(Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum StandardSurfaceProcedure {
+pub(super) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
         definition: ProceduralSurfaceDefinition,
@@ -2724,13 +2724,13 @@ pub(crate) enum StandardSurfaceProcedure {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum StandardRollingBallSource {
+pub(super) enum StandardRollingBallSource {
     ObjectStreamA8,
     E5D8,
 }
 
 #[derive(Clone, PartialEq)]
-pub(crate) enum StandardSurfaceEvidence {
+enum StandardSurfaceEvidence {
     Geometry(SurfaceGeometry),
     Procedure(StandardSurfaceProcedure),
     Both(SurfaceGeometry, StandardSurfaceProcedure),
@@ -2764,7 +2764,7 @@ impl StandardSurfaceEvidence {
     }
 }
 
-pub(crate) fn standard_object_evidence(
+fn standard_object_evidence(
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
@@ -2808,7 +2808,7 @@ fn merge_standard_limit_curves_from_records(
     }
 }
 
-pub(crate) fn standard_object_evidence_from_streams(
+pub(super) fn standard_object_evidence_from_streams(
     streams: impl IntoIterator<Item = Vec<u8>>,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
@@ -3253,7 +3253,7 @@ fn merge_standard_procedure_supports(
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
 /// decoded carrier and its stored sense byte.
-pub(crate) fn attach_standard_faces(
+fn attach_standard_faces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -3370,7 +3370,7 @@ pub(crate) fn attach_standard_faces(
     Ok(())
 }
 
-pub(crate) fn partition_standard_face_components(
+fn partition_standard_face_components(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     components: &[Vec<usize>],
@@ -3497,7 +3497,7 @@ pub(crate) fn partition_standard_face_components(
     true
 }
 
-pub(crate) fn apply_standard_native_edge_faces(
+pub(super) fn apply_standard_native_edge_faces(
     edge_faces: &mut [[usize; 2]],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     records: &[crate::families::standard::records::StandardSurfaceRecord],
@@ -5516,7 +5516,7 @@ fn emit_standard_topology(
     Ok(())
 }
 
-pub(crate) fn standard_native_support_endpoint_pair(
+fn standard_native_support_endpoint_pair(
     support: &StandardEdgeSupport,
     points: &[Point],
     candidates: &[usize],
@@ -5578,7 +5578,7 @@ pub(crate) fn standard_native_support_endpoint_pair(
         })
 }
 
-pub(crate) fn resolve_standard_endpoint_pairs(
+fn resolve_standard_endpoint_pairs(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -5835,7 +5835,7 @@ fn standard_curve_geometry_gauge_keys(
         .collect()
 }
 
-pub(crate) fn standard_circle_endpoint_candidates(
+fn standard_circle_endpoint_candidates(
     points: &[Point],
     center: Point3,
     radius: f64,
@@ -5863,7 +5863,7 @@ pub(crate) fn standard_circle_endpoint_candidates(
 }
 
 /// Resolve standard-row endpoints from equal standard and native edge identities.
-pub(crate) fn standard_native_graph_endpoint_pairs(
+fn standard_native_graph_endpoint_pairs(
     graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
@@ -5893,7 +5893,7 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
 /// Bind standard rows to ordered coordinate rows through the file-global
 /// object journal: `0x60.tag` selects the `b5 03 5e` object id, whose ordered
 /// vertex identities select positions in the standard vertex roster.
-pub(crate) fn standard_serialized_endpoint_pairs(
+fn standard_serialized_endpoint_pairs(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     vertex_roster: &[u32],
@@ -5915,7 +5915,7 @@ pub(crate) fn standard_serialized_endpoint_pairs(
     )
 }
 
-pub(crate) fn merge_standard_edge_vertex_references(
+fn merge_standard_edge_vertex_references(
     target: &mut BTreeMap<u32, [u32; 2]>,
     source: impl IntoIterator<Item = (u32, [u32; 2])>,
 ) -> bool {
@@ -5932,7 +5932,7 @@ pub(crate) fn merge_standard_edge_vertex_references(
 }
 
 /// Resolve native two-sided edge carriers by equal standard and native identities.
-pub(crate) fn standard_native_support_edge_ids(
+pub(super) fn standard_native_support_edge_ids(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_support_ids: &HashSet<u32>,
 ) -> Vec<Option<u32>> {
@@ -5958,7 +5958,7 @@ pub(crate) fn standard_native_support_edge_ids(
 /// Native port pairs remain useful for endpoint propagation and candidate
 /// pruning, but an allocation-only port pair does not bind its row to decoded
 /// coordinates and therefore must not freeze an evidence-preserving gauge.
-pub(crate) fn standard_edge_identity_is_admitted(
+fn standard_edge_identity_is_admitted(
     ordered_endpoint_pair: Option<[usize; 2]>,
     native_endpoint_pair: Option<[usize; 2]>,
     has_native_support: bool,
@@ -5970,10 +5970,7 @@ pub(crate) fn standard_edge_identity_is_admitted(
         || has_limit_curve_binding
 }
 
-pub(crate) fn include_native_endpoint_pairs(
-    candidates: &mut [Vec<usize>],
-    pairs: &[Option<[usize; 2]>],
-) {
+fn include_native_endpoint_pairs(candidates: &mut [Vec<usize>], pairs: &[Option<[usize; 2]>]) {
     for (candidates, pair) in candidates.iter_mut().zip(pairs) {
         if let Some(pair) = pair {
             for point in pair {
@@ -5985,7 +5982,7 @@ pub(crate) fn include_native_endpoint_pairs(
     }
 }
 
-pub(crate) fn combine_propagated_endpoint_pairs(
+fn combine_propagated_endpoint_pairs(
     raw: Option<Vec<Option<[usize; 2]>>>,
     mesh: Option<Vec<Option<[usize; 2]>>>,
 ) -> Option<Vec<Option<[usize; 2]>>> {
@@ -6008,7 +6005,7 @@ pub(crate) fn combine_propagated_endpoint_pairs(
     (!pairs.is_empty()).then_some(pairs)
 }
 
-pub(crate) fn merge_native_endpoint_evidence(
+fn merge_native_endpoint_evidence(
     graph: Option<&[Option<[usize; 2]>]>,
     roster: Option<&[Option<[usize; 2]>]>,
 ) -> Result<Option<Vec<Option<[usize; 2]>>>, &'static str> {
@@ -6062,7 +6059,7 @@ fn merge_ordered_endpoint_pair(
 /// the direction selected by a native identity source. Support pcurves
 /// corroborate the endpoint identity, but their wrapper order is not a second
 /// directed edge-identity source.
-pub(crate) fn merge_derived_endpoint_pair(
+fn merge_derived_endpoint_pair(
     ordered_pairs: &mut [Option<[usize; 2]>],
     edge: usize,
     pair: [usize; 2],
@@ -6084,7 +6081,7 @@ pub(crate) fn merge_derived_endpoint_pair(
 /// The creation-order pattern is not a row identity. It may narrow an
 /// existing geometric domain independently for either successor identity, but
 /// it never supplies native endpoint evidence by itself.
-pub(crate) fn standard_successor_endpoint_points(
+fn standard_successor_endpoint_points(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
 ) -> Vec<[Option<usize>; 2]> {
@@ -6111,7 +6108,7 @@ pub(crate) fn standard_successor_endpoint_points(
         .collect()
 }
 
-pub(crate) fn corroborate_successor_endpoint_points(
+fn corroborate_successor_endpoint_points(
     options: &mut [Vec<[usize; 2]>],
     points: &[[Option<usize>; 2]],
 ) {
@@ -6124,7 +6121,7 @@ pub(crate) fn corroborate_successor_endpoint_points(
     }
 }
 
-pub(crate) fn unique_native_identity_points(
+fn unique_native_identity_points(
     vertices: &[crate::families::b5::graph::B5LogicalVertex],
     raw_point_count: usize,
     tolerances: &BTreeMap<usize, f64>,
@@ -6164,10 +6161,7 @@ pub(crate) fn unique_native_identity_points(
         .collect()
 }
 
-pub(crate) fn intersection_line_direction(
-    left: &SurfaceGeometry,
-    right: &SurfaceGeometry,
-) -> Option<Vector3> {
+fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
     const ANGULAR_TOLERANCE: f64 = EPS_STANDARD_DECODE_GEOMETRY;
 
     match (left, right) {
@@ -6212,7 +6206,7 @@ pub(crate) fn intersection_line_direction(
 /// A line on one right circular or elliptical cone is a generator through its
 /// apex. Same-carrier line rows have no surface-intersection direction, so
 /// their endpoint relation needs this independent straight-branch predicate.
-pub(crate) fn same_cone_generator_pair(
+fn same_cone_generator_pair(
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
     start: Point3,
@@ -6261,7 +6255,7 @@ pub(crate) fn same_cone_generator_pair(
 /// Collect plane normals only from trim-packet frame vectors, which carry the
 /// stored normal's signed sense. A target with conflicting frame vectors stays
 /// unresolved.
-pub(crate) fn standard_plane_normals_from_face_frames(
+fn standard_plane_normals_from_face_frames(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     face_frame_vectors: &[Option<[f64; 3]>],
 ) -> HashMap<u32, [f64; 3]> {
@@ -6292,7 +6286,7 @@ pub(crate) fn standard_plane_normals_from_face_frames(
         .collect()
 }
 
-pub(crate) fn face_surface<'a>(
+fn face_surface<'a>(
     ir: &'a CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -6307,7 +6301,7 @@ pub(crate) fn face_surface<'a>(
 /// Face geometry and standard face bounds are immutable while a topology
 /// candidate is searched. The cache changes only lookup cost; allocation
 /// failure returns `None`, and callers retain the original predicate.
-pub(crate) fn standard_face_point_membership(
+fn standard_face_point_membership(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -6332,7 +6326,7 @@ pub(crate) fn standard_face_point_membership(
         .collect()
 }
 
-pub(crate) fn point_on_standard_face(
+fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
@@ -6369,7 +6363,7 @@ fn point_inside_standard_face_bounds(
 /// order after the distinct-carrier rank for circular supports: ties remain
 /// domains, so this helper cannot choose between symmetric or insufficiently
 /// bounded incidences.
-pub(crate) fn refine_repeated_face_domains_by_geometry_and_bounds(
+fn refine_repeated_face_domains_by_geometry_and_bounds(
     edge_faces: &[[usize; 2]],
     allowed_faces: &mut [Vec<usize>],
     face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
@@ -6673,7 +6667,7 @@ fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
 /// carriers. It is not inferred from carrier AABBs or from a sampled surface
 /// intersection. `None` means that the relation is unavailable; `Some` may be
 /// empty when the relation is present but no supplied pair lies on it.
-pub(crate) fn standard_shared_nurbs_boundary_pair_options(
+fn standard_shared_nurbs_boundary_pair_options(
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
     points: &[Point3],
@@ -7294,7 +7288,7 @@ fn bind_standard_a5_owner_surfaces(
 /// UV-midpoint p-curve test cannot derive that section from its endpoints, but
 /// the serialized circle carrier and face membership still make the pair
 /// admissible for topology solving.
-pub(super) fn standard_endpoint_pair_supports_topology(
+fn standard_endpoint_pair_supports_topology(
     surface: &SurfaceGeometry,
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
@@ -7332,7 +7326,7 @@ pub(super) fn standard_endpoint_pair_supports_topology(
     })
 }
 
-pub(crate) fn standard_pcurve_geometry(
+fn standard_pcurve_geometry(
     surface: &SurfaceGeometry,
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
@@ -7460,7 +7454,7 @@ pub(crate) fn standard_pcurve_geometry(
     ))
 }
 
-pub(crate) fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
+fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
     let delta = short_end - start;
     if delta == 0.0 {
         return None;
@@ -7479,7 +7473,7 @@ pub(crate) fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Optio
     }
 }
 
-pub(crate) fn witnessed_surface_circle_end(
+fn witnessed_surface_circle_end(
     surface: &SurfaceGeometry,
     center: Point3,
     radius: f64,
@@ -7520,7 +7514,7 @@ pub(crate) fn witnessed_surface_circle_end(
     <[Point2; 1]>::try_from(candidates).ok().map(|[end]| end)
 }
 
-pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
@@ -7593,7 +7587,7 @@ pub(crate) fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> O
     }
 }
 
-pub(crate) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, reference: Point2) {
+fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, reference: Point2) {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
             value.u = unwrap_angle(value.u, reference.u);
@@ -7612,7 +7606,7 @@ pub(crate) fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, 
     }
 }
 
-pub(crate) fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
+fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
     point_on_surface_if_supported(point, surface).unwrap_or(false)
 }
 
@@ -7672,7 +7666,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
     Some(residual <= TOLERANCE)
 }
 
-pub(crate) fn standard_spline_line(
+fn standard_spline_line(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -8237,7 +8231,7 @@ fn standard_oriented_native_support_pcurves(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_standard_edge_curve(
+fn build_standard_edge_curve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -8749,7 +8743,7 @@ fn ensure_native_edge_support_surface(
     id
 }
 
-pub(crate) fn standard_circle_pair_solution_is_simple(
+fn standard_circle_pair_solution_is_simple(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -9203,7 +9197,7 @@ fn circle_endpoint_range_choices(
     Some(vec![short, long])
 }
 
-pub(crate) fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bool {
+fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bool {
     const MAX_SELECTION_STATES: usize = 4_096;
 
     fn visit(
@@ -9246,7 +9240,7 @@ pub(crate) fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 
     visit(choices, 0, &mut Vec::new(), &mut 0).unwrap_or(true)
 }
 
-pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
+fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
     fn segments(range: [f64; 2]) -> Vec<[f64; 2]> {
         let span = range[1] - range[0];
         let start = range[0].rem_euclid(std::f64::consts::TAU);
@@ -9277,7 +9271,7 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn standard_circle_param_range(
+fn standard_circle_param_range(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -9334,7 +9328,7 @@ pub(crate) fn standard_circle_param_range(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn native_support_circle_param_range(
+fn native_support_circle_param_range(
     support: &StandardEdgeSupport,
     center: Point3,
     radius: f64,
@@ -9401,7 +9395,7 @@ pub(crate) fn native_support_circle_param_range(
     Some([start_angle, selected_end])
 }
 
-pub(crate) fn attach_standard_circles(
+fn attach_standard_circles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -9540,7 +9534,7 @@ fn standard_circle_axis_from_carrier(
     circle_axis_from_carrier(center, circle_radius, surface)
 }
 
-pub(crate) fn circle_axis_from_carrier(
+fn circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
     surface: &SurfaceGeometry,
@@ -9621,15 +9615,15 @@ pub(crate) fn circle_axis_from_carrier(
     }
 }
 
-pub(crate) fn close_length(left: f64, right: f64) -> bool {
+fn close_length(left: f64, right: f64) -> bool {
     (left - right).abs() <= 1e-5 * (1.0 + left.abs().max(right.abs()))
 }
 
-pub(crate) fn close_squared(left: f64, right: f64) -> bool {
+fn close_squared(left: f64, right: f64) -> bool {
     (left - right).abs() <= 2e-5 * (1.0 + left.abs().max(right.abs()))
 }
 
-pub(crate) fn attach_standard_lines(
+fn attach_standard_lines(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -9712,7 +9706,7 @@ fn plane_intersection_line(
     origin.is_finite().then_some((origin, direction))
 }
 
-pub(crate) fn plane_for_face(
+fn plane_for_face(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     face: usize,

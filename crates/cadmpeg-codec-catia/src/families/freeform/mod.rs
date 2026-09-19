@@ -45,13 +45,13 @@ struct FreeformSurfaceCarrier {
 }
 
 #[derive(Clone)]
-pub(crate) struct ConsolidatedRevolutionBinding {
-    pub(crate) geometry: SurfaceGeometry,
-    pub(crate) profile_sweep: f64,
+pub(super) struct ConsolidatedRevolutionBinding {
+    pub(super) geometry: SurfaceGeometry,
+    pub(super) profile_sweep: f64,
 }
 
 /// Transfer resolved consolidated axis-and-profile revolution carriers.
-pub(crate) fn append_consolidated_revolutions(
+pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
@@ -305,7 +305,7 @@ fn object_id_statement(ids: &[u32]) -> String {
     }
 }
 
-pub(crate) fn try_decode_freeform_surfaces(
+pub(super) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1316,7 +1316,7 @@ fn append_consolidated_line_profiles(
 
 /// Append standalone freeform carriers and return the number of consolidated
 /// surface curves bound to existing standard edges.
-pub(crate) fn append_freeform_surface_pools(
+pub(super) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
@@ -1606,7 +1606,7 @@ pub(crate) fn append_freeform_surface_pools(
 
 type ConsolidatedCarrierKey = (usize, Option<u64>);
 
-pub(crate) enum ConsolidatedCarrierChart<'a> {
+enum ConsolidatedCarrierChart<'a> {
     Identity,
     Cylinder {
         radius: f64,
@@ -1627,15 +1627,15 @@ pub(crate) enum ConsolidatedCarrierChart<'a> {
 }
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct ConsolidatedCurveBindingCounts {
-    pub(crate) standard_edges: usize,
-    pub(crate) partner_supports: usize,
-    pub(crate) partner_face_pcurve_pairs: usize,
-    pub(crate) standard_face_surfaces: usize,
+pub(in crate::families) struct ConsolidatedCurveBindingCounts {
+    pub(super) standard_edges: usize,
+    pub(super) partner_supports: usize,
+    pub(super) partner_face_pcurve_pairs: usize,
+    pub(super) standard_face_surfaces: usize,
     /// Coedge pcurves bound after the endpoint-lift witness.
-    pub(crate) standard_face_pcurves: usize,
+    pub(super) standard_face_pcurves: usize,
     /// Recharts rejected because the derived pcurve coordinates were non-finite.
-    pub(crate) rechart_numeric_failures: usize,
+    pub(super) rechart_numeric_failures: usize,
 }
 
 struct ConsolidatedStandardFaceBinding {
@@ -1676,7 +1676,7 @@ impl ConsolidatedCarrierChart<'_> {
     }
 }
 
-pub(crate) fn consolidated_jet_pcurve(
+fn consolidated_jet_pcurve(
     pcurve: &crate::wire::records::ConsolidatedPcurve,
     chart: &ConsolidatedCarrierChart<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1720,16 +1720,16 @@ pub(crate) fn consolidated_jet_pcurve(
 /// name them are one pool: the ids are index-aligned with the surfaces, and
 /// the alias tags resolve a record's support onto the same pool.
 #[derive(Clone, Copy)]
-pub(crate) struct FreeformSurfacePool<'a> {
+struct FreeformSurfacePool<'a> {
     /// Decoded freeform surfaces in emission order.
-    pub(crate) surfaces: &'a [crate::families::a5a8::records::FreeformSurface],
+    surfaces: &'a [crate::families::a5a8::records::FreeformSurface],
     /// Ids the surfaces were emitted under, index-aligned with `surfaces`.
-    pub(crate) surface_ids: &'a [SurfaceId],
+    surface_ids: &'a [SurfaceId],
     /// Support alias tags that resolve a record's support onto the pool.
-    pub(crate) surface_alias_tags: &'a HashMap<u32, Option<u32>>,
+    surface_alias_tags: &'a HashMap<u32, Option<u32>>,
 }
 
-pub(crate) fn append_resolved_consolidated_surface_curves(
+fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
@@ -2985,11 +2985,7 @@ fn rechart_equivalent_surface_pcurve(
     }
 }
 
-pub(crate) fn append_a8_rolling_ball_pools(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    data: &[u8],
-) {
+fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -3038,7 +3034,7 @@ pub(crate) fn append_a8_rolling_ball_pools(
     }
 }
 
-pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
+pub(super) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
     RollingBallJetDerivative {
         first_limit: Vector3::new(values[0], values[1], values[2]),
         second_limit: Vector3::new(values[3], values[4], values[5]),
