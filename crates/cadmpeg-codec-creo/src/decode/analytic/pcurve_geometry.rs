@@ -12,7 +12,7 @@ const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
-pub fn stored_unit_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
+fn stored_unit_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
     let length = dot(vector, vector).sqrt();
     (length.is_finite() && (length - 1.0).abs() <= EPS_ORTHO).then_some(vector)
 }
@@ -31,7 +31,7 @@ enum RevolutionRadii {
     },
 }
 
-pub fn surface_of_revolution_parallel_pcurve(
+pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
@@ -235,7 +235,7 @@ pub fn surface_of_revolution_parallel_pcurve(
     ))
 }
 
-pub fn meridian_circle_pcurve(
+pub(in crate::decode) fn meridian_circle_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
@@ -338,7 +338,7 @@ pub fn meridian_circle_pcurve(
     ))
 }
 
-pub fn ruled_generator_line_pcurve(
+pub(in crate::decode) fn ruled_generator_line_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {

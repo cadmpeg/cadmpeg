@@ -9,7 +9,7 @@ use crate::psb;
 
 /// Exact procedural recipe stored in a feature-state record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipe {
+pub(crate) enum FeatureRecipe {
     /// Additive linear section sweep named `protextrude`.
     ProtrudeExtrude,
     /// Subtractive linear section sweep named `cutextrude`.
@@ -22,7 +22,7 @@ pub enum FeatureRecipe {
 
 /// Geometry family selected by a procedural feature recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipeKind {
+pub(crate) enum FeatureRecipeKind {
     /// Linear section sweep.
     Extrude,
     /// Rotational section sweep.
@@ -31,7 +31,7 @@ pub enum FeatureRecipeKind {
 
 /// Boolean effect selected by a procedural feature recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureRecipeEffect {
+pub(crate) enum FeatureRecipeEffect {
     /// Material-adding operation.
     Protrude,
     /// Material-removing operation.
@@ -40,7 +40,7 @@ pub enum FeatureRecipeEffect {
 
 impl FeatureRecipe {
     /// Exact stored recipe name without its NUL terminator.
-    pub const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::ProtrudeExtrude => "protextrude",
             Self::CutExtrude => "cutextrude",
@@ -50,7 +50,7 @@ impl FeatureRecipe {
     }
 
     /// Section-sweep geometry family.
-    pub const fn kind(self) -> FeatureRecipeKind {
+    pub(crate) const fn kind(self) -> FeatureRecipeKind {
         match self {
             Self::ProtrudeExtrude | Self::CutExtrude => FeatureRecipeKind::Extrude,
             Self::ProtrudeRevolve | Self::CutRevolve => FeatureRecipeKind::Revolve,
@@ -58,7 +58,7 @@ impl FeatureRecipe {
     }
 
     /// Boolean effect of the section sweep.
-    pub const fn effect(self) -> FeatureRecipeEffect {
+    pub(crate) const fn effect(self) -> FeatureRecipeEffect {
         match self {
             Self::ProtrudeExtrude | Self::ProtrudeRevolve => FeatureRecipeEffect::Protrude,
             Self::CutExtrude | Self::CutRevolve => FeatureRecipeEffect::Cut,
@@ -75,7 +75,7 @@ const FEATURE_RECIPES: &[(&[u8], FeatureRecipe)] = &[
 
 /// Stored identifier keyword, preserving `id` versus `ID`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdKeyword {
+pub(crate) enum IdKeyword {
     /// Lowercase `id`.
     Id,
     /// Uppercase `ID`.
@@ -91,7 +91,7 @@ impl IdKeyword {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::Id => "id",
             Self::ID => "ID",
@@ -101,7 +101,7 @@ impl IdKeyword {
 
 /// Source of a feature-operation display name.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationName {
+pub(crate) enum OperationName {
     /// Stored `<Kind> id <N>` display name.
     Stored {
         /// Exact stored operation-name bytes excluding the NUL terminator.
@@ -116,30 +116,30 @@ pub enum OperationName {
 }
 
 impl OperationName {
-    pub fn display_name_stored(&self) -> bool {
+    pub(crate) fn display_name_stored(&self) -> bool {
         matches!(self, Self::Stored { .. })
     }
 
-    pub fn stored_name(&self) -> Option<String> {
+    pub(crate) fn stored_name(&self) -> Option<String> {
         self.stored_name_bytes()
             .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
     }
 
-    pub fn stored_name_bytes(&self) -> Option<&[u8]> {
+    pub(crate) fn stored_name_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Stored { bytes, .. } => Some(bytes),
             Self::Derived => None,
         }
     }
 
-    pub fn identifier_keyword(&self) -> Option<&str> {
+    pub(crate) fn identifier_keyword(&self) -> Option<&str> {
         match self {
             Self::Stored { keyword, .. } => Some(keyword.as_str()),
             Self::Derived => None,
         }
     }
 
-    pub fn stored_name_prefix(&self) -> Option<u8> {
+    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
         match self {
             Self::Stored { prefix, .. } => *prefix,
             Self::Derived => None,
@@ -149,7 +149,7 @@ impl OperationName {
 
 /// Operation-family kind named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OperationKind {
+pub(crate) enum OperationKind {
     /// Family name taken from a stored display name.
     Stored(String),
     /// Linear section-sweep family.
@@ -161,7 +161,7 @@ pub enum OperationKind {
 }
 
 impl OperationKind {
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Stored(value) => value,
             Self::Extrude => "Extrude",
@@ -180,11 +180,11 @@ impl OperationKind {
 
 /// DEPDB recipe prefix pairing a schema class with a parent feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DepdbPrefix {
+pub(crate) struct DepdbPrefix {
     /// Root feature-definition schema class.
-    pub schema: SchemaClass,
+    pub(crate) schema: SchemaClass,
     /// Previous or parent feature identifier.
-    pub parent: u32,
+    pub(crate) parent: u32,
 }
 
 /// Resolution of a feature's procedural recipe in one stored source state.
@@ -192,7 +192,7 @@ pub struct DepdbPrefix {
 /// A source state that competes with another may still name the recipe it
 /// stored; that candidate is source evidence, not a resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecipeState {
+pub(crate) enum RecipeState {
     /// No recipe is stored.
     None,
     /// One recipe is resolved.
@@ -206,7 +206,7 @@ pub enum RecipeState {
 
 impl RecipeState {
     /// Resolved recipe available to geometry consumers.
-    pub fn resolved(self) -> Option<FeatureRecipe> {
+    pub(super) fn resolved(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::None | Self::Conflicting { .. } => None,
@@ -214,7 +214,7 @@ impl RecipeState {
     }
 
     /// Stored recipe candidate retained for source records.
-    pub fn candidate(self) -> Option<FeatureRecipe> {
+    pub(crate) fn candidate(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::Conflicting { candidate } => candidate,
@@ -223,7 +223,7 @@ impl RecipeState {
     }
 
     /// Whether competing recipes prevent resolution.
-    pub fn is_conflicting(self) -> bool {
+    pub(crate) fn is_conflicting(self) -> bool {
         matches!(self, Self::Conflicting { .. })
     }
 }
@@ -239,7 +239,7 @@ impl From<Option<FeatureRecipe>> for RecipeState {
 /// The projection selects one state per feature, so competing recipes leave
 /// no candidate to carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecipeResolution {
+pub(crate) enum RecipeResolution {
     /// No recipe is stored.
     None,
     /// One recipe is resolved.
@@ -250,7 +250,7 @@ pub enum RecipeResolution {
 
 impl RecipeResolution {
     /// Resolved recipe available to geometry consumers.
-    pub fn resolved(self) -> Option<FeatureRecipe> {
+    pub(crate) fn resolved(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
             Self::None | Self::Conflicting => None,
@@ -258,7 +258,7 @@ impl RecipeResolution {
     }
 
     /// Whether competing recipes prevent resolution.
-    pub fn is_conflicting(self) -> bool {
+    pub(crate) fn is_conflicting(self) -> bool {
         matches!(self, Self::Conflicting)
     }
 }
@@ -281,40 +281,40 @@ impl From<RecipeState> for RecipeResolution {
 
 mod sealed {
     /// Closed set of procedural recipe forms.
-    pub trait Sealed {}
+    pub(crate) trait Sealed {}
 
     impl Sealed for super::RecipeState {}
     impl Sealed for super::RecipeResolution {}
 }
 
 /// Stored or resolved procedural recipe form.
-pub trait RecipeForm: sealed::Sealed {}
+pub(crate) trait RecipeForm: sealed::Sealed {}
 
 impl RecipeForm for RecipeState {}
 impl RecipeForm for RecipeResolution {}
 
 /// One stored feature-state record, before current-state selection.
-pub type FeatureOperationState = FeatureOperation<RecipeState>;
+pub(crate) type FeatureOperationState = FeatureOperation<RecipeState>;
 
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOperation<R: RecipeForm = RecipeResolution> {
+pub(crate) struct FeatureOperation<R: RecipeForm = RecipeResolution> {
     /// Numeric feature identifier following `id` in the stored name.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Operation-family kind.
-    pub kind: OperationKind,
+    pub(crate) kind: OperationKind,
     /// Display-name source.
-    pub name: OperationName,
+    pub(crate) name: OperationName,
     /// Procedural recipe resolution for this state.
-    pub recipe: R,
+    pub(crate) recipe: R,
     /// Multiple stored display states prevent a unique current-state selection.
-    pub display_state_conflict: bool,
+    pub(crate) display_state_conflict: bool,
     /// DEPDB recipe prefix, when present.
-    pub depdb: Option<DepdbPrefix>,
+    pub(crate) depdb: Option<DepdbPrefix>,
     /// Byte offset of the operation name in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset including the optional stored-name prefix.
-    pub state_offset: usize,
+    pub(crate) state_offset: usize,
 }
 
 impl FeatureOperationState {
@@ -334,51 +334,51 @@ impl FeatureOperationState {
 }
 
 impl<R: RecipeForm> FeatureOperation<R> {
-    pub fn display_name_stored(&self) -> bool {
+    pub(crate) fn display_name_stored(&self) -> bool {
         self.name.display_name_stored()
     }
 
-    pub fn stored_name(&self) -> Option<String> {
+    pub(crate) fn stored_name(&self) -> Option<String> {
         self.name.stored_name()
     }
 
-    pub fn stored_name_prefix(&self) -> Option<u8> {
+    pub(crate) fn stored_name_prefix(&self) -> Option<u8> {
         self.name.stored_name_prefix()
     }
 
-    pub fn root_schema_class(&self) -> Option<SchemaClass> {
+    pub(crate) fn root_schema_class(&self) -> Option<SchemaClass> {
         self.depdb.map(|prefix| prefix.schema)
     }
 
-    pub fn parent_feature_id(&self) -> Option<u32> {
+    pub(crate) fn parent_feature_id(&self) -> Option<u32> {
         self.depdb.map(|prefix| prefix.parent)
     }
 }
 
 /// Feature name joined to its model feature identifier by `mdl_feat_ref_info_new`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureReferenceName {
+pub(crate) struct FeatureReferenceName {
     /// Numeric model feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Exact stored feature-name bytes excluding the NUL terminator.
-    pub name_bytes: Vec<u8>,
+    pub(crate) name_bytes: Vec<u8>,
     /// Reference-database object identifier.
-    pub own_reference_id: u32,
+    pub(crate) own_reference_id: u32,
     /// Stored reference type.
-    pub reference_type: u32,
+    pub(crate) reference_type: u32,
     /// Byte offset of the `f7 0x71` entry header.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureReferenceName {
     /// Stored name decoded with replacement for invalid UTF-8 sequences.
-    pub fn name(&self) -> Cow<'_, str> {
+    pub(crate) fn name(&self) -> Cow<'_, str> {
         String::from_utf8_lossy(&self.name_bytes)
     }
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
-pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
+pub(crate) fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
     let mut names = Vec::new();
     for offset in 0..payload.len().saturating_sub(2) {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
@@ -530,7 +530,7 @@ fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<
 
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
-pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
+pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
@@ -670,7 +670,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
 }
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.
-pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
+pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     let bindings = recipe_bindings(payload);
     let conflicting_features = conflicting_recipe_features(&bindings);
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();

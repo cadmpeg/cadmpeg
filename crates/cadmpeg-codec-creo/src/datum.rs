@@ -13,7 +13,7 @@ const EPS_DATUM_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 
 /// Coordinate axis normal to a standard datum plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Axis {
+pub(crate) enum Axis {
     X,
     Y,
     Z,
@@ -39,16 +39,16 @@ impl Axis {
 
 /// An axis-aligned model-space datum plane with equation `x_axis = offset`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DatumPlane {
+pub(crate) struct DatumPlane {
     /// Axis normal to the plane.
-    pub axis: Axis,
+    pub(crate) axis: Axis,
     /// Constant coordinate along the normal axis.
-    pub offset: f64,
+    pub(crate) offset: f64,
 }
 
 impl DatumPlane {
     /// The positive unit basis vector normal to the plane.
-    pub fn normal(self) -> [f64; 3] {
+    pub(crate) fn normal(self) -> [f64; 3] {
         match self.axis {
             Axis::X => [1.0, 0.0, 0.0],
             Axis::Y => [0.0, 1.0, 0.0],
@@ -59,24 +59,24 @@ impl DatumPlane {
 
 /// Source identity and outline for one decoded `ActDatums` plane.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DatumPlaneRecord {
+pub(crate) struct DatumPlaneRecord {
     /// The row's `geom_id`, joined by nested `ref_planes.plane_id` fields.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Modeling feature identifier from the owning `srf_array.feat_id`.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Plane defined by the shared outline coordinate.
-    pub plane: DatumPlane,
+    pub(crate) plane: DatumPlane,
     /// Second outline corner's coordinate along the plane normal.
-    pub opposite_offset: f64,
+    pub(crate) opposite_offset: f64,
     /// Corner coordinates on the remaining axes, in XYZ order.
-    pub in_plane_corners: [[Option<f64>; 2]; 2],
+    pub(crate) in_plane_corners: [[Option<f64>; 2]; 2],
     /// Byte offset of the row's `geom_id` field in the original stream.
-    pub offset_in_payload: usize,
+    pub(crate) offset_in_payload: usize,
 }
 
 impl DatumPlaneRecord {
     /// The two outline corners in model-space XYZ.
-    pub fn corners(&self) -> [[Option<f64>; 3]; 2] {
+    pub(crate) fn corners(&self) -> [[Option<f64>; 3]; 2] {
         let [u, v] = self.plane.axis.in_plane_indices();
         let offsets = [self.plane.offset, self.opposite_offset];
         std::array::from_fn(|index| {
@@ -96,23 +96,23 @@ impl DatumPlaneRecord {
 /// so their source namespace and orientation must survive the container scan
 /// instead of being inferred later from visible rows.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DatumCylinder {
+pub(crate) struct DatumCylinder {
     /// The row's `geom_id` in the `ActDatums` surface namespace.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Modeling feature identifier from the owning `srf_array.feat_id`.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Native row orientation: `true` when the row stores `0xf6`.
-    pub reversed: bool,
+    pub(crate) reversed: bool,
     /// Complete model-space cylinder carrier decoded from the row body.
-    pub frame: PositionalCylinderFrame,
+    pub(crate) frame: PositionalCylinderFrame,
     /// Byte offset of the row's `geom_id` field in the original stream.
-    pub offset_in_payload: usize,
+    pub(crate) offset_in_payload: usize,
 }
 
 /// Decode datum rows whose outline corners share one coordinate.
 ///
 /// This promotion applies only to model-space `ActDatums` outlines.
-pub fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
+pub(crate) fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
     let rows = crate::surface::counted_row_bounds(payload);
     let cache = scalar::ScalarCache::from_section(payload);
     rows.iter()
@@ -138,7 +138,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
 /// the namespace and one complete, valid positional or active-envelope frame
 /// is proved. This keeps unrelated scalar-shaped bytes and ambiguous duplicate
 /// rows out of the native surface join.
-pub fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
+pub(crate) fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
     let rows = crate::surface::rows(payload);
     let parameters = crate::surface::parameter_records(payload);
     rows.iter()
@@ -363,7 +363,7 @@ fn positional_plane(
 }
 
 /// Decode a named datum from its matching outline coordinates.
-pub fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
+pub(crate) fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let marker = b"outline\0\xf9\x02\x03";
     let outline = find(payload, marker, 0)?;
     let id_marker = b"\xe0\x01geom_id\0";

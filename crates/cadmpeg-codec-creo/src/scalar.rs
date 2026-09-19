@@ -31,7 +31,7 @@ const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
 /// the remaining byte count; the exact proof that the bytes carry the slots is
 /// `decode_exact_scalars`, which requires the cursor to consume the body
 /// exactly.
-pub(crate) const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
+const POSITIONAL_SLOT_TABLE_WIDTH: usize = 12;
 
 /// The remaining bytes of a scalar body whose declared slot count its own bytes
 /// can carry, or `None` when the record states no such body.
@@ -87,16 +87,16 @@ pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
 
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DoubleXarTable {
+pub(crate) struct DoubleXarTable {
     /// Offset of the `double_xar` label in the expanded section.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Entries in stored order, including an explicit terminal null slot.
-    pub entries: Vec<DoubleXarSlot>,
+    pub(crate) entries: Vec<DoubleXarSlot>,
 }
 
 /// Defined value forms of a dictionary slot.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DoubleXarSlot {
+pub(crate) enum DoubleXarSlot {
     StockZero,
     StockOne,
     /// A decoded scalar and its source token.
@@ -113,7 +113,7 @@ pub enum DoubleXarSlot {
 
 impl DoubleXarSlot {
     /// Exact bytes occupying this slot.
-    pub fn raw(&self) -> &[u8] {
+    pub(crate) fn raw(&self) -> &[u8] {
         match self {
             Self::StockZero => &[0x0b],
             Self::StockOne => &[0x10],
@@ -124,7 +124,7 @@ impl DoubleXarSlot {
         }
     }
 
-    pub fn value(&self) -> Option<f64> {
+    pub(crate) fn value(&self) -> Option<f64> {
         match self {
             Self::StockZero => Some(0.0),
             Self::StockOne => Some(1.0),
@@ -133,7 +133,7 @@ impl DoubleXarSlot {
         }
     }
 
-    pub fn kind(&self) -> &'static str {
+    pub(crate) fn kind(&self) -> &'static str {
         match self {
             Self::StockZero => "stock_zero",
             Self::StockOne => "stock_one",
@@ -147,7 +147,7 @@ impl DoubleXarSlot {
 
 /// Decode every complete counted `double_xar` dictionary in one expanded section.
 #[must_use]
-pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
+pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
@@ -215,7 +215,7 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
 #[derive(Debug, Clone, Default)]
-pub struct ScalarCache {
+pub(crate) struct ScalarCache {
     entries: Vec<f64>,
     /// Unique leading payload byte for each paired-form tail. `None` marks a
     /// tail shared by distinct cache images.
@@ -225,7 +225,7 @@ pub struct ScalarCache {
 impl ScalarCache {
     /// Build the dictionary in first-appearance order from every complete
     /// eight-byte sequence beginning with `0x46` in one section.
-    pub fn from_section(section: &[u8]) -> Self {
+    pub(crate) fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = BTreeMap::new();
@@ -284,7 +284,11 @@ const GENERIC_LANE_OPENERS: &[u8] = &[
 ];
 
 /// Decode one scalar in a row or `f9` scalar lane using its section cache.
-pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+pub(crate) fn decode_in_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
     match *data.get(offset)? {
         0x18 => {
             let next = *data.get(offset + 1)?;
@@ -328,7 +332,11 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
 /// Positional rows store `0x71` as a seven-byte sub-one IEEE form with an
 /// implicit zero low byte. Named scalar fields use the eight-byte `0x71`
 /// form handled by [`decode_in_lane`].
-pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+pub(crate) fn decode_in_row_lane(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x18) && data.get(offset + 1) == Some(&0x0e) {
         return Some((0.0, offset + 1));
     }
@@ -346,7 +354,7 @@ pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Op
 /// Pcurve rows use the generic row forms first. Their remaining seven-byte
 /// positive DICT forms are selected by the pcurve grammar, so they are tried
 /// only after the generic lane declines the prefix.
-pub fn decode_in_pcurve_lane(
+pub(crate) fn decode_in_pcurve_lane(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -355,7 +363,7 @@ pub fn decode_in_pcurve_lane(
 }
 
 /// Decode one scalar in a positional surface-row lane.
-pub fn decode_in_surface_row_lane(
+pub(crate) fn decode_in_surface_row_lane(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -414,7 +422,7 @@ pub fn decode_in_surface_row_lane(
 /// with `0x2d` in a seven-byte form. The token supplies IEEE bytes one through
 /// six after the fixed `0xc0` high byte; the low byte is zero. Unframed `0x2d`
 /// tokens retain the generic row lane's eight-byte form.
-pub fn decode_in_torus_row_lane(
+pub(crate) fn decode_in_torus_row_lane(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -440,7 +448,7 @@ pub fn decode_in_torus_row_lane(
 ///
 /// This lane has its own signed DICT lattices and fixed-width forms. They take
 /// precedence over the same prefix bytes in positional surface-row lanes.
-pub fn decode_tabulated_cylinder_first_coordinate(
+pub(crate) fn decode_tabulated_cylinder_first_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -502,7 +510,7 @@ pub fn decode_tabulated_cylinder_first_coordinate(
 /// general tabulated-cylinder parser. The enclosing envelope grammar supplies
 /// the field boundaries, so this function does not classify a prefix outside
 /// that lane by itself.
-pub fn decode_round_edge_coordinate(
+pub(crate) fn decode_round_edge_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -520,7 +528,7 @@ pub fn decode_round_edge_coordinate(
 ///
 /// Positive DICT tokens encode the first two IEEE bytes as `0x3f75 + prefix`;
 /// their six-byte payload supplies the remaining bytes.
-pub fn decode_tabulated_cylinder_second_coordinate(
+pub(crate) fn decode_tabulated_cylinder_second_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -534,7 +542,7 @@ pub fn decode_tabulated_cylinder_second_coordinate(
 /// adds an eight-byte positive sub-unit `0x32` form. The same prefix opens a
 /// model reference in positional surface-row bodies; the enclosing two-chart
 /// sample grammar distinguishes the two uses.
-pub fn decode_two_chart_first_coordinate(
+pub(crate) fn decode_two_chart_first_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -549,7 +557,7 @@ pub fn decode_two_chart_first_coordinate(
 ///
 /// Positive-DICT prefixes below the general second-directrix floor use the
 /// same arithmetic lattice when the complete two-chart grammar owns the slot.
-pub fn decode_two_chart_second_coordinate(
+pub(crate) fn decode_two_chart_second_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -639,7 +647,7 @@ pub(crate) fn is_tabulated_cylinder_second_coordinate_opener(byte: u8) -> bool {
 ///
 /// Compact `0x0e` is positive one half in this lane. Positional surface rows
 /// assign the negative value to the same byte.
-pub fn decode_named_local_system_coordinate(
+pub(crate) fn decode_named_local_system_coordinate(
     data: &[u8],
     offset: usize,
     slot: usize,
@@ -663,7 +671,7 @@ pub fn decode_named_local_system_coordinate(
 /// positive subunit high byte. DICT prefixes `0x5b..=0xa3` encode the first
 /// two IEEE bytes as `0x3f75 + prefix`; their six-byte payload supplies the
 /// remaining bytes.
-pub fn decode_named_surface_radius(
+pub(crate) fn decode_named_surface_radius(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -690,7 +698,7 @@ pub fn decode_named_surface_radius(
 /// an alternate width or IEEE mapping. Prefixes `0x5b..=0xa3` encode the first
 /// two IEEE bytes as `0x3f75 + prefix`; their six-byte payload supplies the
 /// remaining bytes.
-pub fn decode_named_positive_dict_scalar(
+pub(crate) fn decode_named_positive_dict_scalar(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -719,7 +727,7 @@ pub(crate) fn is_named_local_system_coordinate_opener(byte: u8) -> bool {
 /// The `0xed` form stores a complete big-endian IEEE-754 value in the eight
 /// bytes following the opener. Other coordinates use the signed DICT lane
 /// shared with tabulated-cylinder control points.
-pub fn decode_model_reference_coordinate(
+pub(crate) fn decode_model_reference_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -735,12 +743,18 @@ pub fn decode_model_reference_coordinate(
 
 /// Decode a complete twelve-slot support frame using the local-system macro
 /// language shared by feature definitions and curve-equation entities.
-pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+pub(crate) fn decode_explicit_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
     decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
 }
 
 /// Decode the feature-definition variant of the twelve-slot support frame.
-pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
+pub(crate) fn decode_feature_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
     decode_local_system_slots(body, cache, LocalSystemVariant::Feature)
 }
 
@@ -748,7 +762,7 @@ pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Op
 ///
 /// Saved conic records may store additional fields after the frame, so the
 /// consumed byte count is returned with the expanded frame.
-pub fn decode_saved_conic_local_system_prefix(
+pub(crate) fn decode_saved_conic_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
@@ -776,7 +790,7 @@ pub fn decode_saved_conic_local_system_prefix(
 }
 
 /// Decode a positional plane local system, including its terminal-zero macro.
-pub fn decode_positional_plane_local_system_slots(
+pub(crate) fn decode_positional_plane_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<[f64; 12]> {
@@ -785,7 +799,7 @@ pub fn decode_positional_plane_local_system_slots(
 
 /// Decode a positional cylinder local system whose origin uses the cylinder
 /// first-coordinate lane.
-pub fn decode_positional_cylinder_local_system_slots(
+pub(crate) fn decode_positional_cylinder_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<[f64; 12]> {
@@ -795,7 +809,7 @@ pub fn decode_positional_cylinder_local_system_slots(
 /// Decode the twelve-slot local-system prefix in a positional torus body.
 ///
 /// The returned byte count leaves the following radius suffix unconsumed.
-pub fn decode_positional_torus_local_system_prefix(
+pub(crate) fn decode_positional_torus_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<([f64; 12], usize)> {
@@ -2007,7 +2021,7 @@ fn decode_plane_support_coordinate(
 ///
 /// The frame otherwise uses the second-coordinate lane, but `0x4a` is a
 /// seven-byte positive IEEE form with an implicit zero low byte.
-pub fn decode_tabulated_cylinder_frame_coordinate(
+pub(crate) fn decode_tabulated_cylinder_frame_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -2022,7 +2036,7 @@ pub fn decode_tabulated_cylinder_frame_coordinate(
 ///
 /// These slots use the first-coordinate lane, except that frame-specific
 /// `0x4a` retains its positive seven-byte form.
-pub fn decode_tabulated_cylinder_first_frame_coordinate(
+pub(crate) fn decode_tabulated_cylinder_first_frame_coordinate(
     data: &[u8],
     offset: usize,
     cache: &ScalarCache,
@@ -2037,7 +2051,7 @@ pub fn decode_tabulated_cylinder_first_frame_coordinate(
 ///
 /// The enclosing record grammar must establish this lane. Several prefix
 /// bytes have different meanings in positional row and generic scalar lanes.
-pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+pub(crate) fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     let prefix = *data.get(offset)?;
     let (byte_0, byte_1) = if prefix == 0xb7 {
         (0x3f, 0xe4)
@@ -2055,7 +2069,7 @@ pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> 
 /// Returns the value and first unread offset. Returns `None` when the prefix
 /// requires interpretation by the enclosing record grammar or input is
 /// truncated.
-pub fn decode(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+pub(crate) fn decode(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     let head = *data.get(offset)?;
     match head {
         0x0d => Some((-1.0, offset + 1)),

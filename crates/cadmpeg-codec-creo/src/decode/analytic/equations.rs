@@ -19,21 +19,21 @@ const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 #[derive(Clone, Copy)]
-pub struct PlaneEquation {
-    pub origin: [f64; 3],
-    pub normal: [f64; 3],
+pub(in crate::decode) struct PlaneEquation {
+    pub(in crate::decode) origin: [f64; 3],
+    pub(in crate::decode) normal: [f64; 3],
 }
 
 #[derive(Clone, Copy)]
-pub struct CylinderEquation {
-    pub origin: [f64; 3],
-    pub axis: [f64; 3],
-    pub ref_direction: [f64; 3],
-    pub radius: f64,
+pub(in crate::decode) struct CylinderEquation {
+    pub(in crate::decode) origin: [f64; 3],
+    pub(in crate::decode) axis: [f64; 3],
+    pub(in crate::decode) ref_direction: [f64; 3],
+    pub(in crate::decode) radius: f64,
 }
 
 #[derive(Clone, Copy)]
-pub struct ConeEquation {
+pub(in crate::decode) struct ConeEquation {
     origin: [f64; 3],
     axis: [f64; 3],
     ref_direction: [f64; 3],
@@ -44,7 +44,7 @@ pub struct ConeEquation {
 
 impl ConeEquation {
     /// A cone with finite radius, positive finite ratio, and half-angle in [0, pi/2).
-    pub fn new(
+    pub(in crate::decode) fn new(
         origin: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
@@ -66,53 +66,53 @@ impl ConeEquation {
         })
     }
     /// The cone reference origin.
-    pub const fn origin(self) -> [f64; 3] {
+    pub(in crate::decode) const fn origin(self) -> [f64; 3] {
         self.origin
     }
     /// The cone axis direction.
-    pub const fn axis(self) -> [f64; 3] {
+    pub(in crate::decode) const fn axis(self) -> [f64; 3] {
         self.axis
     }
     /// The cone reference radial direction.
-    pub const fn ref_direction(self) -> [f64; 3] {
+    pub(in crate::decode) const fn ref_direction(self) -> [f64; 3] {
         self.ref_direction
     }
     /// The radius at the reference origin.
-    pub const fn radius(self) -> f64 {
+    pub(in crate::decode) const fn radius(self) -> f64 {
         self.radius
     }
     /// The radial aspect ratio.
-    pub const fn ratio(self) -> f64 {
+    pub(in crate::decode) const fn ratio(self) -> f64 {
         self.ratio
     }
     /// The cone half-angle in radians.
-    pub const fn half_angle(self) -> f64 {
+    pub(in crate::decode) const fn half_angle(self) -> f64 {
         self.half_angle
     }
 }
 
-pub fn circular_cone(cone: ConeEquation) -> bool {
+pub(in crate::decode) fn circular_cone(cone: ConeEquation) -> bool {
     (cone.ratio - 1.0).abs() <= EPS_NEAR_ZERO
 }
 
 #[derive(Clone, Copy)]
-pub struct SphereEquation {
-    pub center: [f64; 3],
-    pub ref_direction: [f64; 3],
-    pub radius: f64,
+pub(in crate::decode) struct SphereEquation {
+    pub(in crate::decode) center: [f64; 3],
+    pub(in crate::decode) ref_direction: [f64; 3],
+    pub(in crate::decode) radius: f64,
 }
 
 #[derive(Clone, Copy)]
-pub struct TorusEquation {
-    pub center: [f64; 3],
-    pub axis: [f64; 3],
-    pub ref_direction: [f64; 3],
-    pub major_radius: f64,
-    pub minor_radius: f64,
+pub(in crate::decode) struct TorusEquation {
+    pub(in crate::decode) center: [f64; 3],
+    pub(in crate::decode) axis: [f64; 3],
+    pub(in crate::decode) ref_direction: [f64; 3],
+    pub(in crate::decode) major_radius: f64,
+    pub(in crate::decode) minor_radius: f64,
 }
 
 #[derive(Clone, Copy)]
-pub enum CarrierEquation {
+pub(in crate::decode) enum CarrierEquation {
     Plane(PlaneEquation),
     Cylinder(CylinderEquation),
     Cone(ConeEquation),
@@ -122,7 +122,7 @@ pub enum CarrierEquation {
 
 impl CarrierEquation {
     /// Stable carrier family name for diagnostics.
-    pub(crate) fn kind_str(&self) -> &'static str {
+    pub(super) fn kind_str(&self) -> &'static str {
         match self {
             Self::Plane(_) => "plane",
             Self::Cylinder(_) => "cylinder",
@@ -134,31 +134,31 @@ impl CarrierEquation {
 }
 
 #[derive(Clone, Copy)]
-pub struct QuadricEquation {
-    pub matrix: [[f64; 3]; 3],
-    pub linear: [f64; 3],
-    pub constant: f64,
+struct QuadricEquation {
+    matrix: [[f64; 3]; 3],
+    linear: [f64; 3],
+    constant: f64,
 }
 
 #[derive(Clone, Copy)]
-pub struct PlaneConicEquation {
-    pub uu: f64,
-    pub uv: f64,
-    pub vv: f64,
-    pub u: f64,
-    pub v: f64,
-    pub constant: f64,
+pub(super) struct PlaneConicEquation {
+    pub(super) uu: f64,
+    pub(super) uv: f64,
+    pub(super) vv: f64,
+    pub(super) u: f64,
+    pub(super) v: f64,
+    pub(super) constant: f64,
 }
 
-pub fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
+fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
     matrix.map(|row| dot(row, vector))
 }
 
-pub fn outer_product(left: [f64; 3], right: [f64; 3]) -> [[f64; 3]; 3] {
+fn outer_product(left: [f64; 3], right: [f64; 3]) -> [[f64; 3]; 3] {
     left.map(|left| right.map(|right| left * right))
 }
 
-pub fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
+fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
     let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     match carrier {
         CarrierEquation::Cylinder(cylinder) => {
@@ -221,7 +221,7 @@ pub fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
     }
 }
 
-pub fn restrict_quadric_to_plane(
+fn restrict_quadric_to_plane(
     quadric: QuadricEquation,
     origin: [f64; 3],
     u_axis: [f64; 3],
@@ -240,7 +240,7 @@ pub fn restrict_quadric_to_plane(
     }
 }
 
-pub fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
+pub(in crate::decode) fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     for first in 0..planes.len() {
         for second in first + 1..planes.len() {
             for third in second + 1..planes.len() {
@@ -279,7 +279,7 @@ pub fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     None
 }
 
-pub fn plane_intersection_line(
+pub(in crate::decode) fn plane_intersection_line(
     first: PlaneEquation,
     second: PlaneEquation,
 ) -> Option<([f64; 3], [f64; 3])> {
@@ -300,7 +300,7 @@ pub fn plane_intersection_line(
     Some((origin, normalize(direction)?))
 }
 
-pub fn intersect_two_planes_with_quadric(
+pub(super) fn intersect_two_planes_with_quadric(
     first: PlaneEquation,
     second: PlaneEquation,
     carrier: CarrierEquation,
@@ -331,13 +331,13 @@ pub fn intersect_two_planes_with_quadric(
         .collect()
 }
 
-pub fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
+fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
     coefficients.iter().rev().fold(0.0, |value, coefficient| {
         value.mul_add(parameter, *coefficient)
     })
 }
 
-pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
+fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
     let scale = coefficients
         .iter()
         .copied()
@@ -431,7 +431,7 @@ pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
         })
 }
 
-pub fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
+fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
     let Some(count) = first
         .len()
         .checked_add(second.len())
@@ -450,7 +450,7 @@ pub fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
     product
 }
 
-pub const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
+const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
     ([0, 1, 2, 3], 1.0),
     ([0, 1, 3, 2], -1.0),
     ([0, 2, 1, 3], -1.0),
@@ -477,7 +477,7 @@ pub const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
     ([3, 2, 1, 0], 1.0),
 ];
 
-pub fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec<f64> {
+fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec<f64> {
     let zero = vec![0.0];
     let first_y2 = vec![first.vv];
     let first_y = vec![first.v, first.uv];
@@ -513,7 +513,11 @@ pub fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) ->
     determinant
 }
 
-pub fn quadratic_real_roots(quadratic: f64, linear: f64, constant: f64) -> Vec<f64> {
+pub(in crate::decode) fn quadratic_real_roots(
+    quadratic: f64,
+    linear: f64,
+    constant: f64,
+) -> Vec<f64> {
     let scale = quadratic
         .abs()
         .max(linear.abs())
@@ -542,7 +546,7 @@ pub fn quadratic_real_roots(quadratic: f64, linear: f64, constant: f64) -> Vec<f
     roots
 }
 
-pub fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
+fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
     conic.uu * u * u
         + conic.uv * u * v
         + conic.vv * v * v
@@ -551,7 +555,7 @@ pub fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
         + conic.constant
 }
 
-pub fn refine_plane_conic_intersection(
+fn refine_plane_conic_intersection(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
     mut u: f64,
@@ -585,7 +589,7 @@ pub fn refine_plane_conic_intersection(
     [u, v]
 }
 
-pub fn common_plane_conic_parameters(
+pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Vec<[f64; 2]> {
@@ -639,7 +643,7 @@ pub fn common_plane_conic_parameters(
     parameters
 }
 
-pub fn intersect_plane_with_two_quadrics(
+pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     plane: PlaneEquation,
     first: CarrierEquation,
     second: CarrierEquation,
@@ -678,7 +682,7 @@ pub fn intersect_plane_with_two_quadrics(
         .collect()
 }
 
-pub fn intersect_two_planes_with_torus(
+pub(in crate::decode) fn intersect_two_planes_with_torus(
     first: PlaneEquation,
     second: PlaneEquation,
     torus: TorusEquation,
@@ -738,7 +742,7 @@ pub fn intersect_two_planes_with_torus(
         .collect()
 }
 
-pub fn intersect_plane_with_circle(
+pub(in crate::decode) fn intersect_plane_with_circle(
     plane: PlaneEquation,
     center: [f64; 3],
     circle_axis: [f64; 3],
@@ -787,7 +791,9 @@ pub fn intersect_plane_with_circle(
     points
 }
 
-pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3], f64)> {
+pub(in crate::decode) fn circle_parameters(
+    geometry: &CurveGeometry,
+) -> Option<([f64; 3], [f64; 3], f64)> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
@@ -801,7 +807,7 @@ pub fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3]
     ))
 }
 
-pub fn plane_cone_conic(
+pub(in crate::decode) fn plane_cone_conic(
     plane: PlaneEquation,
     cone: ConeEquation,
 ) -> Option<(CurveGeometry, &'static str)> {

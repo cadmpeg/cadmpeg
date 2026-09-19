@@ -28,134 +28,134 @@ const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 /// `type_byte` remains raw because the namespace grammar does not define its
 /// geometric interpretation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurvePrototype {
+pub(crate) struct CurvePrototype {
     /// The row's `crv_id`: the curve's identifier in the `crv_array`
     /// namespace, referenced by `srf_array` and topology row `E0`/`E1`
     /// fields.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The row's raw `type` byte. Its geometric meaning is not identified by
     /// the namespace grammar alone ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)); the curve-body evaluator
     /// determines the interpretation.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// The `feat_id` compact integer, when the labeled row has one: the
     /// feature that generated this curve.
-    pub feature_id: Option<u32>,
+    pub(crate) feature_id: Option<u32>,
     /// The two named-prototype `crv_pnt_dir` orientation flags, when the
     /// prototype carries a complete direction array.
-    pub directions: Option<[u8; 2]>,
+    directions: Option<[u8; 2]>,
     /// Byte offset of this prototype's `crv_array` label in the original
     /// stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One source line in a curve-equation expression program.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveExpressionLine {
+pub(crate) struct CurveExpressionLine {
     /// UTF-8 source text without its NUL terminator.
-    pub text: String,
+    pub(crate) text: String,
     /// Byte offset of the first source byte.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Expression program stored by a curve-from-equation entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionRecord {
+pub(crate) struct CurveExpressionRecord {
     /// Entity identifier from the enclosing record.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Whether the enclosing record is `backup_ents(crv_fr_eqn)`.
-    pub backup: bool,
+    pub(crate) backup: bool,
     /// Bounded native placement frame carried by the equation entity.
-    pub local_system: Option<CurveExpressionLocalSystem>,
+    pub(crate) local_system: Option<CurveExpressionLocalSystem>,
     /// Ordered source lines declared by the `f8` array.
-    pub lines: Vec<CurveExpressionLine>,
+    pub(crate) lines: Vec<CurveExpressionLine>,
     /// Assignment statements in source order.
-    pub assignments: Vec<CurveExpressionAssignment>,
+    pub(crate) assignments: Vec<CurveExpressionAssignment>,
     /// Complete simultaneous-equation blocks in source order.
-    pub solve_blocks: Vec<CurveExpressionSolveBlock>,
+    pub(crate) solve_blocks: Vec<CurveExpressionSolveBlock>,
     /// Whether a `SOLVE`/`FOR` control sequence is malformed or incomplete.
-    pub unresolved_solve_control: bool,
+    pub(crate) unresolved_solve_control: bool,
     /// Curve-equation constructs prohibited by the Creo expression grammar.
-    pub prohibited_constructs: Vec<String>,
+    pub(crate) prohibited_constructs: Vec<String>,
     /// Byte offset of the enclosing entity label.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the `expression` field.
-    pub expression_offset: usize,
+    pub(crate) expression_offset: usize,
 }
 
 /// Count-bounded `local_sys` payload carried by a curve-equation entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionLocalSystem {
+pub(crate) struct CurveExpressionLocalSystem {
     /// Tuple dimensionality from the `f9` wrapper.
-    pub dimensions: u32,
+    pub(crate) dimensions: u32,
     /// Stored tuple count from the `f9` wrapper.
-    pub count: u32,
+    pub(crate) count: u32,
     /// Exact stateful scalar body through the next named field.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Twelve explicit scalar slots, absent when the body uses inheritance or
     /// contains a scalar form that is not decoded.
-    pub explicit_slots: Option<[f64; 12]>,
+    pub(crate) explicit_slots: Option<[f64; 12]>,
     /// Byte offset of the `local_sys` named-record header.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One executable assignment in a curve expression program.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionAssignment {
+pub(crate) struct CurveExpressionAssignment {
     /// Typed relation target receiving the right-hand value.
-    pub target: CurveExpressionTarget,
+    pub(crate) target: CurveExpressionTarget,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
-    pub expression: String,
+    pub(crate) expression: String,
     /// Referenced identifiers in first-appearance order.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Sequentially evaluated value when every dependency is resolved.
-    pub value: Option<CurveExpressionValue>,
+    pub(crate) value: Option<CurveExpressionValue>,
     /// Whether the source-ordered conditional program executes this assignment.
-    pub activation: CurveExpressionActivation,
+    pub(crate) activation: CurveExpressionActivation,
     /// Byte offset of the assignment source line.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One `SOLVE`/`FOR` simultaneous-equation block.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveExpressionSolveBlock {
+pub(crate) struct CurveExpressionSolveBlock {
     /// Ordered equations between the `SOLVE` and `FOR` lines.
-    pub equations: Vec<CurveExpressionEquation>,
+    pub(crate) equations: Vec<CurveExpressionEquation>,
     /// Ordered one-way relations in the block that do not involve an unknown.
-    pub assignments: Vec<CurveExpressionAssignment>,
+    pub(crate) assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
-    pub unknowns: Vec<SolveUnknown>,
+    pub(crate) unknowns: Vec<SolveUnknown>,
     /// Byte offset of the `SOLVE` line.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the terminating `FOR` line.
-    pub for_offset: usize,
+    pub(crate) for_offset: usize,
 }
 
 /// One declared solve unknown and its optional solution.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SolveUnknown {
+pub(crate) struct SolveUnknown {
     /// Declared variable name.
-    pub name: String,
+    pub(crate) name: String,
     /// Solved value, absent when the unknown remains unresolved.
-    pub solution: Option<CurveExpressionValue>,
+    pub(crate) solution: Option<CurveExpressionValue>,
 }
 
 /// One equation in a simultaneous-equation block.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveExpressionEquation {
+pub(crate) struct CurveExpressionEquation {
     /// Exact left-hand expression after surrounding ASCII whitespace removal.
-    pub left: String,
+    pub(crate) left: String,
     /// Exact right-hand expression after surrounding ASCII whitespace removal.
-    pub right: String,
+    pub(crate) right: String,
     /// Referenced identifiers in first-appearance order across both sides.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Byte offset of the equation source line.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Target of one curve-expression assignment.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CurveExpressionTarget {
+pub(crate) enum CurveExpressionTarget {
     /// Scalar parameter target.
     Parameter {
         /// Assigned identifier.
@@ -196,7 +196,7 @@ pub enum CurveExpressionTarget {
 /// Namespace family of an unscoped Creo relation system symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CurveExpressionSystemSymbolFamily {
+pub(crate) enum CurveExpressionSystemSymbolFamily {
     /// Parent-model or assembly dimension (`d#`).
     Dimension,
     /// Section dimension (`sd#`).
@@ -246,7 +246,7 @@ impl CurveExpressionAssignment {
 /// A deterministic value produced by a curve relation expression.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(untagged)]
-pub enum CurveExpressionValue {
+pub(crate) enum CurveExpressionValue {
     /// Dimensionless numeric value.
     Number(f64),
     /// Length in canonical millimeters.
@@ -270,19 +270,19 @@ impl CurveExpressionValue {
 
 /// Canonically scaled relation quantity represented by physical base powers.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
-pub struct CurveExpressionQuantity {
+pub(crate) struct CurveExpressionQuantity {
     /// Numeric value in canonical millimeter-kilogram-second-degree-kelvin units.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Power of length.
-    pub length_power: i8,
+    pub(crate) length_power: i8,
     /// Power of mass.
-    pub mass_power: i8,
+    pub(crate) mass_power: i8,
     /// Power of time.
-    pub time_power: i8,
+    pub(crate) time_power: i8,
     /// Power of plane angle.
-    pub angle_power: i8,
+    pub(crate) angle_power: i8,
     /// Power of temperature.
-    pub temperature_power: i8,
+    pub(crate) temperature_power: i8,
 }
 
 impl CurveExpressionQuantity {
@@ -299,7 +299,7 @@ impl CurveExpressionQuantity {
 
 /// Evaluation state of an assignment inside relation conditionals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveExpressionActivation {
+pub(crate) enum CurveExpressionActivation {
     /// The assignment executes in the current source-ordered evaluation.
     Active,
     /// A resolved enclosing condition excludes the assignment.
@@ -320,64 +320,64 @@ impl CurveExpressionActivation {
 
 /// Exact cylindrical helix parameters from a `crv_fr_eqn` program.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CurveExpressionHelix {
+pub(crate) struct CurveExpressionHelix {
     /// Constant cylindrical radius in model millimeters.
-    pub radius: cadmpeg_ir::scalar::PositiveLength,
+    pub(crate) radius: cadmpeg_ir::scalar::PositiveLength,
     /// Signed axial rise from `t = 0` through `t = 1`.
-    pub height: f64,
+    pub(crate) height: f64,
     /// Native axial coordinate at `t = 0`.
-    pub z_start: f64,
+    pub(crate) z_start: f64,
     /// Positive angular travel in revolutions.
-    pub revolutions: cadmpeg_ir::scalar::PositiveReal,
+    pub(crate) revolutions: cadmpeg_ir::scalar::PositiveReal,
     /// Angular position at `t = 0`, in radians.
-    pub start_angle: cadmpeg_ir::scalar::Angle,
+    pub(crate) start_angle: cadmpeg_ir::scalar::Angle,
     /// Whether angular travel decreases as `t` increases.
-    pub clockwise: bool,
+    pub(crate) clockwise: bool,
 }
 
 /// A curve row with a uniquely delimited topology suffix.
 ///
 /// `faces` and `next_edges` preserve the two native sides in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveTopologyRow {
+pub(crate) struct CurveTopologyRow {
     /// The row's `crv_id`, matching a [`CurvePrototype::id`] in the same
     /// `crv_array` namespace.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The row's raw `type` byte; see [`CurvePrototype::type_byte`].
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// The `feat_id` compact integer: the feature that generated this
     /// curve.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// The two `crv_pnt_dir` orientation-flag bytes, one per half-edge side.
     /// These are per-side orientation flags, not a tangent vector
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
-    pub directions: [u8; 2],
+    pub(crate) directions: [u8; 2],
     /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
     /// bounding the curve's two half-edge sides, absent where the side is
     /// unbounded.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
     /// edge for each of the two half-edge sides, used to walk loops
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
-    pub next_edges: [u32; 2],
+    pub(crate) next_edges: [u32; 2],
     /// Byte offset of the row's `crv_id` field in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl CurveTopologyRow {
     /// The face identifiers bounding the two half-edge sides, in side order,
     /// skipping sides that bound no face.
-    pub fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.faces.iter().flatten().map(|face| face.get())
     }
 
     /// Whether either half-edge side bounds `face_id`.
-    pub fn bounds_face(&self, face_id: u32) -> bool {
+    pub(crate) fn bounds_face(&self, face_id: u32) -> bool {
         self.bounded_face_ids().any(|bounded| bounded == face_id)
     }
 
     /// The stored `F0`/`F1` fields, with `0` for a side that bounds no face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
@@ -385,16 +385,16 @@ impl CurveTopologyRow {
 impl CurvePrototypeTopology {
     /// The stored `crv_hdr_geom_ptr[0/1]` fields, with `0` for a side that
     /// names no surface.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
 
 /// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DepdbCurveSuffix {
-    pub x1: u32,
-    pub face_id: u32,
+pub(crate) struct DepdbCurveSuffix {
+    x1: u32,
+    face_id: u32,
 }
 
 impl serde::Serialize for DepdbCurveSuffix {
@@ -405,63 +405,63 @@ impl serde::Serialize for DepdbCurveSuffix {
 
 /// One DEPDB cross-section curve row with its one-sided topology suffix.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DepdbCurveRow {
+pub(crate) struct DepdbCurveRow {
     /// Curve identifier in the cross-section `crv_array` namespace.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Raw curve-family discriminator.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// Owning feature identifier.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Stored per-side direction flags.
-    pub directions: [u8; 2],
+    pub(crate) directions: [u8; 2],
     /// The `[0, X1, F1, 0]` one-sided suffix.
-    pub suffix: DepdbCurveSuffix,
+    pub(crate) suffix: DepdbCurveSuffix,
     /// Exact bytes between the fixed prefix and one-sided suffix.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Decoded scalar tokens with exact body-relative spans.
-    pub scalar_tokens: Vec<CurveParameterScalar>,
+    pub(crate) scalar_tokens: Vec<CurveParameterScalar>,
     /// Canonical entity references with exact body-relative spans.
-    pub references: Vec<CurveParameterReference>,
+    pub(crate) references: Vec<CurveParameterReference>,
     /// Maximal body spans not claimed by a scalar or reference token.
-    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Byte offset of the row identifier.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Bounded analytic parameter body from one positional `crv_array` row.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveParameterRecord {
+pub(crate) struct CurveParameterRecord {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Raw curve-family discriminator.
-    pub type_byte: u8,
+    pub(crate) type_byte: u8,
     /// Exact bytes between direction flags and the selected suffix boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Scalar tokens with exact body-relative spans.
-    pub scalar_tokens: Vec<CurveParameterScalar>,
+    pub(crate) scalar_tokens: Vec<CurveParameterScalar>,
     /// Canonical entity references with exact body-relative spans.
-    pub references: Vec<CurveParameterReference>,
+    pub(crate) references: Vec<CurveParameterReference>,
     /// Maximal byte spans not claimed by scalar or reference tokens.
-    pub opaque_spans: Vec<CurveParameterOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<CurveParameterOpaqueSpan>,
     /// Positional `ref_geom[0]` and `ref_geom[1]` values following the four
     /// topology references.
-    pub reference_geometry: [u32; 2],
+    pub(crate) reference_geometry: [u32; 2],
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
-    pub suffix_offset: usize,
+    pub(crate) suffix_offset: usize,
 }
 
 impl CurveParameterRecord {
     /// Decoded scalar values in byte order.
-    pub fn scalar_values(&self) -> Vec<f64> {
+    pub(crate) fn scalar_values(&self) -> Vec<f64> {
         self.scalar_tokens.iter().map(|token| token.value).collect()
     }
 
     /// Canonical entity references skipped while walking the scalar lane.
-    pub fn skipped_references(&self) -> Vec<u32> {
+    pub(crate) fn skipped_references(&self) -> Vec<u32> {
         self.references
             .iter()
             .map(|reference| reference.entity_id)
@@ -471,68 +471,68 @@ impl CurveParameterRecord {
 
 /// One decoded scalar token in a positional curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CurveParameterScalar {
+pub(crate) struct CurveParameterScalar {
     /// Decoded scalar value.
-    pub value: f64,
+    pub(crate) value: f64,
     /// Exact token bytes.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Body-relative token offset.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One canonical entity reference in a positional curve body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveParameterReference {
+pub(crate) struct CurveParameterReference {
     /// Referenced entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Body-relative reference-token offset, including `f7`.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Reference-token length in bytes, including `f7`.
-    pub length: usize,
+    pub(crate) length: usize,
 }
 
 /// One maximal unclaimed byte span in a positional curve body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurveParameterOpaqueSpan {
+pub(crate) struct CurveParameterOpaqueSpan {
     /// Exact unclaimed bytes.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Body-relative span offset.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Two pcurve endpoints represented in both adjacent face parameter frames.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PcurveEndpoints {
+pub(crate) struct PcurveEndpoints {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers corresponding to face frames zero and one.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's local UV frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's local UV frame.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl PcurveEndpoints {
     /// Stored face identifiers, with zero for an absent face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
 
 /// Ordered samples of one curve represented in both incident-face charts.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TwoChartPcurveSamples {
+pub(crate) struct TwoChartPcurveSamples {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers in sample-chart order.
-    pub faces: [u32; 2],
+    pub(crate) faces: [u32; 2],
     /// Pointwise-corresponding `[F0(u, v), F1(u, v)]` chart samples.
-    pub samples: Vec<[[f64; 2]; 2]>,
+    pub(crate) samples: Vec<[[f64; 2]; 2]>,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One-sided endpoint path from the complete short fc 02 curve body.
@@ -541,45 +541,45 @@ pub struct TwoChartPcurveSamples {
 /// the second face remains a carrier-only join. The retained terminal operand
 /// is deliberately not interpreted by this record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc02ShortPcurveEndpoints {
+pub(crate) struct Fc02ShortPcurveEndpoints {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent surface identifiers from the topology row.
-    pub faces: [u32; 2],
+    pub(crate) faces: [u32; 2],
     /// Endpoint A then B in the first face's parameter frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Ordered world-coordinate lane from an `fc <subtype>` dense curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FcCurveCoordinates {
+pub(crate) struct FcCurveCoordinates {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Byte following the `fc` body prefix.
-    pub subtype: u8,
+    pub(crate) subtype: u8,
     /// Exact complete curve parameter body, including the `fc` prefix.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Ordered exact world-coordinate values, in mm.
-    pub values_mm: Vec<f64>,
+    pub(crate) values_mm: Vec<f64>,
     /// World-coordinate tokens with exact body-relative spans.
-    pub tokens: Vec<FcCurveCoordinateToken>,
+    pub(crate) tokens: Vec<FcCurveCoordinateToken>,
     /// Maximal body spans not owned by a recognized coordinate token.
-    pub opaque_spans: Vec<FcCurveOpaqueSpan>,
+    pub(crate) opaque_spans: Vec<FcCurveOpaqueSpan>,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One recognized world-coordinate token in an `fc <subtype>` body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FcCurveCoordinateToken {
+pub(crate) struct FcCurveCoordinateToken {
     /// Decoded model length in millimeters.
-    pub value_mm: f64,
+    pub(crate) value_mm: f64,
     /// Exact source bytes occupied by the token.
-    pub raw: Vec<u8>,
+    pub(crate) raw: Vec<u8>,
     /// Token offset relative to the complete curve parameter body.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl serde::Serialize for FcCurveCoordinateToken {
@@ -596,11 +596,11 @@ impl serde::Serialize for FcCurveCoordinateToken {
 
 /// One maximal unclaimed span in an `fc <subtype>` body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FcCurveOpaqueSpan {
+pub(crate) struct FcCurveOpaqueSpan {
     /// Exact source bytes in the span.
-    pub raw: Vec<u8>,
+    raw: Vec<u8>,
     /// Span offset relative to the complete curve parameter body.
-    pub offset: usize,
+    offset: usize,
 }
 
 impl serde::Serialize for FcCurveOpaqueSpan {
@@ -616,7 +616,7 @@ impl serde::Serialize for FcCurveOpaqueSpan {
 
 /// Direction of stored parameters relative to row-frame polar angles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParameterSense {
+pub(crate) enum ParameterSense {
     /// Parameters increase with polar angle.
     Increasing,
     /// Parameters decrease with polar angle.
@@ -625,7 +625,7 @@ pub enum ParameterSense {
 
 impl ParameterSense {
     /// Signed parameter multiplier.
-    pub fn as_i8(self) -> i8 {
+    pub(crate) fn as_i8(self) -> i8 {
         match self {
             Self::Increasing => 1,
             Self::Decreasing => -1,
@@ -635,7 +635,7 @@ impl ParameterSense {
 
 /// Relation between stored circle parameters and row-frame polar angles.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Fc05AngleParameterRelation {
+pub(crate) enum Fc05AngleParameterRelation {
     /// Neither unique parameter sense establishes a reference direction.
     Inconsistent,
     /// A unique parameter sense establishes a reference direction.
@@ -649,105 +649,105 @@ pub enum Fc05AngleParameterRelation {
 
 /// Circle proven by the decoded points of an `fc 05` curve body.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05Circle {
+pub(crate) struct Fc05Circle {
     /// Owning curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Circle center in the FC row's in-plane coordinate frame.
-    pub center_row_frame: [f64; 2],
+    pub(crate) center_row_frame: [f64; 2],
     /// Exact radius in mm.
-    pub radius_mm: f64,
+    pub(crate) radius_mm: f64,
     /// Unit radial direction from the fitted center to the first stored sample.
-    pub sample_direction_row_frame: [f64; 2],
+    pub(crate) sample_direction_row_frame: [f64; 2],
     /// Stored parameter relation and its reference direction.
-    pub angle_parameter: Fc05AngleParameterRelation,
+    pub(crate) angle_parameter: Fc05AngleParameterRelation,
     /// Constant cap-plane ordinate when present in every point.
-    pub cap_ordinate_row_frame: Option<f64>,
+    pub(crate) cap_ordinate_row_frame: Option<f64>,
     /// Number of points participating in validation.
-    pub point_count: usize,
+    pub(crate) point_count: usize,
     /// Maximum absolute radial residual.
-    pub max_residual: f64,
+    pub(crate) max_residual: f64,
     /// Byte offset of the source positional curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One circle edge joining a cylinder to a cap plane.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05CapEdge {
+pub(crate) struct Fc05CapEdge {
     /// Circle curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Opposite cap plane identifier.
-    pub cap_plane_id: u32,
+    pub(crate) cap_plane_id: u32,
     /// Cap ordinate in the owning feature's row frame.
-    pub cap_ordinate_row_frame: f64,
+    pub(crate) cap_ordinate_row_frame: f64,
 }
 
 /// Two or more topology-bound `fc 05` cap circles that establish one native
 /// cylinder's radius and row-frame axis line, but not its model-space frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fc05CylinderCapPair {
+pub(crate) struct Fc05CylinderCapPair {
     /// Cylinder surface identifier shared by every cap edge.
-    pub surface_id: u32,
+    pub(crate) surface_id: u32,
     /// Agreeing cap edges in source order.
-    pub cap_edges: Vec<Fc05CapEdge>,
+    pub(crate) cap_edges: Vec<Fc05CapEdge>,
     /// Shared center in the owning feature's row frame.
-    pub center_row_frame: [f64; 2],
+    pub(crate) center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
-    pub radius_mm: f64,
+    pub(crate) radius_mm: f64,
     /// Unit radial direction at parameter zero in the row's `(x, z)` frame.
-    pub reference_direction_row_frame: [f64; 2],
+    pub(crate) reference_direction_row_frame: [f64; 2],
     /// Shared signed parameter-to-polar-angle relation.
-    pub parameter_sense: ParameterSense,
+    pub(crate) parameter_sense: ParameterSense,
     /// At least two distinct cap ordinates in the owning feature's row frame.
-    pub cap_ordinates_row_frame: Vec<f64>,
+    pub(crate) cap_ordinates_row_frame: Vec<f64>,
     /// Byte offset of the first participating curve row.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Complete eight-slot pcurve endpoints from a labeled curve prototype.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrototypePcurveEndpoints {
+pub(crate) struct PrototypePcurveEndpoints {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Endpoint A then B in schema face frame zero.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in schema face frame one.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the `crv_pnt_arr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Four labeled topology references of a curve prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CurvePrototypeTopology {
+pub(crate) struct CurvePrototypeTopology {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`, absent
     /// where the side names no surface.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Per-face successor curve identifiers from `next_crv_hdr_ptr[0/1]`.
-    pub next_edges: [u32; 2],
+    pub(crate) next_edges: [u32; 2],
     /// Byte offset of the prototype namespace.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Prototype pcurve endpoints bound to their two labeled adjacent faces.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BoundPrototypePcurve {
+pub(crate) struct BoundPrototypePcurve {
     /// Prototype curve identifier.
-    pub curve_id: u32,
+    pub(crate) curve_id: u32,
     /// Adjacent face identifiers corresponding to UV frames zero and one.
-    pub faces: [Option<NonZeroU32>; 2],
+    pub(crate) faces: [Option<NonZeroU32>; 2],
     /// Endpoint A then B in the first face's UV frame.
-    pub face_0_endpoints: [[f64; 2]; 2],
+    pub(crate) face_0_endpoints: [[f64; 2]; 2],
     /// Endpoint A then B in the second face's UV frame.
-    pub face_1_endpoints: [[f64; 2]; 2],
+    pub(crate) face_1_endpoints: [[f64; 2]; 2],
     /// Byte offset of the source prototype pcurve.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl BoundPrototypePcurve {
     /// Stored face identifiers, with zero for an absent face.
-    pub fn stored_face_ids(&self) -> [u32; 2] {
+    pub(crate) fn stored_face_ids(&self) -> [u32; 2] {
         self.faces.map(stored_face_reference)
     }
 }
@@ -755,7 +755,7 @@ impl BoundPrototypePcurve {
 /// Discover every labeled `crv_array` prototype. A label range ends at the
 /// following `crv_array` label, so DEPDB-concatenated namespaces remain
 /// independent.
-pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
+pub(crate) fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
     let mut result = Vec::new();
     let mut start = 0;
     while let Some(relative) = find(payload, b"crv_array\0", start) {
@@ -811,7 +811,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<CurvePrototype> {
 /// the byte-backed evidence that the prototype also supplies an edge identity
 /// in the enclosing topology graph. The promotion remains withheld when the
 /// prototype, topology record, or face namespace is ambiguous.
-pub fn prototype_topology_rows(
+pub(crate) fn prototype_topology_rows(
     prototypes: &[CurvePrototype],
     prototype_topology: &[CurvePrototypeTopology],
     positional_rows: &[CurveTopologyRow],
@@ -872,7 +872,7 @@ pub fn prototype_topology_rows(
 }
 
 /// Decode bounded curve-from-equation expression programs.
-pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
+pub(crate) fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
     expression_records_with_model_name(payload, None)
 }
 
@@ -5618,7 +5618,7 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
 
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
-pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
+pub(crate) fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     record.prohibited_constructs.is_empty().then_some(())?;
     record.solve_blocks.is_empty().then_some(())?;
     (!record.unresolved_solve_control).then_some(())?;
@@ -5645,13 +5645,13 @@ pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressio
 /// `srf_array` should use [`topology_rows_with_face_ids`] so an ambiguous
 /// reference boundary can be resolved by its face roles.
 #[cfg(test)]
-pub fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
+fn topology_rows(payload: &[u8]) -> Vec<CurveTopologyRow> {
     topology_rows_with_face_ids(payload, None)
 }
 
 /// Decode standard topology rows using the enclosing `srf_array` identifier
 /// set to resolve variable-width reference boundaries.
-pub fn topology_rows_with_face_ids(
+pub(crate) fn topology_rows_with_face_ids(
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
 ) -> Vec<CurveTopologyRow> {
@@ -5674,7 +5674,7 @@ pub fn topology_rows_with_face_ids(
 /// Decode a complete DEPDB `crv_array\0 f2 f8 <count>` cross-section array.
 /// Any malformed row or count mismatch withholds the entire array.
 #[must_use]
-pub fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
+pub(crate) fn depdb_cross_section_rows(payload: &[u8]) -> Vec<DepdbCurveRow> {
     let Some(array) = find(payload, b"crv_array\0", 0) else {
         return Vec::new();
     };
@@ -6123,13 +6123,13 @@ fn curve_scalar_lane(
 /// topology suffix. Use [`parameter_records_with_face_ids`] when the enclosing
 /// `srf_array` identifiers are available.
 #[cfg(test)]
-pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
+fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
     parameter_records_with_face_ids(payload, None)
 }
 
 /// Decode analytic bodies using the enclosing `srf_array` identifier set to
 /// resolve variable-width reference boundaries.
-pub fn parameter_records_with_face_ids(
+pub(crate) fn parameter_records_with_face_ids(
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
 ) -> Vec<CurveParameterRecord> {
@@ -6229,7 +6229,7 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
 }
 
 /// Interpret complete eight-slot parameter lanes for pcurve-family rows.
-pub fn pcurve_endpoints(
+pub(crate) fn pcurve_endpoints(
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
 ) -> Vec<PcurveEndpoints> {
@@ -6299,7 +6299,7 @@ fn complete_two_chart_samples(
 /// A canonical body supplies `fc <count>`. Later rows in the same feature and
 /// raw curve family replay the canonical sample extent without the prefix.
 /// Every admitted row consumes exactly four finite scalars per sample.
-pub fn two_chart_pcurve_samples(
+pub(crate) fn two_chart_pcurve_samples(
     payload: &[u8],
     face_ids: Option<&BTreeSet<u32>>,
 ) -> Vec<TwoChartPcurveSamples> {
@@ -6419,7 +6419,7 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
 /// A path is admitted only when the body has one unique topology row, a
 /// complete seven-scalar lane, and the bounded terminal operand. Other fc 02
 /// bodies remain native parameter records until their grammar is settled.
-pub fn fc02_short_pcurve_endpoints(
+pub(crate) fn fc02_short_pcurve_endpoints(
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
 ) -> Vec<Fc02ShortPcurveEndpoints> {
@@ -6444,7 +6444,7 @@ pub fn fc02_short_pcurve_endpoints(
 }
 
 /// Decode exact world-coordinate tokens from FC-prefixed dense curve bodies.
-pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
+pub(crate) fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordinates> {
     let mut result = Vec::new();
     for record in uniquely_bounded_parameter_records(parameters) {
         let Some((&0xfc, tail)) = record.body.split_first() else {
@@ -6526,7 +6526,7 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 }
 
 /// Validate FC05 point lanes against their exact circle identity.
-pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
+pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
     let mut circles = Vec::new();
     for record in uniquely_bounded_parameter_records(parameters) {
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
@@ -6664,7 +6664,7 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
 
 /// Bind validated `fc 05` circles to typed cylinder/plane face pairs and retain
 /// only groups that agree on radius and center at two distinct cap ordinates.
-pub fn fc05_cylinder_cap_pairs(
+pub(crate) fn fc05_cylinder_cap_pairs(
     circles: &[Fc05Circle],
     topology: &[CurveTopologyRow],
     surfaces: &[crate::surface::SurfaceRow],
@@ -6781,7 +6781,7 @@ pub fn fc05_cylinder_cap_pairs(
 }
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
-pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
+pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut search = 0;
@@ -6838,7 +6838,7 @@ pub fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoint
 }
 
 /// Decode the four labeled topology pointers of each curve prototype.
-pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
+pub(crate) fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -6881,7 +6881,7 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
 }
 
 /// Bind complete prototype UV endpoints to labeled prototype topology.
-pub fn bind_prototype_pcurves(
+pub(crate) fn bind_prototype_pcurves(
     pcurves: &[PrototypePcurveEndpoints],
     topology: &[CurvePrototypeTopology],
 ) -> Vec<BoundPrototypePcurve> {

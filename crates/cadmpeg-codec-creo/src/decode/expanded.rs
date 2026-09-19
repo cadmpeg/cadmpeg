@@ -16,7 +16,7 @@ use super::native_records::{
 use super::records::double_xar::CreoDoubleXarTableRecord;
 use super::records::{expanded_section_records, CreoPrimitiveScalarArrayRecord};
 
-pub(crate) fn attach_expanded_sections(
+pub(super) fn attach_expanded_sections(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -82,7 +82,7 @@ pub(crate) fn attach_expanded_sections(
     Ok(())
 }
 
-pub(crate) fn feature_surface_replay_associations(
+pub(super) fn feature_surface_replay_associations(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureSurfaceReplayAssociation> {
     let mut associations = Vec::new();
@@ -162,7 +162,7 @@ pub(crate) fn feature_surface_replay_associations(
     associations
 }
 
-pub(crate) fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
+pub(super) fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static str {
     match kind {
         crate::feature::AffectedIdKind::Geometry => "geometry",
         crate::feature::AffectedIdKind::Edges => "edges",
@@ -173,21 +173,21 @@ pub(crate) fn affected_kind(kind: crate::feature::AffectedIdKind) -> &'static st
     }
 }
 
-pub(crate) fn extent_source(source: crate::feature::ReplayExtentSource) -> &'static str {
+pub(super) fn extent_source(source: crate::feature::ReplayExtentSource) -> &'static str {
     match source {
         crate::feature::ReplayExtentSource::Explicit => "explicit",
         crate::feature::ReplayExtentSource::Inherited => "inherited",
     }
 }
 
-pub(crate) fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef {
+pub(super) fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef {
     CreoHalfEdgeRef {
         curve_id: id.curve_id,
         side: id.side,
     }
 }
 
-pub(crate) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
+pub(super) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
     scan.curves
         .fc05_circles
         .iter()
@@ -207,7 +207,7 @@ pub(crate) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRec
         .collect()
 }
 
-pub(crate) fn fc05_cylinder_cap_pair_records(
+pub(super) fn fc05_cylinder_cap_pair_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFc05CylinderCapPairRecord> {
     scan.curves

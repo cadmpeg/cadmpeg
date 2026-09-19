@@ -32,7 +32,7 @@ const PROTOTYPE_FIELDS: [&[u8]; 8] = [
 
 /// Layout marker between the loop-array label and its array opener.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayoutMarker {
+pub(crate) enum LayoutMarker {
     /// The `f2` marker.
     F2,
     /// The `f3` marker.
@@ -50,58 +50,58 @@ impl serde::Serialize for LayoutMarker {
 
 /// One validated `lo_array` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopArrayFrame {
+pub(crate) struct LoopArrayFrame {
     /// Byte offset of the `lo_array` label.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Optional layout marker immediately after the label: `f2` or `f3`.
     /// Older frames omit this marker and begin directly with `f8`.
-    pub variant: Option<LayoutMarker>,
+    pub(crate) variant: Option<LayoutMarker>,
     /// Stored loop-array slot extent.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Native class reference from the frame header and prototype close.
-    pub class_id: u32,
+    pub(crate) class_id: u32,
     /// Byte offset immediately after the named prototype close.
-    pub prototype_end: usize,
+    pub(crate) prototype_end: usize,
     /// Byte offset of the next array label or the section end.
-    pub end: usize,
+    pub(crate) end: usize,
     /// Additional validated rows exceed the declared extent.
-    pub overfull: bool,
+    pub(crate) overfull: bool,
 }
 
 /// One complete positional `lo_array` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopArrayRecord {
+pub(crate) struct LoopArrayRecord {
     /// Owning frame label offset.
-    pub frame_offset: usize,
+    pub(crate) frame_offset: usize,
     /// `lo_id` compact integer.
-    pub lo_id: u32,
+    pub(crate) lo_id: u32,
     /// `lo_type` compact integer.
-    pub lo_type: u32,
+    pub(crate) lo_type: u32,
     /// `lo_subtype` compact integer.
-    pub lo_subtype: u32,
+    pub(crate) lo_subtype: u32,
     /// `feat_id` compact integer.
-    pub feature_id: u32,
+    pub(crate) feature_id: u32,
     /// Raw `attributes` byte.
-    pub attributes: u8,
+    pub(crate) attributes: u8,
     /// `direction` compact integer.
-    pub direction: u32,
+    pub(crate) direction: u32,
     /// `next_lo_ptr` compact integer.
-    pub next_lo_ptr: u32,
+    pub(crate) next_lo_ptr: u32,
     /// Exact row body from the first body byte through its `e3` close.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the fixed row prefix.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Byte offset of the first body byte.
-    pub body_offset: usize,
+    pub(crate) body_offset: usize,
 }
 
 /// Results of scanning all `lo_array` frames in one section payload.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LoopArrayScan {
+pub(crate) struct LoopArrayScan {
     /// Validated frame headers and named prototypes.
-    pub frames: Vec<LoopArrayFrame>,
+    pub(crate) frames: Vec<LoopArrayFrame>,
     /// Complete positional rows from non-overfull frames.
-    pub records: Vec<LoopArrayRecord>,
+    pub(crate) records: Vec<LoopArrayRecord>,
 }
 
 fn find_named_field(data: &[u8], start: usize, end: usize, name: &[u8]) -> Option<usize> {
@@ -288,7 +288,7 @@ fn parse_frame(
 }
 
 /// Retain structurally complete `lo_array` frames and positional rows.
-pub fn scan(data: &[u8]) -> LoopArrayScan {
+pub(crate) fn scan(data: &[u8]) -> LoopArrayScan {
     let mut result = LoopArrayScan::default();
     let mut search = 0;
     while let Some(offset) = find(data, LO_ARRAY_LABEL, search) {

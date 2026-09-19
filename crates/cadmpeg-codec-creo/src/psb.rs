@@ -10,19 +10,19 @@
 use crate::scalar;
 
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
-pub mod token {
+pub(crate) mod token {
     /// Named-record header: `e0 <type> <name>\0`.
-    pub const NAMED_RECORD: u8 = 0xe0;
+    pub(crate) const NAMED_RECORD: u8 = 0xe0;
     /// Array opener: `f8 <count>`.
-    pub const ARRAY_OPEN: u8 = 0xf8;
+    pub(crate) const ARRAY_OPEN: u8 = 0xf8;
     /// Count-bounded scalar body: `f9 <ndim> <count>`.
-    pub const SCALAR_BODY: u8 = 0xf9;
+    pub(crate) const SCALAR_BODY: u8 = 0xf9;
     /// Entity reference: `f7 <id>`.
-    pub const ENTITY_REF: u8 = 0xf7;
+    pub(crate) const ENTITY_REF: u8 = 0xf7;
     /// Array close.
-    pub const ARRAY_CLOSE: u8 = 0xfb;
+    pub(crate) const ARRAY_CLOSE: u8 = 0xfb;
     /// Compound-record close.
-    pub const COMPOUND_CLOSE: u8 = 0xe3;
+    pub(crate) const COMPOUND_CLOSE: u8 = 0xe3;
 }
 
 /// One structurally framed PSB token.
@@ -30,19 +30,19 @@ pub mod token {
 /// `offset` and `length` refer to the input slice. Unknown bytes remain
 /// explicit.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Token {
+pub(crate) struct Token {
     /// Byte offset of the token's first byte in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Total byte length of the token, including its prefix byte(s).
-    pub length: usize,
+    pub(crate) length: usize,
     /// The token's structural classification.
-    pub kind: TokenKind,
+    pub(crate) kind: TokenKind,
 }
 
 /// Structural token kinds whose byte extent is known independent of the
 /// parent record grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     /// A PSB compact integer ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#21-compact-integers)): `0x00..=0x7f` one byte, or
     /// `0x80..=0xbf XX` two bytes big-endian.
     CompactInt,
@@ -86,7 +86,7 @@ pub enum TokenKind {
 ///
 /// Numeric forms that depend on a parent grammar remain compact or unknown
 /// tokens.
-pub fn tokens(data: &[u8]) -> Vec<Token> {
+pub(crate) fn tokens(data: &[u8]) -> Vec<Token> {
     let mut result = Vec::new();
     let mut offset = 0;
     while let Some(token) = token_at(data, offset) {
@@ -97,7 +97,7 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
 }
 
 /// Decode one byte-self-delimiting PSB token at `offset`.
-pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
+pub(crate) fn token_at(data: &[u8], offset: usize) -> Option<Token> {
     let &head = data.get(offset)?;
     let (length, kind) = match head {
         token::NAMED_RECORD => match data
@@ -175,7 +175,7 @@ pub fn token_at(data: &[u8], offset: usize) -> Option<Token> {
 /// and is the only route that does not advance: every byte at `offset` inside
 /// `data` consumes one or two bytes, so `new_offset > offset` there and a
 /// scanner that follows `new_offset` always makes progress.
-pub fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
+pub(crate) fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
     let Some(&b) = data.get(offset) else {
         return (0, offset);
     };
@@ -194,7 +194,7 @@ pub fn compact_int(data: &[u8], offset: usize) -> (u32, usize) {
 /// Decode a canonical PSB entity-reference identifier. Unlike
 /// [`compact_int`], typed reference lanes reject control bytes and reject a
 /// two-byte representation for values that fit in one byte.
-pub fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static str> {
+pub(crate) fn reference_id(data: &[u8], offset: usize) -> Result<(u32, usize), &'static str> {
     let Some(&head) = data.get(offset) else {
         return Err("reference id is truncated");
     };
@@ -235,7 +235,7 @@ const fn short_form_spec(prefix: u8) -> Option<(u8, bool)> {
 }
 
 /// True when `prefix` opens a 3-byte short-form float token.
-pub fn is_short_form_float(prefix: u8) -> bool {
+pub(crate) fn is_short_form_float(prefix: u8) -> bool {
     short_form_spec(prefix).is_some()
 }
 
@@ -247,7 +247,7 @@ pub fn is_short_form_float(prefix: u8) -> bool {
 /// `(byte0, XX, fill…)`, where `byte0` and the fill mode come from the prefix.
 /// Byte-exact against the spec's worked examples (e.g. `2f 43 00 = 38.0`,
 /// `29 eb 33 = 0.85`, `48 22 00 = -9.0`).
-pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+pub(crate) fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     let (byte0, repeat) = short_form_spec(*data.get(offset)?)?;
     let xx = *data.get(offset + 1)?;
     let yy = *data.get(offset + 2)?;

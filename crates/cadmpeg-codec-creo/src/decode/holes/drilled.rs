@@ -21,7 +21,7 @@ const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 const EPS_DIAMETER_NONZERO: f64 = 1.0e-12;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 
-pub fn stepped_hole_form(
+pub(in crate::decode) fn stepped_hole_form(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
@@ -186,7 +186,7 @@ fn split_patch_table_is_counterbore(
         })
 }
 
-pub fn paired_hole_replay_surfaces_by_source(
+fn paired_hole_replay_surfaces_by_source(
     feature_id: u32,
     table: &crate::feature::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
@@ -266,13 +266,13 @@ pub fn paired_hole_replay_surfaces_by_source(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SimpleDrilledDimensionFamily {
+pub(in crate::decode) enum SimpleDrilledDimensionFamily {
     ExternalId2Depth,
     ExternalId4Depth,
 }
 
 impl SimpleDrilledDimensionFamily {
-    pub fn depth_external_id(self) -> u32 {
+    fn depth_external_id(self) -> u32 {
         match self {
             Self::ExternalId2Depth => 2,
             Self::ExternalId4Depth => 4,
@@ -281,12 +281,12 @@ impl SimpleDrilledDimensionFamily {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct SimpleDrilledHoleRecipe<'a> {
-    pub table: &'a crate::feature::FeatureEntityTable,
-    pub dimension_family: SimpleDrilledDimensionFamily,
+pub(in crate::decode) struct SimpleDrilledHoleRecipe<'a> {
+    pub(in crate::decode) table: &'a crate::feature::FeatureEntityTable,
+    pub(in crate::decode) dimension_family: SimpleDrilledDimensionFamily,
 }
 
-pub fn simple_drilled_hole_recipe<'a>(
+pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
     feature_id: u32,
     tables: &'a [crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
@@ -328,7 +328,7 @@ pub fn simple_drilled_hole_recipe<'a>(
     Some(*recipe)
 }
 
-pub fn simple_drilled_hole_envelope_spans(
+pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
 ) -> Option<[[Option<f64>; 2]; 3]> {
@@ -336,7 +336,7 @@ pub fn simple_drilled_hole_envelope_spans(
     paired_corner_envelope_axis_spans(first, second)
 }
 
-pub fn simple_drilled_hole_corner_envelopes(
+fn simple_drilled_hole_corner_envelopes(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
 ) -> Option<[[[f64; 3]; 2]; 2]> {
@@ -357,7 +357,7 @@ pub fn simple_drilled_hole_corner_envelopes(
     Some([*first, *second])
 }
 
-pub fn simple_drilled_hole_cone_terminal_points(
+fn simple_drilled_hole_cone_terminal_points(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
 ) -> Option<[[f64; 3]; 2]> {
@@ -386,7 +386,7 @@ pub fn simple_drilled_hole_cone_terminal_points(
     points.try_into().ok()
 }
 
-pub fn simple_drilled_hole_placement(
+pub(in crate::decode) fn simple_drilled_hole_placement(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
     diameter: f64,
@@ -403,7 +403,7 @@ pub fn simple_drilled_hole_placement(
     })
 }
 
-pub fn simple_drilled_hole_axis_placement(
+pub(in crate::decode) fn simple_drilled_hole_axis_placement(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
     diameter: f64,
@@ -432,7 +432,7 @@ pub fn simple_drilled_hole_axis_placement(
     simple_drilled_axis_placement_from_frames(&frames, diameter)
 }
 
-pub fn simple_drilled_axis_placement_from_frames(
+pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     frames: &[crate::surface::PositionalCylinderFrame],
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::HolePlacement> {
@@ -620,7 +620,7 @@ impl DrilledHoleEnvelopeLayout {
     }
 }
 
-pub fn drilled_hole_placement_from_corner_envelopes(
+pub(in crate::decode) fn drilled_hole_placement_from_corner_envelopes(
     corners: [[[f64; 3]; 2]; 2],
     diameter: f64,
     depth: f64,
@@ -687,7 +687,7 @@ pub fn drilled_hole_placement_from_corner_envelopes(
     Some(layout.placement(radial_coordinates))
 }
 
-pub fn clipped_drilled_hole_placement_from_cone_points(
+pub(in crate::decode) fn clipped_drilled_hole_placement_from_cone_points(
     corners: [[[f64; 3]; 2]; 2],
     cone_points: [[f64; 3]; 2],
     diameter: f64,
@@ -751,7 +751,7 @@ pub fn clipped_drilled_hole_placement_from_cone_points(
     Some(layout.placement(radial_coordinates))
 }
 
-pub fn paired_corner_envelope_axis_spans(
+pub(in crate::decode) fn paired_corner_envelope_axis_spans(
     first: [[f64; 3]; 2],
     second: [[f64; 3]; 2],
 ) -> Option<[[Option<f64>; 2]; 3]> {
@@ -797,7 +797,7 @@ pub fn paired_corner_envelope_axis_spans(
     Some(spans)
 }
 
-pub fn simple_drilled_hole_dimensions(
+pub(in crate::decode) fn simple_drilled_hole_dimensions(
     scan: &ContainerScan,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
@@ -813,7 +813,7 @@ pub fn simple_drilled_hole_dimensions(
     )
 }
 
-pub fn simple_drilled_hole_dimension_values<'a>(
+pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
@@ -885,7 +885,7 @@ pub fn simple_drilled_hole_dimension_values<'a>(
         .then_some(first)
 }
 
-pub fn dimension_pair_matches_envelope_spans(
+pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
     bore_diameter: f64,
     blind_depth: f64,
     spans: [[Option<f64>; 2]; 3],

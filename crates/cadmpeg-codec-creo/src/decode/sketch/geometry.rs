@@ -27,7 +27,7 @@ const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 const EPS_PARAMETER_FULL_TURN: f64 = 1.0e-9;
 const EPS_ANGLE_FULL_TURN: f64 = 1.0e-12;
 
-pub(crate) fn section_line_geometry(
+pub(in crate::decode) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -50,7 +50,7 @@ pub(crate) fn section_line_geometry(
     .ok()
 }
 
-pub(crate) fn section_point_geometry(
+pub(in crate::decode) fn section_point_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -64,7 +64,7 @@ pub(crate) fn section_point_geometry(
     .ok()
 }
 
-pub(crate) fn section_arc_geometry(
+pub(in crate::decode) fn section_arc_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -99,7 +99,7 @@ pub(crate) fn section_arc_geometry(
     .ok()
 }
 
-pub(crate) fn section_circle_geometry(
+pub(in crate::decode) fn section_circle_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     radii: &BTreeMap<u32, f64>,
     segment: &crate::feature::FeatureCircleSegment,
@@ -113,7 +113,7 @@ pub(crate) fn section_circle_geometry(
     .ok()
 }
 
-pub(crate) fn section_point_row_geometry(
+pub(in crate::decode) fn section_point_row_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeaturePointSegment,
 ) -> Option<SketchGeometry> {
@@ -124,7 +124,7 @@ pub(crate) fn section_point_row_geometry(
     .ok()
 }
 
-pub(crate) fn section_centered_line_geometry(
+pub(in crate::decode) fn section_centered_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureCenteredLineSegment,
 ) -> Option<SketchGeometry> {
@@ -148,7 +148,7 @@ pub(crate) fn section_centered_line_geometry(
     .ok()
 }
 
-pub(crate) fn section_reference_line_geometry(
+pub(in crate::decode) fn section_reference_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureReferenceLineSegment,
 ) -> Option<SketchGeometry> {
@@ -171,7 +171,7 @@ pub(crate) fn section_reference_line_geometry(
     .ok()
 }
 
-pub(crate) fn resolved_section_reference_line_geometry(
+pub(in crate::decode) fn resolved_section_reference_line_geometry(
     definition: &crate::feature::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -209,7 +209,7 @@ pub(crate) fn resolved_section_reference_line_geometry(
         .flatten()
 }
 
-pub(crate) fn section_segment_geometry(
+pub(in crate::decode) fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -218,7 +218,7 @@ pub(crate) fn section_segment_geometry(
         .or_else(|| section_point_geometry(points, segment))
 }
 
-pub(crate) fn saved_section_line_geometry(
+pub(in crate::decode) fn saved_section_line_geometry(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -315,7 +315,7 @@ pub(crate) fn saved_section_line_geometry(
     .ok()
 }
 
-pub(crate) fn saved_section_arc_record<'a>(
+pub(super) fn saved_section_arc_record<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<&'a crate::feature::FeatureSavedArc> {
@@ -336,7 +336,7 @@ pub(crate) fn saved_section_arc_record<'a>(
     })
 }
 
-pub(crate) fn saved_section_arc_carrier(
+pub(in crate::decode) fn saved_section_arc_carrier(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<([f64; 2], f64)> {
@@ -399,15 +399,15 @@ pub(crate) fn saved_section_arc_carrier(
 
 /// The arc facts recovered from a saved-section row.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct SavedSectionArc {
-    pub(crate) center: cadmpeg_ir::units::FinitePoint2,
-    pub(crate) radius: cadmpeg_ir::scalar::PositiveLength,
-    pub(crate) start_angle: Angle,
-    pub(crate) end_angle: Angle,
+pub(in crate::decode) struct SavedSectionArc {
+    pub(in crate::decode) center: cadmpeg_ir::units::FinitePoint2,
+    pub(in crate::decode) radius: cadmpeg_ir::scalar::PositiveLength,
+    pub(in crate::decode) start_angle: Angle,
+    pub(in crate::decode) end_angle: Angle,
 }
 
 impl SavedSectionArc {
-    pub(crate) fn into_geometry(self) -> Option<SketchGeometry> {
+    fn into_geometry(self) -> Option<SketchGeometry> {
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: self.center.into(),
             radius: self.radius.into(),
@@ -418,7 +418,7 @@ impl SavedSectionArc {
     }
 }
 
-pub(crate) fn saved_section_arc(
+pub(in crate::decode) fn saved_section_arc(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SavedSectionArc> {
@@ -453,7 +453,7 @@ pub(crate) fn saved_section_arc(
     })
 }
 
-pub(crate) fn saved_section_segment_point_coordinates(
+pub(in crate::decode) fn saved_section_segment_point_coordinates(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<Vec<(u32, [f64; 2])>> {
@@ -484,7 +484,7 @@ pub(crate) fn saved_section_segment_point_coordinates(
     }
 }
 
-pub(crate) fn saved_section_circle_values(
+pub(in crate::decode) fn saved_section_circle_values(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<([f64; 2], f64)> {
@@ -498,7 +498,7 @@ pub(crate) fn saved_section_circle_values(
     Some(([center.u, center.v], radius.get()))
 }
 
-pub(crate) fn saved_section_entity_geometry(
+pub(in crate::decode) fn saved_section_entity_geometry(
     entity: &crate::feature::FeatureSavedEntity,
 ) -> Option<(u32, SketchGeometry, usize)> {
     match entity {
@@ -665,7 +665,7 @@ pub(crate) fn saved_section_entity_geometry(
     }
 }
 
-pub(crate) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
+pub(in crate::decode) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
     matches!(
         geometry.definition(),
         SketchGeometryDefinition::Circle { .. }
@@ -680,7 +680,7 @@ pub(crate) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
     )
 }
 
-pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
+fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
         SketchGeometryDefinition::Arc {
@@ -708,7 +708,7 @@ pub(crate) fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f6
     }
 }
 
-pub(crate) fn saved_section_missing_line_geometry(
+pub(in crate::decode) fn saved_section_missing_line_geometry(
     definition: &crate::feature::FeatureDefinition,
 ) -> Option<(usize, SketchGeometry)> {
     let order = definition.order_table.as_ref()?;
@@ -802,7 +802,7 @@ pub(crate) fn saved_section_missing_line_geometry(
     ))
 }
 
-pub(crate) fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
+fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
     let scale = first
         .into_iter()
         .chain(second)
@@ -814,7 +814,7 @@ pub(crate) fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
         .all(|(left, right)| (left - right).abs() <= EPS_PARAMETER_AGREEMENT * scale)
 }
 
-pub(crate) fn saved_profile_chains(
+pub(in crate::decode) fn saved_profile_chains(
     sketch: &SketchId,
     geometries: &[(u32, SketchGeometry)],
 ) -> Vec<Vec<SketchEntityUse>> {
@@ -907,7 +907,7 @@ pub(crate) fn saved_profile_chains(
     profiles
 }
 
-pub(crate) fn resolved_section_segment_geometry(
+pub(in crate::decode) fn resolved_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -921,7 +921,7 @@ pub(crate) fn resolved_section_segment_geometry(
     )
 }
 
-pub(crate) fn resolved_section_segment_geometry_with_missing_line(
+pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,

@@ -25,7 +25,7 @@ fn preceding_byte(payload: &[u8], offset: usize) -> Option<u8> {
 
 /// Definition-space parameter-frame field in a `FeatDefs` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureParameterFrameKind {
+pub(crate) enum FeatureParameterFrameKind {
     /// `local_sys` frame field.
     LocalSystem,
     /// `transf` transform field.
@@ -34,44 +34,44 @@ pub enum FeatureParameterFrameKind {
 
 /// One `f9 04 03` definition-space parameter frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureParameterFrame {
+pub(crate) struct FeatureParameterFrame {
     /// Frame field kind.
-    pub kind: FeatureParameterFrameKind,
+    pub(crate) kind: FeatureParameterFrameKind,
     /// Exact scalar-body bytes after `f9 04 03`.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Twelve values when the body consists entirely of defined scalar tokens.
-    pub decoded_values: Option<[f64; 12]>,
+    pub(crate) decoded_values: Option<[f64; 12]>,
     /// Byte offset of the field label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One instantiated row from a feature definition's `place_instruction_ptrs`
 /// table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeaturePlacementInstruction {
+pub(crate) struct FeaturePlacementInstruction {
     /// Stored placement instruction family.
-    pub kind: u32,
+    pub(crate) kind: u32,
     /// Whether the scalar offset lane stores exact zero.
-    pub zero_offset: bool,
+    pub(crate) zero_offset: bool,
     /// Optional driving dimension identifier.
-    pub dimension_id: Option<u32>,
+    pub(crate) dimension_id: Option<u32>,
     /// Optional referenced placement object.
-    pub reference_id: Option<u32>,
+    pub(crate) reference_id: Option<u32>,
     /// First optional geometry operand.
-    pub geometry1_id: Option<u32>,
+    pub(crate) geometry1_id: Option<u32>,
     /// Second optional geometry operand.
-    pub geometry2_id: Option<u32>,
+    pub(crate) geometry2_id: Option<u32>,
     /// First membership selector.
-    pub member1: u32,
+    pub(crate) member1: u32,
     /// Second membership selector.
-    pub member2: u32,
+    pub(crate) member2: u32,
     /// Byte offset of the positional row marker.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Feature-history phase associated with a local outline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutlinePhase {
+pub(crate) enum OutlinePhase {
     /// Labeled `outline` before rollback.
     PreRollback,
     /// Positional replay after rollback.
@@ -82,13 +82,13 @@ pub enum OutlinePhase {
 
 /// Six-slot feature-local outline bounds.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureOutline {
+pub(crate) struct FeatureOutline {
     /// Feature-history phase.
-    pub phase: OutlinePhase,
+    pub(crate) phase: OutlinePhase,
     /// Six scalar slots and their encoded bodies; undefined values remain `None`.
-    pub local_scalars: [DecodedField<Option<f64>>; 6],
+    pub(crate) local_scalars: [DecodedField<Option<f64>>; 6],
     /// Byte offset of the outline label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField<Option<f64>>; 6] {
@@ -117,14 +117,14 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
 
 /// Stored state of a solver scalar token.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ScalarLane {
+pub(crate) enum ScalarLane {
     Value(f64),
     DimensionDriven,
     Undefined,
 }
 
 impl ScalarLane {
-    pub fn value(self) -> Option<f64> {
+    pub(crate) fn value(self) -> Option<f64> {
         match self {
             Self::Value(value) => Some(value),
             Self::DimensionDriven | Self::Undefined => None,
@@ -134,7 +134,7 @@ impl ScalarLane {
 
 /// Solver-variable class carried by a compact integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum VariableType {
+pub(crate) enum VariableType {
     Dimension,
     U,
     V,
@@ -148,7 +148,7 @@ pub enum VariableType {
 
 /// Unclassified code, constructed only by normalizing the encoded integer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct UnknownVariableType(u32);
+pub(crate) struct UnknownVariableType(u32);
 
 impl From<u32> for VariableType {
     fn from(code: u32) -> Self {
@@ -167,7 +167,7 @@ impl From<u32> for VariableType {
 }
 
 impl VariableType {
-    pub fn code(self) -> u32 {
+    pub(crate) fn code(self) -> u32 {
         match self {
             Self::Dimension => 0,
             Self::U => 1,
@@ -184,33 +184,33 @@ impl VariableType {
 
 /// One positional solver-variable row from `var_arr`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureVariableRow {
+pub(crate) struct FeatureVariableRow {
     /// Variable class: `1` is section `u`, `2` is section `v`, `3` is radius.
-    pub variable_type: VariableType,
+    pub(crate) variable_type: VariableType,
     /// Point or solver-variable key.
-    pub key: u32,
+    pub(crate) key: u32,
     /// Solved value when the scalar token is defined inline.
-    pub value: ScalarLane,
+    pub(crate) value: ScalarLane,
     /// Exact encoded scalar body of the stored value.
-    pub value_body: Vec<u8>,
+    pub(crate) value_body: Vec<u8>,
     /// Pre-solve estimate when defined inline.
-    pub guess: ScalarLane,
+    pub(crate) guess: ScalarLane,
     /// Exact encoded scalar body of the pre-solve estimate.
-    pub guess_body: Vec<u8>,
+    pub(crate) guess_body: Vec<u8>,
     /// Stored solver-known flag.
-    pub known: Option<u32>,
+    pub(crate) known: Option<u32>,
     /// Stored solver homogeneity class.
-    pub homogeneity: Option<u32>,
+    pub(crate) homogeneity: Option<u32>,
     /// Solver unknown identifier from the third trailing compact field.
-    pub uvar_id: Option<u32>,
+    pub(crate) uvar_id: Option<u32>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One section-frame point joined from `var_arr` type-1/type-2 rows.
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSectionPoint {
+pub(crate) struct FeatureSectionPoint {
     /// Shared variable-row key.
     pub point_id: u32,
     /// Section `u` coordinate.
@@ -221,26 +221,26 @@ pub struct FeatureSectionPoint {
 
 /// Solved section-variable table from one feature definition.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureVariableTable {
+pub(crate) struct FeatureVariableTable {
     /// Count declared by the `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Entity-table reference following the opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Positional variable rows in stored order.
-    pub rows: Vec<FeatureVariableRow>,
+    pub(crate) rows: Vec<FeatureVariableRow>,
     /// Byte offset of the `var_arr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureVariableTable {
     /// Whether every row declared by the table decoded.
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok() == Some(self.rows.len())
     }
 
     /// Join unique coordinate rows by point identity.
     #[cfg(test)]
-    pub fn points(&self) -> Vec<FeatureSectionPoint> {
+    pub(crate) fn points(&self) -> Vec<FeatureSectionPoint> {
         let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
         for row in self
             .rows
@@ -274,7 +274,7 @@ impl FeatureVariableTable {
     }
 
     /// Reconcile repeated and complementary section-point rows by identity.
-    pub fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
+    pub(crate) fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
         let point_ids = self
             .rows
             .iter()
@@ -320,46 +320,46 @@ impl FeatureVariableTable {
 
 /// One positional solver-equation row from `eqtn_arr`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEquation {
+pub(crate) struct FeatureEquation {
     /// Equation identifier from the first positional field.
-    pub equation_id: u32,
+    pub(crate) equation_id: u32,
     /// Solver function identifier from the second positional field.
-    pub function_id: u32,
+    pub(crate) function_id: u32,
     /// Explicit argument-slot count, when the row uses the counted form.
-    pub explicit_argument_count: Option<u32>,
+    pub(crate) explicit_argument_count: Option<u32>,
     /// Argument slots in stored order. Expansion markers occupy their
     /// documented number of slots; `None` is the native null slot.
-    pub arguments: Vec<Option<u32>>,
+    pub(crate) arguments: Vec<Option<u32>>,
     /// Exact encoded argument body between the argument-count marker and the
     /// auxiliary marker.
-    pub arguments_body: Vec<u8>,
+    pub(crate) arguments_body: Vec<u8>,
     /// Exact encoded auxiliary field body.
-    pub auxiliary_body: Vec<u8>,
+    pub(crate) auxiliary_body: Vec<u8>,
     /// Exact row bytes, including the `e2` row terminator when present.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Solver-equation table from one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureEquationTable {
+pub(crate) struct FeatureEquationTable {
     /// Count declared by the `f8` opener. Its relationship to replay rows is
     /// retained without assuming whether it includes the prototype.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Entity-table reference following the opener, when present.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Exact named prototype body, including its row-class reference.
-    pub prototype_body: Vec<u8>,
+    pub(super) prototype_body: Vec<u8>,
     /// Positional equation rows in stored order.
-    pub rows: Vec<FeatureEquation>,
+    pub(crate) rows: Vec<FeatureEquation>,
     /// Byte offset of the `eqtn_arr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Defined positional segment family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FeatureSegmentKind {
+pub(crate) enum FeatureSegmentKind {
     /// Type `2` line segment with its endpoint IDs.
     Line([u32; 2]),
     /// Type `3` circular-arc segment with its endpoint IDs.
@@ -370,34 +370,34 @@ pub enum FeatureSegmentKind {
 
 /// One positional `segtab_ptr` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSegment {
+pub(crate) struct FeatureSegment {
     /// Segment family and its point identifiers.
-    pub kind: FeatureSegmentKind,
+    pub(crate) kind: FeatureSegmentKind,
     /// Three direction fields; control-range sentinels remain `None`.
-    pub directions: [Option<u32>; 3],
+    pub(crate) directions: [Option<u32>; 3],
     /// Arc center point ID, or `None` for the null sentinel.
-    pub center_id: Option<u32>,
+    pub(crate) center_id: Option<u32>,
     /// Arc orientation field.
-    pub arc_orientation: Option<u32>,
+    pub(crate) arc_orientation: Option<u32>,
     /// Vertical/horizontal constraint field.
-    pub vertical_horizontal: Option<u32>,
+    pub(crate) vertical_horizontal: Option<u32>,
     /// Radius reference field.
-    pub radius_ref: Option<u32>,
+    pub(crate) radius_ref: Option<u32>,
     /// Secondary radius reference field.
-    pub radius2_ref: Option<u32>,
+    pub(crate) radius2_ref: Option<u32>,
     /// External segment identifier used by the order table.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Exact positional row bytes from the optional type wrapper or family
     /// discriminator through the `e2` row close. Empty for a labeled
     /// prototype row.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureSegment {
     /// Endpoint slots into the section variable table. A point repeats its ID.
-    pub fn point_ids(&self) -> [u32; 2] {
+    pub(crate) fn point_ids(&self) -> [u32; 2] {
         match self.kind {
             FeatureSegmentKind::Line(points) | FeatureSegmentKind::Arc(points) => points,
             FeatureSegmentKind::Point(point) => [point; 2],
@@ -407,140 +407,140 @@ impl FeatureSegment {
 
 /// One circular type `10` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureCircleSegment {
+pub(crate) struct FeatureCircleSegment {
     /// Center point ID into the section variable table.
-    pub center_id: u32,
+    pub(crate) center_id: u32,
     /// Radius reference into the section solver namespace.
-    pub radius_ref: u32,
+    pub(crate) radius_ref: u32,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One point type `1` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeaturePointSegment {
+pub(crate) struct FeaturePointSegment {
     /// Point ID stored in the center-point field.
-    pub point_id: u32,
+    pub(crate) point_id: u32,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One centered construction-line type `47` `segtab_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureCenteredLineSegment {
+pub(crate) struct FeatureCenteredLineSegment {
     /// Center point reference stored by the section solver.
-    pub center_id: u32,
+    pub(crate) center_id: u32,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One type `25` section-reference line.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureReferenceLineSegment {
+pub(crate) struct FeatureReferenceLineSegment {
     /// Three stored direction fields.
-    pub directions: [Option<u32>; 3],
+    pub(crate) directions: [Option<u32>; 3],
     /// Optional endpoint IDs into the section variable table.
-    pub point_ids: [Option<u32>; 2],
+    pub(crate) point_ids: [Option<u32>; 2],
     /// Vertical/horizontal constraint field.
-    pub vertical_horizontal: Option<u32>,
+    pub(crate) vertical_horizontal: Option<u32>,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One type `12` bounded section curve.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureBoundedCurveSegment {
+pub(crate) struct FeatureBoundedCurveSegment {
     /// Three stored direction fields.
-    pub directions: [Option<u32>; 3],
+    pub(crate) directions: [Option<u32>; 3],
     /// Endpoint IDs into the section variable table.
-    pub point_ids: [u32; 2],
+    pub(crate) point_ids: [u32; 2],
     /// Stored center-point field.
-    pub center_id: Option<u32>,
+    pub(crate) center_id: Option<u32>,
     /// Stored arc-orientation field.
-    pub arc_orientation: Option<u32>,
+    pub(crate) arc_orientation: Option<u32>,
     /// Stored vertical/horizontal field.
-    pub vertical_horizontal: Option<u32>,
+    pub(crate) vertical_horizontal: Option<u32>,
     /// Stored radius-reference field.
-    pub radius_ref: Option<u32>,
+    pub(crate) radius_ref: Option<u32>,
     /// Stored secondary-radius-reference field.
-    pub radius2_ref: Option<u32>,
+    pub(crate) radius2_ref: Option<u32>,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One type `58` saved-conic section row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureConicSegment {
+pub(crate) struct FeatureConicSegment {
     /// Center point reference stored by the section solver.
-    pub center_id: u32,
+    pub(crate) center_id: u32,
     /// First coefficient reference stored by the section solver.
-    pub first_coefficient_ref: u32,
+    pub(crate) first_coefficient_ref: u32,
     /// Second coefficient reference stored by the section solver.
-    pub second_coefficient_ref: u32,
+    pub(crate) second_coefficient_ref: u32,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOpaqueSegment {
+pub(crate) struct FeatureOpaqueSegment {
     /// Stored segment-family discriminator.
-    pub kind: u32,
+    pub(crate) kind: u32,
     /// Three stored direction fields.
-    pub directions: [Option<u32>; 3],
+    pub(crate) directions: [Option<u32>; 3],
     /// Two stored point fields.
-    pub point_ids: [Option<u32>; 2],
+    pub(crate) point_ids: [Option<u32>; 2],
     /// Stored center-point field.
-    pub center_id: Option<u32>,
+    pub(crate) center_id: Option<u32>,
     /// Stored arc-orientation field.
-    pub arc_orientation: Option<u32>,
+    pub(crate) arc_orientation: Option<u32>,
     /// Stored vertical/horizontal field.
-    pub vertical_horizontal: Option<u32>,
+    pub(crate) vertical_horizontal: Option<u32>,
     /// Stored radius-reference field.
-    pub radius_ref: Option<u32>,
+    pub(crate) radius_ref: Option<u32>,
     /// Stored secondary-radius-reference field.
-    pub radius2_ref: Option<u32>,
+    pub(crate) radius2_ref: Option<u32>,
     /// External segment identifier used by section tables.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Exact positional row bytes from the optional type wrapper or family
     /// discriminator through the `e2` row close. Empty for a labeled
     /// prototype row.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Defining-sketch segment table from one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSegmentTable {
+pub(crate) struct FeatureSegmentTable {
     /// Count declared by the `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Whether the declared count includes an inherited prototype omitted from
     /// the positional replay body.
-    pub has_elided_prototype: bool,
+    pub(crate) has_elided_prototype: bool,
     /// Entity-table reference following the opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Source rows admitted by external identity across all segment families.
     pub(crate) rows: SegmentRows,
     /// Byte offset of the `segtab_ptr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureSegmentTable {
     /// Whether every row declared by the table decoded.
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
             == Some(usize::from(self.has_elided_prototype) + self.rows.len())
     }
@@ -554,7 +554,7 @@ impl FeatureSegmentTable {
     }
 
     /// Resolve a uniquely identified defining-sketch segment from a complete table.
-    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
+    pub(crate) fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
         self.is_complete().then_some(())?;
         self.unique_segment(external_id)
     }
@@ -562,7 +562,7 @@ impl FeatureSegmentTable {
 
 /// Solved/trimmed section entity family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrimEntityKind {
+pub(crate) enum TrimEntityKind {
     /// No center vertex: trimmed line.
     Line,
     /// Center vertex present: trimmed circular arc.
@@ -574,22 +574,22 @@ pub enum TrimEntityKind {
 
 /// One positional `ent_tab` replay row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureTrimEntity {
+pub(crate) struct FeatureTrimEntity {
     /// External ID matching a `segtab` row.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Entity mode field.
-    pub mode: Option<u32>,
+    pub(crate) mode: Option<u32>,
     /// Solved start and end vertex IDs.
-    pub vertices: [u32; 2],
+    pub(crate) vertices: [u32; 2],
     /// Trimmed entity geometry.
-    pub kind: TrimEntityKind,
+    pub(crate) kind: TrimEntityKind,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureTrimEntity {
     /// Solved center vertex identifier for an arc.
-    pub fn center_vertex(&self) -> Option<u32> {
+    pub(crate) fn center_vertex(&self) -> Option<u32> {
         match self.kind {
             TrimEntityKind::Line => None,
             TrimEntityKind::Arc { center_vertex } => Some(center_vertex),
@@ -599,59 +599,59 @@ impl FeatureTrimEntity {
 
 /// One stored hash bucket in a native trim table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureTrimBucket {
+pub(crate) struct FeatureTrimBucket {
     /// Zero-based bucket index.
-    pub index: u32,
+    pub(crate) index: u32,
     /// Number of entries declared by the bucket array opener.
-    pub declared_entry_count: u32,
+    pub(crate) declared_entry_count: u32,
     /// Number of structurally complete entries decoded within the bucket
     /// frame. Absent when the scan decodes more entries than the stored `u32`
     /// count can be compared against.
-    pub decoded_entry_count: Option<u32>,
+    pub(crate) decoded_entry_count: Option<u32>,
     /// Byte offset of the stored bucket index.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureTrimBucket {
     /// Whether every declared entry has one complete stored body.
-    pub fn is_complete(&self) -> bool {
+    pub(super) fn is_complete(&self) -> bool {
         self.decoded_entry_count == Some(self.declared_entry_count)
     }
 }
 
 /// Solved/trimmed entity graph for one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureTrimEntityTable {
+pub(crate) struct FeatureTrimEntityTable {
     /// Count declared by the table opener when present.
-    pub declared_count: Option<u32>,
+    pub(crate) declared_count: Option<u32>,
     /// Native table-class reference when present.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Native row-class reference when present.
-    pub entry_ref: Option<u32>,
+    pub(crate) entry_ref: Option<u32>,
     /// Explicit hash buckets decoded in stored order.
-    pub buckets: Vec<FeatureTrimBucket>,
+    pub(crate) buckets: Vec<FeatureTrimBucket>,
     /// Complete positional rows in stored order.
-    pub rows: Vec<FeatureTrimEntity>,
+    pub(crate) rows: Vec<FeatureTrimEntity>,
     /// Sorted external IDs present in the trimmed profile.
-    pub solved_external_ids: Vec<u32>,
+    pub(crate) solved_external_ids: Vec<u32>,
     /// Byte offset of the `ent_tab` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureTrimEntityTable {
     /// Whether every declared hash-bucket index was decoded in order.
-    pub fn has_complete_bucket_index_sequence(&self) -> bool {
+    fn has_complete_bucket_index_sequence(&self) -> bool {
         complete_bucket_index_sequence(self.declared_count, &self.buckets)
     }
 
     /// Whether every declared bucket and entry body is structurally complete.
-    pub fn has_complete_bucket_frame(&self) -> bool {
+    pub(crate) fn has_complete_bucket_frame(&self) -> bool {
         self.has_complete_bucket_index_sequence()
             && self.buckets.iter().all(FeatureTrimBucket::is_complete)
     }
 
     /// Whether each retained external entity identifier occurs once.
-    pub fn has_unique_external_ids(&self) -> bool {
+    pub(crate) fn has_unique_external_ids(&self) -> bool {
         let mut ids = BTreeSet::new();
         self.rows.iter().all(|row| ids.insert(row.external_id))
     }
@@ -659,42 +659,42 @@ impl FeatureTrimEntityTable {
 
 /// One solved trim vertex and the two trimmed entities incident to it.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureTrimVertex {
+pub(crate) struct FeatureTrimVertex {
     /// Vertex identifier shared with `ent_tab` endpoint and center fields.
-    pub vertex_id: u32,
+    pub(crate) vertex_id: u32,
     /// Distinct `ent_tab` external entity identifiers meeting at the vertex.
-    pub entities: Vec<u32>,
+    pub(crate) entities: Vec<u32>,
     /// Solved section-frame coordinates for a uniquely resolved carrier junction.
-    pub section_coordinates: Option<[f64; 2]>,
+    pub(crate) section_coordinates: Option<[f64; 2]>,
     /// Byte offset of the positional triple in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Solved trim-vertex adjacency table for one feature definition.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureTrimVertexTable {
+pub(crate) struct FeatureTrimVertexTable {
     /// Count declared by the table opener when present.
-    pub declared_count: Option<u32>,
+    pub(crate) declared_count: Option<u32>,
     /// Native table-class reference when present.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Native row-class reference when present.
-    pub entry_ref: Option<u32>,
+    pub(crate) entry_ref: Option<u32>,
     /// Explicit hash buckets decoded in stored order.
-    pub buckets: Vec<FeatureTrimBucket>,
+    pub(crate) buckets: Vec<FeatureTrimBucket>,
     /// Complete validated vertex rows in stored order.
-    pub rows: Vec<FeatureTrimVertex>,
+    pub(crate) rows: Vec<FeatureTrimVertex>,
     /// Byte offset of the `vert_tab` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureTrimVertexTable {
     /// Whether every declared hash-bucket index was decoded in order.
-    pub fn has_complete_bucket_index_sequence(&self) -> bool {
+    fn has_complete_bucket_index_sequence(&self) -> bool {
         complete_bucket_index_sequence(self.declared_count, &self.buckets)
     }
 
     /// Whether every declared bucket and entry body is structurally complete.
-    pub fn has_complete_bucket_frame(&self) -> bool {
+    pub(crate) fn has_complete_bucket_frame(&self) -> bool {
         self.has_complete_bucket_index_sequence()
             && self.buckets.iter().all(FeatureTrimBucket::is_complete)
     }
@@ -712,41 +712,41 @@ fn complete_bucket_index_sequence(
 
 /// One generated-entity ordering row from a gsec3d section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOrderRow {
+pub(crate) struct FeatureOrderRow {
     /// Section entity identifier matching a defining-sketch segment.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// One-based position in the feature's generated-entity table.
-    pub internal_id: u32,
+    pub(crate) internal_id: u32,
     /// Orientation and side flags stored for the generated entity.
-    pub bitmask: u32,
+    pub(crate) bitmask: u32,
     /// Byte offset of the positional triple in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Generated-entity ordering table for one gsec3d section.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureOrderTable {
+pub(crate) struct FeatureOrderTable {
     /// Count declared by the `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Whether `declared_count` includes a structural prototype outside `rows`.
-    pub has_prototype: bool,
+    pub(crate) has_prototype: bool,
     /// Entity-table class reference following the opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Complete positional triples in stored order.
-    pub rows: Vec<FeatureOrderRow>,
+    pub(crate) rows: Vec<FeatureOrderRow>,
     /// Byte offset of the `order_table` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureOrderTable {
     /// Whether every entry declared by the table opener was decoded.
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
             == Some(usize::from(self.has_prototype) + self.rows.len())
     }
 
     /// Resolve a generated-entity position to its section entity identifier.
-    pub fn external_id(&self, internal_id: u32) -> Option<u32> {
+    pub(crate) fn external_id(&self, internal_id: u32) -> Option<u32> {
         self.is_complete().then_some(())?;
         let mut matches = self
             .rows
@@ -764,7 +764,7 @@ impl FeatureOrderTable {
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
-    pub fn internal_id(&self, external_id: u32) -> Option<u32> {
+    pub(crate) fn internal_id(&self, external_id: u32) -> Option<u32> {
         self.is_complete().then_some(())?;
         let mut matches = self
             .rows
@@ -784,7 +784,7 @@ impl FeatureOrderTable {
 
 /// Defined value of a one-byte binary section flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryFlag {
+pub(crate) enum BinaryFlag {
     /// Stored byte `00`.
     Clear,
     /// Stored byte `01`.
@@ -803,62 +803,62 @@ impl BinaryFlag {
 
 /// Reference fields that orient a gsec3d sketch frame.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct FeatureSectionOrientation {
+pub(crate) struct FeatureSectionOrientation {
     /// Section-side flip.
-    pub section_flip: Option<BinaryFlag>,
+    pub(crate) section_flip: Option<BinaryFlag>,
     /// Orientation-reference type discriminator.
-    pub reference_type: Option<u32>,
+    pub(crate) reference_type: Option<u32>,
     /// Referenced sketch segment identifier.
-    pub segment_id: Option<u32>,
+    pub(crate) segment_id: Option<u32>,
     /// Referenced-plane flip.
-    pub reference_flip: Option<BinaryFlag>,
+    pub(crate) reference_flip: Option<BinaryFlag>,
 }
 
 /// One positional gsec3d reference-plane row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSectionReferencePlane {
+pub(crate) struct FeatureSectionReferencePlane {
     /// Row `plane_id` entity identifier.
-    pub plane_entity_id: u32,
+    pub(crate) plane_entity_id: u32,
     /// Row `ref_type` discriminator.
-    pub reference_type: Option<u32>,
+    pub(crate) reference_type: Option<u32>,
     /// Row `ext_ref_id` identifier.
-    pub external_reference_id: Option<u32>,
+    pub(crate) external_reference_id: Option<u32>,
     /// Row `seg_id` identifier.
-    pub segment_id: Option<u32>,
+    pub(crate) segment_id: Option<u32>,
     /// Row `sub_index` value.
-    pub sub_index: Option<u32>,
+    pub(crate) sub_index: Option<u32>,
     /// Row `flip_flag`.
-    pub reference_flip: Option<BinaryFlag>,
+    pub(crate) reference_flip: Option<BinaryFlag>,
 }
 
 /// Byte-backed gsec3d placement and ordering inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSection3d {
+pub(crate) struct FeatureSection3d {
     /// Sketch-plane entity identifier.
-    pub sketch_plane_entity_id: Option<u32>,
+    pub(crate) sketch_plane_entity_id: Option<u32>,
     /// Sketch-plane side flag.
-    pub sketch_plane_flip: Option<BinaryFlag>,
+    pub(crate) sketch_plane_flip: Option<BinaryFlag>,
     /// Named entity references or complete positional rows in stored order.
-    pub reference_planes: ReferencePlanes,
+    pub(crate) reference_planes: ReferencePlanes,
     /// Geometry identifier joining the reference plane to its datum surface.
-    pub reference_plane_datum_geometry_id: Option<u32>,
+    pub(crate) reference_plane_datum_geometry_id: Option<u32>,
     /// Singleton named-record orientation fields.
-    pub orientation: FeatureSectionOrientation,
+    pub(crate) orientation: FeatureSectionOrientation,
     /// Stored dimension identifiers in section order.
-    pub dimension_ids: Vec<u32>,
+    pub(crate) dimension_ids: Vec<u32>,
     /// Byte offset of the gsec3d record header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Reference-plane representation selected by the section layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReferencePlanes {
+pub(crate) enum ReferencePlanes {
     Named(Vec<u32>),
     Positional(Vec<FeatureSectionReferencePlane>),
 }
 
 impl ReferencePlanes {
-    pub fn entity_ids(&self) -> impl Iterator<Item = u32> + '_ {
+    pub(crate) fn entity_ids(&self) -> impl Iterator<Item = u32> + '_ {
         let (named, positional): (&[u32], &[FeatureSectionReferencePlane]) = match self {
             Self::Named(ids) => (ids, &[]),
             Self::Positional(rows) => (&[], rows),
@@ -872,7 +872,7 @@ impl ReferencePlanes {
 
 /// Interpretation of a stored feature-dimension value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DimensionUnit {
+pub(crate) enum DimensionUnit {
     /// Type `0x0a` angle value stored in radians.
     Radians,
     /// Linear dimension value stored in model millimeters.
@@ -883,33 +883,33 @@ pub enum DimensionUnit {
 
 /// One row from a dimension's nested `dim_ref` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDimensionReference {
+pub(crate) struct FeatureDimensionReference {
     /// Nullable item identifier stored by the reference row.
-    pub item_id: Option<u32>,
+    pub(crate) item_id: Option<u32>,
     /// Nullable sense selector stored by the reference row.
-    pub sense: Option<u32>,
+    pub(crate) sense: Option<u32>,
     /// Nullable two-slot point selector stored by the reference row.
-    pub point: [Option<u32>; 2],
+    pub(crate) point: [Option<u32>; 2],
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Nested `dim_ref` table carried by a named `dimtab_ptr` prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDimensionReferenceTable {
+pub(crate) struct FeatureDimensionReferenceTable {
     /// Count declared by the nested table's `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Entity-table class reference following the nested opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Named prototype and positional replay rows in stored order.
-    pub rows: Vec<FeatureDimensionReference>,
+    pub(crate) rows: Vec<FeatureDimensionReference>,
     /// Byte offset of the `dim_ref` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Primary dimension scalar state.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DimensionValue {
+pub(crate) enum DimensionValue {
     Resolved(f64),
     UnresolvedToken(Vec<u8>),
     Undefined,
@@ -926,14 +926,14 @@ impl DimensionValue {
         }
     }
 
-    pub fn resolved(&self) -> Option<f64> {
+    pub(crate) fn resolved(&self) -> Option<f64> {
         match self {
             Self::Resolved(value) => Some(*value),
             Self::UnresolvedToken(_) | Self::Undefined => None,
         }
     }
 
-    pub fn unresolved_token(&self) -> Option<&[u8]> {
+    pub(crate) fn unresolved_token(&self) -> Option<&[u8]> {
         match self {
             Self::UnresolvedToken(token) => Some(token),
             Self::Resolved(_) | Self::Undefined => None,
@@ -943,90 +943,90 @@ impl DimensionValue {
 
 /// One dimension record from a gsec2d `dimtab_ptr` table.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureDimension {
+pub(crate) struct FeatureDimension {
     /// Dimension type discriminator.
-    pub dimension_type: u32,
+    pub(crate) dimension_type: u32,
     /// Decoded primary scalar or unresolved state.
-    pub value: DimensionValue,
+    pub(crate) value: DimensionValue,
     /// Exact encoded scalar body of the primary value.
-    pub value_body: Vec<u8>,
+    pub(crate) value_body: Vec<u8>,
     /// Stored direction byte.
-    pub direction_byte: u8,
+    pub(crate) direction_byte: u8,
     /// Decoded auxiliary scalar, when its prefix is defined.
-    pub auxiliary_value: Option<f64>,
+    pub(crate) auxiliary_value: Option<f64>,
     /// Exact encoded scalar body of the auxiliary value.
-    pub auxiliary_body: Vec<u8>,
+    pub(crate) auxiliary_body: Vec<u8>,
     /// External dimension identifier.
-    pub external_id: u32,
+    pub(crate) external_id: u32,
     /// Nested named-prototype dimension references, when present.
-    pub references: Option<FeatureDimensionReferenceTable>,
+    pub(crate) references: Option<FeatureDimensionReferenceTable>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureDimension {
-    pub fn unit(&self) -> DimensionUnit {
+    pub(crate) fn unit(&self) -> DimensionUnit {
         dimension_unit(self.dimension_type)
     }
 }
 
 /// Dimension table for one gsec2d section.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureDimensionTable {
+pub(crate) struct FeatureDimensionTable {
     /// Count declared by the `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Entity-table class reference following the opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Labeled prototype followed by positional replay rows.
-    pub rows: Vec<FeatureDimension>,
+    pub(crate) rows: Vec<FeatureDimension>,
     /// Byte offset of the `dimtab_ptr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One positional constraint-relation row from `relat_ptr`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRelation {
+pub(crate) struct FeatureRelation {
     /// Relation identifier from the first positional field.
-    pub relation_id: u32,
+    pub(crate) relation_id: u32,
     /// Stored `used` field from the second positional field.
-    pub used: u32,
+    pub(crate) used: u32,
     /// Exact encoded `a`, `b`, and `c` operand-vector block.
-    pub operands: Vec<u8>,
+    pub(crate) operands: Vec<u8>,
     /// Decoded four-slot `a`, `b`, and `c` operand vectors.
-    pub operand_vectors: Option<[[Option<u32>; 4]; 3]>,
+    pub(crate) operand_vectors: Option<[[Option<u32>; 4]; 3]>,
     /// Stored relation sign selector.
-    pub sign: u32,
+    pub(crate) sign: u32,
     /// Stored dimension selector.
-    pub dimension_id: u32,
+    pub(crate) dimension_id: u32,
     /// Stored relation-type discriminator.
-    pub relation_type: u32,
+    pub(crate) relation_type: u32,
     /// Complete positional fields before the `e2` row terminator.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the positional row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Counted `relat_ptr` constraint-relation table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRelationTable {
+pub(crate) struct FeatureRelationTable {
     /// Allocation count declared by the table's `f8` opener. One is the empty
     /// table form; larger counts include two structural entries.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Relation entity-class reference following the opener.
-    pub entity_ref: Option<u32>,
+    pub(crate) entity_ref: Option<u32>,
     /// Complete positional relation rows in stored order.
-    pub rows: Vec<FeatureRelation>,
+    pub(crate) rows: Vec<FeatureRelation>,
     /// Section-entity incidence records used by solver equations.
-    pub skamps: Option<SolverSubtable<FeatureSkamp>>,
+    pub(crate) skamps: Option<SolverSubtable<FeatureSkamp>>,
     /// Joins between relation, equation, and incidence identifiers.
-    pub triples: Option<SolverSubtable<FeatureRelationTriple>>,
+    pub(crate) triples: Option<SolverSubtable<FeatureRelationTriple>>,
     /// Byte offset of the `relat_ptr` label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// A solver table declaration with retained rows, or rows with no decoded declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SolverSubtable<T> {
+pub(crate) enum SolverSubtable<T> {
     Declared {
         header: FeatureSolverTableHeader,
         rows: Vec<T>,
@@ -1036,10 +1036,10 @@ pub enum SolverSubtable<T> {
 
 /// Retained rows without a decoded table declaration. The collection is nonempty.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NonEmptySolverRows<T>(Vec<T>);
+pub(crate) struct NonEmptySolverRows<T>(Vec<T>);
 
 impl<T> SolverSubtable<T> {
-    pub fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
+    fn from_parts(header: Option<FeatureSolverTableHeader>, rows: Vec<T>) -> Option<Self> {
         match header {
             Some(header) => Some(Self::Declared { header, rows }),
             None if rows.is_empty() => None,
@@ -1047,7 +1047,7 @@ impl<T> SolverSubtable<T> {
         }
     }
 
-    pub fn header(&self) -> Option<&FeatureSolverTableHeader> {
+    pub(crate) fn header(&self) -> Option<&FeatureSolverTableHeader> {
         match self {
             Self::Declared { header, .. } => Some(header),
             Self::Unframed(_) => None,
@@ -1062,7 +1062,7 @@ impl<T> SolverSubtable<T> {
         }
     }
 
-    pub fn rows(&self) -> &[T] {
+    fn rows(&self) -> &[T] {
         match self {
             Self::Declared { rows, .. } => rows,
             Self::Unframed(rows) => &rows.0,
@@ -1077,7 +1077,7 @@ impl<T> SolverSubtable<T> {
         }
     }
 
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         match self {
             Self::Declared { header, rows } => header.declared_rows() == rows.len(),
             Self::Unframed(_) => false,
@@ -1086,7 +1086,7 @@ impl<T> SolverSubtable<T> {
 
     /// Declared rows that did not decode. Rows decoded past the declaration are
     /// an over-run, not a shortfall, and `is_complete` reports that state.
-    pub fn missing_rows(&self) -> usize {
+    pub(crate) fn missing_rows(&self) -> usize {
         match self {
             Self::Declared { header, rows } => {
                 let declared = header.declared_rows();
@@ -1138,24 +1138,24 @@ impl<T: HasOffset> SolverSubtable<T> {
 }
 
 impl FeatureRelationTable {
-    pub fn skamps(&self) -> &[FeatureSkamp] {
+    pub(crate) fn skamps(&self) -> &[FeatureSkamp] {
         self.skamps.as_ref().map_or(&[], SolverSubtable::rows)
     }
 
-    pub fn triples(&self) -> &[FeatureRelationTriple] {
+    pub(crate) fn triples(&self) -> &[FeatureRelationTriple] {
         self.triples.as_ref().map_or(&[], SolverSubtable::rows)
     }
 }
 
 /// Header identity for a counted solver subtable.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSolverTableHeader {
+pub(crate) struct FeatureSolverTableHeader {
     /// Count declared by the table's `f8` opener.
-    pub declared_count: u32,
+    pub(crate) declared_count: u32,
     /// Table-class reference following the count.
-    pub entity_ref: u32,
+    pub(crate) entity_ref: u32,
     /// Byte offset of the table label or positional array opener.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// [`FeatureSolverTableHeader::declared_rows`] widens the stored 32-bit
@@ -1169,160 +1169,160 @@ impl FeatureSolverTableHeader {
     /// `declared_count` is the `u32` the `f8` opener stored, which is what the
     /// native record reproduces; the module assertion above proves the
     /// widening exact, so this states no refusal.
-    pub fn declared_rows(&self) -> usize {
+    fn declared_rows(&self) -> usize {
         self.declared_count as usize
     }
 }
 
 /// One entity incidence within a section solver `skamp_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSkampItem {
+pub(crate) struct FeatureSkampItem {
     /// External section-entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Stored endpoint or locus selector.
-    pub sense: u32,
+    pub(crate) sense: u32,
 }
 
 /// One counted section solver `skamp_ptr` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSkamp {
+pub(crate) struct FeatureSkamp {
     /// Incidence identifier referenced by `triples_ptr`.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Stored incidence family.
-    pub kind: u32,
+    pub(crate) kind: u32,
     /// Stored flags.
-    pub flags: u32,
+    pub(crate) flags: u32,
     /// Stored solver status.
-    pub status: u32,
+    pub(crate) status: u32,
     /// Counted entity incidences in stored order.
-    pub items: Vec<FeatureSkampItem>,
+    pub(crate) items: Vec<FeatureSkampItem>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One `triples_ptr` join between solver namespaces.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRelationTriple {
+pub(crate) struct FeatureRelationTriple {
     /// Relation identifier, or the native null sentinel.
-    pub relation_id: Option<u32>,
+    pub(crate) relation_id: Option<u32>,
     /// Equation identifier, or the native null sentinel.
-    pub equation_id: Option<u32>,
+    pub(crate) equation_id: Option<u32>,
     /// Incidence identifier, or the native null sentinel.
-    pub skamp_id: Option<u32>,
+    pub(crate) skamp_id: Option<u32>,
     /// Byte offset of the row in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One solved line retained in feature-definition section coordinates.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedLine {
+pub(crate) struct FeatureSavedLine {
     /// Saved-section entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Entity references preceding or embedded in the record.
-    pub references: Vec<u32>,
+    pub(crate) references: Vec<u32>,
     /// Five-byte `eb` attribute payloads in stored order.
-    pub attributes: Vec<[u8; 5]>,
+    pub(crate) attributes: Vec<[u8; 5]>,
     /// Two three-dimensional endpoints in the section sketch frame.
-    pub endpoints: [[Option<f64>; 3]; 2],
+    pub(crate) endpoints: [[Option<f64>; 3]; 2],
     /// Exact row bytes through the final owned token, excluding the structural boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the record preamble in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One solved circular arc retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedArc {
+pub(crate) struct FeatureSavedArc {
     /// Saved-section entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Arc center in the section sketch frame.
-    pub center: [Option<f64>; 3],
+    pub(crate) center: [Option<f64>; 3],
     /// Arc radius.
-    pub radius: Option<f64>,
+    pub(crate) radius: Option<f64>,
     /// Trimmed arc endpoints in the section sketch frame.
-    pub endpoints: [[Option<f64>; 3]; 2],
+    pub(crate) endpoints: [[Option<f64>; 3]; 2],
     /// Start and end curve parameters.
-    pub parameters: [Option<f64>; 2],
+    pub(crate) parameters: [Option<f64>; 2],
     /// Exact entity-body or positional-row bytes, excluding the structural boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One solved circle retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedCircle {
+pub(crate) struct FeatureSavedCircle {
     /// Saved-section entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Circle center in the section sketch frame.
-    pub center: [Option<f64>; 3],
+    pub(crate) center: [Option<f64>; 3],
     /// Circle radius.
-    pub radius: Option<f64>,
+    pub(crate) radius: Option<f64>,
     /// Exact entity-body bytes, excluding the following entity boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One solved conic retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedConic {
+pub(crate) struct FeatureSavedConic {
     /// Saved-section entity identifier.
-    pub entity_id: u32,
+    pub(crate) entity_id: u32,
     /// Two stored endpoint triples.
-    pub endpoints: [[Option<f64>; 3]; 2],
+    pub(crate) endpoints: [[Option<f64>; 3]; 2],
     /// Start and end conic parameters.
-    pub parameters: [Option<f64>; 2],
+    pub(crate) parameters: [Option<f64>; 2],
     /// Semi-axis coefficients.
-    pub coefficients: [Option<f64>; 2],
+    pub(crate) coefficients: [Option<f64>; 2],
     /// Two in-plane axes, positive normal, and origin.
-    pub local_system: Option<[f64; 12]>,
+    pub(crate) local_system: Option<[f64; 12]>,
     /// Exact entity-body bytes, excluding the following entity boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// A decoded field and its complete encoded value bytes.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DecodedField<T> {
-    pub value: T,
-    pub body: Vec<u8>,
+pub(crate) struct DecodedField<T> {
+    pub(crate) value: T,
+    pub(crate) body: Vec<u8>,
 }
 
 /// One saved interpolation spline retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedSpline {
+pub(crate) struct FeatureSavedSpline {
     /// Saved-section entity identifier, when stored.
-    pub entity_id: Option<u32>,
+    pub(crate) entity_id: Option<u32>,
     /// Declared interpolation-point count, when its extent is valid.
-    pub declared_point_count: Option<u32>,
+    pub(crate) declared_point_count: Option<u32>,
     /// Complete interpolation-point prefix in stored parameter order.
-    pub interpolation_points: Vec<[f64; 3]>,
+    pub(crate) interpolation_points: Vec<[f64; 3]>,
     /// Exact `i_pnts` value bytes through the last complete interpolation point.
-    pub interpolation_points_body: Vec<u8>,
+    pub(crate) interpolation_points_body: Vec<u8>,
     /// Complete endpoint tangent triples and `end_tangts` bytes with the array wrapper.
-    pub endpoint_tangents: Option<DecodedField<[[f64; 3]; 2]>>,
+    pub(crate) endpoint_tangents: Option<DecodedField<[[f64; 3]; 2]>>,
     /// Complete interpolation parameters and `params` bytes with the array wrapper.
-    pub parameters: Option<DecodedField<Vec<f64>>>,
+    pub(crate) parameters: Option<DecodedField<Vec<f64>>>,
     /// Byte offset of the entity label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One saved placeholder entity without analytic geometry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureSavedDummy {
+pub(crate) struct FeatureSavedDummy {
     /// Saved-section entity identifier, when stored.
-    pub entity_id: Option<u32>,
+    pub(crate) entity_id: Option<u32>,
     /// Exact entity-body bytes, excluding the following entity boundary.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Solved saved-section entity with kind-specific valid fields.
 #[derive(Debug, Clone, PartialEq)]
-pub enum FeatureSavedEntity {
+pub(crate) enum FeatureSavedEntity {
     /// Saved straight-line entity.
     Line(FeatureSavedLine),
     /// Saved circular-arc entity.
@@ -1339,49 +1339,49 @@ pub enum FeatureSavedEntity {
 
 /// Solved entity table stored below `p_saved_result`.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSavedSection {
+pub(crate) struct FeatureSavedSection {
     /// Solved entities in stored table order.
-    pub entities: Vec<FeatureSavedEntity>,
+    pub(crate) entities: Vec<FeatureSavedEntity>,
     /// Byte offset of the `p_saved_result` record header in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureDefinition {
+pub(crate) struct FeatureDefinition {
     /// Parsed definition identity and any established canonical owner.
-    pub identity: DefinitionIdentity,
+    pub(crate) identity: DefinitionIdentity,
     /// Exact record bytes through the next feature definition or section end.
-    pub body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
     /// Definition-space local-system and transform fields.
-    pub parameter_frames: Vec<FeatureParameterFrame>,
+    pub(crate) parameter_frames: Vec<FeatureParameterFrame>,
     /// Feature-local outline records in history order.
-    pub outlines: Vec<FeatureOutline>,
+    pub(crate) outlines: Vec<FeatureOutline>,
     /// Section solver-variable table, when present and structurally valid.
-    pub variables: Option<FeatureVariableTable>,
+    pub(crate) variables: Option<FeatureVariableTable>,
     /// Defining-sketch segment table, when present and structurally valid.
-    pub segments: Option<FeatureSegmentTable>,
+    pub(crate) segments: Option<FeatureSegmentTable>,
     /// Solved/trimmed entity graph, when present and structurally valid.
-    pub trim_entities: Option<FeatureTrimEntityTable>,
+    pub(crate) trim_entities: Option<FeatureTrimEntityTable>,
     /// Solved trim-vertex adjacency, when present and structurally valid.
-    pub trim_vertices: Option<FeatureTrimVertexTable>,
+    pub(crate) trim_vertices: Option<FeatureTrimVertexTable>,
     /// gsec3d generated-entity ordering, when present and structurally valid.
-    pub order_table: Option<FeatureOrderTable>,
+    pub(crate) order_table: Option<FeatureOrderTable>,
     /// gsec3d placement and ordering inputs, when present.
-    pub section_3d: Option<FeatureSection3d>,
+    pub(crate) section_3d: Option<FeatureSection3d>,
     /// gsec2d dimension table, when present and structurally valid.
-    pub dimensions: Option<FeatureDimensionTable>,
+    pub(crate) dimensions: Option<FeatureDimensionTable>,
     /// gsec2d constraint-relation table, when present and structurally valid.
-    pub relations: Option<FeatureRelationTable>,
+    pub(crate) relations: Option<FeatureRelationTable>,
     /// Solved saved-section entities, when present and structurally valid.
-    pub saved_section: Option<FeatureSavedSection>,
+    pub(crate) saved_section: Option<FeatureSavedSection>,
     /// Byte offset of the record name in the original stream.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 /// Definition naming before and after a join selects the owner as its identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DefinitionIdentity {
+pub(crate) enum DefinitionIdentity {
     /// A recorded or inherited identifier, with ownership independent of its name.
     Parsed {
         schema_id: Option<NonZeroU32>,
@@ -1396,7 +1396,7 @@ pub enum DefinitionIdentity {
 
 impl DefinitionIdentity {
     /// Numeric record identity. Anonymous source definitions retain zero on the wire.
-    pub fn id(self) -> u32 {
+    pub(crate) fn id(self) -> u32 {
         match self {
             Self::Parsed { schema_id, .. } => schema_id.map_or(0, NonZeroU32::get),
             Self::BoundOwner {
@@ -1405,13 +1405,13 @@ impl DefinitionIdentity {
         }
     }
 
-    pub fn schema_id(self) -> Option<NonZeroU32> {
+    pub(crate) fn schema_id(self) -> Option<NonZeroU32> {
         match self {
             Self::Parsed { schema_id, .. } | Self::BoundOwner { schema_id, .. } => schema_id,
         }
     }
 
-    pub fn owner_feature_id(self) -> Option<u32> {
+    pub(crate) fn owner_feature_id(self) -> Option<u32> {
         match self {
             Self::Parsed {
                 owner_feature_id, ..
@@ -1478,7 +1478,7 @@ fn unresolved_variable_guess_end(payload: &[u8], offset: usize, end: usize) -> O
     suffixes.next().is_none().then_some(suffix)
 }
 
-pub(crate) fn decode_variable_scalar(
+pub(super) fn decode_variable_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -1570,7 +1570,7 @@ pub(crate) fn decode_variable_scalar(
         })
 }
 
-pub(crate) fn decode_section_coordinate_scalar(
+pub(super) fn decode_section_coordinate_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -1628,7 +1628,7 @@ fn decode_variable_guess(
     decoded
 }
 
-pub(crate) fn variable_table(
+pub(super) fn variable_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -1746,7 +1746,7 @@ pub(crate) fn variable_table(
     })
 }
 
-pub(crate) fn positional_variable_table(
+pub(super) fn positional_variable_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -1984,7 +1984,11 @@ fn equation_arguments(
 
 /// Decode the structurally framed `eqtn_arr` solver table in one bounded
 /// feature definition.
-pub fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureEquationTable> {
+pub(crate) fn equation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureEquationTable> {
     if start > end || end > payload.len() {
         return None;
     }
@@ -2100,11 +2104,13 @@ pub fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<Featur
 
 /// Decode instantiated placement-instruction rows from one bounded feature
 /// definition.
-pub fn placement_instructions(definition: &FeatureDefinition) -> Vec<FeaturePlacementInstruction> {
+pub(crate) fn placement_instructions(
+    definition: &FeatureDefinition,
+) -> Vec<FeaturePlacementInstruction> {
     placement_instruction_rows(&definition.body, definition.offset)
 }
 
-pub(crate) fn placement_instruction_rows(
+pub(super) fn placement_instruction_rows(
     payload: &[u8],
     definition_offset: usize,
 ) -> Vec<FeaturePlacementInstruction> {
@@ -2166,7 +2172,7 @@ pub(crate) fn placement_instruction_rows(
     rows
 }
 
-pub(crate) fn segment_table(
+pub(super) fn segment_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -2182,7 +2188,7 @@ pub(crate) fn segment_table(
     segment_table_body(payload, table, cursor, end, PrototypeRow::Present)
 }
 
-pub(crate) fn positional_segment_table(
+pub(super) fn positional_segment_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -2198,14 +2204,14 @@ pub(crate) fn positional_segment_table(
 
 /// Whether a segment table's declared count includes an elided prototype row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PrototypeRow {
+pub(super) enum PrototypeRow {
     /// The first declared row is elided from the body.
     Elided,
     /// Every declared row is present in the body.
     Present,
 }
 
-pub(crate) fn segment_table_body(
+pub(super) fn segment_table_body(
     payload: &[u8],
     table: usize,
     mut cursor: usize,
@@ -2583,33 +2589,33 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TrimTableClasses {
-    pub(crate) table: u32,
-    pub(crate) bucket: u32,
-    pub(crate) entry: u32,
+pub(super) struct TrimTableClasses {
+    pub(super) table: u32,
+    pub(super) bucket: u32,
+    pub(super) entry: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TrimTableHeader {
-    pub(crate) declared_count: u32,
-    pub(crate) classes: TrimTableClasses,
+pub(super) struct TrimTableHeader {
+    pub(super) declared_count: u32,
+    pub(super) classes: TrimTableClasses,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TrimEntryKind {
+pub(super) enum TrimEntryKind {
     Entity,
     Vertex,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TrimBucketStart {
-    pub(crate) index: u32,
-    pub(crate) declared_entry_count: u32,
-    pub(crate) offset: usize,
-    pub(crate) body_start: usize,
+struct TrimBucketStart {
+    index: u32,
+    declared_entry_count: u32,
+    offset: usize,
+    body_start: usize,
 }
 
-pub(crate) fn trim_buckets(
+pub(super) fn trim_buckets(
     payload: &[u8],
     table: usize,
     end: usize,
@@ -2805,7 +2811,7 @@ fn complete_trim_entity_entry(payload: &[u8], offset: usize, end: usize) -> bool
     cursor < end && payload.get(cursor) == Some(&0)
 }
 
-pub(crate) fn trim_vertex_entry(
+pub(super) fn trim_vertex_entry(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -2940,7 +2946,7 @@ fn named_trim_vertex_prototype_complete(
     })
 }
 
-pub(crate) fn trim_table_header(
+pub(super) fn trim_table_header(
     payload: &[u8],
     label: &[u8],
     start: usize,
@@ -3019,7 +3025,7 @@ fn positional_table_region(
     Some((table, declared_count, rows_start, region_end))
 }
 
-pub(crate) fn positional_trim_entity_table(
+pub(super) fn positional_trim_entity_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3223,7 +3229,7 @@ fn trim_vertex_table(
     })
 }
 
-pub(crate) fn positional_trim_vertex_table(
+pub(super) fn positional_trim_vertex_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3560,7 +3566,7 @@ fn trim_circle_circle_intersection(
         .then_some(coordinate)
 }
 
-pub(crate) fn entity_intersection(
+pub(super) fn entity_intersection(
     entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
@@ -3651,7 +3657,7 @@ pub(crate) fn entity_intersection(
         .then_some(first)
 }
 
-pub(crate) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
+pub(super) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
     let table = find_bytes(payload, b"order_table\0", start, end)?;
     let mut cursor = table + b"order_table\0".len();
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
@@ -3740,7 +3746,7 @@ pub(crate) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<Fe
     })
 }
 
-pub(crate) fn positional_order_table(
+pub(super) fn positional_order_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3941,7 +3947,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     })
 }
 
-pub(crate) fn positional_section_3d(
+pub(super) fn positional_section_3d(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4076,7 +4082,7 @@ pub(crate) fn positional_section_3d(
     Some(result)
 }
 
-pub(crate) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
+pub(super) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
     match dimension_type {
         0x0a => DimensionUnit::Radians,
         0x01..=0x05 => DimensionUnit::Millimeters,
@@ -4270,7 +4276,7 @@ fn labeled_dimension(
     })
 }
 
-pub(crate) fn positional_dimension(
+pub(super) fn positional_dimension(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4311,7 +4317,7 @@ pub(crate) fn positional_dimension(
     })
 }
 
-pub(crate) fn dimension_table(
+pub(super) fn dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4377,7 +4383,7 @@ pub(crate) fn dimension_table(
     })
 }
 
-pub(crate) fn positional_dimension_table(
+pub(super) fn positional_dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4432,7 +4438,7 @@ pub(crate) fn positional_dimension_table(
     })
 }
 
-pub(crate) fn self_described_positional_dimension_table(
+pub(super) fn self_described_positional_dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4475,7 +4481,7 @@ pub(crate) fn self_described_positional_dimension_table(
     Some(candidate.clone())
 }
 
-pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+pub(super) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
         return Vec::new();
     };
@@ -4663,7 +4669,7 @@ fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> 
         .map(|(class, _)| class)
 }
 
-pub(crate) fn named_solver_table_header(
+pub(super) fn named_solver_table_header(
     payload: &[u8],
     label: &[u8],
     start: usize,
@@ -4758,7 +4764,7 @@ fn consume_positional_separator(
     .then_some(cursor + length)
 }
 
-pub(crate) fn positional_feature_skamps(
+pub(super) fn positional_feature_skamps(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5029,7 +5035,7 @@ fn positional_skamp_following_table_header(
     (after_row_class <= end).then_some(())
 }
 
-pub(crate) fn feature_relation_triples(
+pub(super) fn feature_relation_triples(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5095,7 +5101,7 @@ pub(crate) fn feature_relation_triples(
     rows
 }
 
-pub(crate) fn positional_relation_triples(
+pub(super) fn positional_relation_triples(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5189,7 +5195,7 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
     chunks.next().is_none().then_some(result)
 }
 
-pub(crate) fn relation_table(
+pub(super) fn relation_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5341,7 +5347,7 @@ fn positional_relation_rows(
     rows
 }
 
-pub(crate) fn positional_relation_table(
+pub(super) fn positional_relation_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5391,7 +5397,7 @@ pub(crate) fn positional_relation_table(
     })
 }
 
-pub(crate) fn saved_section_scalar(
+pub(super) fn saved_section_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -5661,7 +5667,7 @@ fn saved_line_block(
     entities
 }
 
-pub(crate) fn saved_line_entities(
+pub(super) fn saved_line_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5728,7 +5734,7 @@ fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     named_compact_int(payload, b"\xe0\x01id\0", start, end)
 }
 
-pub(crate) fn saved_arc_scalar(
+pub(super) fn saved_arc_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -5792,7 +5798,7 @@ pub(crate) fn saved_arc_scalar(
     decoded
 }
 
-pub(crate) fn saved_positional_generated_entities(
+pub(super) fn saved_positional_generated_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5983,7 +5989,7 @@ fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
         .unwrap_or(row_end)
 }
 
-pub(crate) fn saved_circular_entities(
+pub(super) fn saved_circular_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6060,7 +6066,7 @@ pub(crate) fn saved_circular_entities(
     entities
 }
 
-pub(crate) fn saved_conic_entities(
+pub(super) fn saved_conic_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6148,7 +6154,7 @@ fn admitted_interpolation_point_count(declared: u32, remaining: usize) -> Option
     (declared.checked_mul(3)? <= remaining).then_some(declared)
 }
 
-pub(crate) fn saved_spline_entities(
+pub(super) fn saved_spline_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6263,7 +6269,7 @@ pub(crate) fn saved_spline_entities(
     entities
 }
 
-pub(crate) fn saved_spline_parameter(
+pub(super) fn saved_spline_parameter(
     payload: &[u8],
     offset: usize,
     cache: &scalar::ScalarCache,
@@ -6302,7 +6308,7 @@ pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     }
 }
 
-pub(crate) fn saved_section(
+pub(super) fn saved_section(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6333,7 +6339,7 @@ pub(crate) fn saved_section(
     })
 }
 
-pub(crate) fn positional_saved_section(
+pub(super) fn positional_saved_section(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6352,7 +6358,7 @@ pub(crate) fn positional_saved_section(
 /// Decode full-turn termination stored inside an owned DEPDB section
 /// definition. The owning current-state recipe must independently select a
 /// rotational sweep.
-pub fn definition_revolution_extents(
+pub(crate) fn definition_revolution_extents(
     definitions: &[FeatureDefinition],
     operations: &[FeatureOperation],
 ) -> Vec<FeatureRevolutionExtent> {
@@ -6390,7 +6396,7 @@ pub fn definition_revolution_extents(
     result
 }
 
-pub(crate) fn definitions_in_ranges(
+pub(super) fn definitions_in_ranges(
     payload: &[u8],
     starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
 ) -> Vec<FeatureDefinition> {
@@ -6766,7 +6772,7 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     let mut starts = definition_starts(payload);
     let retained_offsets = starts
         .iter()
@@ -6791,7 +6797,7 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
 /// Decode labelled and positional feature definitions embedded directly in a
 /// DEPDB section. A labelled `gsec2d_ptr` definition supplies the table schema
 /// for its following positional `S2D` instances.
-pub fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     let mut starts = definition_starts(payload);
     starts.extend(depdb_gsec2d_starts(payload));
     let replay_markers = s2d_replay_starts(payload);
@@ -6857,7 +6863,7 @@ fn claimed_s2d_replay_markers(
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
 /// owner. Ownership remains absent unless an independent entity join proves it.
-pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     let mut starts = definition_starts(payload);
     let replay_markers = s2d_replay_starts(payload);
     let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
@@ -6881,7 +6887,7 @@ pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
 /// The sole `gsec2d_ptr` starts the range, so no contextual owner pair occurs inside it.
-pub fn depdb_section_definition(
+pub(crate) fn depdb_section_definition(
     payload: &[u8],
     owner_feature_id: Option<u32>,
 ) -> Option<FeatureDefinition> {
@@ -6921,7 +6927,7 @@ pub fn depdb_section_definition(
 
 /// Bind an owner omitted by `feat_id` through the section's unique generated
 /// datum entry. An explicit canonical `feat_id` remains authoritative.
-pub fn bind_definition_owners(
+pub(crate) fn bind_definition_owners(
     definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
 ) -> Vec<FeatureDefinition> {
@@ -6965,7 +6971,7 @@ pub fn bind_definition_owners(
 /// Bind instantiated saved sections through the exact set of trimmed section
 /// entities copied into the owning feature's generated-entity table. Schema
 /// identifiers remain unchanged; only the omitted canonical owner is filled.
-pub fn bind_trimmed_definition_owners(
+pub(crate) fn bind_trimmed_definition_owners(
     definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
 ) -> Vec<FeatureDefinition> {
@@ -7024,7 +7030,7 @@ pub fn bind_trimmed_definition_owners(
 /// owning generated-entity table. A uniquely keyed trimmed-entity roster is
 /// exact; otherwise the generated IDs must be a nonempty subset of the order
 /// table. Empty and non-unique joins remain unbound.
-pub fn bind_replay_definition_owners(
+pub(crate) fn bind_replay_definition_owners(
     definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
@@ -7119,7 +7125,7 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
 /// datum, and sketch-plane identifier chain. Repeated definitions for one
 /// plane remain unowned because the current regeneration snapshot is not
 /// established.
-pub fn bind_section_owners(
+pub(crate) fn bind_section_owners(
     definitions: Vec<FeatureDefinition>,
     operations: &[FeatureOperation],
     section_ranges: &[(usize, usize)],

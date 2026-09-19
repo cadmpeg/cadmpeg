@@ -54,7 +54,7 @@ fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGe
     Some(geometries)
 }
 
-pub fn counterbore_dimensions(
+pub(in crate::decode) fn counterbore_dimensions(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -121,7 +121,7 @@ pub fn counterbore_dimensions(
 
 /// Check whether a cylinder radius is one of the two radii declared by a
 /// complete counterbore dimension tuple.
-pub fn counterbore_dimension_tuple_matches_radius(
+pub(in crate::decode) fn counterbore_dimension_tuple_matches_radius(
     (bore_diameter, counterbore_diameter, _): (f64, f64, f64),
     radius: f64,
 ) -> bool {
@@ -130,7 +130,7 @@ pub fn counterbore_dimension_tuple_matches_radius(
         .any(|expected| approximately_equal(radius, expected))
 }
 
-pub fn counterbore_dimension_values<'a>(
+pub(in crate::decode) fn counterbore_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     generated_radii: &[f64],
 ) -> Option<(f64, f64, f64)> {
@@ -187,7 +187,7 @@ pub fn counterbore_dimension_values<'a>(
         .then_some(first)
 }
 
-pub fn counterbore_envelope_dimension_values<'a>(
+pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
     source_spans: &[Option<[[Option<f64>; 2]; 3]>],
 ) -> Option<(f64, f64, f64)> {
@@ -259,7 +259,7 @@ pub fn counterbore_envelope_dimension_values<'a>(
     unique_counterbore_dimension_tuple(&candidates)
 }
 
-pub fn counterbore_unenveloped_dimension_values<'a>(
+pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::FeatureDimensionTable>,
 ) -> Option<(f64, f64, f64)> {
     let candidates = tables
@@ -271,7 +271,7 @@ pub fn counterbore_unenveloped_dimension_values<'a>(
     unique_counterbore_dimension_tuple(&candidates)
 }
 
-pub fn counterbore_envelope_dimension_tuple(
+fn counterbore_envelope_dimension_tuple(
     table: &crate::feature::FeatureDimensionTable,
 ) -> Option<(f64, f64, f64)> {
     (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
@@ -309,9 +309,7 @@ pub fn counterbore_envelope_dimension_tuple(
     ))
 }
 
-pub fn unique_counterbore_dimension_tuple(
-    candidates: &[(f64, f64, f64)],
-) -> Option<(f64, f64, f64)> {
+fn unique_counterbore_dimension_tuple(candidates: &[(f64, f64, f64)]) -> Option<(f64, f64, f64)> {
     let first = *candidates.first()?;
     candidates
         .iter()
@@ -324,7 +322,7 @@ pub fn unique_counterbore_dimension_tuple(
         .then_some(first)
 }
 
-pub fn counterbore_patch_geometries<'a>(
+pub(in crate::decode) fn counterbore_patch_geometries<'a>(
     scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     feature_id: u32,
@@ -370,7 +368,7 @@ pub fn counterbore_patch_geometries<'a>(
     .and_then(resolve_rows)
 }
 
-pub fn counterbore_cylinder_sources(
+pub(in crate::decode) fn counterbore_cylinder_sources(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<Vec<Vec<u32>>> {
@@ -420,7 +418,7 @@ fn counterbore_source_corner_envelopes(
         .collect()
 }
 
-pub fn counterbore_entity_table<'a>(
+fn counterbore_entity_table<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<&'a crate::feature::FeatureEntityTable> {
@@ -447,7 +445,7 @@ pub fn counterbore_entity_table<'a>(
     Some(*table)
 }
 
-pub fn counterbore_axis_placement(
+pub(in crate::decode) fn counterbore_axis_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -472,7 +470,7 @@ pub fn counterbore_axis_placement(
     })
 }
 
-pub fn counterbore_support_axis_placement(
+pub(in crate::decode) fn counterbore_support_axis_placement(
     feature_id: u32,
     table: &crate::feature::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
@@ -514,7 +512,7 @@ pub fn counterbore_support_axis_placement(
     })
 }
 
-pub fn counterbore_axis_placement_from_sources(
+pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     cylinder_sources: &[Vec<u32>],
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     counterbore_diameter: f64,
@@ -534,7 +532,7 @@ pub fn counterbore_axis_placement_from_sources(
     })
 }
 
-pub fn counterbore_directed_placement(
+pub(in crate::decode) fn counterbore_directed_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -578,10 +576,10 @@ pub fn counterbore_directed_placement(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CounterboreEnvelopeLayout {
-    pub axis: Axis,
-    pub center: [f64; 3],
-    pub axial_interval: [f64; 2],
+struct CounterboreEnvelopeLayout {
+    axis: Axis,
+    center: [f64; 3],
+    axial_interval: [f64; 2],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -593,7 +591,7 @@ struct CounterboreCornerAssignment {
     length: f64,
 }
 
-pub fn counterbore_source_envelope_layout(
+fn counterbore_source_envelope_layout(
     corners: [[[f64; 3]; 2]; 2],
     diameter: f64,
     axial_depth: Option<f64>,
@@ -652,7 +650,7 @@ pub fn counterbore_source_envelope_layout(
     })
 }
 
-pub fn counterbore_placement_from_corner_envelopes(
+pub(in crate::decode) fn counterbore_placement_from_corner_envelopes(
     source_corners: &[[[[f64; 3]; 2]; 2]],
     bore_diameter: f64,
     counterbore_diameter: f64,
@@ -770,7 +768,7 @@ fn counterbore_corner_assignment(
     })
 }
 
-pub fn counterbore_directed_span(
+pub(in crate::decode) fn counterbore_directed_span(
     counterbore: (u32, Point3, [f64; 3]),
     bore: (u32, Point3, [f64; 3]),
     counterbore_depth: f64,
@@ -820,7 +818,7 @@ pub fn counterbore_directed_span(
     ))
 }
 
-pub fn counterbore_source_boundary_circle(
+fn counterbore_source_boundary_circle(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -921,7 +919,7 @@ pub fn counterbore_source_boundary_circle(
         .then_some(first)
 }
 
-pub fn counterbore_source_patch_geometries(
+pub(in crate::decode) fn counterbore_source_patch_geometries(
     cylinder_sources: &[Vec<u32>],
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     bore_diameter: f64,
@@ -968,7 +966,7 @@ pub fn counterbore_source_patch_geometries(
     )
 }
 
-pub fn counterbore_source_corner_patch_geometries(
+fn counterbore_source_corner_patch_geometries(
     cylinder_sources: &[Vec<u32>],
     source_corners: &[[[[f64; 3]; 2]; 2]],
     bore_diameter: f64,
@@ -1022,7 +1020,7 @@ pub fn counterbore_source_corner_patch_geometries(
     )
 }
 
-pub fn complete_cylinder_source_carrier(
+fn complete_cylinder_source_carrier(
     ids: &[u32],
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     radius: f64,

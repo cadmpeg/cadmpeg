@@ -40,7 +40,7 @@ impl<T> NumericArray<T> {
     ///
     /// [`NumericArray::try_new`] proved this sum an index, so it does not
     /// overflow.
-    pub(crate) fn element_count(&self) -> usize {
+    pub(super) fn element_count(&self) -> usize {
         self.runs.iter().map(|run| index_from_u32(run.count)).sum()
     }
 }

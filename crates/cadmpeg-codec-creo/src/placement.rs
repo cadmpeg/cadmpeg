@@ -30,11 +30,11 @@ const EPS_FRAME_DENOMINATOR: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeatureSectionTransform {
+pub(crate) struct FeatureSectionTransform {
     /// Owning `feat_defs_<id>` record identifier.
-    pub definition_id: u32,
+    pub(crate) definition_id: u32,
     /// Unique modeling feature identifier inside the definition, when present.
-    pub feature_id: Option<u32>,
+    pub(crate) feature_id: Option<u32>,
     /// Model-space point corresponding to section coordinate `[0, 0, 0]`.
     origin: [f64; 3],
     /// Model-space direction of increasing section `u`.
@@ -42,12 +42,12 @@ pub struct FeatureSectionTransform {
     /// Model-space direction of increasing section `v`.
     v_axis: [f64; 3],
     /// Byte offset of the source `gsec3d_ptr` record.
-    pub offset: usize,
+    pub(crate) offset: usize,
 }
 
 impl FeatureSectionTransform {
     /// Constructs a finite right-handed orthonormal section frame.
-    pub fn new(
+    pub(crate) fn new(
         definition_id: u32,
         feature_id: Option<u32>,
         origin: [f64; 3],
@@ -79,17 +79,17 @@ impl FeatureSectionTransform {
     }
 
     /// Model-space section origin.
-    pub fn origin(&self) -> [f64; 3] {
+    pub(crate) fn origin(&self) -> [f64; 3] {
         self.origin
     }
 
     /// Model-space direction of increasing section u.
-    pub fn u_axis(&self) -> [f64; 3] {
+    pub(crate) fn u_axis(&self) -> [f64; 3] {
         self.u_axis
     }
 
     /// Model-space direction of increasing section v.
-    pub fn v_axis(&self) -> [f64; 3] {
+    pub(crate) fn v_axis(&self) -> [f64; 3] {
         self.v_axis
     }
 
@@ -109,20 +109,20 @@ impl FeatureSectionTransform {
     }
 
     /// Right-handed normal derived from the section axes.
-    pub fn normal(&self) -> [f64; 3] {
+    pub(crate) fn normal(&self) -> [f64; 3] {
         cross(self.u_axis, self.v_axis)
     }
 }
 
 pub(crate) struct PlacementSources<'a> {
-    pub datums: &'a [DatumPlaneRecord],
-    pub surface_rows: &'a [SurfaceRow],
-    pub model_planes: &'a [PlaneLocalSystem],
-    pub outline_planes: &'a [OutlinePlane],
-    pub plane_envelopes: &'a [PlaneEnvelopeRecord],
-    pub surface_parameters: &'a [SurfaceParameterRecord],
-    pub geometry_tables: &'a [FeatureGeometryTable],
-    pub affected_ids: &'a [FeatureAffectedIds],
+    pub(crate) datums: &'a [DatumPlaneRecord],
+    pub(crate) surface_rows: &'a [SurfaceRow],
+    pub(crate) model_planes: &'a [PlaneLocalSystem],
+    pub(crate) outline_planes: &'a [OutlinePlane],
+    pub(crate) plane_envelopes: &'a [PlaneEnvelopeRecord],
+    pub(crate) surface_parameters: &'a [SurfaceParameterRecord],
+    pub(crate) geometry_tables: &'a [FeatureGeometryTable],
+    pub(crate) affected_ids: &'a [FeatureAffectedIds],
 }
 
 /// Plane in scalar form: `dot(normal, point) = offset`.

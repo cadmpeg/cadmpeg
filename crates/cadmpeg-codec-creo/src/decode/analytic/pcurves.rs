@@ -67,7 +67,7 @@ fn topology_ignored_surface_ids(
         .collect()
 }
 
-pub fn canonicalized_pcurve_endpoints(
+pub(in crate::decode) fn canonicalized_pcurve_endpoints(
     scan: &ContainerScan,
     faces: [Option<NonZeroU32>; 2],
     face_0_endpoints: [[f64; 2]; 2],
@@ -86,7 +86,7 @@ pub fn canonicalized_pcurve_endpoints(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TwoChartEndpointSets {
+pub(in crate::decode) enum TwoChartEndpointSets {
     Both([[[f64; 2]; 2]; 2]),
     First([[f64; 2]; 2]),
     Second([[f64; 2]; 2]),
@@ -94,7 +94,7 @@ pub(crate) enum TwoChartEndpointSets {
 
 impl TwoChartEndpointSets {
     /// The endpoint path for each face.
-    pub(crate) fn paths(self) -> [Option<[[f64; 2]; 2]>; 2] {
+    pub(in crate::decode) fn paths(self) -> [Option<[[f64; 2]; 2]>; 2] {
         match self {
             Self::Both(paths) => paths.map(Some),
             Self::First(path) => [Some(path), None],
@@ -185,7 +185,7 @@ fn map_two_chart_endpoint_sets(
     }
 }
 
-pub(crate) fn mapped_two_chart_endpoint_sets(
+pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
@@ -205,7 +205,7 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
 }
 
 #[cfg(test)]
-pub fn mapped_pcurve_endpoints(
+pub(in crate::decode) fn mapped_pcurve_endpoints(
     ir: &CadIr,
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
@@ -218,71 +218,71 @@ pub fn mapped_pcurve_endpoints(
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct PcurveEndpointEvidence {
-    pub points: [[f64; 3]; 2],
-    pub complete: bool,
+pub(in crate::decode) struct PcurveEndpointEvidence {
+    pub(super) points: [[f64; 3]; 2],
+    pub(in crate::decode) complete: bool,
     /// The endpoints came from a complete native grammar that is allowed to
     /// override an inconsistent inferred analytic intersection at a vertex.
-    pub authoritative: bool,
+    pub(super) authoritative: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PcurveMismatchDetail {
-    pub curve_id: u32,
-    pub faces: [u32; 2],
-    pub same_order_error: f64,
-    pub reverse_order_error: f64,
+pub(in crate::decode) struct PcurveMismatchDetail {
+    pub(in crate::decode) curve_id: u32,
+    pub(in crate::decode) faces: [u32; 2],
+    pub(in crate::decode) same_order_error: f64,
+    pub(in crate::decode) reverse_order_error: f64,
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct PcurveEndpointDiagnostics {
-    pub records: usize,
-    pub inactive_paths: usize,
-    pub inactive_records: usize,
-    pub partial_records: usize,
-    pub topology_mismatch_records: usize,
-    pub missing_surfaces: usize,
-    pub unevaluable_paths: usize,
-    pub mapped_paths: usize,
-    pub unmapped_records: usize,
-    pub inconsistent_records: usize,
-    pub accepted_records: usize,
-    pub complete_records: usize,
-    pub conflicting_curves: usize,
-    pub evidence: usize,
-    pub complete_evidence: usize,
-    pub two_chart_records: usize,
-    pub two_chart_complete_records: usize,
-    pub two_chart_partial_records: usize,
-    pub two_chart_missing_surface_paths: usize,
-    pub two_chart_unevaluable_paths: usize,
-    pub two_chart_surface_mismatch_records: usize,
-    pub two_chart_no_sample_records: usize,
-    pub two_chart_unmapped_records: usize,
-    pub carrier_validated_paths: usize,
-    pub carrier_rejected_paths: usize,
-    pub carrier_unknown_missing_surface_paths: usize,
-    pub carrier_unknown_missing_carrier_paths: usize,
-    pub carrier_unknown_unsupported_pair_paths: usize,
-    pub carrier_unknown_parallel_plane_paths: usize,
-    pub carrier_unknown_unsupported_path_paths: usize,
-    pub carrier_rejected_records: usize,
-    pub mismatch_samples: Vec<PcurveMismatchDetail>,
+pub(in crate::decode) struct PcurveEndpointDiagnostics {
+    pub(in crate::decode) records: usize,
+    pub(in crate::decode) inactive_paths: usize,
+    pub(in crate::decode) inactive_records: usize,
+    pub(in crate::decode) partial_records: usize,
+    pub(in crate::decode) topology_mismatch_records: usize,
+    pub(in crate::decode) missing_surfaces: usize,
+    pub(in crate::decode) unevaluable_paths: usize,
+    pub(in crate::decode) mapped_paths: usize,
+    pub(in crate::decode) unmapped_records: usize,
+    pub(in crate::decode) inconsistent_records: usize,
+    pub(in crate::decode) accepted_records: usize,
+    pub(in crate::decode) complete_records: usize,
+    pub(in crate::decode) conflicting_curves: usize,
+    pub(in crate::decode) evidence: usize,
+    pub(in crate::decode) complete_evidence: usize,
+    pub(in crate::decode) two_chart_records: usize,
+    pub(in crate::decode) two_chart_complete_records: usize,
+    pub(in crate::decode) two_chart_partial_records: usize,
+    pub(in crate::decode) two_chart_missing_surface_paths: usize,
+    pub(in crate::decode) two_chart_unevaluable_paths: usize,
+    pub(in crate::decode) two_chart_surface_mismatch_records: usize,
+    pub(in crate::decode) two_chart_no_sample_records: usize,
+    pub(in crate::decode) two_chart_unmapped_records: usize,
+    pub(in crate::decode) carrier_validated_paths: usize,
+    pub(in crate::decode) carrier_rejected_paths: usize,
+    pub(in crate::decode) carrier_unknown_missing_surface_paths: usize,
+    pub(in crate::decode) carrier_unknown_missing_carrier_paths: usize,
+    pub(in crate::decode) carrier_unknown_unsupported_pair_paths: usize,
+    pub(in crate::decode) carrier_unknown_parallel_plane_paths: usize,
+    pub(in crate::decode) carrier_unknown_unsupported_path_paths: usize,
+    pub(in crate::decode) carrier_rejected_records: usize,
+    pub(in crate::decode) mismatch_samples: Vec<PcurveMismatchDetail>,
 }
 
 impl PcurveEndpointDiagnostics {
     /// Returns the total number of path outcomes.
-    pub fn paths(&self) -> usize {
+    pub(in crate::decode) fn paths(&self) -> usize {
         self.mapped_paths + self.missing_surfaces + self.unevaluable_paths
     }
 
     /// Returns the number of records with at least one mapped chart.
-    pub fn two_chart_mapped_records(&self) -> usize {
+    pub(in crate::decode) fn two_chart_mapped_records(&self) -> usize {
         self.two_chart_complete_records + self.two_chart_partial_records
     }
 
     /// Returns the number of paths without a carrier decision.
-    pub fn carrier_unknown_paths(&self) -> usize {
+    pub(in crate::decode) fn carrier_unknown_paths(&self) -> usize {
         self.carrier_unknown_missing_surface_paths
             + self.carrier_unknown_missing_carrier_paths
             + self.carrier_unknown_unsupported_pair_paths
@@ -585,7 +585,7 @@ fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&m
 
 /// Reconcile the signed frame of a radius-zero support cone from a pcurve
 /// endpoint and an independently placed adjacent plane.
-pub fn reconcile_support_apex_cone_parameter_branches(
+pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -767,14 +767,14 @@ fn pcurve_mismatch_detail(
     })
 }
 
-pub fn pcurve_edge_endpoint_evidence(
+pub(in crate::decode) fn pcurve_edge_endpoint_evidence(
     scan: &ContainerScan,
     ir: &CadIr,
 ) -> BTreeMap<u32, PcurveEndpointEvidence> {
     pcurve_edge_endpoint_evidence_with_diagnostics(scan, ir).0
 }
 
-pub fn pcurve_edge_endpoint_evidence_with_diagnostics(
+fn pcurve_edge_endpoint_evidence_with_diagnostics(
     scan: &ContainerScan,
     ir: &CadIr,
 ) -> (
@@ -1030,14 +1030,14 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     (evidence, diagnostics)
 }
 
-pub fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
+fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
     pcurve_edge_endpoint_evidence(scan, ir)
         .into_iter()
         .map(|(curve_id, evidence)| (curve_id, evidence.points))
         .collect()
 }
 
-pub fn linear_pcurve_carrier(
+pub(in crate::decode) fn linear_pcurve_carrier(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
 ) -> Option<CurveGeometry> {
@@ -1319,7 +1319,7 @@ pub fn linear_pcurve_carrier(
     }
 }
 
-pub fn transfer_analytic_pcurve_carriers(
+pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1464,9 +1464,12 @@ pub fn transfer_analytic_pcurve_carriers(
     Ok(transferred)
 }
 
-pub type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
+type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
 
-pub fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Option<[[f64; 3]; 2]> {
+pub(in crate::decode) fn directed_pcurve_points(
+    directions: [u8; 2],
+    points: [[f64; 3]; 2],
+) -> Option<[[f64; 3]; 2]> {
     match directions {
         [0x01, 0xf6] => Some(points),
         [0xf6, 0x01] => Some([points[1], points[0]]),
@@ -1475,7 +1478,7 @@ pub fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Opt
 }
 
 #[cfg(test)]
-pub fn solve_pcurve_vertex_domains(
+pub(in crate::decode) fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
@@ -1497,7 +1500,7 @@ pub fn solve_pcurve_vertex_domains(
 /// other pcurve constraints by the caller, but an inferred analytic
 /// intersection or carrier curve must not erase it merely because that
 /// inferred geometry is inconsistent.
-pub fn solve_pcurve_vertex_domains_with_authoritative_points(
+pub(in crate::decode) fn solve_pcurve_vertex_domains_with_authoritative_points(
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
@@ -1626,7 +1629,7 @@ pub fn solve_pcurve_vertex_domains_with_authoritative_points(
         .collect()
 }
 
-pub fn native_pcurve_midpoint(
+pub(in crate::decode) fn native_pcurve_midpoint(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     edge_points: [[f64; 3]; 2],
@@ -1649,9 +1652,10 @@ pub fn native_pcurve_midpoint(
     cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).map(|point| [point.x, point.y, point.z])
 }
 
-pub type NativePcurveCandidates = BTreeMap<(u32, u32), Vec<([[f64; 2]; 2], usize)>>;
+pub(in crate::decode) type NativePcurveCandidates =
+    BTreeMap<(u32, u32), Vec<([[f64; 2]; 2], usize)>>;
 
-pub fn pcurve_backed_periodic_conic_parameter_range(
+pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     geometry: &CurveGeometry,
     curve_id: u32,
     faces: [u32; 2],
@@ -1685,7 +1689,7 @@ pub fn pcurve_backed_periodic_conic_parameter_range(
     selected
 }
 
-pub fn oriented_native_pcurve_endpoints(
+pub(in crate::decode) fn oriented_native_pcurve_endpoints(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     traversal: [[f64; 3]; 2],
@@ -1704,7 +1708,7 @@ pub fn oriented_native_pcurve_endpoints(
     }
 }
 
-pub fn unique_oriented_native_pcurve(
+pub(in crate::decode) fn unique_oriented_native_pcurve(
     surface: &SurfaceGeometry,
     candidates: &[([[f64; 2]; 2], usize)],
     traversal: [[f64; 3]; 2],
@@ -1723,7 +1727,7 @@ pub fn unique_oriented_native_pcurve(
     Some(selected)
 }
 
-pub fn planar_curve_pcurve(
+pub(in crate::decode) fn planar_curve_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
     record: &dyn std::fmt::Display,

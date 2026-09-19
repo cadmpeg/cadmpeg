@@ -17,7 +17,7 @@ use crate::decode::sketch_transfer::loci::{
 const EPS_SAVED_LINE_AXIS: f64 = 1.0e-9;
 const EPS_SKAMP_AGREEMENT: f64 = 1.0e-9;
 
-pub(crate) fn section_line_fixed_coordinate(
+pub(in crate::decode) fn section_line_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SectionAxis> {
@@ -26,14 +26,14 @@ pub(crate) fn section_line_fixed_coordinate(
     section_line_entity_fixed_coordinate(definition, segment.external_id)
 }
 
-pub(crate) fn section_line_entity_fixed_coordinate(
+pub(super) fn section_line_entity_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionAxis> {
     section_line_entity_fixed_coordinate_with_mode(definition, entity_id, false)
 }
 
-pub(crate) fn section_line_entity_fixed_coordinate_with_unique_rows(
+pub(super) fn section_line_entity_fixed_coordinate_with_unique_rows(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionAxis> {
@@ -173,7 +173,7 @@ fn section_line_direct_fixed_coordinates_with_mode(
     coordinates
 }
 
-pub(crate) fn section_skamp_point_on_line(
+pub(in crate::decode) fn section_skamp_point_on_line(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<(u32, u32, SectionAxis)> {
@@ -228,7 +228,7 @@ pub(crate) fn section_skamp_point_on_line(
     Some((pair.0.point_ids()[0], pair.1, coordinate))
 }
 
-pub(crate) fn section_skamp_saved_point_on_line(
+pub(in crate::decode) fn section_skamp_saved_point_on_line(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<(u32, SectionAxis, f64)> {
@@ -280,12 +280,12 @@ pub(crate) fn section_skamp_saved_point_on_line(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum SectionSymmetryAxis {
+pub(super) enum SectionSymmetryAxis {
     Point(u32),
     Value(f64),
 }
 
-pub(crate) fn section_skamp_axis_symmetry(
+pub(super) fn section_skamp_axis_symmetry(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<(
@@ -325,7 +325,7 @@ pub(crate) fn section_skamp_axis_symmetry(
     ))
 }
 
-pub(crate) fn section_skamp_point_symmetry(
+pub(super) fn section_skamp_point_symmetry(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<(u32, SectionPointSource, SectionPointSource)> {
@@ -339,7 +339,7 @@ pub(crate) fn section_skamp_point_symmetry(
     ))
 }
 
-pub(crate) fn saved_line_fixed_coordinate_value(
+fn saved_line_fixed_coordinate_value(
     line: &crate::feature::FeatureSavedLine,
     coordinate: SectionAxis,
 ) -> Option<f64> {
@@ -354,26 +354,26 @@ pub(crate) fn saved_line_fixed_coordinate_value(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum SectionPointSource {
+pub(in crate::decode) enum SectionPointSource {
     Point(u32),
     Value([f64; 2]),
 }
 
-pub(crate) fn unique_section_skamp_segment(
+pub(in crate::decode) fn unique_section_skamp_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
     definition.segments.as_ref()?.segment(external_id)
 }
 
-pub(crate) fn unique_decoded_section_segment(
+pub(in crate::decode) fn unique_decoded_section_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
     definition.segments.as_ref()?.unique_segment(external_id)
 }
 
-pub(crate) fn section_segment_rows(
+pub(in crate::decode) fn section_segment_rows(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<&crate::feature::FeatureSegment> {
     definition
@@ -382,7 +382,7 @@ pub(crate) fn section_segment_rows(
         .map_or_else(Vec::new, |table| table.rows.ordinary().collect())
 }
 
-pub(crate) fn complete_section_segment_rows(
+pub(in crate::decode) fn complete_section_segment_rows(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<&crate::feature::FeatureSegment> {
     definition
@@ -392,7 +392,7 @@ pub(crate) fn complete_section_segment_rows(
         .map_or_else(Vec::new, |table| table.rows.ordinary().collect())
 }
 
-pub(crate) fn section_skamp_point_entity_id(
+pub(super) fn section_skamp_point_entity_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
@@ -404,7 +404,7 @@ pub(crate) fn section_skamp_point_entity_id(
         .then_some(segment.point_ids()[0])
 }
 
-pub(crate) fn section_skamp_selected_point_id(
+pub(in crate::decode) fn section_skamp_selected_point_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
@@ -415,7 +415,7 @@ pub(crate) fn section_skamp_selected_point_id(
     section_skamp_selected_point_id_with_ordinary_segment(definition, item, ordinary_segment)
 }
 
-pub(crate) fn section_skamp_selected_point_id_with_ordinary_segment(
+pub(in crate::decode) fn section_skamp_selected_point_id_with_ordinary_segment(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
     ordinary_segment: Option<&crate::feature::FeatureSegment>,
@@ -460,7 +460,7 @@ pub(crate) fn section_skamp_selected_point_id_with_ordinary_segment(
     }
 }
 
-pub(crate) fn section_skamp_selected_point(
+fn section_skamp_selected_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionPointSource> {
@@ -469,7 +469,7 @@ pub(crate) fn section_skamp_selected_point(
         .or_else(|| saved_section_point(definition, item).map(SectionPointSource::Value))
 }
 
-pub(crate) fn section_skamp_incidence_point(
+pub(in crate::decode) fn section_skamp_incidence_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionPointSource> {
@@ -483,7 +483,7 @@ pub(crate) fn section_skamp_incidence_point(
     })
 }
 
-pub(crate) fn saved_section_point(
+fn saved_section_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<[f64; 2]> {

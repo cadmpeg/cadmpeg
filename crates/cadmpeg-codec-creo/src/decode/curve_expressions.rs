@@ -25,7 +25,7 @@ use crate::container::ContainerScan;
 use super::coverage::source_section;
 use super::native::annotate;
 
-pub(crate) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
+pub(super) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
     format!(
         "creo:depdb:curve_expression#{}-{}-{}",
         if record.backup { "backup" } else { "active" },
@@ -41,7 +41,7 @@ const EPS_HELIX_UV_ORTHO: f64 = 1.0e-9;
 
 type CurveExpressionParameterOrder = (Vec<u32>, BTreeSet<(usize, usize)>);
 
-pub(crate) fn curve_expression_helix_definition(
+fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,
 ) -> Option<ProceduralCurveDefinition> {
     let helix = crate::curve::expression_helix(record)?;
@@ -154,11 +154,7 @@ fn curve_expression_helix_feature_definition(
     }))
 }
 
-pub(crate) fn expression_dependency_reaches(
-    dependencies: &[Vec<usize>],
-    start: usize,
-    target: usize,
-) -> bool {
+fn expression_dependency_reaches(dependencies: &[Vec<usize>], start: usize, target: usize) -> bool {
     let mut pending = vec![start];
     let mut visited = BTreeSet::new();
     while let Some(index) = pending.pop() {
@@ -172,7 +168,7 @@ pub(crate) fn expression_dependency_reaches(
     false
 }
 
-pub(crate) fn curve_expression_parameter_order(
+fn curve_expression_parameter_order(
     record: &crate::curve::CurveExpressionRecord,
     unique_assignment_indices: &BTreeMap<String, usize>,
 ) -> Option<CurveExpressionParameterOrder> {
@@ -223,7 +219,7 @@ pub(crate) fn curve_expression_parameter_order(
     ))
 }
 
-pub(crate) fn curve_expression_parameter_names(
+fn curve_expression_parameter_names(
     assignments: &[crate::curve::CurveExpressionAssignment],
 ) -> Vec<Option<String>> {
     let counts = assignments
@@ -252,7 +248,7 @@ pub(crate) fn curve_expression_parameter_names(
         .collect()
 }
 
-pub(crate) fn transfer_curve_expression_features(
+pub(super) fn transfer_curve_expression_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

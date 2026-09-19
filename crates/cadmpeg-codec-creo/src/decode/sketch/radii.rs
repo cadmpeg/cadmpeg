@@ -42,7 +42,7 @@ use crate::decode::sketch_transfer::loci::{
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
-pub(crate) fn resolved_section_radii(
+pub(in crate::decode) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
@@ -324,7 +324,7 @@ pub(crate) fn resolved_section_radii(
     radii
 }
 
-pub(crate) fn section_relation_length_dimension<'a>(
+pub(super) fn section_relation_length_dimension<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     relation: &crate::feature::FeatureRelation,
 ) -> Option<&'a crate::feature::FeatureDimension> {
@@ -337,7 +337,7 @@ pub(crate) fn section_relation_length_dimension<'a>(
     matches!(dimension.dimension_type, 1..=5).then_some(dimension)
 }
 
-pub(crate) fn section_type5_radius_arc<'a>(
+fn section_type5_radius_arc<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     relation: &crate::feature::FeatureRelation,
 ) -> Option<&'a crate::feature::FeatureSegment> {
@@ -362,7 +362,7 @@ pub(crate) fn section_type5_radius_arc<'a>(
     )
 }
 
-pub(crate) fn section_type6_radius_arc<'a>(
+fn section_type6_radius_arc<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     relation: &crate::feature::FeatureRelation,
 ) -> Option<&'a crate::feature::FeatureSegment> {
@@ -387,7 +387,7 @@ pub(crate) fn section_type6_radius_arc<'a>(
     )
 }
 
-pub(crate) fn section_radius_relation_arc<'a>(
+pub(in crate::decode) fn section_radius_relation_arc<'a>(
     definition: &'a crate::feature::FeatureDefinition,
     relation: &crate::feature::FeatureRelation,
 ) -> Option<&'a crate::feature::FeatureSegment> {
@@ -424,12 +424,12 @@ fn unique_section_radius_arc(
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum SectionRadiusSource {
+enum SectionRadiusSource {
     Reference(u32),
     Value(f64),
 }
 
-pub(crate) fn section_skamp_radius_source(
+fn section_skamp_radius_source(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionRadiusSource> {
@@ -453,7 +453,7 @@ pub(crate) fn section_skamp_radius_source(
     (radius.is_finite() && radius > 0.0).then_some(SectionRadiusSource::Value(radius))
 }
 
-pub(crate) fn section_arc_carrier(
+pub(super) fn section_arc_carrier(
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -464,7 +464,7 @@ pub(crate) fn section_arc_carrier(
     Some((center, radius))
 }
 
-pub(crate) fn section_axis_line_carrier_with_points(
+pub(in crate::decode) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -477,7 +477,7 @@ pub(crate) fn section_axis_line_carrier_with_points(
     section_fixed_coordinate_line_carrier(variable_points, segment, fixed_coordinate)
 }
 
-pub(crate) fn section_fixed_coordinate_line_carrier(
+fn section_fixed_coordinate_line_carrier(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
     fixed_coordinate: SectionAxis,
@@ -514,7 +514,7 @@ pub(crate) fn section_fixed_coordinate_line_carrier(
         .flatten()
 }
 
-pub(crate) fn section_proven_axis_line_carrier(
+fn section_proven_axis_line_carrier(
     definition: &crate::feature::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -530,7 +530,7 @@ pub(crate) fn section_proven_axis_line_carrier(
     }
 }
 
-pub(crate) fn section_axis_reference_line_geometry(
+pub(in crate::decode) fn section_axis_reference_line_geometry(
     definition: &crate::feature::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -574,7 +574,7 @@ pub(crate) fn section_axis_reference_line_geometry(
     SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
 }
 
-pub(crate) fn section_segment_intersection_carrier_with_missing_line(
+pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     definition: &crate::feature::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -604,7 +604,7 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
     .ok()
 }
 
-pub(crate) fn trim_segment_id(
+pub(in crate::decode) fn trim_segment_id(
     definition: &crate::feature::FeatureDefinition,
     row: &crate::feature::FeatureTrimEntity,
 ) -> Option<u32> {

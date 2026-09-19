@@ -64,7 +64,7 @@ mod prototype_association_tests;
 /// The stream is read from its beginning. When `options.container_only` is set,
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
-pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(root.window())?;
     let classification = crate::dialect::classify(&scan);
     // Charge section cardinality before IR construction so max_entities can

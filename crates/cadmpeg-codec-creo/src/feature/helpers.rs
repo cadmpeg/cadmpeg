@@ -6,7 +6,7 @@ use cadmpeg_core::decode::bounded_len;
 use crate::psb;
 use crate::scalar;
 
-pub(crate) fn decode_exact_scalars(
+pub(super) fn decode_exact_scalars(
     payload: &[u8],
     slot_count: usize,
     cache: &scalar::ScalarCache,
@@ -22,6 +22,6 @@ pub(crate) fn decode_exact_scalars(
     (cursor.pos() == payload.len()).then_some(values)
 }
 
-pub(crate) fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
+pub(super) fn find_bytes(payload: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
     cadmpeg_core::bytes::find_in(payload, needle, start, end)
 }
