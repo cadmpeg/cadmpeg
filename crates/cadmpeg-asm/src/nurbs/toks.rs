@@ -697,7 +697,13 @@ pub fn test_table(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        cache_scope, lex_test_span, marker_at, owned_construction_subtype, owned_marker_positions,
+        owned_subtype_defs, subtype_refs, subtype_span, test_table, Cur,
+    };
+    use crate::kernel_header::RefWidth;
+    use crate::nurbs::reader::BsplineMarker;
+    use crate::sab::Token;
 
     fn ident(name: &str) -> Token {
         Token::Ident(name.to_string())

@@ -802,7 +802,10 @@ fn variable_blend_value(
 
 #[cfg(test)]
 mod variable_blend_value_tests {
-    use super::*;
+    use super::{variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
+    use crate::kernel_header::RefWidth;
+    use crate::nurbs::toks::Cur;
+    use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::geometry::VariableBlendValuePayload;
 
     fn text(bytes: &mut Vec<u8>, value: &str) {

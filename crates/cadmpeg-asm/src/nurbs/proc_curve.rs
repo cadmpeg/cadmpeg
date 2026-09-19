@@ -3432,8 +3432,17 @@ pub(crate) fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2
 
 #[cfg(test)]
 mod cache_form_tests {
-    use super::*;
+    use super::{
+        cache_first_curve_context, native_support_chart, normalize_pcurve_for_surface_record,
+        normalize_support_pcurve, nurbs_curve_parameter_domain, NativeSupportChart,
+        ProjectionRoleSlot,
+    };
+    use crate::kernel_header::RefWidth;
+    use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
+    use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs};
     use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
 
     fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
         PcurveNurbs::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()

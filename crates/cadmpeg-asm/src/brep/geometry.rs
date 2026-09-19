@@ -1104,7 +1104,8 @@ pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
 
 #[cfg(test)]
 mod analytic_surface_tests {
-    use super::*;
+    use super::decode_surface;
+    use crate::sab::{Record, Token};
     use std::sync::Arc;
 
     fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
@@ -1167,7 +1168,8 @@ mod analytic_surface_tests {
 
 #[cfg(test)]
 mod sense_tests {
-    use super::*;
+    use super::record_reversed;
+    use crate::sab::{Record, Token};
 
     #[test]
     fn intcurve_sense_falls_back_only_when_the_scope_has_no_boolean() {

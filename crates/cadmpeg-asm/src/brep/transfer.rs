@@ -150,7 +150,10 @@ pub fn transfer_into_ir<'ir>(
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-    use super::*;
+    use super::transfer_into_ir;
+    use crate::brep::AsmBrep;
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::document::CadIr;
 
     #[test]
     fn empty_transfer_still_declares_every_asm_native_arena() {
