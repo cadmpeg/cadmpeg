@@ -1323,19 +1323,8 @@ impl ValueExt for Value {
     }
 }
 
-fn value_reference(value: &Value) -> Option<u64> {
-    match value {
-        Value::Reference(id) => Some(*id),
-        _ => None,
-    }
-}
-
 fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
     record.partial(name)?.parameters.get(index)
-}
-
-fn has_partial(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
 }
 
 fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {

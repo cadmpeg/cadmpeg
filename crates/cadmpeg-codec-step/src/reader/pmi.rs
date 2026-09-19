@@ -5,9 +5,7 @@ use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
-use super::{
-    has_partial, named_parameter, record_values, references, source_numeric_id, RecordExt, ValueExt,
-};
+use super::{named_parameter, record_values, references, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
@@ -1016,8 +1014,8 @@ fn datum_references(
     let Some(compartment) = exchange.records().get(&compartment_id) else {
         return Vec::new();
     };
-    if !has_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
-        && !has_partial(compartment, "DATUM_REFERENCE_ELEMENT")
+    if compartment.partial("DATUM_REFERENCE_COMPARTMENT").is_none()
+        && compartment.partial("DATUM_REFERENCE_ELEMENT").is_none()
     {
         return Vec::new();
     }
@@ -1044,9 +1042,7 @@ fn datum_references(
             .into_iter()
             .filter_map(|element_id| {
                 let element = exchange.records().get(&element_id)?;
-                if !has_partial(element, "DATUM_REFERENCE_ELEMENT") {
-                    return None;
-                }
+                element.partial("DATUM_REFERENCE_ELEMENT")?;
                 let datum = datum_base(element).and_then(ValueExt::reference)?;
                 annotations.get(datum)?;
                 let mut modifiers = compartment_modifiers.clone();

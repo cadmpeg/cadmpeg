@@ -18,7 +18,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, ReferenceName, Value};
 
 use super::representation;
-use super::value_reference;
+use super::ValueExt;
 use super::{decode_text, opaque_record_id, record_targets, StageOutcome};
 
 const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
@@ -528,8 +528,8 @@ fn add_sheet_revision_usages(
             let parameters = source_parameters(record, "DRAWING_SHEET_REVISION_USAGE");
             Some((
                 id,
-                value_reference(parameters.first()?)?,
-                value_reference(parameters.get(1)?)?,
+                parameters.first()?.reference()?,
+                parameters.get(1)?.reference()?,
                 parameters.get(2).cloned(),
             ))
         })
@@ -612,7 +612,7 @@ fn add_draughting_model_associations(
         let Some(parameters) = association_parameters(record) else {
             continue;
         };
-        let Some(model_id) = parameters.get(3).and_then(value_reference) else {
+        let Some(model_id) = parameters.get(3).and_then(ValueExt::reference) else {
             continue;
         };
         let Some(model) = drawings.get_mut(&model_id) else {
@@ -620,7 +620,7 @@ fn add_draughting_model_associations(
         };
 
         let mut complete = true;
-        let definition_id = parameters.get(2).and_then(value_reference);
+        let definition_id = parameters.get(2).and_then(ValueExt::reference);
         let definition_target = definition_id.and_then(|definition_id| {
             match target_context.resolve(definition_id) {
                 TargetResolution::Resolved(definition) => Some(definition),
@@ -767,13 +767,13 @@ fn association_parameters(record: &RawRecord) -> Option<&[Value]> {
 }
 
 fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -> Option<u64> {
-    parameters.get(5).and_then(value_reference).or_else(|| {
+    parameters.get(5).and_then(ValueExt::reference).or_else(|| {
         record
             .partials
             .iter()
             .find(|partial| partial.name == "ANNOTATION_PLACEHOLDER_OCCURRENCE")
             .and_then(|partial| partial.parameters.first())
-            .and_then(value_reference)
+            .and_then(ValueExt::reference)
     })
 }
 
@@ -871,7 +871,7 @@ fn wrapper_target_resolution(
             .iter()
             .find(|partial| partial.name == "ANNOTATION_PLANE")
             .and_then(|partial| partial.parameters.get(2))
-            .and_then(value_reference)
+            .and_then(ValueExt::reference)
         {
             pending.push((plane, false));
         } else if let Some(items) = mapped_representation(record, exchange)
@@ -895,7 +895,7 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
         .iter()
         .find(|partial| partial.name == "MAPPED_ITEM")
         .and_then(|partial| partial.parameters.get(1))
-        .and_then(value_reference)?;
+        .and_then(ValueExt::reference)?;
     exchange
         .records()
         .get(&map_id)
@@ -905,7 +905,7 @@ fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64>
                 .find(|partial| partial.name == "REPRESENTATION_MAP")
         })
         .and_then(|partial| partial.parameters.get(1))
-        .and_then(value_reference)
+        .and_then(ValueExt::reference)
 }
 
 fn collect_references(value: &Value, output: &mut Vec<u64>) {

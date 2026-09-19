@@ -4,7 +4,7 @@
 use crate::ids::{key_word, kind};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::{has_partial, named_parameter, references, RecordExt, ValueExt};
+use super::{named_parameter, references, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -104,7 +104,7 @@ pub(super) fn decode(
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
     for (&id, record) in exchange.records() {
-        if !has_partial(record, "INVISIBILITY") {
+        if record.partial("INVISIBILITY").is_none() {
             continue;
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
@@ -121,7 +121,7 @@ pub(super) fn decode(
             if exchange
                 .records()
                 .get(&target)
-                .is_some_and(|record| has_partial(record, "PRESENTATION_LAYER_ASSIGNMENT"))
+                .is_some_and(|record| record.partial("PRESENTATION_LAYER_ASSIGNMENT").is_some())
             {
                 hidden_layer_ids.insert(target);
                 layer_targets.insert(target);
@@ -173,7 +173,7 @@ pub(super) fn decode(
         }
     }
     for (&layer_id, layer) in exchange.records() {
-        if !has_partial(layer, "PRESENTATION_LAYER_ASSIGNMENT") {
+        if layer.partial("PRESENTATION_LAYER_ASSIGNMENT").is_none() {
             continue;
         }
         let Some(assigned_items) =
@@ -867,7 +867,7 @@ fn presentation_item_one(
             source_id: super::step_source_id(id),
         };
     };
-    let has = |name: &str| has_partial(record, name);
+    let has = |name: &str| record.partial(name).is_some();
     if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences

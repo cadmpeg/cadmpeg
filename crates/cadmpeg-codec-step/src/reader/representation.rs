@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared access to inherited `REPRESENTATION` attributes.
 
-use super::value_reference;
+use super::ValueExt;
 use crate::parse::{RawRecord, Value};
 
 pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -19,8 +19,13 @@ pub(super) fn items(record: &RawRecord) -> Option<Vec<u64>> {
         partial
             .parameters
             .get(1)
-            .and_then(value_list)
-            .map(|items| items.iter().filter_map(value_reference).collect::<Vec<_>>())
+            .and_then(ValueExt::list)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(ValueExt::reference)
+                    .collect::<Vec<_>>()
+            })
     })
 }
 
@@ -29,13 +34,6 @@ pub(super) fn is_representation_name(name: &str) -> bool {
         || name.ends_with("_REPRESENTATION")
         || name == "SHAPE_REPRESENTATION_WITH_PARAMETERS"
         || name == "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS"
-}
-
-fn value_list(value: &Value) -> Option<&[Value]> {
-    match value {
-        Value::List(values) => Some(values),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
