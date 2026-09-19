@@ -128,10 +128,13 @@ fn probe_decoder(
 mod tests {
     use std::io::Write as _;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ExpandSpec};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec};
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
-    use super::*;
+    use super::{
+        inflate_bounded_probe, inflate_deflate, inflate_zlib_exact, inflate_zlib_member,
+        inflate_zlib_probe,
+    };
 
     #[test]
     fn exact_inflate_rejects_trailing_bytes() {

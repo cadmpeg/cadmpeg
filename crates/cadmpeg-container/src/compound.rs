@@ -1955,11 +1955,19 @@ fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use std::cmp::Ordering;
+    use std::io::{self, Read};
 
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::container::ContainerRole;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
 
-    use super::*;
+    use super::{
+        cfb_name_cmp, cfb_upper_unit, parse_directory, path_key, range_lock_sector,
+        read_detection_prefix, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
+        CompoundVersion, DirectorySlot, DIFAT_SECTOR, END_OF_CHAIN, FAT_SECTOR, FREE_SECTOR, MAGIC,
+        NO_STREAM, RANGE_LOCK_END,
+    };
 
     const SECTOR_SIZE: usize = 512;
 
