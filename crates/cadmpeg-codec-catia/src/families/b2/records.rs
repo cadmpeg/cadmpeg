@@ -546,11 +546,11 @@ impl B2UseMetadata {
 #[cfg(test)]
 pub(in crate::families::b2) struct B2EdgeMetadata {
     /// Record byte offset.
-    pub pos: usize,
+    pos: usize,
     /// Complete payload bytes.
-    pub payload: Vec<u8>,
+    pub(super) payload: Vec<u8>,
     /// Values carried by each `0x0a <u16le>` reference token.
-    pub references: Vec<u16>,
+    pub(super) references: Vec<u16>,
 }
 
 /// Structurally decoded width-coded class-`0x5e` edge node.
@@ -2274,7 +2274,7 @@ pub(crate) struct B2Torus {
 #[cfg(test)]
 pub(in crate::families::b2) struct B2GroupSeparator {
     /// Consolidated-frame header token.
-    pub token: u32,
+    pub(super) token: u32,
 }
 
 /// Typed group opener stored in a `b2 03 60` record.

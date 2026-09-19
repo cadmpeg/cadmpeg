@@ -429,7 +429,7 @@ pub(crate) struct A8Pcurve {
     pub(in crate::families) support_id: u32,
     /// Stored UV-jet channel-mode byte.
     #[cfg(test)]
-    pub mode: u8,
+    pub(super) mode: u8,
     /// Knot-aligned UV jet sites.
     pub(in crate::families) sites: Vec<A8PcurveSite>,
     /// Native parameter range.
