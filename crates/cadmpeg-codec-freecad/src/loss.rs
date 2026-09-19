@@ -24,7 +24,7 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FreecadLossCode {
+pub(crate) enum FreecadLossCode {
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
@@ -48,7 +48,7 @@ pub enum FreecadLossCode {
 impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [FreecadLossCode] = &[
+    const ALL: &'static [FreecadLossCode] = &[
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
@@ -62,7 +62,7 @@ impl FreecadLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -80,7 +80,7 @@ impl FreecadLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
@@ -111,7 +111,7 @@ impl FreecadLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    fn kind(self) -> LossKind {
         let strict_floor = match self {
             Self::SourceGuiSchemaUnverified => None,
             other => other.shared_taxonomy().strict_floor(),
@@ -126,7 +126,7 @@ impl FreecadLossCode {
     /// The structured code is `fcstd/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }

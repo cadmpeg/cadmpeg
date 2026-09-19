@@ -32,7 +32,7 @@ pub(crate) mod tessellation;
 pub(crate) mod topology;
 mod validation;
 
-pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
+const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
 /// Container facts available when the STEP source identity is authored.
 #[derive(Debug, Clone, Copy)]
@@ -80,7 +80,7 @@ impl Packaging {
     }
 }
 
-pub(super) fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
+fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
     ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
         .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
             policy.min(MAX_RECORD_GRAPH_DEPTH)
@@ -239,10 +239,10 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     }
 }
 
-pub(super) struct AnalyzedExchange {
-    pub decoded: Decoded,
-    pub matched: DialectMatch,
-    pub opaque_offsets: BTreeSet<usize>,
+pub(crate) struct AnalyzedExchange {
+    pub(crate) decoded: Decoded,
+    pub(crate) matched: DialectMatch,
+    pub(crate) opaque_offsets: BTreeSet<usize>,
 }
 
 struct OpaqueSourceRecord {
@@ -253,7 +253,7 @@ struct OpaqueSourceRecord {
 }
 
 /// Decode a complete clear-text exchange structure.
-pub fn decode(
+pub(crate) fn decode(
     input: &[u8],
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
@@ -262,7 +262,7 @@ pub fn decode(
     decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
-pub(super) fn decode_exchange(
+fn decode_exchange(
     input: &[u8],
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
@@ -284,7 +284,7 @@ pub(super) fn decode_exchange(
 /// Runs the semantic decode path (discarding the IR at the inspect boundary)
 /// so `unknown_entities` and related attributes stay accurate. This is not a
 /// cheap syntactic census.
-pub(super) fn analyze_exchange(
+pub(crate) fn analyze_exchange(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
@@ -934,12 +934,12 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
 }
 
 /// A non-blank STEP record reference.
-pub(super) fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
+fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
     cadmpeg_core::nonblank_literal!("#{id}")
 }
 
 /// A source association for a STEP record.
-pub(super) fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
+fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
@@ -1202,7 +1202,7 @@ fn schema_name(exchange: &Exchange) -> String {
     exchange.schema_identifiers().join(",")
 }
 
-pub(super) fn decode_text(
+fn decode_text(
     exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,

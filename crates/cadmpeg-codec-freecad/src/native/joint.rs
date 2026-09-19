@@ -8,11 +8,11 @@ use std::collections::BTreeMap;
 
 /// Open paired-joint label; `grounded` denotes a different payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PairedJointFamily(String);
+pub(crate) struct PairedJointFamily(String);
 
 impl PairedJointFamily {
     /// Retain the source label unless it denotes a grounded constraint.
-    pub fn new(value: String) -> Result<Self, String> {
+    pub(crate) fn new(value: String) -> Result<Self, String> {
         if value.eq_ignore_ascii_case("grounded") {
             return Err("paired joint cannot use the grounded family".into());
         }
@@ -20,7 +20,7 @@ impl PairedJointFamily {
     }
 
     /// Source label, including custom enumeration values.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
 }
@@ -111,13 +111,13 @@ impl JointParameters {
 /// One assembly joint or grounded-object constraint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "JointRecordWire", into = "JointRecordWire")]
-pub struct JointRecord {
+pub(crate) struct JointRecord {
     /// Stable joint identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Grounded object or paired connectors.
-    pub body: JointBody,
+    pub(crate) body: JointBody,
     /// Joint scalar, limit, detach, enable, and suppression properties.
     parameters: JointParameters,
 }
@@ -126,7 +126,7 @@ pub struct JointRecord {
 #[derive(Debug, Clone, PartialEq)]
 // Paired connector arrays stay inline and preserve their fixed cardinality without allocation.
 #[allow(clippy::large_enum_variant)]
-pub enum JointBody {
+pub(crate) enum JointBody {
     /// Object-to-ground constraint.
     Grounded {
         /// Grounded object reference.
@@ -145,13 +145,13 @@ pub enum JointBody {
 
 /// One paired-joint connector.
 #[derive(Debug, Clone, PartialEq)]
-pub struct JointConnectorRecord {
+pub(crate) struct JointConnectorRecord {
     /// Connector reference with subelement paths.
-    pub reference: Option<LinkTarget>,
+    pub(crate) reference: Option<LinkTarget>,
     /// Connector-local coordinate frame.
-    pub placement: FiniteFrame,
+    pub(crate) placement: FiniteFrame,
     /// Connector attachment-offset frame.
-    pub offset: FiniteFrame,
+    pub(crate) offset: FiniteFrame,
 }
 
 impl JointRecord {
@@ -175,7 +175,7 @@ impl JointRecord {
     }
 
     /// Persisted joint family code, or `grounded`.
-    pub fn kind(&self) -> &str {
+    pub(crate) fn kind(&self) -> &str {
         match &self.body {
             JointBody::Grounded { .. } => "grounded",
             JointBody::Pair { kind, .. } => kind.as_str(),
@@ -183,7 +183,7 @@ impl JointRecord {
     }
 
     /// Ordered connector references.
-    pub fn references(&self) -> Vec<&LinkTarget> {
+    pub(crate) fn references(&self) -> Vec<&LinkTarget> {
         match &self.body {
             JointBody::Grounded { reference, .. } => reference.iter().collect(),
             JointBody::Pair { connectors, .. } => connectors
@@ -194,7 +194,7 @@ impl JointRecord {
     }
 
     /// Connector-local coordinate frames in connector order.
-    pub fn placements(&self) -> Vec<[[f64; 4]; 4]> {
+    pub(crate) fn placements(&self) -> Vec<[[f64; 4]; 4]> {
         match &self.body {
             JointBody::Grounded { placement, .. } => vec![placement.rows()],
             JointBody::Pair { connectors, .. } => {
@@ -207,7 +207,7 @@ impl JointRecord {
     }
 
     /// Connector attachment-offset frames in connector order.
-    pub fn offsets(&self) -> Vec<[[f64; 4]; 4]> {
+    fn offsets(&self) -> Vec<[[f64; 4]; 4]> {
         match &self.body {
             JointBody::Grounded { .. } => Vec::new(),
             JointBody::Pair { connectors, .. } => {

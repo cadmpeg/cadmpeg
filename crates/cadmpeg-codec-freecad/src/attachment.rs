@@ -70,10 +70,10 @@ const MAP_MODE_NAMES: &[&str] = &[
 /// An index in the attachment map-mode table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct MapModeIndex(u8);
+pub(crate) struct MapModeIndex(u8);
 
 impl MapModeIndex {
-    pub(crate) fn try_new(index: usize) -> Result<Self, String> {
+    fn try_new(index: usize) -> Result<Self, String> {
         if index >= MAP_MODE_NAMES.len() {
             return Err(format!("map_mode index {index} is out of range"));
         }

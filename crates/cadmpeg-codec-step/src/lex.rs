@@ -5,23 +5,23 @@ use std::ops::Range;
 
 /// The entity or value occurrence class.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum OccurrencePrefix {
+enum OccurrencePrefix {
     Entity,
     Value,
 }
 
 /// A lexical token with its exact source-byte extent.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token {
+pub(crate) struct Token {
     /// Parsed token category.
-    pub kind: TokenKind,
+    pub(crate) kind: TokenKind,
     /// Half-open byte range in the exchange structure.
-    pub span: Range<usize>,
+    pub(crate) span: Range<usize>,
 }
 
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     /// Standard keyword or entity name.
     Name(String),
     /// User-defined `!`-prefixed keyword.
@@ -72,18 +72,18 @@ pub enum TokenKind {
 
 /// Binary literal payload packed most-significant nibble first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BinaryValue {
+pub(crate) struct BinaryValue {
     /// Unused low-order bits in the final byte, including nibble padding.
     unused_bits: u8,
     data: Box<[u8]>,
 }
 
 impl BinaryValue {
-    pub fn bit_len(&self) -> usize {
+    pub(crate) fn bit_len(&self) -> usize {
         self.data.len() * 8 - usize::from(self.unused_bits)
     }
 
-    pub fn data(&self) -> &[u8] {
+    pub(crate) fn data(&self) -> &[u8] {
         &self.data
     }
 }
@@ -91,15 +91,15 @@ impl BinaryValue {
 /// Lexical failure with a stable byte position.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message} at byte {offset}")]
-pub struct LexError {
+pub(crate) struct LexError {
     /// Byte offset at which tokenization failed.
-    pub offset: usize,
+    offset: usize,
     /// Violated lexical invariant.
-    pub message: String,
+    pub(crate) message: String,
 }
 
 /// Tokenize one complete clear-text exchange structure.
-pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
+pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token()? {

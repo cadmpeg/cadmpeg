@@ -39,9 +39,9 @@ const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
 pub(super) struct GeometryData {
-    pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
-    pub transformation_operators: BTreeMap<u64, Transform>,
-    pub units: UnitScales,
+    pub(super) placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    pub(super) transformation_operators: BTreeMap<u64, Transform>,
+    pub(super) units: UnitScales,
 }
 
 pub(super) fn placement_transform(

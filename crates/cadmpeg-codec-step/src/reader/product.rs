@@ -43,8 +43,8 @@ const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
 ];
 
 pub(super) struct ProductData {
-    pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    pub product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
+    pub(super) product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
+    pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
 pub(super) fn decode(

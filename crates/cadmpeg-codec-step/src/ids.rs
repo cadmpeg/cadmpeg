@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{Identity, IdentityComponent, IdentityKey, IdentityNamespac
 /// checked when the value is built. The `kind!` macro builds one from a source
 /// literal when the crate compiles; `IdentityKind::try_new` admits
 /// file-derived text and returns an error when the text cannot be a kind.
-pub type IdentityKind = IdentityComponent;
+pub(crate) type IdentityKind = IdentityComponent;
 
 /// The `<format>` component of every STEP identity.
 static FORMAT: IdentityComponent = cadmpeg_ir::identity_component!("step");
@@ -69,49 +69,49 @@ pub(crate) use key_word;
 
 /// File-level signature opaque record: `step:file:signature#{index}`.
 #[must_use]
-pub fn signature(index: usize) -> UnknownId {
+pub(crate) fn signature(index: usize) -> UnknownId {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_FILE, kind!("signature"));
     UnknownId::from(Identity::compose(&namespace, IdentityKey::from(index)))
 }
 
 /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
 #[must_use]
-pub fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn data(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DATA, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Product structure identity: `step:product:{kind}#{key}`.
 #[must_use]
-pub fn product(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn product(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRODUCT, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Presentation / PMI identity: `step:presentation:{kind}#{key}`.
 #[must_use]
-pub fn presentation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn presentation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_PRESENTATION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Construction / procedural identity: `step:construction:{kind}#{key}`.
 #[must_use]
-pub fn construction(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn construction(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_CONSTRUCTION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Tessellation identity: `step:tessellation:{kind}#{key}`.
 #[must_use]
-pub fn tessellation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn tessellation(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_TESSELLATION, kind);
     Identity::compose(&namespace, key)
 }
 
 /// Drawing graph identity: `step:drawing:{kind}#{key}`.
 #[must_use]
-pub fn drawing(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
+pub(crate) fn drawing(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(&FORMAT, &SCOPE_DRAWING, kind);
     Identity::compose(&namespace, key)
 }

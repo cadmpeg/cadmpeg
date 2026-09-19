@@ -29,7 +29,7 @@ pub(crate) mod schema_identifier;
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
-pub enum Value {
+pub(crate) enum Value {
     /// Reference to a DATA entity instance.
     Reference(u64),
     /// Reference to an externally defined value instance.
@@ -62,25 +62,25 @@ pub enum Value {
 
 /// One simple entity leaf within an entity instance.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PartialRecord {
+pub(crate) struct PartialRecord {
     /// Uppercase standard or `!`-prefixed user-defined entity name.
-    pub name: String,
+    pub(crate) name: String,
     /// Explicit external-mapping parameters.
-    pub parameters: Vec<Value>,
+    pub(crate) parameters: Vec<Value>,
 }
 
-pub use partials::RecordPartials;
+pub(crate) use partials::RecordPartials;
 
 mod partials {
     use super::PartialRecord;
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
-    pub struct RecordPartials(Vec<PartialRecord>);
+    pub(crate) struct RecordPartials(Vec<PartialRecord>);
 
     impl RecordPartials {
         /// Builds the population of one simple entity instance.
-        pub fn single(first: PartialRecord) -> Self {
+        pub(crate) fn single(first: PartialRecord) -> Self {
             Self(vec![first])
         }
 
@@ -95,7 +95,7 @@ mod partials {
         }
 
         /// The first partial record, which always exists.
-        pub fn first(&self) -> &PartialRecord {
+        pub(crate) fn first(&self) -> &PartialRecord {
             &self.0[0]
         }
     }
@@ -135,51 +135,51 @@ mod partials {
 
 /// One DATA entity instance with its exact source extent.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RawRecord {
+pub(crate) struct RawRecord {
     /// One leaf for a simple instance or all leaves for a complex instance.
-    pub partials: RecordPartials,
+    pub(crate) partials: RecordPartials,
     /// Half-open byte range from instance name through semicolon.
-    pub span: Range<usize>,
+    pub(crate) span: Range<usize>,
 }
 
 /// One entity-like record in the HEADER section.
 #[derive(Debug, Clone, PartialEq)]
-pub struct HeaderRecord {
+pub(crate) struct HeaderRecord {
     /// Header record name.
-    pub name: String,
+    pub(crate) name: String,
     /// Header record parameters.
-    pub parameters: Vec<Value>,
+    pub(crate) parameters: Vec<Value>,
     /// Byte offset of the record name in the source.
-    pub offset: usize,
+    offset: usize,
 }
 
 /// One DATA section and its ordered population.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DataSection {
+pub(crate) struct DataSection {
     /// Edition-3 DATA section parameters.
-    pub parameters: Vec<Value>,
+    pub(crate) parameters: Vec<Value>,
     /// Entity-instance names in source order.
-    pub records: Vec<u64>,
+    pub(crate) records: Vec<u64>,
 }
 
 /// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnchorEntry {
+pub(crate) struct AnchorEntry {
     /// Local resource name.
-    pub name: String,
+    pub(crate) name: String,
     /// Value bound to the resource name.
-    pub value: Value,
+    pub(crate) value: Value,
     /// Ordered metadata tags attached to the binding.
-    pub tags: Vec<AnchorTag>,
+    tags: Vec<AnchorTag>,
 }
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-pub struct AnchorTag {
+struct AnchorTag {
     /// Tag name, preserving source case.
-    pub name: String,
+    name: String,
     /// Tag value.
-    pub value: Value,
+    value: Value,
 }
 
 /// An admitted entity or value occurrence name in a REFERENCE binding.
@@ -200,16 +200,16 @@ impl std::fmt::Display for ReferenceName {
 
 /// One edition-3 external REFERENCE binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReferenceEntry {
+pub(crate) struct ReferenceEntry {
     /// External entity or value occurrence name such as `#123`.
-    pub name: ReferenceName,
+    pub(crate) name: ReferenceName,
     /// External resource URI.
-    pub uri: String,
+    pub(crate) uri: String,
 }
 
 /// Parsed exchange structure and global DATA record graph.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Exchange {
+pub(crate) struct Exchange {
     /// HEADER records in source order.
     header: Vec<HeaderRecord>,
     /// ANCHOR bindings in source order.
@@ -441,7 +441,7 @@ impl Exchange {
 
 /// Structural or lexical exchange failure.
 #[derive(Debug, thiserror::Error)]
-pub enum ParseError {
+pub(crate) enum ParseError {
     /// Tokenization failed.
     #[error(transparent)]
     Lex(#[from] LexError),
@@ -460,7 +460,7 @@ pub enum ParseError {
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParseDiagnosticKind {
+pub(crate) enum ParseDiagnosticKind {
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
     /// A simple named carrier omits its inherited `name` value.
@@ -475,22 +475,22 @@ pub enum ParseDiagnosticKind {
 
 /// One attributable parser diagnostic that does not prevent recovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParseDiagnostic {
+pub(crate) struct ParseDiagnostic {
     /// Byte offset of the containing source record.
-    pub offset: usize,
+    pub(crate) offset: usize,
     /// Stable diagnostic classification.
-    pub kind: ParseDiagnosticKind,
+    pub(crate) kind: ParseDiagnosticKind,
     /// Human-readable explanation, including the observed and canonical order.
-    pub message: String,
+    pub(crate) message: String,
 }
 
 /// Parse one complete clear-text exchange structure and resolve DATA references.
-pub fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+pub(crate) fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
     parse_inner(input, None)
 }
 
 /// Parse one exchange structure while charging the caller's decode session.
-pub fn parse_with_context(
+pub(crate) fn parse_with_context(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {

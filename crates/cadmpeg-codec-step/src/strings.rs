@@ -6,15 +6,15 @@ use crate::parse::implementation_level::ImplementationLevel;
 /// A malformed or unsupported string escape.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message} at string byte {offset}")]
-pub struct StringError {
+pub(crate) struct StringError {
     /// Byte position within the unquoted string token.
-    pub offset: usize,
+    offset: usize,
     /// Description of the violated escape invariant.
-    pub message: String,
+    message: String,
 }
 
 /// Decode the bytes between a Part 21 string token's apostrophe delimiters.
-pub fn decode(input: &[u8]) -> Result<String, StringError> {
+pub(crate) fn decode(input: &[u8]) -> Result<String, StringError> {
     decode_with_level(input, ImplementationLevel::LegacyEdition1)
 }
 
@@ -139,7 +139,7 @@ fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringErr
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.
-pub fn encode(input: &str) -> String {
+pub(crate) fn encode(input: &str) -> String {
     let mut output = String::new();
     for character in input.chars() {
         match character {

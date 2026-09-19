@@ -513,24 +513,24 @@ mod tests {
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DesignCensusRecordWire", into = "DesignCensusRecordWire")]
-pub struct DesignCensusRecord {
+pub(crate) struct DesignCensusRecord {
     /// Stable census identity derived from the native object.
-    pub id: String,
+    pub(crate) id: String,
     /// Native application object being classified.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted runtime type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Neutral history feature projected from the object.
-    pub feature: String,
+    pub(crate) feature: String,
     /// Stable CADIR feature-definition family name.
-    pub semantic_kind: String,
+    pub(crate) semantic_kind: String,
     /// Whether topology post-processing composition wraps the operation.
-    pub post_processed: bool,
+    pub(crate) post_processed: bool,
 }
 
 impl DesignCensusRecord {
     /// Whether the operation has neutral semantics.
-    pub fn neutral(&self) -> bool {
+    pub(crate) fn neutral(&self) -> bool {
         self.semantic_kind != "native"
     }
 }
@@ -583,7 +583,7 @@ impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
 /// Carrier grammar counted by a census record. Empty payloads have no census.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum CarrierCensusForm {
+pub(crate) enum CarrierCensusForm {
     /// Compact text shape-set grammar.
     Text,
     /// Binary shape-set grammar.
@@ -592,43 +592,43 @@ pub enum CarrierCensusForm {
 
 /// Machine-derived carrier and topology-family census for one exact shape payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CarrierCensusRecord {
+pub(crate) struct CarrierCensusRecord {
     /// Stable census identity derived from the shape payload.
-    pub id: String,
+    pub(crate) id: String,
     /// Shape payload being counted.
-    pub payload: String,
+    pub(crate) payload: String,
     /// `text` or `binary` carrier grammar.
-    pub form: CarrierCensusForm,
+    pub(crate) form: CarrierCensusForm,
     /// Grammar version declared by the shape-set header.
-    pub topology_version: u8,
+    pub(crate) topology_version: u8,
     /// Recursive 2D-curve family counts.
-    pub curves_2d: BTreeMap<String, u64>,
+    pub(crate) curves_2d: BTreeMap<String, u64>,
     /// Recursive 3D-curve family counts.
-    pub curves_3d: BTreeMap<String, u64>,
+    pub(crate) curves_3d: BTreeMap<String, u64>,
     /// Recursive surface-family counts.
-    pub surfaces: BTreeMap<String, u64>,
+    pub(crate) surfaces: BTreeMap<String, u64>,
     /// Topological shape-family counts.
-    pub topology: BTreeMap<String, u64>,
+    pub(crate) topology: BTreeMap<String, u64>,
     /// Standalone polygon carrier count.
-    pub polygons_3d: u64,
+    pub(crate) polygons_3d: u64,
     /// Polygon-on-triangulation carrier count.
-    pub polygons_on_triangulations: u64,
+    pub(crate) polygons_on_triangulations: u64,
     /// Triangulation carrier count.
-    pub triangulations: u64,
+    pub(crate) triangulations: u64,
 }
 
 /// One support attachment and its distinct persisted frames.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "AttachmentRecordWire", into = "AttachmentRecordWire")]
-pub struct AttachmentRecord {
+pub(crate) struct AttachmentRecord {
     /// Stable attachment identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Attached application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Ordered support objects and subelements.
-    pub supports: Vec<Option<LinkTarget>>,
+    pub(crate) supports: Vec<Option<LinkTarget>>,
     /// Persisted attachment-map mode.
-    pub map_mode: Option<MapModeIndex>,
+    pub(crate) map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
     placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
@@ -668,7 +668,7 @@ impl AttachmentRecord {
     }
 
     /// Effective frame used for neutral geometry.
-    pub fn effective_frame(&self) -> [[f64; 4]; 4] {
+    pub(crate) fn effective_frame(&self) -> [[f64; 4]; 4] {
         crate::attachment::effective_frame(
             self.placement().map(FiniteFrame::rows),
             self.offset().map(FiniteFrame::rows),
@@ -731,7 +731,7 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
 
 /// A nonempty half-open byte interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ByteSpan {
+pub(crate) struct ByteSpan {
     start: u64,
     end: u64,
 }
@@ -754,13 +754,13 @@ impl ByteSpan {
 /// Exact XML text paired with its nonempty source interval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "RetainedXmlWire", into = "RetainedXmlWire")]
-pub struct RetainedXml {
+pub(crate) struct RetainedXml {
     text: String,
     span: ByteSpan,
 }
 
 impl RetainedXml {
-    pub(crate) fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
+    fn try_new(text: String, start: u64, end: u64) -> Result<Self, String> {
         let span = ByteSpan::try_new(start, end)?;
         if end - start != text.len() as u64 {
             return Err("raw_xml length disagrees with byte_start and byte_end".to_owned());
@@ -809,33 +809,33 @@ impl From<RetainedXml> for RetainedXmlWire {
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "GuiDocumentRecordWire", into = "GuiDocumentRecordWire")]
-pub struct GuiDocumentRecord {
+pub(crate) struct GuiDocumentRecord {
     /// Stable GUI document identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Exact persisted GUI schema declaration when present.
-    pub schema_version: Option<String>,
+    pub(crate) schema_version: Option<String>,
     /// Exact root attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered camera, active-view, clipping, and other document state.
-    pub states: Vec<GuiStateRecord>,
+    pub(crate) states: Vec<GuiStateRecord>,
 }
 
 /// One ordered document-level GUI state element.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiStateRecord {
+pub(crate) struct GuiStateRecord {
     /// Stable state identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Persisted XML element name.
-    pub kind: String,
+    pub(crate) kind: String,
     /// Exact element attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered descendant value elements.
-    pub values: Vec<ValueRecord>,
+    pub(crate) values: Vec<ValueRecord>,
     /// Referenced display assets.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
     /// Retained XML and its byte span.
     #[serde(flatten)]
-    pub xml: RetainedXml,
+    pub(crate) xml: RetainedXml,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -892,7 +892,7 @@ impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
 
 /// A supported semantic annotation runtime type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnnotationRuntimeType {
+pub(crate) enum AnnotationRuntimeType {
     /// The `App::Annotation` runtime type.
     Annotation,
     /// The `App::AnnotationLabel` runtime type.
@@ -929,7 +929,7 @@ pub enum AnnotationRuntimeType {
 
 impl AnnotationRuntimeType {
     /// Returns the persisted runtime type name.
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Annotation => "App::Annotation",
             Self::AnnotationLabel => "App::AnnotationLabel",
@@ -992,26 +992,26 @@ impl<'de> Deserialize<'de> for AnnotationRuntimeType {
 
 /// One semantic annotation object kept distinct from drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SemanticAnnotationRecord {
+pub(crate) struct SemanticAnnotationRecord {
     /// Stable semantic annotation identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted annotation runtime type.
-    pub kind: AnnotationRuntimeType,
+    pub(crate) kind: AnnotationRuntimeType,
     /// Ordered user-visible text fragments.
-    pub text: Vec<String>,
+    pub(crate) text: Vec<String>,
     /// Object and subelement references grouped by source property.
-    pub references: BTreeMap<String, Vec<Option<LinkTarget>>>,
+    pub(crate) references: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed or exactly framed annotation properties grouped by source name.
-    pub parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<String, String>,
     /// Referenced symbol, image, or other side entries.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
 }
 
 /// Persisted page runtime type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TechDrawPageKind {
+pub(crate) enum TechDrawPageKind {
     /// Native page.
     Page,
     /// Python page.
@@ -1020,11 +1020,11 @@ pub enum TechDrawPageKind {
 
 /// Persisted non-page runtime type.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TechDrawNonPageKind(String);
+pub(crate) struct TechDrawNonPageKind(String);
 
 /// Drawing runtime type and its page payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TechDrawKind {
+pub(crate) enum TechDrawKind {
     /// Page with ordered views and optional template.
     Page {
         /// Persisted page class.
@@ -1040,7 +1040,7 @@ pub enum TechDrawKind {
 
 impl TechDrawKind {
     /// Admits a runtime type and its page payload.
-    pub fn try_new(
+    pub(crate) fn try_new(
         kind: String,
         views: Vec<String>,
         template: Option<String>,
@@ -1064,7 +1064,7 @@ impl TechDrawKind {
     }
 
     /// Persisted runtime type name.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Page {
                 runtime: TechDrawPageKind::Page,
@@ -1082,21 +1082,21 @@ impl TechDrawKind {
 /// One `TechDraw` page, template, view, dimension, or annotation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DrawingRecordWire", into = "DrawingRecordWire")]
-pub struct DrawingRecord {
+pub(crate) struct DrawingRecord {
     /// Stable drawing-record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Persisted `TechDraw` runtime type.
-    pub kind: TechDrawKind,
+    pub(crate) kind: TechDrawKind,
     /// Ordered source object and subelement references for a view or dimension.
-    pub sources: Vec<Option<LinkTarget>>,
+    pub(crate) sources: Vec<Option<LinkTarget>>,
     /// All drawing relationships grouped by their persisted property name.
-    pub relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
+    pub(crate) relationships: BTreeMap<String, Vec<Option<LinkTarget>>>,
     /// Typed scalar/vector/string drawing fields retained by property name.
-    pub parameters: BTreeMap<String, String>,
+    pub(crate) parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1155,20 +1155,20 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
 /// One product container, prototype, or placed link occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ProductNodeRecordWire", into = "ProductNodeRecordWire")]
-pub struct ProductNodeRecord {
+pub(crate) struct ProductNodeRecord {
     /// Stable record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning application object.
-    pub object: String,
+    pub(crate) object: String,
     /// Structural family and family-specific payload.
-    pub node: ProductNode,
+    pub(crate) node: ProductNode,
 }
 
 /// Structural family of a product node.
 #[derive(Debug, Clone, PartialEq)]
 // Keep each native node payload inline; occurrence fields are read together during projection.
 #[allow(clippy::large_enum_variant)]
-pub enum ProductNode {
+pub(crate) enum ProductNode {
     /// `App::DocumentObjectGroup`.
     Group(ContainerNode),
     /// `App::Part` or assembly container.
@@ -1186,45 +1186,45 @@ pub enum ProductNode {
 
 /// Shared payload of a non-occurrence product container.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ContainerNode {
+pub(crate) struct ContainerNode {
     /// Ordered contained application objects.
-    pub members: Vec<String>,
+    pub(crate) members: Vec<String>,
     /// Local placement as a row-major affine matrix.
-    pub local_transform: Option<FiniteFrame>,
+    pub(crate) local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
-    pub placement_property: Option<String>,
+    pub(crate) placement_property: Option<String>,
 }
 
 /// Link occurrence payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinkOccurrence {
+pub(crate) struct LinkOccurrence {
     /// Ordered contained application objects.
-    pub members: Vec<String>,
+    pub(crate) members: Vec<String>,
     /// Linked prototype object.
-    pub prototype: Option<String>,
+    pub(crate) prototype: Option<String>,
     /// External document token when the prototype is not local.
-    pub external_document: Option<ExternalDocument>,
+    pub(crate) external_document: Option<ExternalDocument>,
     /// Local occurrence placement as a row-major affine matrix.
-    pub local_transform: Option<FiniteFrame>,
+    pub(crate) local_transform: Option<FiniteFrame>,
     /// Property supplying the placement.
-    pub placement_property: Option<String>,
+    pub(crate) placement_property: Option<String>,
     /// Admitted link-array values.
-    pub array: LinkArray,
+    pub(crate) array: LinkArray,
     /// Whether the prototype transform participates in occurrence placement.
-    pub link_transform: Option<bool>,
+    pub(crate) link_transform: Option<bool>,
     /// Subelement paths selected on the linked prototype.
-    pub linked_subelements: Vec<String>,
+    pub(crate) linked_subelements: Vec<String>,
     /// Whether the link claims its prototype as a tree child.
-    pub claim_child: Option<bool>,
+    pub(crate) claim_child: Option<bool>,
     /// Copy-on-change policy and its payload.
-    pub copy_on_change: Option<CopyOnChange>,
+    pub(crate) copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
-    pub scale: Option<FiniteVec3>,
+    pub(crate) scale: Option<FiniteVec3>,
 }
 
 /// Independently optional array carriers with a common element count.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinkArray {
+pub(crate) struct LinkArray {
     count: Option<u64>,
     transforms: Vec<FiniteFrame>,
     scales: Vec<FiniteVec3>,
@@ -1239,7 +1239,7 @@ pub struct LinkArray {
 /// permits one scalar link occurrence or infers a nonzero count from the
 /// populated array-valued fields, including per-element visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LinkArrayCardinality {
+pub(crate) enum LinkArrayCardinality {
     /// The link is not an array and carries one occurrence.
     Scalar,
     /// The link is an array of this many elements.
@@ -1280,7 +1280,7 @@ impl LinkArray {
     }
 
     /// Element cardinality: the stated count, else the one the carriers establish.
-    pub fn cardinality(&self) -> LinkArrayCardinality {
+    fn cardinality(&self) -> LinkArrayCardinality {
         let elements = self.count.unwrap_or_else(|| {
             (self.transforms.len() as u64)
                 .max(self.scales.len() as u64)
@@ -1320,19 +1320,19 @@ impl CopyOnChangePolicy {
 
 /// Copy-on-change policy and its dependent payload.
 #[derive(Debug, Clone, PartialEq)]
-pub struct CopyOnChange {
+pub(crate) struct CopyOnChange {
     /// Admitted persisted policy index.
     policy: CopyOnChangePolicy,
     /// Original tracked object.
-    pub source: Option<LinkTarget>,
+    pub(crate) source: Option<LinkTarget>,
     /// Internal ownership group.
-    pub group: Option<LinkTarget>,
+    pub(crate) group: Option<LinkTarget>,
     /// Whether the tracked source changed.
-    pub touched: Option<bool>,
+    touched: Option<bool>,
 }
 
 impl CopyOnChange {
-    pub(crate) fn from_wire(
+    fn from_wire(
         policy: Option<String>,
         source: Option<LinkTarget>,
         group: Option<LinkTarget>,
@@ -1363,7 +1363,7 @@ impl CopyOnChange {
 
 impl ProductNodeRecord {
     /// Structural family string retained on the CADIR wire.
-    pub fn kind(&self) -> &'static str {
+    pub(crate) fn kind(&self) -> &'static str {
         match self.node {
             ProductNode::Group(_) => "group",
             ProductNode::Part(_) => "part",
@@ -1373,7 +1373,7 @@ impl ProductNodeRecord {
     }
 
     /// Ordered contained application objects.
-    pub fn members(&self) -> &[String] {
+    pub(crate) fn members(&self) -> &[String] {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -1385,7 +1385,7 @@ impl ProductNodeRecord {
     }
 
     /// Local placement matrix when stored on the node.
-    pub fn local_transform(&self) -> Option<FiniteFrame> {
+    pub(crate) fn local_transform(&self) -> Option<FiniteFrame> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -1397,7 +1397,7 @@ impl ProductNodeRecord {
     }
 
     /// Property supplying the placement.
-    pub fn placement_property(&self) -> Option<&str> {
+    pub(crate) fn placement_property(&self) -> Option<&str> {
         match &self.node {
             ProductNode::Group(node)
             | ProductNode::Part(node)
@@ -1409,7 +1409,7 @@ impl ProductNodeRecord {
     }
 
     /// Occurrence payload when this node is a link.
-    pub fn occurrence(&self) -> Option<&LinkOccurrence> {
+    pub(crate) fn occurrence(&self) -> Option<&LinkOccurrence> {
         match &self.node {
             ProductNode::Occurrence(node) => Some(node),
             _ => None,
@@ -1417,62 +1417,62 @@ impl ProductNodeRecord {
     }
 
     /// Linked prototype object for an occurrence.
-    pub fn prototype(&self) -> Option<&str> {
+    pub(crate) fn prototype(&self) -> Option<&str> {
         self.occurrence().and_then(|node| node.prototype.as_deref())
     }
 
     /// External document token when the prototype is not local.
-    pub fn external_document(&self) -> Option<&ExternalDocument> {
+    pub(crate) fn external_document(&self) -> Option<&ExternalDocument> {
         self.occurrence()
             .and_then(|node| node.external_document.as_ref())
     }
 
     /// Number of array elements requested by the link.
-    pub fn element_count(&self) -> Option<u64> {
+    pub(crate) fn element_count(&self) -> Option<u64> {
         self.occurrence().and_then(|node| node.array.count)
     }
 
     /// Element cardinality of a link occurrence. A non-occurrence node has none.
-    pub fn element_cardinality(&self) -> Option<LinkArrayCardinality> {
+    pub(crate) fn element_cardinality(&self) -> Option<LinkArrayCardinality> {
         self.occurrence().map(|node| node.array.cardinality())
     }
 
     /// Whether the prototype transform participates in occurrence placement.
-    pub fn link_transform(&self) -> Option<bool> {
+    pub(crate) fn link_transform(&self) -> Option<bool> {
         self.occurrence().and_then(|node| node.link_transform)
     }
 
     /// Ordered per-element placements for a link array.
-    pub fn element_transforms(&self) -> &[FiniteFrame] {
+    pub(crate) fn element_transforms(&self) -> &[FiniteFrame] {
         self.occurrence()
             .map_or(&[], |node| node.array.transforms.as_slice())
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub fn element_scales(&self) -> &[FiniteVec3] {
+    pub(crate) fn element_scales(&self) -> &[FiniteVec3] {
         self.occurrence()
             .map_or(&[], |node| node.array.scales.as_slice())
     }
 
     /// Ordered per-element visibility values after `FreeCAD` bit-order decoding.
-    pub fn element_visibility(&self) -> &[bool] {
+    pub(crate) fn element_visibility(&self) -> &[bool] {
         self.occurrence()
             .map_or(&[], |node| node.array.visibility.as_slice())
     }
 
     /// Subelement paths selected on the linked prototype.
-    pub fn linked_subelements(&self) -> &[String] {
+    pub(crate) fn linked_subelements(&self) -> &[String] {
         self.occurrence()
             .map_or(&[], |node| node.linked_subelements.as_slice())
     }
 
     /// Whether the link claims its prototype as a tree child.
-    pub fn claim_child(&self) -> Option<bool> {
+    pub(crate) fn claim_child(&self) -> Option<bool> {
         self.occurrence().and_then(|node| node.claim_child)
     }
 
     /// Persisted copy-on-change policy name or numeric code.
-    pub fn copy_on_change(&self) -> Option<&str> {
+    pub(crate) fn copy_on_change(&self) -> Option<&str> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .map(|copy| copy.policy.as_str())
@@ -1486,35 +1486,35 @@ impl ProductNodeRecord {
     }
 
     /// Original object tracked by copy-on-change.
-    pub fn copy_on_change_source(&self) -> Option<&LinkTarget> {
+    pub(crate) fn copy_on_change_source(&self) -> Option<&LinkTarget> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .and_then(|copy| copy.source.as_ref())
     }
 
     /// Internal ownership group for copy-on-change copies.
-    pub fn copy_on_change_group(&self) -> Option<&LinkTarget> {
+    pub(crate) fn copy_on_change_group(&self) -> Option<&LinkTarget> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .and_then(|copy| copy.group.as_ref())
     }
 
     /// Whether the tracked source has changed.
-    pub fn copy_on_change_touched(&self) -> Option<bool> {
+    pub(crate) fn copy_on_change_touched(&self) -> Option<bool> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .and_then(|copy| copy.touched)
     }
 
     /// Base scale vector applied to every occurrence element.
-    pub fn scale(&self) -> Option<[f64; 3]> {
+    pub(crate) fn scale(&self) -> Option<[f64; 3]> {
         self.occurrence()
             .and_then(|node| node.scale)
             .map(FiniteVec3::values)
     }
 
     /// Explicit per-element application objects in array order.
-    pub fn element_objects(&self) -> &[String] {
+    pub(crate) fn element_objects(&self) -> &[String] {
         match &self.node {
             ProductNode::LinkGroup {
                 element_objects, ..
@@ -1701,48 +1701,48 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
 
 /// One persisted GUI view provider linked to an application object when available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiViewProviderRecord {
+pub(crate) struct GuiViewProviderRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Application object identity, or `None` for a GUI-only provider.
-    pub object: Option<NonBlankString>,
+    pub(crate) object: Option<NonBlankString>,
     /// Persisted provider name.
-    pub name: String,
+    pub(crate) name: String,
     /// Persisted tree-expansion state.
-    pub expanded: Option<bool>,
+    pub(crate) expanded: Option<bool>,
     /// Source order in `ViewProviderData`.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact provider XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// One persisted property owned by a GUI view provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GuiPropertyRecord {
+pub(crate) struct GuiPropertyRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning view-provider identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted property name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime property type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Native status bits.
-    pub status: Option<u64>,
+    pub(crate) status: Option<u64>,
     /// Source order within the provider.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Ordered value elements.
-    pub values: Vec<ValueRecord>,
+    pub(crate) values: Vec<ValueRecord>,
     /// Referenced archive entries.
-    pub side_entries: Vec<String>,
+    pub(crate) side_entries: Vec<String>,
     /// Retained XML and its byte span.
     #[serde(flatten)]
-    pub xml: RetainedXml,
+    pub(crate) xml: RetainedXml,
 }
 
 /// ZIP physical-ledger role stored on one archive span.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArchiveSpanRole {
+pub(crate) enum ArchiveSpanRole {
     /// ZIP local-header signature for the named entry.
     LocalSignature(String),
     /// ZIP local-header fields for the named entry.
@@ -1809,7 +1809,7 @@ impl TryFrom<&cadmpeg_container::SpanRole> for ArchiveSpanRole {
 
 impl ArchiveSpanRole {
     /// Stable physical-ledger label retained on the CADIR wire.
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::LocalSignature(_) => "local-signature",
             Self::LocalFields(_) => "local-fields",
@@ -1830,7 +1830,7 @@ impl ArchiveSpanRole {
     }
 
     /// Owning entry, when the role is entry-owned.
-    pub fn entry(&self) -> Option<&str> {
+    fn entry(&self) -> Option<&str> {
         match self {
             Self::LocalSignature(entry)
             | Self::LocalFields(entry)
@@ -1893,13 +1893,13 @@ impl ArchiveSpanRole {
 /// One physical archive span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ArchiveSpanWire", into = "ArchiveSpanWire")]
-pub struct ArchiveSpan {
+pub(crate) struct ArchiveSpan {
     /// Stable span identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Nonempty byte interval.
-    pub span: ByteSpan,
+    pub(crate) span: ByteSpan,
     /// Structural role.
-    pub role: ArchiveSpanRole,
+    pub(crate) role: ArchiveSpanRole,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1938,7 +1938,7 @@ impl TryFrom<ArchiveSpanWire> for ArchiveSpan {
 /// Structural document-kind classification from declared object domains.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum DocumentKind {
+pub(crate) enum DocumentKind {
     /// At least one `Assembly::` object.
     Assembly,
     /// At least one `TechDraw::` object and no assembly objects.
@@ -1955,7 +1955,7 @@ pub enum DocumentKind {
 
 impl DocumentKind {
     /// Stable document-kind label retained on the CADIR wire.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Assembly => "assembly",
             Self::Drawing => "drawing",
@@ -1969,7 +1969,7 @@ impl DocumentKind {
 
 /// Parsed file version with its exact source spelling.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileVersion {
+pub(crate) struct FileVersion {
     spelling: String,
     value: usize,
 }
@@ -1994,24 +1994,24 @@ impl FileVersion {
 /// Metadata read from the persistence document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DocumentFactsWire", into = "DocumentFactsWire")]
-pub struct DocumentFacts {
+pub(crate) struct DocumentFacts {
     /// Stable document-record identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Persistence file version.
-    pub file_version: FileVersion,
+    pub(crate) file_version: FileVersion,
     /// Producing application version, when carried.
-    pub program_version: Option<String>,
+    pub(crate) program_version: Option<String>,
     /// XML document element name.
-    pub root_name: String,
+    pub(crate) root_name: String,
     /// Number of declared application objects.
-    pub object_count: usize,
+    pub(crate) object_count: usize,
     /// Application domains present in object declarations.
-    pub domains: Vec<String>,
+    pub(crate) domains: Vec<String>,
 }
 
 impl DocumentFacts {
     /// Structural document-kind classification.
-    pub fn document_kind(&self) -> DocumentKind {
+    pub(crate) fn document_kind(&self) -> DocumentKind {
         if self.domains.iter().any(|domain| domain == "Assembly") {
             DocumentKind::Assembly
         } else if self.domains.iter().any(|domain| domain == "TechDraw") {
@@ -2072,27 +2072,27 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
 /// One declared application object and its persistence state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
-pub struct ObjectRecord {
+pub(crate) struct ObjectRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Persisted object name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime type name.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Persisted numeric identity, when present.
-    pub persistent_id: Option<i64>,
+    pub(crate) persistent_id: Option<i64>,
     /// Optional custom view-provider type.
-    pub view_type: Option<String>,
+    pub(crate) view_type: Option<String>,
     /// Declaration attributes not projected into dedicated fields.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered dependency identities.
-    pub dependencies: Vec<String>,
+    pub(crate) dependencies: Vec<String>,
     /// Positive partial-load capability from the dependency record.
-    pub dependency_allow_partial: Option<std::num::NonZeroU64>,
+    pub(crate) dependency_allow_partial: Option<std::num::NonZeroU64>,
     /// Source-order index.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact object-data XML and its source span, when present.
-    pub data: Option<RetainedXml>,
+    pub(crate) data: Option<RetainedXml>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2180,39 +2180,39 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
 /// One dynamic object extension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExtensionRecord {
+pub(crate) struct ExtensionRecord {
     /// Stable extension identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning object identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted extension name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime extension type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Source-order index.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Exact extension XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// Dynamic-property persistence metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DynamicPropertyMeta {
+pub(crate) struct DynamicPropertyMeta {
     /// Display group.
-    pub group: String,
+    pub(crate) group: String,
     /// Documentation string.
-    pub documentation: Option<String>,
+    pub(crate) documentation: Option<String>,
     /// Native attribute flags.
-    pub attributes: Option<i64>,
+    pub(crate) attributes: Option<i64>,
     /// Read-only state.
-    pub read_only: Option<bool>,
+    pub(crate) read_only: Option<bool>,
     /// Hidden state.
-    pub hidden: Option<bool>,
+    pub(crate) hidden: Option<bool>,
 }
 
 /// External document named by a file path or a document identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExternalDocument {
+pub(crate) enum ExternalDocument {
     /// Path carried by a `file` attribute.
     File(NonBlankString),
     /// Document identity carried without a `file` attribute.
@@ -2221,14 +2221,14 @@ pub enum ExternalDocument {
 
 impl ExternalDocument {
     /// Document token retained on the CADIR wire.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::File(value) | Self::Name(value) => value.as_str(),
         }
     }
 
     /// Attribute spelling retained on the CADIR wire.
-    pub fn attribute(&self) -> Option<&'static str> {
+    pub(crate) fn attribute(&self) -> Option<&'static str> {
         match self {
             Self::File(_) => Some("file"),
             Self::Name(_) => None,
@@ -2259,7 +2259,7 @@ impl ExternalDocument {
 /// One `XLink`, `PropertyLink`, or `PropertyLinkSub` target.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
-pub struct LinkTarget {
+pub(crate) struct LinkTarget {
     /// External document, when the target is not local.
     document: Option<ExternalDocument>,
     /// Target object identity. Empty source names are absent.
@@ -2282,7 +2282,7 @@ impl LinkTarget {
     }
 
     /// Admits a target with a document, object, or subelement selection.
-    pub fn try_new(
+    fn try_new(
         document: Option<ExternalDocument>,
         object: Option<NonBlankString>,
         subelements: Vec<String>,
@@ -2298,12 +2298,12 @@ impl LinkTarget {
     }
 
     /// External document when the target is not local.
-    pub fn document(&self) -> Option<&ExternalDocument> {
+    pub(crate) fn document(&self) -> Option<&ExternalDocument> {
         self.document.as_ref()
     }
 
     /// Ordered subelement selectors.
-    pub fn subelements(&self) -> &[String] {
+    pub(crate) fn subelements(&self) -> &[String] {
         &self.subelements
     }
 
@@ -2313,17 +2313,17 @@ impl LinkTarget {
     }
 
     /// Document token retained on the CADIR wire.
-    pub fn document_name(&self) -> Option<&str> {
+    pub(crate) fn document_name(&self) -> Option<&str> {
         self.document.as_ref().map(ExternalDocument::as_str)
     }
 
     /// Attribute spelling retained on the CADIR wire.
-    pub fn document_attribute(&self) -> Option<&'static str> {
+    pub(crate) fn document_attribute(&self) -> Option<&'static str> {
         self.document.as_ref().and_then(ExternalDocument::attribute)
     }
 
     /// Target object identity, omitting empty source names.
-    pub fn object(&self) -> Option<&str> {
+    pub(crate) fn object(&self) -> Option<&str> {
         self.object.as_ref().map(NonBlankString::as_str)
     }
 }
@@ -2377,22 +2377,22 @@ impl TryFrom<LinkTargetWire> for LinkTarget {
 
 /// One property value element retained in source order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ValueRecord {
+pub(crate) struct ValueRecord {
     /// Value element tag.
-    pub tag: String,
+    pub(crate) tag: String,
     /// Ordered position among value elements.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Value attributes.
-    pub attributes: BTreeMap<String, String>,
+    pub(crate) attributes: BTreeMap<String, String>,
     /// Direct text content.
-    pub text: Option<String>,
+    pub(crate) text: Option<String>,
     /// Exact value-element XML.
-    pub raw_xml: String,
+    pub(crate) raw_xml: String,
 }
 
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PropertyBody {
+pub(crate) enum PropertyBody {
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
@@ -2411,25 +2411,25 @@ pub enum PropertyBody {
 /// One persisted property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
-pub struct PropertyRecord {
+pub(crate) struct PropertyRecord {
     /// Stable native identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning native object or document identity.
-    pub owner: String,
+    pub(crate) owner: String,
     /// Persisted property name.
-    pub name: String,
+    pub(crate) name: String,
     /// Runtime property type.
-    pub type_name: String,
+    pub(crate) type_name: String,
     /// Broad persistence value family selected by the property type.
-    pub family: PropertyFamily,
+    pub(crate) family: PropertyFamily,
     /// Native status bits.
-    pub status: Option<u64>,
+    pub(crate) status: Option<u64>,
     /// Transient declaration or persisted payload.
-    pub body: PropertyBody,
+    pub(crate) body: PropertyBody,
     /// Source-order index within the owner.
-    pub order: usize,
+    pub(crate) order: usize,
     /// Retained XML and its byte span.
-    pub xml: RetainedXml,
+    pub(crate) xml: RetainedXml,
 }
 
 /// More than one property matches a selection.
@@ -2486,12 +2486,12 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 
 impl PropertyRecord {
     /// Whether this is a status-only transient property declaration.
-    pub fn is_transient(&self) -> bool {
+    pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, PropertyBody::Transient)
     }
 
     /// Ordered value elements; empty for a transient declaration.
-    pub fn values(&self) -> &[ValueRecord] {
+    pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             PropertyBody::Persisted { values, .. } => values,
             PropertyBody::Transient => &[],
@@ -2499,7 +2499,7 @@ impl PropertyRecord {
     }
 
     /// Recovered link targets; empty for a transient declaration.
-    pub fn links(&self) -> &[Option<LinkTarget>] {
+    pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
             PropertyBody::Transient => &[],
@@ -2507,7 +2507,7 @@ impl PropertyRecord {
     }
 
     /// Referenced archive entries; empty for a transient declaration.
-    pub fn side_entries(&self) -> &[String] {
+    pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             PropertyBody::Persisted { side_entries, .. } => side_entries,
             PropertyBody::Transient => &[],
@@ -2613,7 +2613,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
 /// Format-level property value families.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PropertyFamily {
+pub(crate) enum PropertyFamily {
     /// Boolean, integer, or floating scalar.
     Scalar,
     /// Unit-bearing quantity.
@@ -2649,27 +2649,27 @@ pub enum PropertyFamily {
 /// One logical archive entry and its graph ownership.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "EntryRecordWire", into = "EntryRecordWire")]
-pub struct EntryRecord {
+pub(crate) struct EntryRecord {
     /// Stable entry identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Exact archive entry name.
-    pub name: String,
+    pub(crate) name: String,
     /// Classified entry role.
-    pub role: cadmpeg_core::container::ContainerRole,
+    pub(crate) role: cadmpeg_core::container::ContainerRole,
     /// Application property, GUI property, and GUI state identities that reference this entry.
-    pub referenced_by: Vec<String>,
+    pub(crate) referenced_by: Vec<String>,
     /// Complete logical bytes.
-    pub data: Vec<u8>,
+    pub(crate) data: Vec<u8>,
 }
 
 impl EntryRecord {
     /// Logical byte length.
-    pub fn byte_len(&self) -> u64 {
+    pub(crate) fn byte_len(&self) -> u64 {
         self.data.len() as u64
     }
 
     /// Lowercase SHA-256 of logical bytes.
-    pub fn sha256(&self) -> String {
+    pub(crate) fn sha256(&self) -> String {
         sha256_hex(&self.data)
     }
 }
@@ -2723,20 +2723,20 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
 /// One non-overlapping logical-entry byte span.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "LogicalSpanWire", into = "LogicalSpanWire")]
-pub struct LogicalSpan {
+pub(crate) struct LogicalSpan {
     /// Stable span identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning archive entry.
-    pub entry: String,
+    pub(crate) entry: String,
     /// Nonempty byte interval.
-    pub span: ByteSpan,
+    pub(crate) span: ByteSpan,
     /// Span family and owner.
-    pub classification: LogicalClassification,
+    pub(crate) classification: LogicalClassification,
 }
 
 /// Logical-entry family. Typed and named-opaque spans own a native record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LogicalClassification {
+pub(crate) enum LogicalClassification {
     /// Framing bytes with no native owner.
     Structural,
     /// Typed native record bytes.
@@ -2753,7 +2753,7 @@ pub enum LogicalClassification {
 
 impl LogicalClassification {
     /// Classification string retained on the CADIR wire.
-    pub const fn as_str(&self) -> &'static str {
+    pub(crate) const fn as_str(&self) -> &'static str {
         match self {
             Self::Structural => "structural",
             Self::Typed { .. } => "typed",
@@ -2762,7 +2762,7 @@ impl LogicalClassification {
     }
 
     /// Native record that owns typed or opaque bytes.
-    pub fn owner(&self) -> Option<&str> {
+    pub(crate) fn owner(&self) -> Option<&str> {
         match self {
             Self::Structural => None,
             Self::Typed { owner } | Self::NamedOpaque { owner } => Some(owner.as_str()),
@@ -2822,25 +2822,25 @@ impl TryFrom<LogicalSpanWire> for LogicalSpan {
 
 /// Deterministic whole-archive byte-accounting summary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ByteCoverageRecord {
+pub(crate) struct ByteCoverageRecord {
     /// Stable report identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Complete physical archive length.
-    pub physical_byte_len: u64,
+    pub(crate) physical_byte_len: u64,
     /// Number of physical partition spans.
-    pub physical_span_count: usize,
+    pub(crate) physical_span_count: usize,
     /// Number of logical archive entries.
-    pub logical_entry_count: usize,
+    pub(crate) logical_entry_count: usize,
     /// Sum of complete logical entry lengths.
-    pub logical_byte_len: u64,
+    pub(crate) logical_byte_len: u64,
     /// Number of logical partition spans.
-    pub logical_span_count: usize,
+    pub(crate) logical_span_count: usize,
     /// Byte count for each closed classification.
-    pub classification_bytes: BTreeMap<String, u64>,
+    pub(crate) classification_bytes: BTreeMap<String, u64>,
     /// Sorted logical entries containing named opaque bytes.
-    pub named_opaque_entries: Vec<String>,
+    pub(crate) named_opaque_entries: Vec<String>,
     /// Whether both physical and logical partitions close exactly.
-    pub exact: bool,
+    pub(crate) exact: bool,
 }
 
 /// Persistent string tables in contiguous numeric `HasherIndex` order.
@@ -2874,17 +2874,17 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
 /// One document-wide persistent string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
-pub struct StringTableRecord {
+pub(crate) struct StringTableRecord {
     /// Zero-based document table index referenced by shape properties.
     index: usize,
     /// Owning property when the table is serialized beside its first use.
-    pub owner_property: Option<String>,
+    pub(crate) owner_property: Option<String>,
     /// Whether all strings, rather than only marked strings, were persisted.
-    pub save_all: bool,
+    save_all: bool,
     /// Native hashing threshold.
-    pub threshold: i64,
+    threshold: i64,
     /// Referenced side entry, or `None` for inline data.
-    pub source_entry: Option<String>,
+    pub(crate) source_entry: Option<String>,
     /// Parsed records in serialized order.
     entries: Vec<StringTableEntry>,
 }
@@ -2927,7 +2927,7 @@ impl StringTableRecord {
     }
 
     /// Declared number of serialized entries, equal to `entries.len()`.
-    pub fn declared_count(&self) -> usize {
+    fn declared_count(&self) -> usize {
         self.entries().len()
     }
 }
@@ -2988,15 +2988,15 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
 
 /// One relative-coded record in a persistent string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StringTableEntry {
+pub(crate) struct StringTableEntry {
     /// Restored numeric string identity.
-    pub string_id: i64,
+    pub(crate) string_id: i64,
     /// Native flag word.
-    pub flags: u64,
+    pub(crate) flags: u64,
     /// Restored referenced string identities.
-    pub components: Vec<i64>,
+    pub(crate) components: Vec<i64>,
     /// Exact payload following the numeric header.
-    pub payload: String,
+    pub(crate) payload: String,
     /// Exact serialized record without its line terminator.
-    pub raw: String,
+    pub(crate) raw: String,
 }

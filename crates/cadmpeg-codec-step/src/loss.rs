@@ -28,7 +28,7 @@ const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`StepLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum StepLossCode {
+pub(crate) enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
     ParseNoncanonicalSyntax,
     /// A decode stage surfaced a per-record warning.
@@ -316,7 +316,7 @@ pub enum StepLossCode {
 impl StepLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub const ALL: &'static [StepLossCode] = &[
+    const ALL: &'static [StepLossCode] = &[
         Self::ParseNoncanonicalSyntax,
         Self::DecodeWarning,
         Self::ByteAccountingUnclassified,
@@ -462,7 +462,7 @@ impl StepLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
             Self::DecodeWarning => "decode.warning",
@@ -630,7 +630,7 @@ impl StepLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::ByteAccountingUnclassified
             | Self::DocumentLengthUnitUnresolved
@@ -835,7 +835,7 @@ impl StepLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
-    pub fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
     }
 
@@ -844,7 +844,7 @@ impl StepLossCode {
     /// The structured code is `step/<local>`. Severity comes from the local
     /// code; the strict floor comes from the taxonomy.
     #[must_use]
-    pub fn note(self, message: impl Into<String>) -> LossNote {
+    pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
