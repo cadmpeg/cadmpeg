@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 
 /// Source namespaces used to derive native record ids.
 pub mod identity;
@@ -47,7 +47,9 @@ macro_rules! native_record {
         }
 
         mod $wire {
-            use super::*;
+            #[cfg(feature = "schema")]
+            use schemars::JsonSchema;
+            use serde::Deserialize;
 
             $(#[doc = $record_doc])*
             #[derive(Deserialize)]
@@ -123,7 +125,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the classification.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Native curve-parameterization sense before IR carrier normalization.
     sense: cadmpeg_ir::topology::Sense,
     /// Native continuity token, normally `tangent` or `unknown`.
@@ -136,9 +138,9 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the selector.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Selected coedge, or null when the native edge has no owner back-reference.
-    owner_coedge: Option<CoedgeId> [serde(default, skip_serializing_if = "Option::is_none")],
+    owner_coedge: Option<cadmpeg_ir::ids::CoedgeId> [serde(default, skip_serializing_if = "Option::is_none")],
 }
 
 native_record! {
@@ -147,11 +149,11 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep vertex carrying the fields.
-    vertex: VertexId,
+    vertex: cadmpeg_ir::ids::VertexId,
     /// Edge selected as this vertex record's native owner.
-    owning_edge: EdgeId,
+    owning_edge: cadmpeg_ir::ids::EdgeId,
     /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
-    endpoint_index: EndpointSlot,
+    endpoint_index: crate::brep::records::EndpointSlot,
 }
 
 /// Endpoint selected by a native vertex ownership record.
@@ -319,7 +321,7 @@ native_record! {
     /// Source SAB face record index.
     record_index,
     /// Solved face carrying the key.
-    face: FaceId,
+    face: cadmpeg_ir::ids::FaceId,
     /// Non-negative Design-join key; absence is the native `-1` null value.
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
 }
@@ -380,7 +382,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep vertex carrying the tolerant record.
-    vertex: VertexId,
+    vertex: cadmpeg_ir::ids::VertexId,
     /// The first two independent tolerance evaluations, retained verbatim in
     /// native centimetres; `-1` denotes an unset evaluation.
     leading_tolerances: [f64; 2],
@@ -388,7 +390,7 @@ native_record! {
     /// follows it. The unset sentinel is a marker rather than a length, so the
     /// neutral vertex carries no tolerance and this record keeps whether the
     /// slot was unset or absent.
-    evaluated_slot: EvaluatedToleranceSlot,
+    evaluated_slot: crate::brep::records::EvaluatedToleranceSlot,
 }
 
 native_record! {
@@ -398,7 +400,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep edge carrying the tolerant record.
-    edge: EdgeId,
+    edge: cadmpeg_ir::ids::EdgeId,
     /// Per-entity serializer revision stamp following the model-space
     /// tolerance, matching the stream's revision value space.
     entity_revision: i64,
@@ -414,11 +416,11 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Solved B-rep coedge carrying the tolerant interval.
-    coedge: CoedgeId,
+    coedge: cadmpeg_ir::ids::CoedgeId,
     /// Native start and end parameters following the base coedge fields.
     parameter_range: [f64; 2],
     /// Release-selected fixed fields following the parameter interval.
-    extension: TolerantCoedgeExtension [serde(default)],
+    extension: crate::brep::records::TolerantCoedgeExtension [serde(default)],
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
@@ -467,7 +469,7 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Unknown exact-surface placeholder emitted for the sentinel record.
-    surface: SurfaceId,
+    surface: cadmpeg_ir::ids::SurfaceId,
 }
 
 /// Native side classification stored on an ASM wire record.
@@ -487,11 +489,11 @@ native_record! {
     /// Source SAB record index.
     record_index,
     /// Neutral shell containing the wire.
-    shell: ShellId,
+    shell: cadmpeg_ir::ids::ShellId,
     /// Edge ring or isolated vertex owned by the native wire.
-    members: WireMembers [serde(flatten)],
+    members: crate::brep::records::WireMembers [serde(flatten)],
     /// Native side classification.
-    side: WireSide,
+    side: crate::brep::records::WireSide,
 }
 
 /// Mutually exclusive native wire members.
@@ -571,7 +573,7 @@ native_record! {
     /// Source SAB body record index.
     record_index,
     /// Solved body carrying the key.
-    body: BodyId,
+    body: cadmpeg_ir::ids::BodyId,
     /// Zero-based body-record position within the BREP blob.
     body_ordinal: u32,
     /// Basename of the BREP blob containing this body.
@@ -586,7 +588,7 @@ native_record! {
     /// Source SAB transform record index.
     record_index,
     /// Solved body referencing the transform record.
-    body: BodyId,
+    body: cadmpeg_ir::ids::BodyId,
     /// The linear transform includes rotation.
     rotation: bool,
     /// The linear transform includes reflection.
