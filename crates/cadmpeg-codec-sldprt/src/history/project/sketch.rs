@@ -13,7 +13,7 @@ use crate::history::literals::{
     parse_positive_dimension_length_mm, strip_diameter_modifier,
 };
 
-pub(crate) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition> {
     if feature.input_class.as_deref() != Some("moPLine_c")
         || feature
             .properties
@@ -33,7 +33,7 @@ pub(crate) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition>
     }))
 }
 
-pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
     let diameter = feature
         .parameters
         .get("D2")
@@ -71,7 +71,7 @@ pub(crate) fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
+pub(in crate::history) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
     let origin = parse_point3_mm(feature.properties.get("BlockOrigin")?)?;
     Transform::affine([
         [1.0, 0.0, 0.0, origin.x],

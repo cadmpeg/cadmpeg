@@ -15,7 +15,7 @@ use crate::history::literals::{
     parse_bool, parse_length_mm, parse_positive_length_mm, parse_valid_direction,
 };
 
-pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
         faces: feature
             .properties
@@ -31,7 +31,7 @@ pub(crate) fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
         Some(value) => parse_length_mm(value).and_then(cadmpeg_ir::scalar::NonNegativeLength::new),
         None => None,
@@ -54,7 +54,7 @@ pub(crate) fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
     let continuity = feature
         .properties
         .get("Continuity")
@@ -83,7 +83,7 @@ pub(crate) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_trim_surface(
+pub(super) fn project_trim_surface(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
@@ -112,7 +112,7 @@ pub(crate) fn project_trim_surface(
     })
 }
 
-pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
         faces: feature
             .properties
@@ -133,7 +133,7 @@ pub(crate) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     let distance = cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
         feature
             .parameters

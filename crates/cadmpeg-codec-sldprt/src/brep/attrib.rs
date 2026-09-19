@@ -43,8 +43,8 @@ const ATOM_LOCAL: usize = 4;
 #[derive(Debug, Clone)]
 pub(crate) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
-    pub(crate) face_attr: u16,
-    pub(crate) identity: Option<super::PersistentFaceIdentity>,
+    pub(super) face_attr: u16,
+    pub(super) identity: Option<super::PersistentFaceIdentity>,
 }
 
 /// A persistent identity bound to an emitted face.
@@ -58,7 +58,7 @@ pub(crate) struct FaceAtom {
 #[derive(Debug, Clone)]
 pub(crate) struct BodyModifier {
     /// Attribute id of the body carrying the attribute.
-    pub(crate) body_attr: u16,
+    pub(super) body_attr: u16,
     /// One-based ordinal in the ordered Keywords modeling-feature records.
     pub(crate) history_ordinal: u32,
     /// Emitted body identity, resolved once the graph retains its bodies.
@@ -80,7 +80,7 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
 }
 
 /// Stream-local attribute definitions with unique names or withheld conflicts.
-pub(crate) type DefinitionTable = HashMap<u16, Option<String>>;
+type DefinitionTable = HashMap<u16, Option<String>>;
 
 /// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
 fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
@@ -145,7 +145,7 @@ fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
 }
 
 /// Resolve the stream-local attribute-definition table.
-pub(crate) fn definition_table(buf: &[u8]) -> DefinitionTable {
+pub(super) fn definition_table(buf: &[u8]) -> DefinitionTable {
     definition_candidates(buf)
         .into_iter()
         .map(|(node, family)| {
@@ -158,7 +158,7 @@ pub(crate) fn definition_table(buf: &[u8]) -> DefinitionTable {
 }
 
 /// Map definition-record node ids to their stored family names.
-pub(crate) fn named_definitions(buf: &[u8]) -> HashMap<u16, String> {
+fn named_definitions(buf: &[u8]) -> HashMap<u16, String> {
     definition_table(buf)
         .into_iter()
         .filter_map(|(node, name)| name.map(|name| (node, name)))
@@ -281,7 +281,7 @@ fn atom_payload<'a>(
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
-pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
+pub(super) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == ATOM_ID) {
         return Vec::new();
@@ -341,7 +341,7 @@ pub(crate) fn scan(buf: &[u8]) -> Vec<RawFaceAtom> {
 }
 
 /// Decode every body-level last-modifier binding carried by one stream body.
-pub(crate) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
+pub(super) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
     let definitions = definitions(buf);
     if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
         return Vec::new();

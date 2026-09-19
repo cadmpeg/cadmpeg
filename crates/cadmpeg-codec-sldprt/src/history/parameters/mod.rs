@@ -115,12 +115,12 @@ pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignPara
     parameters
 }
 
-pub(crate) fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
+fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
     bare_text_parameter_literal(expression)
         .or_else(|| formatted_text_dimension_literal(name, expression))
 }
 
-pub(crate) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
+pub(super) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
     let expression = expression.trim();
     if expression.is_empty()
         || expression.chars().any(|character| {
@@ -144,7 +144,7 @@ pub(crate) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterV
     Some(ParameterValue::String(expression.to_owned()))
 }
 
-pub(crate) fn formatted_text_dimension_literal(
+pub(super) fn formatted_text_dimension_literal(
     name: &str,
     expression: &str,
 ) -> Option<ParameterValue> {
@@ -200,7 +200,7 @@ pub(crate) fn global_parameter_owners(
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
 /// Retained native histories keep their source expressions.
-pub(crate) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
+pub(super) fn apply_evaluated_parameters(histories: &mut [FeatureHistory]) {
     let evaluated = project_parameters(histories)
         .into_iter()
         .filter_map(|parameter| {
@@ -245,7 +245,7 @@ pub(crate) fn parse_native_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(crate) fn native_parameter_is_length(
+pub(super) fn native_parameter_is_length(
     feature: &Feature,
     name: &str,
     expression: Option<&str>,
@@ -326,7 +326,7 @@ pub(crate) fn format_native_scalar(
     }
 }
 
-pub(crate) fn populate_parameter_dependencies(
+fn populate_parameter_dependencies(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
@@ -342,7 +342,7 @@ pub(crate) fn populate_parameter_dependencies(
     }
 }
 
-pub(crate) fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
+fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
     let mut seen_owners = std::collections::HashSet::new();
     let owner_order = parameters
         .iter()
@@ -394,7 +394,7 @@ pub(crate) fn parameter_aliases(
     ParameterAliases::new(parameters, feature_names, global_owners).materialize(expression_owner)
 }
 
-pub(crate) fn insert_parameter_alias(
+fn insert_parameter_alias(
     aliases: &mut HashMap<String, Option<ParameterId>>,
     alias: String,
     parameter: &ParameterId,
@@ -412,7 +412,7 @@ pub(crate) fn insert_parameter_alias(
         .or_insert_with(|| Some(parameter.clone()));
 }
 
-pub(crate) struct ParameterAliases {
+pub(super) struct ParameterAliases {
     global: HashMap<String, Option<ParameterId>>,
     exact: HashMap<String, Option<ParameterId>>,
     document_local: HashMap<String, Option<ParameterId>>,
@@ -420,7 +420,7 @@ pub(crate) struct ParameterAliases {
 }
 
 impl ParameterAliases {
-    pub(crate) fn new(
+    pub(super) fn new(
         parameters: &[DesignParameter],
         feature_names: &HashMap<FeatureId, String>,
         global_owners: &HashSet<FeatureId>,
@@ -485,7 +485,7 @@ impl ParameterAliases {
         aliases
     }
 
-    pub(crate) fn for_owner<'a>(&'a self, owner: Option<&'a FeatureId>) -> ParameterAliasView<'a> {
+    pub(super) fn for_owner<'a>(&'a self, owner: Option<&'a FeatureId>) -> ParameterAliasView<'a> {
         ParameterAliasView {
             aliases: self,
             owner,
@@ -510,13 +510,13 @@ impl ParameterAliases {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ParameterAliasView<'a> {
+pub(in crate::history) struct ParameterAliasView<'a> {
     aliases: &'a ParameterAliases,
     owner: Option<&'a FeatureId>,
 }
 
 impl ParameterAliasView<'_> {
-    pub(crate) fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+    pub(super) fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
         self.aliases
             .exact
             .get(alias)
@@ -530,7 +530,7 @@ impl ParameterAliasView<'_> {
     }
 }
 
-pub(crate) fn parameter_aliases_by_owner(
+fn parameter_aliases_by_owner(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
@@ -538,7 +538,7 @@ pub(crate) fn parameter_aliases_by_owner(
     ParameterAliases::new(parameters, feature_names, global_owners)
 }
 
-pub(crate) fn evaluate_parameter_expressions(
+fn evaluate_parameter_expressions(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
@@ -671,7 +671,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         .count()
 }
 
-pub(crate) fn parameter_value_states(
+fn parameter_value_states(
     parameters: &[DesignParameter],
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
     include_global: bool,
@@ -700,7 +700,7 @@ pub(crate) fn parameter_value_states(
     states
 }
 
-pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
+fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
     let close = |left: f64, right: f64| {
         (left - right).abs()
             <= EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9 * (1.0 + left.abs().max(right.abs()))
@@ -723,7 +723,7 @@ pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &Paramet
     }
 }
 
-pub(crate) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>) -> bool {
+pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>) -> bool {
     identifier.is_quoted()
         || identifier.value().contains('@')
         || identifier.value().strip_prefix('D').is_some_and(|ordinal| {
@@ -731,7 +731,7 @@ pub(crate) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>
         })
 }
 
-pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
+pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
     expression_identifier_tokens(expression)
         .into_iter()
         .flatten()
@@ -741,10 +741,10 @@ pub(crate) fn expression_identifiers(expression: &str) -> impl Iterator<Item = S
 
 /// An expression whose quoted identifier is never closed.
 #[derive(Debug)]
-pub(crate) struct UnclosedQuote;
+pub(in crate::history) struct UnclosedQuote;
 
 /// One identifier token of the expression it borrows from.
-pub(crate) struct ExpressionIdentifier<'a> {
+pub(super) struct ExpressionIdentifier<'a> {
     raw: &'a str,
     following: &'a str,
     value: std::borrow::Cow<'a, str>,
@@ -785,18 +785,18 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The identifier text, with the quotes and doubled quotes resolved.
-    pub(crate) fn value(&self) -> &str {
+    pub(super) fn value(&self) -> &str {
         &self.value
     }
 
     /// Whether the source spelled this identifier in quotes.
-    pub(crate) fn is_quoted(&self) -> bool {
+    pub(super) fn is_quoted(&self) -> bool {
         self.quoted
     }
 
     /// Whether the token is expression syntax — a literal, a constant, or a function name
     /// applied to a following argument list — rather than a name to resolve.
-    pub(crate) fn is_syntax(&self) -> bool {
+    pub(super) fn is_syntax(&self) -> bool {
         if self.quoted {
             return false;
         }
@@ -817,19 +817,19 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The expression text that follows this token.
-    pub(crate) fn following(&self) -> &'a str {
+    pub(super) fn following(&self) -> &'a str {
         self.following
     }
 
     /// The text of `tail` that precedes this token, where `tail` is the not-yet-consumed
     /// remainder of the expression this token was cut from.
-    pub(crate) fn preceding(&self, tail: &'a str) -> Option<&'a str> {
+    pub(super) fn preceding(&self, tail: &'a str) -> Option<&'a str> {
         tail.strip_suffix(self.following)
             .and_then(|head| head.strip_suffix(self.raw))
     }
 }
 
-pub(crate) fn expression_identifier_tokens(
+pub(super) fn expression_identifier_tokens(
     expression: &str,
 ) -> Result<Vec<ExpressionIdentifier<'_>>, UnclosedQuote> {
     let mut identifiers = Vec::new();

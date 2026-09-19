@@ -21,7 +21,7 @@ use crate::history::literals::{
     strip_diameter_modifier, valid_direction,
 };
 
-pub(crate) fn project_extrude(
+pub(in crate::history) fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
@@ -234,7 +234,7 @@ pub(crate) fn project_extrude(
     }))
 }
 
-pub(crate) fn project_hole(
+pub(in crate::history) fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -424,13 +424,13 @@ pub(crate) fn threaded_hole_major_diameter(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct HoleProfileConstruction {
-    pub(crate) diameter: cadmpeg_ir::scalar::PositiveLength,
-    pub(crate) depth: Option<Length>,
-    pub(crate) construction: HoleConstruction,
-    pub(crate) exit_kind: Option<HoleKind>,
-    pub(crate) bottom: Option<HoleBottom>,
-    pub(crate) taper_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
+pub(in crate::history) struct HoleProfileConstruction {
+    pub(in crate::history) diameter: cadmpeg_ir::scalar::PositiveLength,
+    pub(in crate::history) depth: Option<Length>,
+    pub(in crate::history) construction: HoleConstruction,
+    pub(in crate::history) exit_kind: Option<HoleKind>,
+    pub(in crate::history) bottom: Option<HoleBottom>,
+    pub(in crate::history) taper_angle: Option<cadmpeg_ir::scalar::InteriorAngle>,
 }
 
 fn hole_form(kind: HoleKind) -> HoleConstruction {
@@ -440,7 +440,7 @@ fn hole_form(kind: HoleKind) -> HoleConstruction {
     }
 }
 
-pub(crate) fn hole_profile_construction(
+fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -479,7 +479,9 @@ pub(crate) fn hole_profile_construction(
     }
 }
 
-pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
+pub(in crate::history) fn hole_sketch_construction(
+    profile: &Feature,
+) -> Option<HoleProfileConstruction> {
     enum ParsedDimension {
         Diameter(Length),
         Length(Length),

@@ -73,7 +73,7 @@ pub(crate) fn prepare_parameters_for_write(
     }
 }
 
-pub(crate) fn sync_neutral_parameters(
+fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -294,7 +294,7 @@ pub(crate) fn sync_neutral_parameters(
     Ok(())
 }
 
-pub(crate) fn rewrite_renamed_parameter_references(
+fn rewrite_renamed_parameter_references(
     parameters: &mut [DesignParameter],
     original: &[DesignParameter],
     original_feature_names: &HashMap<FeatureId, String>,
@@ -379,7 +379,7 @@ pub(crate) fn rewrite_renamed_parameter_references(
     }
 }
 
-pub(crate) fn rewrite_parameter_expression(
+pub(in crate::history) fn rewrite_parameter_expression(
     expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Option<String> {
@@ -415,7 +415,7 @@ pub(crate) fn rewrite_parameter_expression(
     Some(rewritten)
 }
 
-pub(crate) fn unquoted_expression_identifier(value: &str) -> bool {
+pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {
     let mut characters = value.chars();
     characters.next().is_some_and(|character| {
         !character.is_ascii_digit()
@@ -426,7 +426,7 @@ pub(crate) fn unquoted_expression_identifier(value: &str) -> bool {
     })
 }
 
-pub(crate) fn restore_equivalent_parameter_expressions(
+pub(super) fn restore_equivalent_parameter_expressions(
     feature: &Feature,
     original_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,
     evaluated_parameters: &HashMap<String, BTreeMap<cadmpeg_core::text::NonBlankString, String>>,

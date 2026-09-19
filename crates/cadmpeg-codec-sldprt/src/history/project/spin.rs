@@ -19,7 +19,7 @@ use crate::history::literals::{
     parse_positive_length_mm, parse_valid_direction,
 };
 
-pub(crate) fn project_rib(
+pub(super) fn project_rib(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {
@@ -72,7 +72,7 @@ pub(crate) fn project_rib(
     })
 }
 
-pub(crate) fn project_loft(
+pub(super) fn project_loft(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
@@ -128,7 +128,7 @@ pub(crate) fn project_loft(
     }))
 }
 
-pub(crate) fn resolve_native_refs(
+pub(super) fn resolve_native_refs(
     value: &str,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<Vec<String>> {
@@ -146,7 +146,7 @@ pub(crate) fn resolve_native_refs(
         .collect()
 }
 
-pub(crate) fn project_sweep(
+pub(super) fn project_sweep(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
@@ -239,7 +239,7 @@ fn sweep_mode(op: BooleanOp) -> SweepMode {
     }
 }
 
-pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
+fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
     feature
         .properties
         .get("Operation")
@@ -260,7 +260,7 @@ pub(crate) fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
         .unwrap_or(BooleanOp::Unresolved)
 }
 
-pub(crate) fn project_revolve(
+pub(super) fn project_revolve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> FeatureDefinition {

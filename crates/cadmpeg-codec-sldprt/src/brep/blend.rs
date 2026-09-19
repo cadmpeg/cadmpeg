@@ -18,24 +18,24 @@ const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 
 /// One exact constant-radius blend construction.
 #[derive(Debug, Clone)]
-pub(crate) struct BlendCarrier {
+pub(super) struct BlendCarrier {
     /// Stream-local surface carrier attribute.
-    pub(crate) attr: u16,
+    attr: u16,
     /// Tag-byte offset in the stream.
-    pub(crate) offset: usize,
+    pub(super) offset: usize,
     /// Ordered support references.
-    pub(crate) supports: [BlendSupportRef; 2],
+    pub(super) supports: [BlendSupportRef; 2],
     /// Stored center/spine curve attribute.
-    pub(crate) spine: u16,
+    pub(super) spine: u16,
     /// Signed rolling-ball radius in millimetres.
-    pub(crate) signed_radius: f64,
+    pub(super) signed_radius: f64,
     /// Whether each support uses the opposite natural-normal side.
-    pub(crate) reversed: [bool; 2],
+    pub(super) reversed: [bool; 2],
 }
 
 /// Reference used by one rolling-ball support side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BlendSupportRef {
+pub(super) enum BlendSupportRef {
     /// Direct surface-carrier attribute.
     Surface(u16),
     /// Zero-offset support-pair attribute; topology selects one member.
@@ -44,11 +44,11 @@ pub(crate) enum BlendSupportRef {
 
 /// Two candidate surface carriers associated with one intersection curve.
 #[derive(Debug, Clone)]
-pub(crate) struct SupportPairCarrier {
+pub(super) struct SupportPairCarrier {
     /// Ordered candidate surface-carrier attributes.
-    pub(crate) supports: [u16; 2],
+    pub(super) supports: [u16; 2],
     /// Intersection-curve attribute.
-    pub(crate) intersection: u16,
+    pub(super) intersection: u16,
 }
 
 #[derive(PartialEq, Eq)]
@@ -148,7 +148,7 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
 }
 
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
-pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+pub(super) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
     for offset in 0..bytes.len().saturating_sub(57) {

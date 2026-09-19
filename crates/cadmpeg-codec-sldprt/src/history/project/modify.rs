@@ -19,7 +19,7 @@ use crate::history::literals::{
     parse_valid_direction, parse_vector3,
 };
 
-pub(crate) fn project_fillet(feature: &Feature) -> FeatureDefinition {
+pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")
@@ -137,7 +137,7 @@ pub(crate) fn fillet_radius_parameter_has_native_display(
         && dimension_display(expression).is_some()
 }
 
-pub(crate) fn variable_fillet(feature: &Feature) -> bool {
+fn variable_fillet(feature: &Feature) -> bool {
     feature.kind.eq_ignore_ascii_case("VarFillet")
         || feature
             .input_class
@@ -145,7 +145,7 @@ pub(crate) fn variable_fillet(feature: &Feature) -> bool {
             .is_some_and(|class| class.eq_ignore_ascii_case("VarFillet_c"))
 }
 
-pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_shell(feature: &Feature) -> FeatureDefinition {
     let thickness = feature
         .parameters
         .get("Thickness")
@@ -176,7 +176,7 @@ pub(crate) fn project_shell(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_thicken(feature: &Feature) -> FeatureDefinition {
     use cadmpeg_ir::features::ThickenSide;
 
     let thickness = feature
@@ -215,7 +215,7 @@ pub(crate) fn project_thicken(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
     let pull_direction = feature
         .properties
         .get("Direction")
@@ -254,7 +254,7 @@ pub(crate) fn project_draft(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
     let op = feature
         .properties
         .get("Operation")
@@ -281,7 +281,7 @@ pub(crate) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
     }))
 }
 
-pub(crate) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
+pub(in crate::history) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
     let value = feature
         .properties
         .get("Mode")
@@ -302,7 +302,7 @@ pub(crate) fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode
     }
 }
 
-pub(crate) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets: feature
             .properties
@@ -321,7 +321,7 @@ pub(crate) fn project_cut_with_surface(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: feature
             .properties
@@ -332,14 +332,14 @@ pub(crate) fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition
     }))
 }
 
-pub(crate) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_delete_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Operation(FeatureOperation::DeleteFace {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         heal: parse_bool(feature.properties.get("Heal")?)?,
     }))
 }
 
-pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Operation(
         FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
@@ -351,7 +351,7 @@ pub(crate) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinitio
     ))
 }
 
-pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
     let distance = || {
         feature
             .parameters
@@ -401,7 +401,7 @@ pub(crate) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
     }))
 }
 
-pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
     let bodies = feature
         .properties
         .get("Bodies")
@@ -433,7 +433,7 @@ pub(crate) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
     }))
 }
 
-pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_dome(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Dome {
         faces: feature
             .properties
@@ -457,7 +457,7 @@ pub(crate) fn project_dome(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
     let axis = feature
         .properties
         .get("Axis")
@@ -500,7 +500,7 @@ pub(crate) fn project_flex(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Flex { axis, mode })
 }
 
-pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_scale(feature: &Feature) -> FeatureDefinition {
     let center = match feature.properties.get("CenterType").map(String::as_str) {
         None | Some("Point") => feature
             .properties
@@ -546,7 +546,7 @@ pub(crate) fn project_scale(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(crate) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
+pub(in crate::history) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
     let length = |name, positional| {
         feature
             .parameters

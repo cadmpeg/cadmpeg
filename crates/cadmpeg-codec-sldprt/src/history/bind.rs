@@ -174,7 +174,7 @@ pub(crate) fn bind_unique_sketch_feature(
     }
 }
 
-pub(crate) fn sketch_alias_base_name(name: &str) -> Option<&str> {
+fn sketch_alias_base_name(name: &str) -> Option<&str> {
     let (base, suffix) = name.rsplit_once('<')?;
     let ordinal = suffix.strip_suffix('>')?;
     (!base.is_empty() && !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit()))
@@ -313,7 +313,7 @@ pub(crate) fn order_model_features_for_regeneration(ir: &mut cadmpeg_ir::CadIr) 
 
 /// Mutable references to every side an extrusion extent carries.
 /// Bind each decoded face to the body owning it.
-pub(crate) fn face_owner_bodies(
+fn face_owner_bodies(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
@@ -435,7 +435,7 @@ pub(crate) fn derive_feature_outputs(
     }
 }
 
-pub(crate) fn bind_definition_sketch(
+pub(super) fn bind_definition_sketch(
     definition: &mut FeatureDefinition,
     native_ref: &str,
     feature_ref: &FeatureId,

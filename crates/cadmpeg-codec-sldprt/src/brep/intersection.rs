@@ -39,17 +39,17 @@ struct Chart {
 }
 
 /// One validated intersection curve and its solved chart.
-pub(crate) struct IntersectionCarrier {
-    pub(crate) carrier: CurveCarrier,
-    pub(crate) support_data: IntersectionSupportData,
+pub(super) struct IntersectionCarrier {
+    pub(super) carrier: CurveCarrier,
+    pub(super) support_data: IntersectionSupportData,
 }
 
 /// Ordered supports and optional UV lanes for the model-space chart curve.
 #[derive(Clone)]
-pub(crate) struct IntersectionSupportData {
-    pub(crate) supports: [u16; 2],
-    pub(crate) fit_tolerance_mm: f64,
-    pub(crate) support_uv: Option<[Vec<Point2>; 2]>,
+pub(super) struct IntersectionSupportData {
+    pub(super) supports: [u16; 2],
+    pub(super) fit_tolerance_mm: f64,
+    pub(super) support_uv: Option<[Vec<Point2>; 2]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

@@ -425,7 +425,7 @@ pub(crate) fn bind_configuration_topology_selections(
     Ok(())
 }
 
-pub(crate) fn restore_configuration_tree_node_definitions(
+pub(super) fn restore_configuration_tree_node_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
 ) {
@@ -766,7 +766,7 @@ pub(crate) fn project_configuration_sketch_states(
     Ok(losses)
 }
 
-pub(crate) fn inherit_configuration_shared_semantics(
+pub(super) fn inherit_configuration_shared_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -805,7 +805,7 @@ pub(crate) fn inherit_configuration_shared_semantics(
     Ok(())
 }
 
-pub(crate) fn inherit_configuration_hole_semantics(
+pub(super) fn inherit_configuration_hole_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
     inherit_placements: bool,
@@ -1045,7 +1045,7 @@ fn configuration_reference_plane_frame(
 
 /// Reuse a document-level datum reference when a scoped state omits the
 /// reference or retains its frame with only the face selector unresolved.
-pub(crate) fn inherit_configuration_reference_plane_semantics(
+pub(super) fn inherit_configuration_reference_plane_semantics(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
 ) {
@@ -1148,7 +1148,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
     }
 }
 
-pub(crate) fn configuration_surface_carriers(
+pub(super) fn configuration_surface_carriers(
     ir: &cadmpeg_ir::CadIr,
     configuration_index: usize,
 ) -> Vec<cadmpeg_ir::geometry::Surface> {
@@ -1270,7 +1270,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
     }
 }
 
-pub(crate) fn configuration_lane_assignments(
+pub(super) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<(usize, usize)> {
@@ -1306,7 +1306,7 @@ pub(crate) fn configuration_lane_assignments(
         .collect()
 }
 
-pub(crate) fn configuration_index_for_slot(
+fn configuration_index_for_slot(
     configurations: &[DesignConfiguration],
     slot_index: u32,
 ) -> Option<usize> {
@@ -1373,6 +1373,6 @@ pub(crate) fn unresolved_configuration_lanes(
         .count()
 }
 
-pub(crate) fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
+fn configuration_state_lane(lane: &crate::records::FeatureInputLane) -> bool {
     !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
 }

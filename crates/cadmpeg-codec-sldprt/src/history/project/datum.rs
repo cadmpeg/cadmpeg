@@ -18,7 +18,7 @@ use crate::history::literals::{
     valid_plane_frame,
 };
 
-pub(crate) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let normal = parse_vector3(feature.properties.get("Normal")?)?;
     let u_axis = parse_vector3(feature.properties.get("UAxis")?)?;
@@ -29,7 +29,7 @@ pub(crate) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
     ))
 }
 
-pub(crate) fn project_offset_plane(
+pub(in crate::history) fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Option<FeatureDefinition> {
@@ -63,7 +63,7 @@ pub(crate) fn project_offset_plane(
     ))
 }
 
-pub(crate) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let direction = parse_vector3(feature.properties.get("Direction")?)?;
     valid_direction(direction).then_some(FeatureDefinition::Operation(
@@ -74,7 +74,7 @@ pub(crate) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition>
     ))
 }
 
-pub(crate) fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
         position: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
             feature.properties.get("Position")?,
@@ -83,7 +83,7 @@ pub(crate) fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition
     }))
 }
 
-pub(crate) fn project_datum_coordinate_system(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_datum_coordinate_system(feature: &Feature) -> Option<FeatureDefinition> {
     let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
     let x_axis = parse_vector3(feature.properties.get("XAxis")?)?;
     let y_axis = parse_vector3(feature.properties.get("YAxis")?)?;
@@ -97,7 +97,7 @@ pub(crate) fn project_datum_coordinate_system(feature: &Feature) -> Option<Featu
     ))
 }
 
-pub(crate) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
     let parameter = feature.properties.get("Parameter")?.trim().to_string();
     let x_expression = feature.properties.get("XEquation")?.trim().to_string();
     let y_expression = feature.properties.get("YEquation")?.trim().to_string();
@@ -123,7 +123,7 @@ pub(crate) fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinit
     ))
 }
 
-pub(crate) fn project_projected_curve(
+pub(super) fn project_projected_curve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
@@ -153,7 +153,7 @@ pub(crate) fn project_projected_curve(
     ))
 }
 
-pub(crate) fn project_composite_curve(
+pub(super) fn project_composite_curve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {
@@ -185,7 +185,7 @@ pub(crate) fn project_composite_curve(
     ))
 }
 
-pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     let axis_origin = parse_point3_mm(feature.properties.get("AxisOrigin")?)?;
     let axis_direction = parse_valid_direction(feature.properties.get("AxisDirection")?)?;
     let radius = parse_positive_length_mm(feature.parameters.get("Radius")?)?;
@@ -221,7 +221,7 @@ pub(crate) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
     }))
 }
 
-pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
+pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
     let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
     let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
     let revolutions = feature
@@ -249,7 +249,7 @@ pub(crate) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
     ))
 }
 
-pub(crate) fn project_wrap(
+pub(super) fn project_wrap(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Option<FeatureDefinition> {

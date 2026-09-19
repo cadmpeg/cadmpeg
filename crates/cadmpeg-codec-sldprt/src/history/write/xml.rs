@@ -8,7 +8,7 @@ use cadmpeg_ir::features::{
 
 use crate::history::classify::extrude_op;
 
-pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
+pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     if let Some(tag) = feature
         .source_tag
         .as_ref()
