@@ -2637,12 +2637,23 @@ impl TSplineSurfaceConstruction {
 #[cfg_attr(feature = "schema", schemars(rename = "TSplineSurfaceConstruction"))]
 #[serde(deny_unknown_fields)]
 struct TSplineSurfaceConstructionWire {
+    /// Ordered U and V native parameter intervals.
     parameter_ranges: [[f64; 2]; 2],
+    /// Native T-spline type integer.
     type_code: i64,
+    /// Inline or referenced shared subtransform object.
     subtransform: TSplineSubtransform,
+    /// Native trailing integer.
     trailing_value: i64,
+    /// Six ordered solved-surface discontinuity arrays.
     discontinuities: [Vec<f64>; 6],
+    /// Native discontinuity tail flag.
     discontinuity_flag: bool,
+    /// Cache contract: the revision-gated form, or the legacy solved-cache
+    /// tolerance this construction states instead. The revision layout stores
+    /// the shared tail first, then four optional parameter values
+    /// (`support_bounds`), the type code as an enum, the nested subtransform
+    /// scope, and the trailing integer.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm>,
 }
