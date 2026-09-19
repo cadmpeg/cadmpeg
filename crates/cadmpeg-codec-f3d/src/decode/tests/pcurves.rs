@@ -10,8 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_asm::asm_header;
@@ -398,7 +398,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             .find(|curve| curve.id == source)
             .expect("deformable source carrier")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -634,7 +634,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let mut control_points = nurbs.control_points();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
-    nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
@@ -889,7 +889,7 @@ fn negative_ref_pcurve_reverses_its_uv_parameterization() {
             &DecodeOptions::default(),
         )
         .expect("reversed ref pcurve decode");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().model.pcurves[0].geometry
     else {
         panic!("ref pcurve is not a NURBS");
@@ -914,7 +914,7 @@ fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
             &DecodeOptions::default(),
         )
         .expect("doubly reversed ref pcurve decode");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().model.pcurves[0].geometry
     else {
         panic!("ref pcurve is not a NURBS");
@@ -1052,13 +1052,13 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     assert_eq!(pcurve.native_tail_flags(), Some([true, false, true, false]));
     assert_eq!(pcurve.parameter_range(), Some([-1.0, 2.0]));
     assert_eq!(pcurve.fit_tolerance(), Some(0.001));
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
     let mut control_points = nurbs.control_points();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
-    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
@@ -1066,7 +1066,8 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
         true,
     )
     .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
+        &mut pcurve.metadata
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -1094,7 +1095,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
         .expect("generated scoped pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let pcurve = &mut edited.model.pcurves[0];
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
     let mut pole_index = 0usize;
@@ -1107,7 +1108,8 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
             Ok(())
         })
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
+        &mut pcurve.metadata
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -1130,7 +1132,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated rational pcurve decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &mut edited.model.pcurves[0].geometry
     else {
         panic!("expected rational pcurve")
@@ -1149,7 +1151,8 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
     }
-    let poles = cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
+    let poles =
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
     nurbs.set_poles(poles.unwrap()).unwrap();
     let expected = edited.model.pcurves[0].clone();
 
@@ -1173,7 +1176,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     assert_eq!(pcurve.wrapper_reversed(), None);
     assert_eq!(pcurve.fit_tolerance(), None);
     assert_eq!(pcurve.parameter_range(), Some([-2.0, 4.0]));
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
     let mut pole_index = 0usize;
@@ -1192,7 +1195,8 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     nurbs
         .edit_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } = &mut pcurve.metadata
+    let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
+        &mut pcurve.metadata
     else {
         panic!("decoded fixture uses general pcurve metadata")
     };
@@ -1237,8 +1241,8 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let Some(parameter_range) = inline.parameter_range() else {
         panic!("ref-form fixture carries a parameter range")
     };
-    inline.metadata = cadmpeg_ir::geometry::PcurveMetadata::AsmInline {
-        form: cadmpeg_ir::geometry::PcurveInlineForm::try_new(
+    inline.metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
+        form: cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
             false,
             [true, false, true, false],
             parameter_range,

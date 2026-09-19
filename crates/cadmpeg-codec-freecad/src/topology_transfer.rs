@@ -7,10 +7,12 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, GeometryLayoutError, Pcurve, PcurveGeometry, PcurveNurbs,
-    PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    sampled::{
+        GeometryLayoutError, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+    },
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -34,7 +36,7 @@ use crate::brep::{
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
 const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
@@ -336,7 +338,7 @@ impl<'a> Builder<'a> {
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                         None,
                         primary_range,
                         None,
@@ -369,7 +371,7 @@ impl<'a> Builder<'a> {
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
-                        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                             None,
                             secondary_range,
                             None,
@@ -1717,10 +1719,10 @@ fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
 /// the carrier refuses.
 pub(crate) fn pcurve_geometry(
     curve: &TextCurve2d,
-) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
     Ok(match curve {
         TextCurve2d::Line { origin, direction } => {
-            cadmpeg_ir::geometry::LinePcurve::try_new(*origin, *direction)
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(*origin, *direction)
                 .ok()
                 .map(PcurveGeometry::Line)
         }
@@ -1729,16 +1731,18 @@ pub(crate) fn pcurve_geometry(
             x_axis,
             y_axis,
             radius,
-        } => cadmpeg_ir::geometry::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius)
-            .ok()
-            .map(PcurveGeometry::Circle),
+        } => {
+            cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(*center, *x_axis, *y_axis, *radius)
+                .ok()
+                .map(PcurveGeometry::Circle)
+        }
         TextCurve2d::Ellipse {
             center,
             x_axis,
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::EllipsePcurve::try_new(
+        } => cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
             *center,
             *x_axis,
             *y_axis,
@@ -1752,7 +1756,7 @@ pub(crate) fn pcurve_geometry(
             x_axis,
             y_axis,
             focal_distance,
-        } => cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+        } => cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
             *vertex,
             *x_axis,
             *y_axis,
@@ -1766,7 +1770,7 @@ pub(crate) fn pcurve_geometry(
             y_axis,
             major_radius,
             minor_radius,
-        } => cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+        } => cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
             *center,
             *x_axis,
             *y_axis,
@@ -1791,15 +1795,19 @@ pub(crate) fn pcurve_geometry(
             let Some(basis) = pcurve_geometry(basis)? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::TrimmedPcurve::try_new(*parameter_range, true, Box::new(basis))
-                .ok()
-                .map(PcurveGeometry::Trimmed)
+            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
+                *parameter_range,
+                true,
+                Box::new(basis),
+            )
+            .ok()
+            .map(PcurveGeometry::Trimmed)
         }
         TextCurve2d::Offset { distance, basis } => {
             let Some(basis) = pcurve_geometry(basis)? else {
                 return Ok(None);
             };
-            cadmpeg_ir::geometry::OffsetPcurve::try_new(*distance, Box::new(basis))
+            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(*distance, Box::new(basis))
                 .ok()
                 .map(PcurveGeometry::Offset)
         }

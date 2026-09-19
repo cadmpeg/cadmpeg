@@ -50,7 +50,7 @@ use crate::parse::schema_identifier::split_schema_identifier;
 use crate::parse::Exchange;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");

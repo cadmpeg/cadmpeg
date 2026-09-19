@@ -28,9 +28,10 @@ use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs, RollingBallSide,
-    RollingBallSideExtension, RollingBallSupportCurve, RollingBallSupportSurface,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, VariableBlendCache,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, RollingBallSide, RollingBallSideExtension,
+    RollingBallSupportCurve, RollingBallSupportSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -320,7 +321,7 @@ pub(crate) fn decode_rolling_ball_curve(
             let origin = take_native_vec3(bytes, position, 0x13)?;
             let direction = take_native_vec3(bytes, position, 0x14)?;
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(
                         origin[0] * LEN_TO_MM,
                         origin[1] * LEN_TO_MM,
@@ -340,7 +341,7 @@ pub(crate) fn decode_rolling_ball_curve(
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
                             center[1] * LEN_TO_MM,
@@ -354,7 +355,7 @@ pub(crate) fn decode_rolling_ball_curve(
                 ))
             } else {
                 CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
                             center[1] * LEN_TO_MM,
@@ -372,7 +373,7 @@ pub(crate) fn decode_rolling_ball_curve(
         "degenerate_curve" => {
             let point = take_native_vec3(bytes, position, 0x13)?;
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
@@ -561,7 +562,7 @@ pub(crate) fn rolling_ball_curve(
             let origin = cur.take_position()?;
             let direction = cur.take_vector3()?;
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(
                         origin[0] * LEN_TO_MM,
                         origin[1] * LEN_TO_MM,
@@ -581,7 +582,7 @@ pub(crate) fn rolling_ball_curve(
             let major_radius = reference.norm() * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
                             center[1] * LEN_TO_MM,
@@ -595,7 +596,7 @@ pub(crate) fn rolling_ball_curve(
                 ))
             } else {
                 CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         Point3::new(
                             center[0] * LEN_TO_MM,
                             center[1] * LEN_TO_MM,
@@ -613,7 +614,7 @@ pub(crate) fn rolling_ball_curve(
         "degenerate_curve" => {
             let point = cur.take_position()?;
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
                     point[0] * LEN_TO_MM,
                     point[1] * LEN_TO_MM,
                     point[2] * LEN_TO_MM,
@@ -805,7 +806,7 @@ mod variable_blend_value_tests {
     use super::{variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::VariableBlendValuePayload;
 
     fn text(bytes: &mut Vec<u8>, value: &str) {

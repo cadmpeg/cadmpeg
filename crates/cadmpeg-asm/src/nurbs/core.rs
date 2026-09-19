@@ -16,7 +16,7 @@ use crate::nurbs::subtypes::{self, decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::math::Point3;
 
 use crate::nurbs::toks::take_knot_table as knots;

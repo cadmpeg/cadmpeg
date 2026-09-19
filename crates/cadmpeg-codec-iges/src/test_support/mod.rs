@@ -21,7 +21,7 @@ pub(crate) fn plan_at(
     ir: &cadmpeg_ir::CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::IgesCodec.plan(
         EncodeInput { ir, fidelity },
@@ -66,7 +66,7 @@ pub(crate) fn detect_and_decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResu
 
 /// Count of report losses carrying one loss code.
 pub(crate) fn code_count(
-    report: &cadmpeg_ir::report::DecodeReport,
+    report: &cadmpeg_ir::report::decode::DecodeReport,
     code: crate::loss::IgesLossCode,
 ) -> usize {
     report

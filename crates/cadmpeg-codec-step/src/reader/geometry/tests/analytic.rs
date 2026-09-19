@@ -11,7 +11,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{
     model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id,
 };
-use cadmpeg_ir::geometry::{Curve, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::PcurveGeometry, Curve, SolvedCurveGeometry, SolvedSurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -239,7 +241,7 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
         .expect("source-parameterized linear-extrusion pcurve");
     assert!(matches!(
         &used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
             if nurbs.degree() == 1
                 && nurbs.control_points()
                     == [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
@@ -603,7 +605,7 @@ fn annotation_plane_keeps_its_neutral_plane_reachable() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#70")
     }));
 }
@@ -670,7 +672,7 @@ fn complex_geometry_instances_decode_named_partials() {
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line(_)
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

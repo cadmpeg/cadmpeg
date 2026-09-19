@@ -658,8 +658,8 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                 assert!(seeds.is_empty());
                 assert!(matches!(
                     (pattern).definition(),
-                    cadmpeg_ir::features::PatternTransform::Unresolved {
-                        form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                    cadmpeg_ir::features::patterns::PatternTransform::Unresolved {
+                        form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
                     }
                 ));
             }
@@ -977,7 +977,7 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
-                pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_CIRCULAR,
+                pattern: cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_CIRCULAR,
             }),
         ),
         native_ref: Some("pattern-feature".to_string()),
@@ -1634,14 +1634,14 @@ fn visualization_values_do_not_assert_missing_design_intent() {
         .expect("decode visualization-only values");
 
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Attribute
             && loss.message.contains("schema-selected presentation value")
     }));
     assert!(decoded
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::loss::LossCategory::DesignIntent));
 }
 
 #[test]
@@ -1678,7 +1678,7 @@ fn decode_does_not_promote_field_class_names_to_features() {
             ["CurrentFeature", class]
         );
         assert!(decoded.report().losses.iter().any(|loss| {
-            loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+            loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
                 && loss.message.contains("neutral features")
         }));
     }

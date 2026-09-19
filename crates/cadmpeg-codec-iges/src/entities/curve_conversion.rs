@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsError};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_CURVE_CONVERSION_EXACT_GEOMETRY: f64 = 1.0e-12;

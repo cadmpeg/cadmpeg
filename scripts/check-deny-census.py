@@ -1597,8 +1597,7 @@ def resolve_item(index, name, owner, ambiguities):
         matches = [candidate for candidate in candidates
                    if candidate.crate == crate and candidate.scope == wanted]
         if not matches:
-            # A public re-export such as ``crate::geometry::NurbsCurve`` can
-            # own its declaration in the private ``geometry::carriers``
+            # A public re-export can refer to a declaration in a descendant
             # module. A unique descendant is source evidence for that module
             # route; ambiguous descendants still fail closed.
             descendants = [

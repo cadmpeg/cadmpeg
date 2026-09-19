@@ -161,7 +161,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ir.model.curves.push(Curve {
         id: source_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )

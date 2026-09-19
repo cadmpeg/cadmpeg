@@ -7,7 +7,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::examples::unit_cube;
@@ -380,7 +380,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         .expect("AP214 is a catalog row");
     assert_eq!(
         plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotProvided {}
+        cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
     let loss = plan
         .report()
@@ -405,7 +405,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
         .expect("AP203 edition 1 is a catalog row");
     assert_eq!(
         plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotProvided {}
+        cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
 }
 

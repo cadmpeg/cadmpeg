@@ -4,7 +4,7 @@
 use crate::kernel_header::RefWidth;
 use crate::sab::{int_le_at, vec3_le_at};
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{NurbsPoleGrid, NurbsPoles3, WeightedPole3};
+use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;
 
@@ -519,7 +519,7 @@ pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
 mod string_width_tests {
     use super::{take_native_string, ReadPoles3};
     use crate::kernel_header::RefWidth;
-    use cadmpeg_ir::geometry::NurbsPoleGrid;
+    use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
     use cadmpeg_ir::math::Point3;
 
     /// A `0x09` string whose length prefix is the stream integer width.

@@ -206,7 +206,7 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::SeamEdgePcurveUnresolved.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

@@ -11,8 +11,8 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::NurbsCurve, Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis,
+    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -48,7 +48,7 @@ fn placed_offset_source(
             let origin = line_curve.origin();
             let direction = line_curve.direction();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     transform.apply_point(*origin)?,
                     unit_vector(transform.apply_vector(*direction)?)?,
                 )
@@ -61,7 +61,7 @@ fn placed_offset_source(
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     transform.apply_point(*center)?,
                     unit_vector(transform.apply_vector(*axis)?)?.scale(orientation),
                     unit_vector(transform.apply_vector(*ref_direction)?)?,
@@ -431,7 +431,7 @@ pub(super) fn project(
                         let origin = line_curve.origin();
                         let direction = line_curve.direction();
                         let Some(payload) = admit(
-                            cadmpeg_ir::geometry::LineCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                                 origin.translated(normal.cross(*direction), distance),
                                 *direction,
                             ),
@@ -461,7 +461,7 @@ pub(super) fn project(
                             continue;
                         }
                         let Some(payload) = admit(
-                            cadmpeg_ir::geometry::CircleCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                 *center,
                                 *axis,
                                 *ref_direction,

@@ -2,7 +2,7 @@
 
 use super::super::revolution::transfer_resolved_revolution_surfaces;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::AnnotationBuilder;

@@ -7,7 +7,9 @@ use crate::families::e5::decode::{
     EPS_E5_DECODE_EXACT_GEOMETRY,
 };
 use cadmpeg_ir::eval::pcurve_uv;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -24,7 +26,7 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             surface: SurfaceId::mint("catia:test:surface#left".to_string())
                 .expect("identity grammar"),
             pcurve: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(1.0, 0.0),
                 )
@@ -37,7 +39,7 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
             surface: SurfaceId::mint("catia:test:surface#right".to_string())
                 .expect("identity grammar"),
             pcurve: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 1.0),
                     Point2::new(1.0, 0.0),
                 )
@@ -79,7 +81,7 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
 #[test]
 fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -100,7 +102,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
             surface: SurfaceId::mint("catia:test:surface#left".to_string())
                 .expect("identity grammar"),
             pcurve: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(1.0, 0.0),
                 )
@@ -113,7 +115,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
             surface: SurfaceId::mint("catia:test:surface#right".to_string())
                 .expect("identity grammar"),
             pcurve: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 1.0),
                     Point2::new(1.0, 0.0),
                 )
@@ -129,7 +131,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
 
     sides[1].curve = Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -142,7 +144,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
     assert!(e5_occurrence_intersection_cache(&sides).is_none());
 
     let left_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -151,7 +153,7 @@ fn occurrence_intersection_cache_requires_one_admitted_exact_carrier() {
         .expect("valid CircleCurve fixture"),
     ));
     let right_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(0.0, 1.0, 0.0),

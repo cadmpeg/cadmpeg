@@ -18,7 +18,10 @@
 //! and the categories this codec spans (decode, entity, graph, presentation,
 //! geometry, writer) have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 macro_rules! loss_codes {
     ($( $(#[$meta:meta])* $variant:ident => $code:literal ),+ $(,)?) => {
         /// A stable identifier for one IGES transfer loss.
@@ -197,7 +200,7 @@ impl IgesLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("iges") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

@@ -66,7 +66,7 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.message.contains("legacy design run")
     }));
 }

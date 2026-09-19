@@ -4,7 +4,7 @@
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;

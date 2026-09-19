@@ -72,7 +72,7 @@ fn decode_resolves_feature_topology_selections() {
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Resolved { edges, native }, ..
         }] if edges == &[base.ir().model.edges[0].id.clone()] && native == edge)
     ));
@@ -223,7 +223,9 @@ fn decode_reports_unresolved_feature_output_scope() {
 #[test]
 fn decode_dispatches_typed_features_by_xml_family() {
     use cadmpeg_ir::features::{
-        ChamferSpec, FeatureDefinition, FeatureOperation, HoleKind, RadiusSpec,
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        holes::HoleKind,
+        FeatureDefinition, FeatureOperation,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -254,7 +256,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         decoded.ir().model.features[2].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: actual_radius,
             },
@@ -277,7 +279,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             spec: ChamferSpec::Distance {
                 distance: actual_distance,
             },
@@ -289,7 +291,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
             shape,
 
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if actual_diameter.get() == 4.0)));

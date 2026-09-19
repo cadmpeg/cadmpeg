@@ -1011,7 +1011,9 @@ fn incomplete_legacy_values_are_reported() {
             .report()
             .losses
             .iter()
-            .filter(|loss| { loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::RecordNotTyped })
+            .filter(|loss| {
+                loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
+            })
             .count(),
         7
     );

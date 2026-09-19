@@ -14,8 +14,9 @@ use crate::classification::NativeClassKind;
 use crate::history::classify::{feature_family, feature_input_class, is_chamfer, is_fillet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    AxisAngle, BodyRetentionMode, BodySelection, ChamferGroup, ChamferSpec, EdgeSelection,
-    FaceMotion, FaceSelection, FilletGroup, FlexMode, RadiusSpec, ScaleCenter, ScaleFactors,
+    edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
+    AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
+    FlexMode, ScaleCenter, ScaleFactors,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 

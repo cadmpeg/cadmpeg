@@ -9,7 +9,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
+use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::PositiveReal;
 

@@ -3,8 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::Pcurve,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
@@ -42,7 +43,7 @@ pub(super) struct WritableEdge<'a> {
 
 #[derive(Clone, Copy)]
 pub(super) enum WritableEdgeCurve<'a> {
-    Line(cadmpeg_ir::geometry::LineCurve),
+    Line(cadmpeg_ir::geometry::analytic::LineCurve),
     Nurbs(&'a NurbsCurve),
 }
 
@@ -101,7 +102,7 @@ pub(super) struct WritableObjectCurve<'a> {
 }
 
 enum ObjectCurveGeometry<'a> {
-    Circle(&'a cadmpeg_ir::geometry::CircleCurve),
+    Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
 }
 

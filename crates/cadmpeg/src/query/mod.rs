@@ -32,15 +32,15 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-pub use fidelity::FidelityArgs;
-pub use graph::GraphArgs;
-pub use item::ItemArgs;
-pub use join::JoinArgs;
-pub use schema::SchemaArgs;
+use fidelity::FidelityArgs;
+use graph::GraphArgs;
+use item::ItemArgs;
+use join::JoinArgs;
+use schema::SchemaArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
-pub enum QueryView {
+pub(crate) enum QueryView {
     /// Aggregate artifact projections with common input and output arguments.
     #[command(flatten)]
     Aggregate(AggregateView),
@@ -123,7 +123,7 @@ pub enum QueryView {
 
 /// Aggregate query views that share [`QueryArgs`].
 #[derive(Debug, Subcommand)]
-pub enum AggregateView {
+pub(crate) enum AggregateView {
     /// What this JSON file is.
     ///
     /// Accepts every artifact kind. Each source, decode, inspect, or refusal
@@ -152,12 +152,12 @@ pub enum AggregateView {
 
 /// Input selection and output format for one query view.
 #[derive(Debug, Args)]
-pub struct QueryArgs {
+pub(crate) struct QueryArgs {
     /// JSON file, or `-` for standard input.
-    pub file: PathBuf,
+    file: PathBuf,
     /// Print the projected subtree as JSON instead of the table.
     #[arg(long)]
-    pub json: bool,
+    json: bool,
 }
 
 impl AggregateView {
@@ -478,7 +478,7 @@ impl<'de> Deserialize<'de> for ArenaLen {
 }
 
 /// Runs one query view against one artifact file.
-pub fn run(view: &QueryView) -> Result<()> {
+pub(crate) fn run(view: &QueryView) -> Result<()> {
     match view {
         QueryView::Aggregate(view) => run_aggregate(view),
         QueryView::Item(args) => item::run(args),
@@ -517,7 +517,7 @@ fn read_input(path: &Path) -> Result<Vec<u8>> {
 
 /// Artifact kind decided from top-level keys alone.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArtifactKind {
+enum ArtifactKind {
     Report,
     Cadir,
     Sidecar,
@@ -528,7 +528,7 @@ pub(crate) enum ArtifactKind {
 ///
 /// The sniff skips every value it does not name, so a view that goes on to
 /// materialize the document pays for one body parse, not two.
-pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
+fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \

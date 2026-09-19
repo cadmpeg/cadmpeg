@@ -258,7 +258,7 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         0
     );
     assert!(decoded.report().losses.iter().all(|loss| {
-        loss.code.category() != cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() != cadmpeg_ir::report::loss::LossCategory::DesignIntent
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
@@ -978,7 +978,7 @@ fn decode_transfers_each_supported_formula_input_independently() {
         4
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("4 modeling-scope field record(s)")
     }));

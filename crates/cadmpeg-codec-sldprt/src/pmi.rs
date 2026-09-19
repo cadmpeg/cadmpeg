@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
 use rmp::Marker;
 
@@ -46,7 +46,7 @@ fn neutral_parameter_is_count(
     value: Option<&cadmpeg_ir::features::ParameterValue>,
 ) -> bool {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, ParameterValue, PatternTransform,
+        patterns::PatternTransform, FeatureDefinition, FeatureOperation, ParameterValue,
     };
 
     matches!(value, Some(ParameterValue::Integer(_)))

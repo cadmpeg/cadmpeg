@@ -4,9 +4,9 @@ use crate::entities::composite::bounded_nurbs_for_curve_with_tolerance;
 use crate::entities::composite::concatenate_nurbs;
 use crate::entities::composite::elevate_nurbs_to_degree;
 use crate::entities::curve_conversion::circular_arc_nurbs;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::ids::EdgeId;
@@ -99,7 +99,8 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, reference, radius).unwrap(),
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, reference, radius)
+                .unwrap(),
         )),
         source_object: None,
     });

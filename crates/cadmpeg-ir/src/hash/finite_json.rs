@@ -8,7 +8,7 @@
 //!
 //! The refusal travels as the inner serializer's own error, because that is the
 //! only error type a nested `Serialize` implementation can return. The refused
-//! value is recorded in a [`FiniteGuard`] the whole walk shares, so the caller
+//! value is recorded in a `FiniteGuard` the whole walk shares, so the caller
 //! reads back which float was refused.
 
 use std::cell::Cell;

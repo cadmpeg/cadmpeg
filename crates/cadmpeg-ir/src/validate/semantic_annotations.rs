@@ -4,7 +4,10 @@
 use std::collections::HashSet;
 
 use crate::document::CadIr;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 pub(super) fn check_semantic_annotations(
     ir: &CadIr,

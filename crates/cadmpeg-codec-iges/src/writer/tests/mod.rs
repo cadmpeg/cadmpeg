@@ -23,7 +23,7 @@ use super::WRITER_SENDER_PRODUCT;
 use super::WRITER_UNITS_NAME;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::Curve;
@@ -55,22 +55,22 @@ mod encode;
 mod quarantine;
 mod roundtrip;
 
-fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-            | cadmpeg_ir::LossTaxonomy::ProceduralReduced
-            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
+            | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
     )
 }
 
-fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::LossTaxonomy) -> bool {
+fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::LossTaxonomy::PreservedSourceUnavailable
-            | cadmpeg_ir::LossTaxonomy::MetadataNotTransferred
+        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
+            | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
     )
 }
 
@@ -249,7 +249,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(2_000_000.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -600,7 +600,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     let cases = [
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -611,7 +611,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -623,7 +623,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -637,7 +637,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -649,7 +649,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -679,7 +679,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 #[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -805,7 +805,7 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 #[test]
 fn generated_full_circle_has_lexically_identical_endpoints() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -830,7 +830,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
 #[test]
 fn generated_circle_refuses_a_zero_length_edge_span() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

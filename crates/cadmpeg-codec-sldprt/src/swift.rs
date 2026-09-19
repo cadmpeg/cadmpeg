@@ -299,7 +299,7 @@ pub(crate) fn pattern_hole_nominal_context(
         else {
             continue;
         };
-        let [cadmpeg_ir::features::PatternSeed::Feature(seed)] = seeds.as_slice() else {
+        let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
             continue;
         };
         if !features

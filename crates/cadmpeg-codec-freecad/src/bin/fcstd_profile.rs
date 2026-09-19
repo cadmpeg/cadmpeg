@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use cadmpeg_codec_freecad::{
     FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{CadIr, Severity};
+use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
 use serde_json::Value;
 

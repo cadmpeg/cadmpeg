@@ -31,7 +31,7 @@ use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use crate::IgesVersion;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");

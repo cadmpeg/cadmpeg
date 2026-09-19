@@ -9,14 +9,14 @@ use crate::eval::variable_blend_is_zero_radius;
 use crate::eval::variable_blend_radius;
 use crate::eval::ConstantRollingBallSection;
 use crate::eval::ContactTrackDifferential;
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::sampled::PolylineSamples;
+use crate::geometry::sampled::PolylineVertex;
 use crate::geometry::BlendCrossSection;
 use crate::geometry::BlendRadiusLaw;
 use crate::geometry::BlendSupport;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
-use crate::geometry::PcurveGeometry;
-use crate::geometry::PolylineSamples;
-use crate::geometry::PolylineVertex;
 use crate::geometry::ProceduralSurface;
 use crate::geometry::ProceduralSurfaceDefinition;
 use crate::geometry::RevisionSurfaceParameterization;
@@ -61,7 +61,7 @@ fn variable_blend_eval_fixture(
     ir.model.curves.push(Curve {
         id: slice.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
             )
@@ -73,7 +73,7 @@ fn variable_blend_eval_fixture(
         Surface {
             id: first_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -85,7 +85,7 @@ fn variable_blend_eval_fixture(
         Surface {
             id: second_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     second_origin,
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -114,7 +114,7 @@ fn variable_blend_eval_fixture(
         }),
         curve: None,
         pcurve: Some(PcurveGeometry::Line(
-            crate::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+            crate::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
         )),
         location: Point3::new(0.0, 0.0, 0.0),
         secondary_pcurve: None,
@@ -396,13 +396,19 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
         };
         let mut construction = definition_payload.construction().clone();
 
-        construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line(
-            crate::geometry::LinePcurve::try_new(Point2::new(3.0, 0.0), Point2::new(0.0, 1.0))
-                .unwrap(),
+        construction.sides[0].pcurve = Some(crate::geometry::pcurve::PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(3.0, 0.0),
+                Point2::new(0.0, 1.0),
+            )
+            .unwrap(),
         ));
-        construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line(
-            crate::geometry::LinePcurve::try_new(Point2::new(0.5, 2.0), Point2::new(0.0, 2.0))
-                .unwrap(),
+        construction.sides[1].pcurve = Some(crate::geometry::pcurve::PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.5, 2.0),
+                Point2::new(0.0, 2.0),
+            )
+            .unwrap(),
         ));
         *definition_payload =
             crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
@@ -434,7 +440,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         Some(VariableBlendCrossSection::Circular {}),
     );
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        crate::geometry::LineCurve::try_new(
+        crate::geometry::analytic::LineCurve::try_new(
             Point3::new(3.0, 0.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
         )
@@ -553,7 +559,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!((replica.z - (expected + 30.0)).abs() <= tolerance);
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-        crate::geometry::PolylineCurve::new(
+        crate::geometry::sampled::PolylineCurve::new(
             PolylineSamples::Parameterized {
                 vertices: vec![
                     Point3::new(2.0, 0.0, 3.0),
@@ -744,7 +750,7 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
             parameter: 0.0,
             radius: 0.0,
             function: PcurveGeometry::Line(
-                crate::geometry::LinePcurve::try_new(
+                crate::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(2.0, 100.0),
                     Point2::new(3.0, 200.0),
                 )

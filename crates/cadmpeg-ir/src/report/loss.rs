@@ -8,32 +8,7 @@ use crate::provenance::SourceProvenance;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Severity of a loss note or validation finding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum Severity {
-    /// Informational; no action needed.
-    Info,
-    /// Non-fatal approximation or normalization.
-    Warning,
-    /// A correctness problem in the produced IR or export.
-    Error,
-    /// A hard stop: the requested operation cannot be completed faithfully.
-    Blocking,
-}
-
-impl fmt::Display for Severity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Info => "info",
-            Self::Warning => "warning",
-            Self::Error => "error",
-            Self::Blocking => "blocking",
-        })
-    }
-}
+use crate::report::Severity;
 
 /// What subsystem a loss pertains to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -388,8 +363,8 @@ impl<'a> LossNamespace<'a> {
 #[macro_export]
 macro_rules! loss_namespace {
     ($value:literal $(,)?) => {{
-        const STATIC_LOSS_NAMESPACE: $crate::report::LossNamespace<'static> =
-            match $crate::report::LossNamespace::new($value) {
+        const STATIC_LOSS_NAMESPACE: $crate::report::loss::LossNamespace<'static> =
+            match $crate::report::loss::LossNamespace::new($value) {
                 Ok(namespace) => namespace,
                 Err(_) => panic!("loss namespace literal is reserved"),
             };
@@ -602,3 +577,6 @@ impl LossNote {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_strict_floor, Severity, "strict_floor");
 cadmpeg_core::named_optional_field!(deserialize_provenance, SourceProvenance, "provenance");
+
+#[cfg(test)]
+mod tests;

@@ -28,7 +28,10 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{LossCategory, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossCategory, LossNote, LossTaxonomy},
+    Severity,
+};
 use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -655,9 +658,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             extent,
             ..
         }) => {
-            use cadmpeg_ir::features::HolePlacement;
+            use cadmpeg_ir::features::holes::HolePlacement;
 
-            let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = shape.construction()
+            let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = shape.construction()
             else {
                 return true;
             };
@@ -956,20 +959,20 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     !face_selection_is_resolved(group.center_faces())
                         || matches!(
                             group.side_one_faces(),
-                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
                         )
                         || matches!(
                             group.side_two_faces(),
-                            cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
                         )
                         || matches!(
                             group.side_one_faces(),
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(ref selection)
                                 if !face_selection_is_resolved(selection)
                         )
                         || matches!(
                             group.side_two_faces(),
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(ref selection)
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(ref selection)
                                 if !face_selection_is_resolved(selection)
                         )
                 })
@@ -1531,7 +1534,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 for group in groups {
                     face_selection(group.center_faces());
                     for side in [group.side_one_faces(), group.side_two_faces()] {
-                        if let cadmpeg_ir::features::FullRoundSideSelection::Explicit(selection) =
+                        if let cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(selection) =
                             side
                         {
                             face_selection(selection);
@@ -2164,7 +2167,7 @@ impl<'a> F3dDecodeSession<'a> {
         } = session_state;
         let mut report = crate::report::build_decode_report(
             scan,
-            cadmpeg_ir::report::DecodeTransfer::full(true),
+            cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             geometry_losses(&brep),
         );
         if undecoded_candidates != 0 {
@@ -2248,7 +2251,7 @@ impl<'a> F3dDecodeSession<'a> {
                 source_attributes,
                 report: crate::report::build_decode_report(
                     scan,
-                    cadmpeg_ir::report::DecodeTransfer::full(false),
+                    cadmpeg_ir::report::decode::DecodeTransfer::full(false),
                     container_losses(scan),
                 ),
                 report_scope,
@@ -3020,7 +3023,7 @@ fn decode_scanned_document<'a>(
         let source_image = preserve_source_image(scan);
         let mut report = crate::report::build_decode_report(
             scan,
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             container_losses(scan),
         );
         match crate::xref::decode(scan) {
@@ -3674,7 +3677,7 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
+    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     report
         .losses
         .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
@@ -3710,7 +3713,7 @@ fn apply_bodyless_design_classification(
                 | LossTaxonomy::MissingGeometryStream
         )
     });
-    report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
+    report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
         (0, reference_images) => format!(
             "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
@@ -4962,7 +4965,7 @@ fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> Str
         .join(", ")
 }
 
-fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::LossNote> {
+fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
@@ -5131,7 +5134,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
 ///
 /// The report names the BREP carrier state. A failed binary decode gets a
 /// decode-failure note. Each remaining state gets its own loss description.
-fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::LossNote> {
+fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);

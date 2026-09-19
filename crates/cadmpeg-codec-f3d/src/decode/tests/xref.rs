@@ -7,8 +7,8 @@ use crate::loss::F3dLossCode;
 #[test]
 fn superseded_xref_placements_have_a_distinct_loss_note() {
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: Default::default(),

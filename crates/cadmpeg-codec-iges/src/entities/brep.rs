@@ -10,7 +10,10 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::{Pcurve, PcurveGeometry},
+    CurveGeometry,
+};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
@@ -176,7 +179,7 @@ fn project_pcurve_uses(
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                     None,
                     Some(range),
                     fit_tolerance,

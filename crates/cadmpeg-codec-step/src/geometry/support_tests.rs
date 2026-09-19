@@ -14,7 +14,7 @@ fn rejects_transform_that_step_operator_cannot_represent() {
     .expect("affine transform");
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
         basis: Box::new(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )

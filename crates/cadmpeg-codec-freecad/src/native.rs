@@ -158,7 +158,7 @@ mod tests {
         let findings = crate::validate_native(&roundtrip);
         assert!(findings.iter().any(|finding| {
             finding.message.contains("string table id")
-                && finding.check == cadmpeg_ir::report::Check::NativeLinks
+                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
         }));
     }
 

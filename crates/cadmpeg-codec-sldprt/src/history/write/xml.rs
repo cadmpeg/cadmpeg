@@ -2,7 +2,7 @@
 //! Native XML tag and operation-kind helpers for write.
 
 use cadmpeg_ir::features::{
-    BodyRetentionMode, FeatureDefinition, FeatureOperation, PatternTransform, SweepMode,
+    patterns::PatternTransform, BodyRetentionMode, FeatureDefinition, FeatureOperation, SweepMode,
     UnresolvedFamily,
 };
 

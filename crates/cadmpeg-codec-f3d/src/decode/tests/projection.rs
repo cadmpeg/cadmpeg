@@ -52,8 +52,8 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         .expect("active face operand"),
     );
     let mut report = cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
         transfer_ledger: Default::default(),
@@ -223,8 +223,8 @@ fn presentation_timeline_objects_are_not_incomplete_modeling_features() {
 #[test]
 fn full_round_fillet_with_automatic_sides_is_complete() {
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        FullRoundSideSelection,
+        edge_treatments::FullRoundSideSelection, FaceSelection, Feature, FeatureDefinition,
+        FeatureId, FeatureOperation,
     };
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -241,15 +241,19 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-                groups: vec![cadmpeg_ir::features::FullRoundFilletGroup::new(
-                    FaceSelection::Resolved {
-                        faces: vec!["test:model:face#center".try_into().expect("valid identity")],
-                        native: "native:center-group".into(),
-                    },
-                    FullRoundSideSelection::Automatic,
-                    FullRoundSideSelection::Automatic,
-                )
-                .unwrap()]
+                groups: vec![
+                    cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
+                        FaceSelection::Resolved {
+                            faces: vec!["test:model:face#center"
+                                .try_into()
+                                .expect("valid identity")],
+                            native: "native:center-group".into(),
+                        },
+                        FullRoundSideSelection::Automatic,
+                        FullRoundSideSelection::Automatic,
+                    )
+                    .unwrap(),
+                ]
                 .try_into()
                 .unwrap(),
             }),

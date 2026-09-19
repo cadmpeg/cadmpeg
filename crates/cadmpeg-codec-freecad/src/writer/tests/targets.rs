@@ -8,7 +8,7 @@ use crate::FcstdCodec;
 use cadmpeg_core::target::{DefaultSource, TargetRefusalKind};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -115,7 +115,7 @@ fn inherit_preserves_a_schema_four_source_entry_for_entry() {
 
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     assert_eq!(
         plan.report().target().map(ToString::to_string),

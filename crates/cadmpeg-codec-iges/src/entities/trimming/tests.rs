@@ -6,8 +6,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    Curve, CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -354,7 +355,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -366,7 +367,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -447,8 +448,11 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
 
     let pcurves = vec![(
         PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(2.0, 0.0))
-                .unwrap(),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(2.0, 0.0),
+            )
+            .unwrap(),
         ),
         [0.0, 1.0],
     )];
@@ -741,7 +745,7 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
     ]))];
     let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter).unwrap();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

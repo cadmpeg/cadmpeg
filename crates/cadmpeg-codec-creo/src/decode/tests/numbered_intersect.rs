@@ -48,10 +48,10 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
-        EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature,
-        FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+        edge_treatments::RadiusSpec, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
+        Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
         FeatureOperation as IrFeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,
-        LinearTermination, RadiusSpec, RevolutionAxis,
+        LinearTermination, RevolutionAxis,
     },
     scalar::{Angle, Length},
 };
@@ -904,11 +904,13 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     )
     .expect("valid test fixture");
     let fillet = IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-            edges: generated_edges.clone(),
-            radius: RadiusSpec::Unresolved { form: None },
-            tangency_weight: None,
-        }),
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::FilletGroup {
+                edges: generated_edges.clone(),
+                radius: RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            },
+        ),
     });
     assert_eq!(
         feature_generated_dependencies(&fillet),
@@ -916,10 +918,12 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
     );
 
     let chamfer = IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
-            edges: generated_edges,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
-        }),
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::ChamferGroup {
+                edges: generated_edges,
+                spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: None },
+            },
+        ),
         flip_direction: false,
     });
     assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
@@ -1354,7 +1358,7 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
         [[-0.3125, 1.625], [0.3125, 1.9375]],
     ];
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, -1.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1364,7 +1368,7 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
     assert_eq!(
         cylinder_from_complementary_outline_bounds(&plane, bounds),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 1.625, -1.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1378,7 +1382,7 @@ fn complementary_split_outlines_establish_a_cylinder_carrier() {
 #[test]
 fn split_outline_carrier_requires_complementary_square_bounds() {
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

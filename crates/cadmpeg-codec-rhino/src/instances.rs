@@ -289,7 +289,7 @@ pub(crate) struct DefinitionDiagnostic {
 }
 
 impl DefinitionDiagnostic {
-    pub(crate) fn to_loss(&self) -> cadmpeg_ir::LossNote {
+    pub(crate) fn to_loss(&self) -> cadmpeg_ir::report::loss::LossNote {
         self.diagnostic
             .code
             .unwrap_or(RhinoLossCode::ContainerInstanceDefinitionDegraded)

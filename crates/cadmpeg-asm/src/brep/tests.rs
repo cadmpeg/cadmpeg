@@ -26,10 +26,10 @@ use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
 
-fn exact_circle_directrix() -> cadmpeg_ir::geometry::NurbsCurve {
+fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
-    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
         vec![
@@ -101,7 +101,7 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     assert!(rational_four_arc_circle(&approximate).is_none());
 }
 
-fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
+fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let quadratic = exact_circle_directrix();
     let weights = quadratic.weights().unwrap();
     let homogeneous = |index: usize| {
@@ -146,7 +146,7 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::NurbsCurve {
             )
         })
         .unzip();
-    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         3,
         vec![
             0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0,
@@ -205,13 +205,13 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
 
 fn plane(origin: Point3, normal: Vector3, u_axis: Vector3) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
     ))
 }
 
 fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             origin,
             axis,
             Vector3::new(1.0, 0.0, 0.0),
@@ -221,8 +221,8 @@ fn cylinder(origin: Point3, axis: Vector3, radius: f64) -> SurfaceGeometry {
     ))
 }
 
-fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::NurbsCurve {
-    cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+fn linear_spine(points: Vec<Point3>) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
+    cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
         points,
@@ -1014,7 +1014,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    let candidate = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![

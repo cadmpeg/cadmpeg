@@ -123,7 +123,7 @@ enum GripVertexMarker {
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::LossNote>), CodecError> {
+) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
     let Some(folder) = scan.design_asset_folder() else {
         return Ok((Vec::new(), Vec::new()));
     };

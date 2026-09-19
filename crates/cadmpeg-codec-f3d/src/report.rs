@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::SourceMeta;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
@@ -24,12 +24,12 @@ pub(crate) enum ReportScope {
 /// the document, by [`classify_document`].
 pub(crate) fn build_decode_report(
     scan: &ContainerScan<'_>,
-    transfer: cadmpeg_ir::report::DecodeTransfer,
+    transfer: cadmpeg_ir::report::decode::DecodeTransfer,
     losses: Vec<LossNote>,
 ) -> DecodeBody {
     DecodeBody {
         transfer,
-        coverage: cadmpeg_ir::Coverage::default(),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: crate::container::summary_notes(
             scan,
@@ -39,7 +39,7 @@ pub(crate) fn build_decode_report(
                 crate::container::SummaryScope::FullDecode
             },
         ),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -101,7 +101,7 @@ mod tests {
 
         let mut report = build_decode_report(
             &scan,
-            cadmpeg_ir::report::DecodeTransfer::full(true),
+            cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             Vec::new(),
         );
         let source =

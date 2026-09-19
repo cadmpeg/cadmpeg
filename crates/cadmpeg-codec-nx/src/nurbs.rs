@@ -20,8 +20,9 @@ use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
-    PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsError, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    pcurve::PcurveGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use curve_references::CurveDescriptorReferences;
@@ -245,7 +246,7 @@ fn decode_pcurves(
                     weights.push(weight);
                 }
             }
-            let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 descriptor.basis.degree as u32,
                 knots,
                 control_points,

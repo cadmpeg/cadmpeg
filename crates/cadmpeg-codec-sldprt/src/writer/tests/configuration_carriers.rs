@@ -2,8 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -1117,7 +1117,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
     let major_direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     for geometry in [
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis,
                 major_direction,
@@ -1126,7 +1126,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
             .unwrap(),
         )),
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 axis,
                 major_direction,
@@ -1157,7 +1157,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
     let cases = [
         (
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     origin,
                     axis,
                     reference,
@@ -1171,7 +1171,7 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
         ),
         (
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     origin,
                     axis,
                     reference,
@@ -1185,15 +1185,19 @@ fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() 
         ),
         (
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(origin, axis, reference, -2.0)
-                    .unwrap(),
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    origin, axis, reference, -2.0,
+                )
+                .unwrap(),
             )),
             "signed sphere radius -2",
         ),
         (
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(origin, axis, reference, 2.0, -0.5)
-                    .unwrap(),
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                    origin, axis, reference, 2.0, -0.5,
+                )
+                .unwrap(),
             )),
             "torus radii (2, -0.5)",
         ),

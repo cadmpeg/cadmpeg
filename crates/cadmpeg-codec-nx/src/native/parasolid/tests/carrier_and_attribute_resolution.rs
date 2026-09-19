@@ -20,7 +20,7 @@ use cadmpeg_ir::geometry::BlendRadiusLaw;
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::loss::LossCategory;
 use std::io::Cursor;
 
 #[test]

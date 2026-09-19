@@ -17,9 +17,11 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveNurbs,
-    RevisionCacheForm, RevisionSurfaceParameterization, RollingBallSide, RollingBallSupportCurve,
-    SolvedCurveGeometry, SurfaceGeometry, VariableBlendCache,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::PcurveNurbs,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, RevisionCacheForm,
+    RevisionSurfaceParameterization, RollingBallSide, RollingBallSupportCurve, SolvedCurveGeometry,
+    SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -1653,13 +1655,13 @@ pub(crate) fn ellipse_to_nurbs(
     // the carrier reads rows and there is no pole lane and weight lane to pair.
     let corner = cadmpeg_ir::scalar::NonZeroReal::new(std::f64::consts::FRAC_1_SQRT_2)?;
     let full = cadmpeg_ir::scalar::NonZeroReal::new(1.0)?;
-    let pole = |point, weight| cadmpeg_ir::geometry::WeightedPole3 { point, weight };
+    let pole = |point, weight| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
     NurbsCurve::new(
         2,
         vec![
             0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0,
         ],
-        cadmpeg_ir::geometry::NurbsPoles3::Rational {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
             points: vec![
                 pole(at(1.0, 0.0), full),
                 pole(at(1.0, 1.0), corner),

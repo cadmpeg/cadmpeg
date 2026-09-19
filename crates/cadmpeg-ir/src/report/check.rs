@@ -8,8 +8,8 @@ use std::fmt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{LossNote, Severity};
 use crate::document::CensusKey;
+use crate::report::{loss::LossNote, Severity};
 
 /// Which invariant a validation finding concerns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

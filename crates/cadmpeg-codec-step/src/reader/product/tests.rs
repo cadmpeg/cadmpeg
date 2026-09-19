@@ -274,7 +274,7 @@ fn occurrence_transform_requires_direct_definition_representation_endpoints() {
     assert_eq!(child.transform, Transform::identity());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("NAUO #12")
     }));
 }
@@ -331,7 +331,7 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("NAUO #10")
     }));
 }
@@ -357,7 +357,7 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
         );
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains("NAUO #12")
                 && loss.message.contains("#38")
                 && loss.message.contains("#43")
@@ -417,7 +417,7 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
             .all(|occurrence| !occurrence.id.as_str().contains("#12")));
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains("NAUO #12")
                 && loss
                     .message
@@ -545,7 +545,7 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
     assert!(result.ir().model.bodies[0].transform.is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss
                 .message
                 .contains("conflicting standalone MAPPED_ITEM placements")
@@ -588,7 +588,7 @@ fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
         assert!(conflicting.ir().model.bodies[0].transform.is_none());
         assert!(conflicting.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains("#39")
                 && loss.message.contains("#40")
         }));
@@ -882,7 +882,7 @@ fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
         .any(|occurrence| occurrence.id.as_str().contains("#16")));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementAmbiguous.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("NAUO #16")
             && loss.message.contains("occurrence-owned mapped")
             && loss.message.contains("#47")
@@ -948,7 +948,7 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("NAUO #16")
     }));
 }
@@ -1005,7 +1005,7 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
     for usage_id in [16, 17] {
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementUnresolved.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains(&format!("NAUO #{usage_id}"))
         }));
     }

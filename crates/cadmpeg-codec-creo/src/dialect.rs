@@ -34,7 +34,7 @@
 use crate::container::{ContainerScan, Layout, UnknownLayout};
 use crate::loss::CreoLossCode;
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");

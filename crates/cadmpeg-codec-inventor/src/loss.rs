@@ -18,7 +18,10 @@
 //! added later, and the categories this codec spans have no honest common
 //! default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one Inventor transfer loss.
 ///
@@ -227,7 +230,7 @@ impl InventorLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("inventor") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("inventor") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

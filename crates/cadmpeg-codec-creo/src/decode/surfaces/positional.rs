@@ -102,7 +102,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            let Ok(sphere_surface) = cadmpeg_ir::geometry::SphereSurface::try_new(
+            let Ok(sphere_surface) = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(center[0], center[1], center[2]),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -210,7 +210,7 @@ pub(in super::super) fn transfer_positional_tori(
         };
         let geometry = if frame.major_radius() == 0.0 {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                match cadmpeg_ir::geometry::SphereSurface::try_new(
+                match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
                     Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                     Vector3::new(
@@ -226,7 +226,7 @@ pub(in super::super) fn transfer_positional_tori(
             ))
         } else {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                match cadmpeg_ir::geometry::TorusSurface::try_new(
+                match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
                     Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                     Vector3::new(
@@ -328,7 +328,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
             record.surface_id,
         );
-        let Ok(line_curve) = cadmpeg_ir::geometry::LineCurve::try_new(
+        let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(
                 frame.directrix[0][0],
                 frame.directrix[0][1],
@@ -338,7 +338,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+        let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(
                 frame.directrix[0][0],
                 frame.directrix[0][1],
@@ -447,7 +447,7 @@ fn note_tabulated_cylinder_refusals(
     replay_offset: usize,
     lane: &str,
     refused: &[String],
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     for record in refused {
         losses.push(
@@ -484,7 +484,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut replay_counts = BTreeMap::<u32, usize>::new();
     for replay in &scan.curves.tabulated_cylinder_replays {

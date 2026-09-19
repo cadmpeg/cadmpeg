@@ -135,7 +135,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -170,8 +170,9 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = 0.25;
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
-                .expect("valid PlaneSurface fixture");
+            *plane_surface =
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred plane geometry"),
     }
@@ -280,7 +281,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -296,7 +297,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             id: cadmpeg_ir::ids::SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -363,7 +364,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -384,8 +385,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = -8.5;
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
-                .expect("valid PlaneSurface fixture");
+            *plane_surface =
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred support plane"),
     }
@@ -400,8 +402,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.x = -9.0;
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
-                .expect("valid PlaneSurface fixture");
+            *plane_surface =
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred support plane"),
     }
@@ -508,7 +511,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -524,7 +527,7 @@ fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -588,7 +591,7 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -649,7 +652,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                         cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -675,9 +678,13 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
         let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 0.75;
-        *cylinder_surface =
-            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-                .expect("valid CylinderSurface fixture");
+        *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            *origin,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .expect("valid CylinderSurface fixture");
     }
     assert_eq!(
         super::round_constant_radius(&scan, &ir, 913).expect("round constant radius"),

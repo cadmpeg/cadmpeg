@@ -36,9 +36,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    BlendCrossSection, BlendRadiusLaw, Curve, CurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -82,7 +82,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             origin.y += 1.0e12;
             origin.z += 1.0e12;
             *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .unwrap();
         }
     }
     let translated_point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -210,7 +211,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
 #[test]
 fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
-    use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurface, Surface};
+    use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -229,13 +230,17 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         id: support.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     false,
                 ),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     vec![
                         vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
                         vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
@@ -827,7 +832,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![first, last],
@@ -846,7 +851,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     );
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.5, 1.0, 1.0],
             vec![first, last],
@@ -968,7 +973,8 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 #[test]
 fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     use cadmpeg_ir::geometry::{
-        Curve, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, ProceduralCurve, Surface,
+        nurbs::NurbsSurface, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        Surface,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
     use cadmpeg_ir::math::Point3;
@@ -987,9 +993,17 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     vec![
                         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
                         vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
@@ -1005,7 +1019,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1127,7 +1141,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         Surface {
             id: base_surfaces[0].clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1139,7 +1153,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         Surface {
             id: base_surfaces[1].clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1296,7 +1310,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         result.ir_mut().model.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(
                         origin.x + radius * normal.x,
                         origin.y + radius * normal.y,
@@ -1708,7 +1722,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         ir.model.surfaces.push(Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1774,7 +1788,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                             surface: Some(offsets[1].clone()),
                             pcurve: Some(
                                 PcurveGeometry::Line(
-                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                         Point2::new(1.0, 2.0),
                                         Point2::new(3.0, 4.0),
                                     )

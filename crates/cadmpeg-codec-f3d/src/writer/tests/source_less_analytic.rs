@@ -11,8 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -297,7 +297,8 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     origin.z += 25.0;
     let normal = cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0);
     let u_axis = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
-    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap();
+    *plane_surface =
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap();
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(
         &point_edited,
@@ -1086,7 +1087,7 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
             .try_into()
             .expect("valid identity"),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1292,7 +1293,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         source_less.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(start, direction).unwrap(),
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).unwrap(),
             )),
             source_object: None,
         });
@@ -1356,7 +1357,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId::mint("generated:test:circle#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             cadmpeg_ir::math::Point3::new(4.0, -2.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -1395,11 +1396,11 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
             .iter()
-            .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
     );
     round_trip.ir_mut().model.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1430,7 +1431,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let curve_id = CurveId::mint("generated:test:ellipse#0").expect("identity grammar");
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             cadmpeg_ir::math::Point3::new(-3.0, 5.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1468,7 +1469,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         !cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
             .findings
             .iter()
-            .any(|finding| finding.check == cadmpeg_ir::Check::Annotations)
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::Annotations)
     );
 }
 
@@ -1484,7 +1485,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             cadmpeg_ir::math::Point3::new(2.0, -4.0, 6.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1582,7 +1583,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
     source_less.model.surfaces.push(Surface {
         id: surface,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1629,7 +1630,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_less.model.curves.push(Curve {
             id: curves[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, z),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1699,7 +1700,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(-2.0, 4.0, 8.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1732,7 +1733,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1769,7 +1770,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 3.0, -5.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1801,7 +1802,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let ratio = 0.4;
     let half_angle = 0.35;
-    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         *origin,
         *axis,
         *ref_direction,
@@ -1838,7 +1839,7 @@ fn generated_f3d_rewrites_plane_frame() {
         .expect("generated planar triangle decode");
     let mut edited = decoded.ir().clone();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1868,7 +1869,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
         .expect("generated planar triangle decode");
     let mut edited = decoded.ir().clone();
     edited.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),

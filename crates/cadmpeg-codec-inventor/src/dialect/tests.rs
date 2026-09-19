@@ -11,7 +11,7 @@
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use super::{
     dialect_loss, kernel_dialect_loss, DialectRecovery, InventorDialect,

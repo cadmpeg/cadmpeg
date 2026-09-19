@@ -4,7 +4,10 @@
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::math::Point3;
 
 use crate::decode::analytic::equations::{quadratic_real_roots, PlaneEquation};
@@ -499,7 +502,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<CurveGeometry>, CodecError> {
     fn recognize(
         ctx: &DecodeContext<'_>,

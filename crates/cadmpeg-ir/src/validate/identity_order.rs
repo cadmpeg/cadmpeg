@@ -4,7 +4,10 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::document::CadIr;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 fn push_identity(seen: &mut HashSet<String>, findings: &mut Vec<Finding>, id: &str) {
     if !crate::ids::is_valid_identity(id) {

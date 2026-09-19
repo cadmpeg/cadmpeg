@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{error_finding, CadIr, Finding};
-use crate::report::Check;
+use crate::report::check::Check;
 
 pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
     let features = ir

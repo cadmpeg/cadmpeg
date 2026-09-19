@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    pcurve::Pcurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -104,7 +104,7 @@ impl FaceAdmissionRejection {
         }
     }
 
-    pub(in super::super) const fn coverage_key(self) -> cadmpeg_ir::CoverageKey {
+    pub(in super::super) const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
             Self::MissingSurfaceCarrier => {
                 crate::coverage::BREP_REJECTED_FACE_MISSING_SURFACE_CARRIER_COUNT
@@ -271,7 +271,10 @@ impl BrepTransferDiagnostics {
             .collect()
     }
 
-    pub(in super::super) fn record_coverage(&self, coverage: &mut cadmpeg_ir::Coverage) {
+    pub(in super::super) fn record_coverage(
+        &self,
+        coverage: &mut cadmpeg_ir::report::decode::Coverage,
+    ) {
         coverage.record(
             crate::coverage::BREP_CANDIDATE_FACE_COUNT,
             self.candidate_face_count,
@@ -1017,7 +1020,7 @@ pub(in super::super) fn transfer_native_brep(
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(scan, ir);
     let planes = carriers
@@ -2026,12 +2029,13 @@ pub(in super::super) fn transfer_native_brep(
                     }
                     let pcurves = pcurve_geometry
                         .and_then(|(geometry, parameter_range, offset, tag)| {
-                            let metadata = cadmpeg_ir::geometry::PcurveMetadata::try_general(
-                                None,
-                                parameter_range,
-                                None,
-                            )
-                            .ok()?;
+                            let metadata =
+                                cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                                    None,
+                                    parameter_range,
+                                    None,
+                                )
+                                .ok()?;
                             let pcurve = PcurveId::compose(
                                 &crate::identity::VISIBGEOM_PCURVE,
                                 cadmpeg_ir::ids::IdentityKey::from(half_edge.curve_id)
@@ -2096,7 +2100,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
             Vector3::new(
                 frame.unit_vector()[0],
@@ -2165,7 +2169,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             if ir.model.curves.iter().any(|curve| curve.id == id) {
                 continue;
             }
-            let Ok(circle_curve) = cadmpeg_ir::geometry::CircleCurve::try_new(
+            let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(center[0], center[1], center[2]),
                 Vector3::new(
                     frame.unit_vector()[0],

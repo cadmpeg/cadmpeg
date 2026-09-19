@@ -112,7 +112,7 @@ fn residual_parasolid_schema_charges_a_strict_dialect_loss() {
     );
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Reject
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
     assert!(losses[0].message.contains("block@7:body+3"));

@@ -3,7 +3,7 @@
 
 use super::error_finding;
 use crate::document::CadIr;
-use crate::report::{Check, Finding};
+use crate::report::check::{Check, Finding};
 use crate::sketches::{
     SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
     SketchGeometryDefinition, SketchLocus,

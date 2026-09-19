@@ -10,8 +10,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::PcurveGeometry,
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -26,14 +27,14 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 fn curve_geometry_for_sheet_pcurve(
     geometry: &PcurveGeometry,
-) -> Result<Option<CurveGeometry>, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<Option<CurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
     let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
     let vector = |vector: Point2| Vector3::new(vector.u, vector.v, 0.0);
     let line = |origin: Point2, direction: Point2| {
         let length = direction.u.hypot(direction.v);
         (length.is_finite() && length > 0.0).then(|| {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     point(origin),
                     vector(Point2::new(direction.u / length, direction.v / length)),
                 )
@@ -52,7 +53,7 @@ fn curve_geometry_for_sheet_pcurve(
             let x_axis = circle_pcurve.x_axis();
             let radius = circle_pcurve.radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
@@ -67,7 +68,7 @@ fn curve_geometry_for_sheet_pcurve(
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
@@ -82,7 +83,7 @@ fn curve_geometry_for_sheet_pcurve(
             let x_axis = parabola_pcurve.x_axis();
             let focal_distance = parabola_pcurve.focal_distance();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     point(*vertex),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
@@ -97,7 +98,7 @@ fn curve_geometry_for_sheet_pcurve(
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                     point(*center),
                     Vector3::new(0.0, 0.0, 1.0),
                     vector(*x_axis),
@@ -149,7 +150,7 @@ fn curve_geometry_for_sheet_pcurve(
             let length = direction.norm();
             (length.is_finite() && length > 0.0).then(|| {
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         placed_origin,
                         direction.scale(1.0 / length),
                     )
@@ -190,7 +191,7 @@ fn curve_geometry_for_sheet_pcurve(
 fn align_sheet_edge_to_pcurve(
     ir: &mut CadIr,
     geometry: &PcurveGeometry,
-) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
+) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
     let pcurve_id = ir.model.pcurves[0].id.clone();
     let (curve_id, point_ids) = {
         let edge_id = ir
@@ -288,7 +289,7 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -303,15 +304,15 @@ pub(crate) fn cylinder_surface_doc() -> CadIr {
 
 #[test]
 pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
-) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
+) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
     let bytes = include_bytes!("../../../tests/fixtures/ap214_sheet.p21");
     let mut ir = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode sheet")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![
@@ -339,7 +340,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
         .expect("decode NURBS pcurve");
     assert!(matches!(
         &decoded.ir().model.pcurves[0].geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
             if nurbs.degree() == 1
                 && !nurbs.periodic()
                 && nurbs.control_points().len() == 2
@@ -350,8 +351,8 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
 
 #[test]
 fn writer_round_trips_every_exact_step_pcurve_family(
-) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::transform::Transform2;
 
@@ -365,11 +366,16 @@ fn writer_round_trips_every_exact_step_pcurve_family(
     let y_axis = Point2::new(-0.8, 0.6);
     let cases = [
         PcurveGeometry::Circle(
-            cadmpeg_ir::geometry::CirclePcurve::try_new(Point2::new(2.0, 3.0), x_axis, y_axis, 4.0)
-                .unwrap(),
+            cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+                Point2::new(2.0, 3.0),
+                x_axis,
+                y_axis,
+                4.0,
+            )
+            .unwrap(),
         ),
         PcurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                 Point2::new(2.0, 3.0),
                 x_axis,
                 y_axis,
@@ -379,7 +385,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
             .unwrap(),
         ),
         PcurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                 Point2::new(2.0, 3.0),
                 x_axis,
                 y_axis,
@@ -388,7 +394,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
             .unwrap(),
         ),
         PcurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                 Point2::new(2.0, 3.0),
                 x_axis,
                 y_axis,
@@ -398,11 +404,11 @@ fn writer_round_trips_every_exact_step_pcurve_family(
             .unwrap(),
         ),
         PcurveGeometry::Trimmed(
-            cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
                 [0.25, 1.75],
                 true,
                 Box::new(PcurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CirclePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
                         Point2::new(2.0, 3.0),
                         x_axis,
                         y_axis,
@@ -414,10 +420,10 @@ fn writer_round_trips_every_exact_step_pcurve_family(
             .unwrap(),
         ),
         PcurveGeometry::Offset(
-            cadmpeg_ir::geometry::OffsetPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
                 -0.5,
                 Box::new(PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(2.0, 3.0),
                         Point2::new(4.0, 0.0),
                     )
@@ -428,7 +434,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
         ),
         PcurveGeometry::Transformed {
             basis: Box::new(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(1.0, 2.0),
                     Point2::new(3.0, 4.0),
                 )
@@ -702,7 +708,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
 #[test]
 pub(crate) fn analytic_conics_round_trip_through_step() {
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -711,7 +717,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
         .unwrap(),
     ));
     let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -765,7 +771,7 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     ir.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1133,7 +1139,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1145,7 +1151,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1159,7 +1165,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1171,7 +1177,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
         ),
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1200,7 +1206,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
 #[test]
 fn analytic_surface_placements_preserve_orientation() {
     let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1256,9 +1262,9 @@ fn nurbs_curve_rational_uses_complex_form() {
 #[test]
 pub(crate) fn nurbs_surface_grid_orientation_is_u_major() {
     let n = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -1342,7 +1348,7 @@ fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
     .expect("writer should recover a continuous loop order");
     assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("continuous vertex-to-vertex")
     }));
 

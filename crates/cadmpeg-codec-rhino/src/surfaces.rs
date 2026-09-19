@@ -6,8 +6,8 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -57,7 +57,7 @@ pub(crate) fn is_procedural_class(uuid: Uuid) -> bool {
 #[derive(Debug, Clone)]
 pub(crate) enum TypedSurface {
     Plane {
-        plane: cadmpeg_ir::geometry::PlaneSurface,
+        plane: cadmpeg_ir::geometry::analytic::PlaneSurface,
         parameterization: PlaneParameterization,
     },
     Nurbs(NurbsSurface),
@@ -951,7 +951,7 @@ fn read_plane_surface_with_parameterization(
         (domain, v_domain)
     };
     let geometry = TypedSurface::Plane {
-        plane: cadmpeg_ir::geometry::PlaneSurface::try_new(
+        plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             scale_native_point(native_plane.origin, scale)
                 .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
             vector(native_plane.zaxis),

@@ -1,10 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{FaceSelection, FeatureDirection3, FinitePoint3, PathRef};
+//! Pattern operands, admitted transforms, and stage composition.
+
+use super::{
+    BodySelection, FaceSelection, FeatureDirection3, FeatureId, FinitePoint3, PathRef,
+    SelectionMembers,
+};
+use crate::ids::OccurrenceId;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// One geometric selection repeated or reflected by a pattern operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum PatternSeed {
+    /// Complete result of a preceding construction-history feature.
+    Feature(FeatureId),
+    /// Selected faces, including faces in an intermediate regenerated result.
+    Faces(FaceSelection),
+    /// Selected bodies, including bodies in an intermediate regenerated result.
+    Bodies(BodySelection),
+    /// Selected placed component occurrences.
+    Occurrences(
+        #[serde(deserialize_with = "deserialize_local_occurrences")] SelectionMembers<OccurrenceId>,
+    ),
+}
 
 /// The stages of a composite pattern nested inside a composite stage.
 ///
@@ -581,7 +609,7 @@ impl<C: JsonSchema> JsonSchema for PatternKind<C> {
     }
 }
 
-fn composite_composition_is_valid(stages: &[crate::features::PatternStage]) -> bool {
+fn composite_composition_is_valid(stages: &[crate::features::patterns::PatternStage]) -> bool {
     let mut occurrences = None;
     stages.iter().enumerate().all(|(index, stage)| {
         let Some(stage_count) = pattern_occurrence_count(stage.pattern.definition()) else {
@@ -689,3 +717,8 @@ cadmpeg_core::named_optional_field!(deserialize_form, PatternForm, "form");
 cadmpeg_core::named_optional_field!(deserialize_direction, Vector3, "direction");
 cadmpeg_core::named_optional_field!(deserialize_second, LinearPatternDirection, "second");
 cadmpeg_core::named_optional_field!(deserialize_path, PathRef, "path");
+
+selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
+
+#[cfg(test)]
+mod tests;

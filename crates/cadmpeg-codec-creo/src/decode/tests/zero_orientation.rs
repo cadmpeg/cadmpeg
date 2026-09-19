@@ -43,8 +43,8 @@ use crate::decode::sweep::surfaces::revolved_nurbs_surface;
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsPoleGrid, NurbsSurface, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -438,7 +438,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(2.0, 3.0, 0.0),
                     Vector3::new(0.0, -1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -451,7 +451,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(2.0, -5.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -466,7 +466,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(2.0, 8.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -556,7 +556,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         let half_angle = cone_surface.half_angle();
         let mut origin = *origin;
         origin.x = 3.0;
-        *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             origin,
             *axis,
             *ref_direction,
@@ -578,7 +578,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         let half_angle = cone_surface.half_angle();
         let mut origin = *origin;
         origin.x = 2.0;
-        *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+        *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             origin,
             *axis,
             *ref_direction,
@@ -599,9 +599,13 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     let radius = sphere_surface.radius();
     let mut center = *center;
     center.z = 1.0;
-    *sphere_surface =
-        cadmpeg_ir::geometry::SphereSurface::try_new(center, *axis, *ref_direction, radius)
-            .expect("valid SphereSurface fixture");
+    *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+        center,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .expect("valid SphereSurface fixture");
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
 }
 
@@ -1206,7 +1210,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         reference: None,
     };
     let spline = SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             2,
             vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
             vec![
@@ -1472,13 +1476,13 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let surface = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             3,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
             false,
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             (0..4)
                 .flat_map(|u| {
                     [
@@ -1587,9 +1591,9 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
     let first = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
@@ -1601,9 +1605,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     )
     .expect("valid first extrusion surface");
     let second = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
                 vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
@@ -1711,13 +1715,13 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let surface = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             3,
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
             false,
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             [-1.0, -0.5, 0.5, 1.0]
                 .into_iter()
                 .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])

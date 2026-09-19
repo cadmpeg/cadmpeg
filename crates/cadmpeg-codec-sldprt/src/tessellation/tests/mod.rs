@@ -44,7 +44,7 @@ use cadmpeg_ir::topology::Sense;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 
 use crate::SldprtCodec;
 
@@ -55,7 +55,7 @@ use crate::test_support::tessellation::descriptor;
 use crate::test_support::tessellation::display_list_payload;
 use crate::test_support::tessellation::extended_display_list_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
-use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, Curve, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     VertexId,
@@ -94,7 +94,7 @@ fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
 #[test]
 fn analytic_surface_residuals_measure_normal_distance() {
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 2.0),
             Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
             Vector3::new(1.0, 0.0, 0.0),
@@ -102,7 +102,7 @@ fn analytic_surface_residuals_measure_normal_distance() {
         .unwrap(),
     ));
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
             Vector3::new(1.0, 0.0, 0.0),
@@ -111,7 +111,7 @@ fn analytic_surface_residuals_measure_normal_distance() {
         .unwrap(),
     ));
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -120,7 +120,7 @@ fn analytic_surface_residuals_measure_normal_distance() {
         .unwrap(),
     ));
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -130,7 +130,7 @@ fn analytic_surface_residuals_measure_normal_distance() {
         .unwrap(),
     ));
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -234,7 +234,7 @@ fn add_face(
         model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).unwrap(),
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
             )),
             source_object: None,
         });
@@ -282,7 +282,7 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
         model,
         name,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -334,9 +334,17 @@ fn test_nurbs_surface() -> NurbsSurface {
         })
         .collect();
     NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(control_points, None),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            false,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, None),
         false,
     )
     .expect("valid test NURBS surface")
@@ -390,7 +398,7 @@ fn add_cylindrical_patch_face(
     model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -428,7 +436,7 @@ fn add_cylindrical_patch_face(
         .collect::<Vec<_>>();
     let curve_geometries = [
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, min_z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -437,11 +445,14 @@ fn add_cylindrical_patch_face(
             .unwrap(),
         )),
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(corners[1], Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                corners[1],
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
         )),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, max_z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -450,8 +461,11 @@ fn add_cylindrical_patch_face(
             .unwrap(),
         )),
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(corners[3], Vector3::new(0.0, 0.0, -1.0))
-                .unwrap(),
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                corners[3],
+                Vector3::new(0.0, 0.0, -1.0),
+            )
+            .unwrap(),
         )),
     ];
     for (index, geometry) in curve_geometries.into_iter().enumerate() {
@@ -1002,7 +1016,7 @@ fn cylindrical_trim_accepts_quantized_points_within_boundary_tolerance() {
 fn cone_support_binds_display_list_face() {
     let mut model = model_with_body();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1057,7 +1071,7 @@ fn cone_support_binds_display_list_face() {
 fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     let mut model = model_with_body();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1300,7 +1314,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         &mut model,
         "plane-coincident",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1722,7 +1736,7 @@ fn decode_rejects_nonfinite_display_list_values() {
 fn planar_boundary_accepts_bounded_ellipse_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1731,7 +1745,7 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
     ));
     let frame = plane_frame(surface.solved().expect("solved carrier")).unwrap();
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1761,7 +1775,7 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
 fn planar_boundary_accepts_bounded_circle_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1770,7 +1784,7 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
     ));
     let frame = plane_frame(surface.solved().expect("solved carrier")).unwrap();
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1802,7 +1816,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         &mut model,
         "arc-competitor",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1826,7 +1840,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             .find(|curve| curve.id.as_str() == curve_id)
             .unwrap()
             .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

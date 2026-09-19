@@ -11,8 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -1728,14 +1728,14 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \
              transferred.",
         )],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -1762,7 +1762,7 @@ fn material_losses(report: &cadmpeg_ir::codec::DecodeBody) -> Vec<&str> {
     report
         .losses
         .iter()
-        .filter(|loss| loss.code.category() == cadmpeg_ir::report::LossCategory::Material)
+        .filter(|loss| loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Material)
         .map(|loss| loss.message.as_str())
         .collect()
 }

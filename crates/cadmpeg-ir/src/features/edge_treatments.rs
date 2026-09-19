@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Fillet and chamfer operands, dimensions, and radius laws.
+
 use super::{face_selections_overlap, EdgeSelection, FaceSelection};
 use crate::scalar::{FiniteReal, InteriorAngle, Length, PositiveLength};
 #[cfg(feature = "schema")]
@@ -318,3 +320,6 @@ impl ChamferSpec {
 cadmpeg_core::named_optional_field!(deserialize_form, RadiusForm, "form");
 cadmpeg_core::named_optional_field!(deserialize_tangency_weight, FiniteReal, "tangency_weight");
 cadmpeg_core::named_optional_field!(deserialize_chamfer_spec_form, ChamferForm, "form");
+
+#[cfg(test)]
+mod tests;

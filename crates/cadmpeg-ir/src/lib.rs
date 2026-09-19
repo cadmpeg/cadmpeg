@@ -11,8 +11,8 @@
 //!
 //! Document state machine: [`draft::ModelDraft`] commits into [`CadIr`];
 //! [`validate_neutral()`] then yields a
-//! [`ValidationReport`]. Decode produces [`DecodeResult`] without embedding
-//! validation. Start a hand-built document with [`CadIr::empty`], populate its
+//! [`report::check::ValidationReport`]. Decode produces [`DecodeResult`]
+//! without embedding validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
 //! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
 //! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
@@ -23,7 +23,8 @@
 //! enumerates a container, and decoding returns a [`DecodeResult`].
 //! [`DecodeFailure`] separates backend [`cadmpeg_core::CodecError`] values from
 //! strict-policy refusals that retain the completed report. A successful decode
-//! reports partial transfer through [`DecodeReport`] and [`LossNote`].
+//! reports partial transfer through [`report::decode::DecodeReport`] and
+//! [`report::loss::LossNote`].
 //!
 //! [`Annotations`] records source locations and fidelity by globally unique
 //! entity ID. An omitted exactness entry means byte-exact; explicit entries
@@ -113,19 +114,13 @@ pub use products::{
     LinkMember, LinkState, Occurrence, OperandContainer, PairedJointKind, ProductDefinition,
     ProductDefinitionKind, PrototypeReference,
 };
-/// Source location attached to a [`LossNote`].
+/// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
     AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
     SourceLocation, SourceObjectAssociation, SourceProvenance, StaticStreamName, StreamName,
 };
 pub use references::{ReferenceSelection, ReferenceTarget};
 
-pub use report::{
-    CensusBasis, Check, Coverage, CoverageKey, DecodeReport, DecodeTransfer, EntityCensus,
-    ExportReport, FidelityResolution, Finding, HexByteCoverageKey, IndexedCoverageKey,
-    LossCategory, LossKind, LossNote, LossTaxonomy, ReplayFidelity, Severity, StrictConsequence,
-    SynthesisFidelity, ValidationReport, WritePath, SHARED_LOSS_NAMESPACE,
-};
 pub use sketches::{
     NativeOperandField, Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition,
     SketchConstraintId, SketchCoordinateAxis, SketchDistanceMeasurement, SketchDistancePair,

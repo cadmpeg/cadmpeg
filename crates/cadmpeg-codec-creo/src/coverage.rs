@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-use cadmpeg_ir::{CoverageKey, HexByteCoverageKey, IndexedCoverageKey};
+use cadmpeg_ir::report::decode::{CoverageKey, HexByteCoverageKey, IndexedCoverageKey};
 
 pub(crate) const VISIBLE_CURVE_TYPE_ROW_COUNT: HexByteCoverageKey =
     HexByteCoverageKey::new("visible_curve_type_", "_row_count");
@@ -1588,7 +1588,7 @@ mod tests {
     fn coverage_keys_are_unique() {
         let unique = ALL
             .iter()
-            .map(cadmpeg_ir::CoverageKey::as_str)
+            .map(cadmpeg_ir::report::decode::CoverageKey::as_str)
             .collect::<BTreeSet<_>>();
         assert_eq!(unique.len(), ALL.len());
     }

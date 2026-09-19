@@ -36,7 +36,7 @@ use crate::loss::FreecadLossCode;
 use crate::native::DocumentFacts;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch, Grammar};
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
@@ -52,7 +52,7 @@ include!("dialect/registry_ids.rs");
 /// No row is a cross-format default because this writer cannot synthesize an
 /// `FCStd` document graph from another format.
 ///
-/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::TargetRequest::Inherit
+/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::target::TargetRequest::Inherit
 pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     id: FcstdDialect::Schema4.id(),
     aliases: &["4"],

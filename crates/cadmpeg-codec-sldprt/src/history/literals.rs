@@ -4,8 +4,8 @@
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ChamferSpec, DimensionDisplay, FaceMotion, FeatureDefinition, FeatureOperation,
-        ParameterValue, PatternTransform,
+        edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
+        FaceMotion, FeatureDefinition, FeatureOperation, ParameterValue,
     },
     scalar::{Angle, Length},
 };

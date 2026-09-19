@@ -3,7 +3,7 @@
 use super::{cylinder, lane, lane_with_position_reference, model_hole, native_history};
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, HolePlacement};
+use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -108,7 +108,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     let surface = |id, x| Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(x, 7.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -125,12 +125,12 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     assert_eq!(placements.len(), 2);
     assert!(placements.iter().any(|placement| matches!(
         placement,
-        cadmpeg_ir::features::HolePlacement::Axis { origin, .. }
+        cadmpeg_ir::features::holes::HolePlacement::Axis { origin, .. }
             if origin.x == -9.0 && origin.y == 7.0 && origin.z == 10.0
     )));
     assert!(placements.iter().any(|placement| matches!(
         placement,
-        cadmpeg_ir::features::HolePlacement::Axis { origin, .. }
+        cadmpeg_ir::features::holes::HolePlacement::Axis { origin, .. }
             if origin.x == 13.0 && origin.y == 7.0 && origin.z == 10.0
     )));
 
@@ -172,7 +172,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     let opposite_side = |id, x| Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(x, 30.0, 10.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -208,9 +208,13 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     let radius = cylinder_surface.radius();
 
     let axis = Vector3::new(0.0, 0.0, -1.0);
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, axis, *ref_direction, radius)
-            .unwrap();
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     surfaces.push(opposite);
     assert_eq!(
         marker_pattern_bore_axes(
@@ -258,7 +262,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(x, 11.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -391,7 +395,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
 
             origin.z = 20.0;
             let axis = Vector3::new(0.0, 0.0, -1.0);
-            *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 origin,
                 axis,
                 *ref_direction,
@@ -412,7 +416,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(1000.0, 1000.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -758,7 +762,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     assert_eq!(placements.len(), 1);
     assert!(matches!(
        placements[0],
-       cadmpeg_ir::features::HolePlacement::Axis {
+       cadmpeg_ir::features::holes::HolePlacement::Axis {
            origin: geometry_1,
            axis: geometry_2,
        }
@@ -797,7 +801,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     assert_eq!(paired_placements.len(), 2);
     assert!(matches!(
        paired_placements[0],
-       cadmpeg_ir::features::HolePlacement::Axis {
+       cadmpeg_ir::features::holes::HolePlacement::Axis {
            origin: geometry_1,
            axis: geometry_2,
        }
@@ -812,7 +816,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
            })));
     assert!(matches!(
        paired_placements[1],
-       cadmpeg_ir::features::HolePlacement::Axis {
+       cadmpeg_ir::features::holes::HolePlacement::Axis {
            origin: geometry_1,
            axis: geometry_2,
        }
@@ -1096,7 +1100,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1125,7 +1129,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     assert_eq!(
         placements.as_deref(),
         Some(
-            &[cadmpeg_ir::features::HolePlacement::Axis {
+            &[cadmpeg_ir::features::holes::HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(12.0, 23.0, 0.0))
                     .unwrap(),
                 axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -1324,7 +1328,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(12.0, 23.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

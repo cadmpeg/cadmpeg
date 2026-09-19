@@ -20,7 +20,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
     let source = CurveId::mint("test:model:curve#source").unwrap();
     let subset = CurveId::mint("test:model:curve#subset").unwrap();
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        crate::geometry::LineCurve::try_new(
+        crate::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )

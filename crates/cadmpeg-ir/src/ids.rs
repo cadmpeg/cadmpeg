@@ -1131,7 +1131,7 @@ id_type!(
     CurveId
 );
 id_type!(
-    /// Identifies a [`crate::geometry::Pcurve`] carrier.
+    /// Identifies a [`crate::geometry::pcurve::Pcurve`] carrier.
     PcurveId
 );
 id_type!(

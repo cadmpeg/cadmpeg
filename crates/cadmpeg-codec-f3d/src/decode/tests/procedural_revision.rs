@@ -13,7 +13,7 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use zip::CompressionMethod;
@@ -834,7 +834,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .find(|candidate| candidate.id == *curve)
                 .expect("vertex-blend boundary curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -3.0),
                     cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
                         .unit()
@@ -1153,7 +1153,8 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     if let Some(rows) = &mut weight_rows {
         rows[0][1] = 0.65;
     }
-    let poles = cadmpeg_ir::geometry::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
+    let poles =
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
     nurbs.set_poles(poles.unwrap()).unwrap();
     *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
@@ -1208,7 +1209,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     let mut control_points = nurbs.control_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
@@ -1321,7 +1322,7 @@ fn decode_retains_generated_rolling_ball_definition() {
 #[test]
 fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
     use cadmpeg_ir::geometry::{
-        BlendRadiusLaw, CurveGeometry, NurbsCurve, ProceduralSurfaceDefinition,
+        nurbs::NurbsCurve, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
         SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1380,7 +1381,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
         });
     let support_geometry = [
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -1388,7 +1389,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
             .unwrap(),
         )),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1585,7 +1586,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     let mut control_points = nurbs.control_points();
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
-    *nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,

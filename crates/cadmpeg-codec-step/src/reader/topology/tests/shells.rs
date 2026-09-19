@@ -677,7 +677,7 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     assert!(solid.ir().model.bodies.is_empty());
     assert!(solid.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
     }));
     assert!(cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone()).is_ok());
 }
@@ -696,7 +696,7 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
     }));
 }
 

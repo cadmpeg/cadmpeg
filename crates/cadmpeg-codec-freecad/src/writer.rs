@@ -114,8 +114,8 @@ pub(crate) fn write_seekable(
         "unsupported retained entries and unedited XML records were preserved".into(),
     ];
     Ok(WriteOutcome {
-        census: cadmpeg_ir::EntityCensus {
-            basis: cadmpeg_ir::CensusBasis::IrArenas,
+        census: cadmpeg_ir::report::export::EntityCensus {
+            basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: ir.census(),
         },
         notes,
@@ -123,7 +123,7 @@ pub(crate) fn write_seekable(
 }
 
 pub(crate) struct WriteOutcome {
-    pub(crate) census: cadmpeg_ir::EntityCensus,
+    pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) notes: Vec<String>,
 }
 

@@ -6,7 +6,7 @@
 //! pcurves.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
@@ -1743,7 +1743,7 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
         tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
     (valid_direction && valid_tail).then_some(SurfaceGeometry::Solved(
         SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(point[0], point[1], 0.0),
                 normal,
                 u_axis,
@@ -2129,7 +2129,7 @@ impl B2Cylinder {
 
     pub(in crate::families) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::from(self.origin),
                 Vector3::from(self.axis.get()),
                 Vector3::from(self.reference_direction.get()),
@@ -2881,7 +2881,7 @@ pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeom
     let axial = slant * cone.half_angle.cos();
     let axis = cone.axis.get();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(
                 cone.apex[0] + axial * axis[0],
                 cone.apex[1] + axial * axis[1],
@@ -2901,7 +2901,7 @@ pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeom
 #[must_use]
 pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
             Vector3::from(sphere.axis.get()),
             Vector3::from(sphere.direction_x.get()),
@@ -2915,7 +2915,7 @@ pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<Surfa
 #[must_use]
 pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(torus.center[0], torus.center[1], torus.center[2]),
             Vector3::from(torus.axis.get()),
             Vector3::from(torus.direction_x.get()),

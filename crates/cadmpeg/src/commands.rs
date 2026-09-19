@@ -10,7 +10,7 @@ use reporting::{
     write_payload_report, CommandReportBody, Payload,
 };
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
@@ -58,19 +58,19 @@ fn print_load_notice(document: &LoadedDocument) {
 }
 
 /// CLI-facing conversion arguments assembled from argv.
-pub struct ConversionArgs {
+pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
-    pub losses: LossPolicy,
+    pub(crate) losses: LossPolicy,
     /// Permit export when validation reports errors.
-    pub allow_errors: bool,
+    pub(crate) allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
-    pub allow_empty: bool,
+    pub(crate) allow_empty: bool,
     /// CAD output destination and its overwrite policy.
-    pub destination: DestinationPolicy,
+    pub(crate) destination: DestinationPolicy,
     /// Optional path for the JSON command report.
-    pub report: Option<FileDestination>,
+    pub(crate) report: Option<FileDestination>,
     /// Explicit input format selected by the user.
-    pub forced_input: Option<ForcedInput>,
+    pub(crate) forced_input: Option<ForcedInput>,
 }
 
 /// Attempt to persist a semantic refusal without replacing it with a report
@@ -164,7 +164,7 @@ impl Serialize for DiffReportPayload<'_> {
 }
 
 /// Inspect a native container and print its entries.
-pub fn inspect(
+pub(crate) fn inspect(
     inputs: &InputCatalog,
     path: &Path,
     forced: Option<&'static cadmpeg_registry::NativeDescriptor>,
@@ -286,7 +286,7 @@ fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyh
 }
 
 /// Dump a native CAD file and write CADIR JSON.
-pub fn dump(
+pub(crate) fn dump(
     inputs: &InputCatalog,
     path: &Path,
     destination: &DestinationPolicy,
@@ -352,7 +352,7 @@ pub fn dump(
 }
 
 /// Load and check CADIR, printing a human-readable or JSON report.
-pub fn check_cmd(
+pub(crate) fn check_cmd(
     inputs: &InputCatalog,
     path: &Path,
     forced: Option<ForcedInput>,
@@ -414,7 +414,7 @@ pub fn check_cmd(
 }
 
 /// Convert a CAD file to another format.
-pub fn convert(
+pub(crate) fn convert(
     inputs: &InputCatalog,
     path: &Path,
     to: Option<&str>,
@@ -537,7 +537,7 @@ pub fn convert(
 }
 
 /// Compare two CAD files.
-pub fn diff(
+pub(crate) fn diff(
     inputs: &InputCatalog,
     a: DiffInput<'_>,
     b: DiffInput<'_>,

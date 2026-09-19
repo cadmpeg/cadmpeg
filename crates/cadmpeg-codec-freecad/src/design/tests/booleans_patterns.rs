@@ -314,7 +314,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear {
                 direction: Some(direction),
                 spacing: actual_spacing,
                 count: 4,
@@ -326,7 +326,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::LinearOffsets { direction: Some(direction), offsets } if direction.x == 1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 2.0, 9.0])
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets } if direction.x == 1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 2.0, 9.0])
     ));
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Pattern {
@@ -337,7 +337,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     else {
         panic!("two-axis pattern")
     };
-    let cadmpeg_ir::features::PatternTransform::Composite { stages } =
+    let cadmpeg_ir::features::patterns::PatternTransform::Composite { stages } =
         admitted_pattern.definition()
     else {
         panic!("composite pattern");
@@ -345,22 +345,22 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     assert_eq!(stages.len(), 2);
     assert!(matches!(
         stages[0].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. }
+        cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. }
     ));
     assert!(matches!(stages[1].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::LinearOffsets { direction: Some(direction), offsets }
+        cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets }
             if direction.y == -1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
     ));
     assert_eq!(
         stages.combination(1).expect("stage 1"),
-        cadmpeg_ir::features::PatternStageCombination::CartesianProduct
+        cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct
     );
     assert!(matches!(
         feature("PolarCustom").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::CircularAngles { angles, .. } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CircularAngles { angles, .. } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
             (angle.get().to_degrees() - expected).abs() < EPS_PATTERN_ANGLE_DEGREES))
     ));
     assert!(matches!(
@@ -368,7 +368,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear {
                 direction: None,
                 spacing: actual_spacing,
                 count: 3,
@@ -401,7 +401,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     assert!(
         baseline_findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::Identity),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::Identity),
         "{baseline_findings:?}"
     );
     let mut corrupted = result.ir().clone();
@@ -452,7 +452,7 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear {
                 spacing: actual_spacing,
                 count: 3,
                 ..
@@ -462,7 +462,7 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Circular {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Circular {
                 angle,
                 count: 3,
                 ..
@@ -475,20 +475,20 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
     else {
         panic!("two-axis absent modes");
     };
-    let cadmpeg_ir::features::PatternTransform::Composite { stages } =
+    let cadmpeg_ir::features::patterns::PatternTransform::Composite { stages } =
         admitted_pattern.definition()
     else {
         panic!("composite pattern");
     };
     assert!(matches!(stages[0].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear {
+        cadmpeg_ir::features::patterns::PatternTransform::Linear {
             spacing: actual_spacing,
             count: 3,
             ..
         } if actual_spacing.get() == 4.0
     ));
     assert!(matches!(stages[1].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear {
+        cadmpeg_ir::features::patterns::PatternTransform::Linear {
             spacing: actual_spacing,
             count: 2,
             ..
@@ -548,7 +548,7 @@ fn distinguishes_absent_and_malformed_pattern_modes() {
             assert!(result.report().losses.iter().all(|loss| {
                 loss.code.namespace() == "fcstd"
                     && loss.code.local_code() == "feature.native-kind-retained"
-                    && loss.severity == cadmpeg_ir::Severity::Blocking
+                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
             }));
         }
     }
@@ -779,7 +779,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     }
 
@@ -788,7 +788,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear {
                 direction: Some(direction),
                 count: 4,
                 ..
@@ -798,13 +798,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear { count: 4, .. })
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 4, .. })
     ));
     assert!(matches!(&(definition(&selected, "Polar")),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Circular {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Circular {
                 axis_dir,
                 angle,
                 count: 4,
@@ -819,7 +819,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
     else {
         panic!("selected two-axis pattern");
     };
-    let cadmpeg_ir::features::PatternTransform::Composite { stages } =
+    let cadmpeg_ir::features::patterns::PatternTransform::Composite { stages } =
         admitted_pattern.definition()
     else {
         panic!("composite pattern");
@@ -827,10 +827,10 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
     assert_eq!(stages.len(), 2);
     assert!(matches!(
         stages[0].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. }
+        cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. }
     ));
     assert!(matches!(stages[1].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear {
+        cadmpeg_ir::features::patterns::PatternTransform::Linear {
             direction: Some(direction),
             count: 3,
             ..
@@ -840,13 +840,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Scale { count: 4, .. })
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Scale { count: 4, .. })
     ));
     assert!(matches!(&(definition(&selected, "InactiveTwoAxis")),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. })
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. })
     ));
     assert!(selected.report().losses.is_empty());
 
@@ -867,7 +867,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear {
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear {
                         direction: Some(direction),
                         count: 4,
                         ..
@@ -877,13 +877,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear { count: 2, .. })
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 2, .. })
             )),
             ("Polar", "Reversed") => assert!(matches!(&(definition(&result, object)),
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Circular {
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Circular {
                         axis_dir,
                         count: 4,
                         ..
@@ -893,7 +893,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Circular {
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Circular {
                         count: 3,
                         axis_dir,
                         ..
@@ -907,13 +907,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 else {
                     panic!("absent second reversal");
                 };
-                let cadmpeg_ir::features::PatternTransform::Composite { stages } =
+                let cadmpeg_ir::features::patterns::PatternTransform::Composite { stages } =
                     admitted_pattern.definition()
                 else {
                     panic!("composite pattern");
                 };
                 assert!(matches!(stages[1].pattern.definition(),
-                    cadmpeg_ir::features::PatternTransform::Linear {
+                    cadmpeg_ir::features::patterns::PatternTransform::Linear {
                         direction: Some(direction),
                         count: 3,
                         ..
@@ -924,13 +924,13 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. })
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. })
             )),
             ("Scaled", "Occurrences") => assert!(matches!(&(definition(&result, object)),
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     pattern: admitted_pattern,
                     ..
-                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Scale { count: 2, .. })
+                }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Scale { count: 2, .. })
             )),
             _ => unreachable!(),
         }
@@ -948,7 +948,7 @@ fn distinguishes_absent_and_malformed_pattern_occurrence_and_reversal_carriers()
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 pattern: admitted_pattern,
                 ..
-            }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. })
+            }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. })
         )
     );
     assert!(inactive_reversal.report().losses.is_empty());
@@ -1142,7 +1142,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Circular {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
                 angle,
@@ -1155,7 +1155,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Mirror {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Mirror {
                 plane_origin,
                 plane_normal,
             } if *plane_origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
@@ -1165,7 +1165,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::MirrorReference {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::MirrorReference {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
@@ -1235,7 +1235,7 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::MirrorReference {
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::MirrorReference {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
@@ -1243,7 +1243,7 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }
 
@@ -1296,8 +1296,8 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             pattern: admitted_pattern,
             ..
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Scale {
-                center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Scale {
+                center: cadmpeg_ir::features::patterns::PatternScaleCenter::FirstSeedCentroid,
                 final_factor: 2.5,
                 count: 3,
             })
@@ -1311,7 +1311,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
     else {
         panic!("expected composite pattern");
     };
-    let cadmpeg_ir::features::PatternTransform::Composite { stages } =
+    let cadmpeg_ir::features::patterns::PatternTransform::Composite { stages } =
         admitted_pattern.definition()
     else {
         panic!("composite pattern");
@@ -1319,19 +1319,19 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
     assert_eq!(stages.len(), 2);
     assert_eq!(
         stages.combination(0).expect("stage 0"),
-        cadmpeg_ir::features::PatternStageCombination::Initialize
+        cadmpeg_ir::features::patterns::PatternStageCombination::Initialize
     );
     assert!(matches!(
         stages[0].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Linear { count: 3, .. }
+        cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. }
     ));
     assert_eq!(
         stages.combination(1).expect("stage 1"),
-        cadmpeg_ir::features::PatternStageCombination::AlignedSlices
+        cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices
     );
     assert!(matches!(
         stages[1].pattern.definition(),
-        cadmpeg_ir::features::PatternTransform::Scale { count: 3, .. }
+        cadmpeg_ir::features::patterns::PatternTransform::Scale { count: 3, .. }
     ));
     assert!(result.report().losses.is_empty());
 }

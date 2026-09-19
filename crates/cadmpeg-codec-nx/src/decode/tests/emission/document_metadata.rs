@@ -10,8 +10,8 @@ use crate::NxCodec;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::report::LossKind;
-use cadmpeg_ir::report::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossKind;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 use std::io::Cursor;
 
 #[test]

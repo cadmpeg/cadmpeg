@@ -29,8 +29,9 @@ use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 
 const EPS_RADIUS_NONZERO: f64 = 1.0e-10;
@@ -92,7 +93,7 @@ pub(in super::super) fn revolved_section_surface(
             if radial_speed <= EPS_RADIAL_SPEED {
                 (radius > EPS_RADIUS_NONZERO).then_some(())?;
                 return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         point(on_axis),
                         vector(axis),
                         vector(reference),
@@ -103,7 +104,7 @@ pub(in super::super) fn revolved_section_surface(
             }
             if axial_rate.abs() <= EPS_AXIAL_RATE {
                 return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         point(on_axis),
                         vector(axis),
                         vector(reference),
@@ -118,7 +119,7 @@ pub(in super::super) fn revolved_section_surface(
                 axis
             };
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     point(on_axis),
                     vector(cone_axis),
                     vector(reference),
@@ -146,7 +147,7 @@ pub(in super::super) fn revolved_section_surface(
             })?;
             if major_radius <= EPS_MAJOR_RADIUS {
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         point(center),
                         vector(axis),
                         vector(reference),
@@ -156,7 +157,7 @@ pub(in super::super) fn revolved_section_surface(
                 )))
             } else {
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         point(on_axis),
                         vector(axis),
                         vector(reference),
@@ -181,7 +182,7 @@ pub(in super::super) fn placed_section_geometry_curve(
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(start[0], start[1], start[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -196,7 +197,7 @@ pub(in super::super) fn placed_section_geometry_curve(
                 direction.u * transform.u_axis()[2] + direction.v * transform.v_axis()[2],
             ])?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(origin[0], origin[1], origin[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -207,7 +208,7 @@ pub(in super::super) fn placed_section_geometry_curve(
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(center[0], center[1], center[2]),
                     Vector3::new(
                         transform.normal()[0],
@@ -252,7 +253,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -409,12 +410,12 @@ pub(in super::super) fn revolved_nurbs_surface(
         }
     }
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             directrix.degree(),
             directrix.knots().to_vec(),
             false,
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
             vec![
                 0.0,
@@ -432,7 +433,7 @@ pub(in super::super) fn revolved_nurbs_surface(
             ],
             false,
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control_points.chunks(9_usize).map(<[_]>::to_vec).collect(),
             Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
         ),
@@ -460,7 +461,7 @@ impl TryFrom<RevolvedSectionCircle> for CurveGeometry {
     type Error = &'static str;
 
     fn try_from(circle: RevolvedSectionCircle) -> Result<Self, Self::Error> {
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             circle.center,
             circle.axis,
             circle.ref_direction,
@@ -508,7 +509,7 @@ pub(in super::super) fn extruded_section_line(
     let direction = transform.normal();
     let origin = section_point_in_model(transform, point);
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2]),
         )
@@ -520,7 +521,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {

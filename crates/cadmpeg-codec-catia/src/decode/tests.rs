@@ -178,7 +178,7 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
         2
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 retained object graph(s)")
             && loss.message.contains("2 field record(s)")
@@ -217,7 +217,7 @@ fn container_only_stops_before_geometry() {
 fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
     fn refusing_route(refusal: &mut crate::nurbs::LaneRefusals) -> Option<()> {
         let short_weight_lane = || {
-            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -273,7 +273,7 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Option<crate::families::FamilyOutput> {
         crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -289,7 +289,7 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         Some(crate::families::FamilyOutput {
             ir: cadmpeg_ir::CadIr::empty(),
             report: cadmpeg_ir::codec::DecodeBody::new(
-                cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
             ),
             annotations: cadmpeg_ir::Annotations::default(),
             unknowns: Vec::new(),

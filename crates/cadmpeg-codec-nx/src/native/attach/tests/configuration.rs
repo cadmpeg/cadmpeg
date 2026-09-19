@@ -201,7 +201,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     use crate::native::features::holes::SimpleHoleFamily;
     use crate::native::features::holes::SimpleHoleForm;
     use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::{features::HoleKind, scalar::Length};
+    use cadmpeg_ir::{features::holes::HoleKind, scalar::Length};
 
     let operations = ["simple-a".to_string(), "simple-b".to_string()];
     let templates = operations
@@ -1075,7 +1075,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
             seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::PatternTransform::Unresolved { form: None } if seeds.is_empty())
+        }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::Unresolved { form: None } if seeds.is_empty())
     ));
 }
 
@@ -1155,7 +1155,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
 #[test]
 fn topology_inferred_hole_axis_is_not_an_authored_direction() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HolePlacement};
+    use cadmpeg_ir::features::{holes::HolePlacement, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     for kind in ["SIMPLE HOLE", "HOLE PACKAGE"] {

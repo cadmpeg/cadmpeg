@@ -30,7 +30,7 @@ use crate::records::{
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::knots_nondecreasing;
+use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::TextPlacement;

@@ -52,7 +52,7 @@
 //! coedge, edge, and vertex topology. Each inflated Parasolid stream is also
 //! retained as an unknown record.
 //!
-//! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
+//! Read [`cadmpeg_ir::report::decode::DecodeReport`] before using the model as a complete
 //! representation. Deltas streams pair with the preceding equal-schema partition
 //! in validated `UG_PART` segment order and apply
 //! supported non-topology full records and exact-key tombstones using the last
@@ -127,7 +127,7 @@ pub struct NxCodec;
 impl CodecBackend for NxCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
+    fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
         let Some(namespace) = ir.native.namespace("nx") else {
             return Vec::new();
         };
@@ -136,9 +136,9 @@ impl CodecBackend for NxCodec {
             .and_then(|_| namespace.admit::<native::structure::occurrences::FastLoadOccurrences>());
         match admitted {
             Ok(_) => Vec::new(),
-            Err(error) => vec![cadmpeg_ir::Finding {
-                check: cadmpeg_ir::Check::NativeLinks,
-                severity: cadmpeg_ir::Severity::Error,
+            Err(error) => vec![cadmpeg_ir::report::check::Finding {
+                check: cadmpeg_ir::report::check::Check::NativeLinks,
+                severity: cadmpeg_ir::report::Severity::Error,
                 message: error.to_string(),
                 entity: None,
             }],

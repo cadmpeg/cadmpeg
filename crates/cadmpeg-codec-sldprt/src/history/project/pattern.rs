@@ -5,8 +5,8 @@ use crate::classification::NativeClassKind;
 use crate::records::Feature;
 use cadmpeg_ir::{
     features::{
-        FeatureDefinition, FeatureId, FeatureOperation, PathRef, PatternKind, PatternSeed,
-        PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureId, FeatureOperation, PathRef,
     },
     scalar::{Angle, Length},
 };
@@ -99,7 +99,7 @@ pub(super) fn project_pattern(
                     feature.parameters.get("D2"),
                 ) {
                     (Some(direction), Some(spacing), Some(count)) => {
-                        Some(cadmpeg_ir::features::LinearPatternDirection {
+                        Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                             direction: parse_valid_direction(direction)?,
                             spacing: Length::new(parse_positive_dimension_length_mm(spacing)?)?,
                             count: parse_count(count)?,

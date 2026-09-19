@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Statically declared decode-coverage measures.
 
-use cadmpeg_ir::CoverageKey;
+use cadmpeg_ir::report::decode::CoverageKey;
 
 pub(crate) const RSE_STORAGE_BANDS: CoverageKey = CoverageKey::new("rse_storage_bands");
 pub(crate) const RSE_DATABASES: CoverageKey = CoverageKey::new("rse_databases");

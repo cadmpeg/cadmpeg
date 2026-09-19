@@ -166,9 +166,9 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
     };
     assert!(matches!(
         groups.as_slice(),
-        [cadmpeg_ir::features::FilletGroup {
+        [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius
             },
             tangency_weight: Some(weight),

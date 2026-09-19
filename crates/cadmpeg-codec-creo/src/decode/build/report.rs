@@ -75,7 +75,7 @@ pub(in super::super) fn build_report(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
-    coverage: cadmpeg_ir::Coverage,
+    coverage: cadmpeg_ir::report::decode::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeBody {
@@ -164,13 +164,13 @@ pub(in super::super) fn build_report(
 
     DecodeBody {
         transfer: if container_only {
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
-            cadmpeg_ir::report::DecodeTransfer::full(has_transferred_geometry(ir))
+            cadmpeg_ir::report::decode::DecodeTransfer::full(has_transferred_geometry(ir))
         },
         coverage,
         losses,
         notes: container::notes(scan),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }

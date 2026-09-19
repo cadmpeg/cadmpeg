@@ -34,10 +34,11 @@ use crate::decode::sweep::profiles::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation, HoleForm,
-    HoleKind, LinearTermination,
+    holes::{HoleForm, HoleKind},
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+    LinearTermination,
 };
-use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -115,7 +116,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         row(43, crate::surface::SurfaceKind::TorusOrSphere),
     ];
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -124,7 +125,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         .expect("valid CylinderSurface fixture"),
     ));
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -200,7 +201,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         None
     );
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -799,7 +800,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             }),
             bottom: None,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::SimpleDrilled {
                     drill_point_angle: angle,
                 },
@@ -839,7 +840,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
 
             extent: None,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));
@@ -1099,7 +1100,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
 #[test]
 fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     let carrier = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1126,7 +1127,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         }));
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
-        Some(cadmpeg_ir::features::HolePlacement::Axis {
+        Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("finite point fixture"),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -1144,9 +1145,13 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 0.25;
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-            .expect("valid CylinderSurface fixture");
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .expect("valid CylinderSurface fixture");
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &conflicting_patch, 0.625),
         None
@@ -1195,7 +1200,7 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
 
     assert_eq!(
         counterbore_support_axis_placement(9, &table, &rows, std::slice::from_ref(&frame)),
-        Some(cadmpeg_ir::features::HolePlacement::Axis {
+        Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0))
                 .expect("finite point fixture"),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, -1.0, 0.0))
@@ -1231,7 +1236,7 @@ fn simple_drilled_axis_accepts_only_coaxial_dimension_matched_carriers() {
 
     assert_eq!(
         simple_drilled_axis_placement_from_frames(&[first, shifted], 0.5),
-        Some(cadmpeg_ir::features::HolePlacement::Axis {
+        Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, -3.0, 4.0))
                 .expect("finite point fixture"),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))

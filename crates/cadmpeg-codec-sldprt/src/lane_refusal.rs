@@ -25,7 +25,7 @@ impl LaneRefusals {
     pub(crate) fn note(
         &mut self,
         record: impl std::fmt::Display,
-        error: &cadmpeg_ir::geometry::NurbsError,
+        error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) {
         self.records.push(format!("{record}: {error}"));
     }

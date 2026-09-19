@@ -7,7 +7,7 @@ use crate::records::{
     topology::extrude_selection::DesignExtrudeSelectionMember,
 };
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
-use cadmpeg_ir::geometry::{knots_nondecreasing, PcurveNurbs};
+use cadmpeg_ir::geometry::{nurbs::knots_nondecreasing, pcurve::PcurveNurbs};
 use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 

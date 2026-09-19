@@ -8,20 +8,20 @@ use crate::evaluation::tests::model_body;
 use crate::evaluation::BodyCensusEvaluation;
 use crate::evaluation::FeatureBoundary;
 use crate::evaluation::UnsupportedBodyCensusReason;
+use cadmpeg_ir::features::patterns::PatternKind;
+use cadmpeg_ir::features::patterns::PatternSeed;
 use cadmpeg_ir::features::BodySelection;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::features::PatternKind;
-use cadmpeg_ir::features::PatternSeed;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::features::patterns::PatternTransform;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::PatternTransform;
 
 #[test]
 fn body_pattern_adds_one_copy_per_non_original_occurrence() {

@@ -21,20 +21,20 @@ const DEFAULT_MAX_PATHS: usize = 10_000;
 
 /// Input selection for `query graph`.
 #[derive(Debug, Args)]
-pub struct GraphArgs {
+pub(crate) struct GraphArgs {
     /// JSON file, or `-` for standard input.
-    pub file: std::path::PathBuf,
+    file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
     /// `query counts --json`.
-    pub arena: String,
+    arena: String,
     /// Which records of the arena to walk from.
     #[command(flatten)]
-    pub records: RecordSelection,
+    records: RecordSelection,
     /// Maximum edge length from a start. `0` emits only the start records.
     /// Default is 1 (the start and its immediate references).
     #[arg(long, value_name = "N", default_value_t = 1)]
-    pub hops: usize,
+    hops: usize,
     /// Comma-separated dotted field paths to follow. Omit to follow every
     /// string that equals another record's `id` in this document. Each path
     /// must match an extracted edge field exactly (`links`, `native_ref`,
@@ -42,18 +42,18 @@ pub struct GraphArgs {
     /// array's path (`links`), not `links.0`. An array of objects uses the
     /// nested field path without indices (`pcurves.pcurve`).
     #[arg(long, value_delimiter = ',', value_name = "PATH")]
-    pub follow: Option<Vec<String>>,
+    follow: Option<Vec<String>>,
     /// Walk incoming references ("what refers to this record?"). Forward is
     /// the default ("what does this record refer to?").
     #[arg(long)]
-    pub reverse: bool,
+    reverse: bool,
     /// Stop after this many result paths (default 10000). Truncation prints
     /// a note on standard error and still exits 0.
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_PATHS)]
-    pub max_paths: usize,
+    max_paths: usize,
     /// Record output selection.
     #[command(flatten)]
-    pub(crate) output: OutputArgs,
+    output: OutputArgs,
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +68,7 @@ struct WalkOutcome {
 }
 
 /// Runs `query graph` against one CADIR document.
-pub fn run(args: &GraphArgs) -> Result<()> {
+pub(super) fn run(args: &GraphArgs) -> Result<()> {
     let output = args.output.mode();
     let doc = CadirDocument::load(&args.file, "graph")?;
     let target = ArenaTarget::parse(&args.arena)?;

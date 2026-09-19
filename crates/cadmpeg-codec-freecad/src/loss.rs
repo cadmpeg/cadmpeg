@@ -13,7 +13,8 @@
 //! leaves only the per-instance message to the caller.
 //!
 use cadmpeg_ir::report::{
-    LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind, Severity,
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
+    Severity,
 };
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");

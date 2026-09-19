@@ -4,7 +4,8 @@ use super::{lane_with_position_reference, model_hole, native_history, profile_li
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, HoleBottom, HoleKind, LinearTermination,
+    holes::{HoleBottom, HoleKind},
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -195,7 +196,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     assert_eq!(
         construction.kind,
         HoleKind::Counterdrill {
-            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+            diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap(),
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.55).unwrap())
             )
@@ -803,7 +804,7 @@ fn unique_axial_profile_resolves_the_unique_incomplete_hole() {
             extent: Some(LinearTermination::ThroughAll {}),
 
             ..
-        }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter_2,
                     depth: actual_depth,

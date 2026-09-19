@@ -163,7 +163,7 @@ fn neutral_feature(
 }
 
 fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinition {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind};
+    use cadmpeg_ir::features::{holes::HoleKind, FeatureDefinition, FeatureOperation};
 
     FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: None,
@@ -171,8 +171,8 @@ fn simple_hole_definition(diameter: f64) -> cadmpeg_ir::features::FeatureDefinit
         face: None,
         direction: None,
         placements: None,
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
             None,
             Some(cadmpeg_ir::scalar::PositiveLength::new(diameter).unwrap()),
         )

@@ -10,8 +10,8 @@ use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -73,7 +73,7 @@ fn encoder_writes_source_less_curved_sketches() {
         })
         .unwrap(),
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-            curve: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 vec![
@@ -984,9 +984,11 @@ fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
         features::{
-            BodySelection, ChamferSpec, EdgeSelection, FaceMotion, FaceSelection, Feature,
-            FeatureDefinition, FeatureId, FeatureOperation, HoleKind, LinearTermination,
-            PatternKind, PatternTransform, RadiusSpec,
+            edge_treatments::{ChamferSpec, RadiusSpec},
+            holes::HoleKind,
+            patterns::{PatternKind, PatternTransform},
+            BodySelection, EdgeSelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
+            FeatureId, FeatureOperation, LinearTermination,
         },
         scalar::{Angle, Length},
     };
@@ -1024,20 +1026,22 @@ fn encoder_writes_source_less_native_features() {
     });
     let definitions = vec![
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Resolved {
-                    edges: vec![ir.model.edges[0].id.clone()],
-                    native: "edge-a,edge-b".into(),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Resolved {
+                        edges: vec![ir.model.edges[0].id.clone()],
+                        native: "edge-a,edge-b".into(),
+                    },
+                    radius: RadiusSpec::Constant {
+                        radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
+                    },
+                    tangency_weight: None,
                 },
-                radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                },
-                tangency_weight: None,
-            }),
+            ),
         }),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::ChamferGroup {
+                cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Native("edge-c".into()),
                     spec: ChamferSpec::TwoDistances {
                         first: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
@@ -1113,7 +1117,7 @@ fn encoder_writes_source_less_native_features() {
             profile_filter: None,
             face: Some(FaceSelection::Native("face-g".into())),
             direction: None,
-            placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
+            placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0, 4.0, 5.0))
                     .unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -1121,8 +1125,8 @@ fn encoder_writes_source_less_native_features() {
                 ))
                 .unwrap(),
             }]),
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Countersink {
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Countersink {
                     diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
                     angle: cadmpeg_ir::scalar::InteriorAngle::new(1.4).unwrap(),
                 }),
@@ -1161,7 +1165,7 @@ fn encoder_writes_source_less_native_features() {
             direction: Some(Vector3::new(1.0, 0.0, 0.0)),
             spacing: Length::new(10.0).unwrap(),
             count: 3,
-            second: Some(cadmpeg_ir::features::LinearPatternDirection {
+            second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                 direction: Vector3::new(0.0, 1.0, 0.0),
                 spacing: Length::new(20.0).unwrap(),
                 count: 4,
@@ -1196,7 +1200,9 @@ fn encoder_writes_source_less_native_features() {
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
-                    seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
+                    seeds: vec![cadmpeg_ir::features::patterns::PatternSeed::Feature(
+                        seed_id.clone(),
+                    )],
                     pattern,
                 }),
             ),
@@ -1258,7 +1264,7 @@ fn encoder_writes_source_less_native_features() {
                 pattern: admitted_pattern,
                 ..
             }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
-                    second: Some(cadmpeg_ir::features::LinearPatternDirection {
+                    second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: Vector3 {
                             x: 0.0,
                             y: 1.0,

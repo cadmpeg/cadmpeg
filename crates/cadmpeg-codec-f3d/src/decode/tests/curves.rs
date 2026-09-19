@@ -10,8 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -490,7 +490,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("vector-offset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![-2.0, -2.0, 5.0, 5.0],
             vec![
@@ -639,7 +639,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .find(|curve| curve.id == source_id)
         .expect("subset source carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![-1.5, -1.5, 3.5, 3.5],
             vec![
@@ -684,7 +684,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     assert_eq!(
         source_curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![-1.5, -1.5, 3.5, 3.5],
                 vec![
@@ -1057,7 +1057,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .find(|curve| curve.id == component.component)
             .expect("compound component curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
                 cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
                     .unit()
@@ -1207,7 +1207,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
 #[test]
 fn generated_embedded_offset_supports_decode_and_write_source_less() {
     use cadmpeg_ir::geometry::{
-        PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+        pcurve::PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     let result = F3dCodec
@@ -1380,8 +1380,8 @@ fn generated_mixed_offset_supports_write_source_less() {
                     (*context_sides)[1].surface = None;
                     (*context_sides)[1].pcurve = None;
                     (*context_sides)[0].pcurve = Some(
-                        cadmpeg_ir::geometry::PcurveGeometry::Line(
-                            cadmpeg_ir::geometry::LinePcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                 cadmpeg_ir::math::Point2::new(1.0, 2.0),
                                 cadmpeg_ir::math::Point2::new(3.0, -1.0),
                             )
@@ -1440,8 +1440,8 @@ fn generated_mixed_offset_supports_write_source_less() {
     assert_eq!(
         context.sides()[0].pcurve,
         Some(
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![

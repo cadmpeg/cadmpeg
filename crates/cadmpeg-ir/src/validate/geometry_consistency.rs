@@ -10,10 +10,13 @@ use crate::eval::{
     model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
 use crate::geometry::{
-    PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::math::{Point3, Vector3};
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 use crate::topology::Sense;
 
 use crate::units::COINCIDENCE_TOLERANCE;
@@ -653,7 +656,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// Such an interval is recovered independently from the shared 3D curve by
 /// `edge_pcurve_parameter_ranges`.
 fn pcurve_parameter_ranges(
-    pcurve: &crate::geometry::Pcurve,
+    pcurve: &crate::geometry::pcurve::Pcurve,
     pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
@@ -694,8 +697,8 @@ fn edge_pcurve_parameter_ranges(
     curve_geometry: Option<&crate::geometry::CurveGeometry>,
     start: Point3,
     end: Point3,
-    first: &crate::geometry::Pcurve,
-    last: &crate::geometry::Pcurve,
+    first: &crate::geometry::pcurve::Pcurve,
+    last: &crate::geometry::pcurve::Pcurve,
     tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
     let start_parameters = pcurve_parameter_seeds_on_surface(context, first)
@@ -823,7 +826,7 @@ fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<f64> {
     unique
 }
 
-fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
+fn pcurve_parameter_seeds(pcurve: &crate::geometry::pcurve::Pcurve) -> Vec<f64> {
     let mut seeds = vec![0.0];
     if let Some(range) = pcurve.parameter_range() {
         seeds.extend(range);
@@ -836,7 +839,7 @@ fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
 
 fn pcurve_parameter_seeds_on_surface(
     context: &SurfacePcurveContext<'_, '_>,
-    pcurve: &crate::geometry::Pcurve,
+    pcurve: &crate::geometry::pcurve::Pcurve,
 ) -> Vec<f64> {
     let mut seeds = pcurve_parameter_seeds(pcurve);
     let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
@@ -886,7 +889,7 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
 /// Explicit trim metadata, if the pcurve carrier itself supplies it. A raw
 /// NURBS knot domain is deliberately excluded: it bounds the carrier, not the
 /// edge occurrence.
-fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
+fn pcurve_parameter_extremes(pcurve: &crate::geometry::pcurve::Pcurve) -> Option<[f64; 2]> {
     pcurve
         .parameter_range()
         .or_else(|| pcurve_geometry_trim_range(&pcurve.geometry))

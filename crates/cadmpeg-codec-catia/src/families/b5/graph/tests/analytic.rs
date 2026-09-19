@@ -8,7 +8,7 @@ use crate::families::b5::graph::{
     B5PcurveParameterization, B5Profile, B5Record, B5SphereGreatCirclePcurve, B5Surface,
 };
 use crate::wire;
-use cadmpeg_ir::geometry::NurbsSurface;
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
 
 #[test]
@@ -1233,9 +1233,9 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
     assert!(is_referenced_geometry_class(0xb5, 0x31));
     let source = B5Surface::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
                     .chunks(2_usize)
                     .map(<[_]>::to_vec)

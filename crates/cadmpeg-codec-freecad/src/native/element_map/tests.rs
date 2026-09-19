@@ -63,7 +63,7 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     assert!(
         findings.iter().any(|finding| {
             finding.message.contains("mapIndex")
-                && finding.check == cadmpeg_ir::report::Check::NativeLinks
+                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
         }),
         "invalid child mapIndex was not reported: {findings:#?}"
     );
@@ -116,7 +116,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
         let findings = crate::validate_native(&roundtrip);
         assert!(findings.iter().any(|finding| {
             finding.message.contains("maps[")
-                && finding.check == cadmpeg_ir::report::Check::NativeLinks
+                && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
         }));
     }
 }

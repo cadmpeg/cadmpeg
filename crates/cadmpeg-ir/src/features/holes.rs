@@ -1,10 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::deserialize_local_standard;
+//! Hole construction, placement, and compatible dimensions.
+
+use super::{FeatureDirection3, FinitePoint3};
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// One complete spatial placement in a hole operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum HolePlacement {
+    /// Position and directed drilling vector recorded by the feature definition.
+    Directed {
+        /// Hole entry position in model space.
+        position: FinitePoint3,
+        /// Directed drilling vector.
+        direction: FeatureDirection3,
+    },
+    /// Unoriented geometric axis inferred from a generated cylindrical surface.
+    Axis {
+        /// Point on the cylinder axis in model space.
+        origin: FinitePoint3,
+        /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
+        axis: FeatureDirection3,
+    },
+}
 
 /// A counterdrill recess diameter and optional larger entry diameter.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -743,3 +767,5 @@ cadmpeg_core::named_optional_field!(deserialize_fit, String, "fit");
 cadmpeg_core::named_optional_field!(deserialize_clearance, Length, "clearance");
 cadmpeg_core::named_optional_field!(deserialize_class, String, "class");
 cadmpeg_core::named_optional_field!(deserialize_major_diameter, PositiveLength, "major_diameter");
+
+selection_field_deserializer!(deserialize_local_standard, "standard");

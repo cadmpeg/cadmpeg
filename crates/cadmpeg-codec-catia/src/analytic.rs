@@ -66,8 +66,13 @@ pub(crate) fn cylinder_uvr(c: &mut Cursor, origin: Point3) -> Option<(SurfaceGeo
     let ref_direction = u.unit()?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(origin, axis, ref_direction, radius)
-                .ok()?,
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            )
+            .ok()?,
         )),
         radius,
     ))
@@ -92,7 +97,7 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> {
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::ConeSurface::try_new(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 origin,
                 axis,
                 ref_direction,
@@ -125,7 +130,7 @@ pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, f64, f64)> 
     let minor_radius = c.f64()?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 center,
                 axis,
                 ref_direction,

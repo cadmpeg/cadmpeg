@@ -11,7 +11,7 @@ use crate::curves::GeometryError;
 use crate::settings::MillimeterScale;
 use crate::test_support::test_dump::{crc_chunk, long_chunk, push_f64, push_i32};
 use crate::wire::Uuid;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const EPS_EXACT_GEOMETRY: f64 = 1.0e-12;

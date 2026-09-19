@@ -14,7 +14,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{
+        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -36,7 +38,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
                 length: actual_length,
             }),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (placements.is_none()) && actual_diameter.get() == 6.35 && actual_length.get() == 12.0)));
@@ -77,7 +79,9 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
 
 #[test]
 fn semantic_writer_retains_partial_native_hole_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{
+        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -100,7 +104,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));
@@ -110,9 +114,9 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::PartialCounterbore(
-                    cadmpeg_ir::features::PartialPair::First(actual_diameter),
+                    cadmpeg_ir::features::holes::PartialPair::First(actual_diameter),
                 ),
                 ..
             }, Some(actual_diameter_2),) if actual_diameter.get() == 10.0 && actual_diameter_2.get() == 6.0)));
@@ -123,7 +127,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
             extent: None,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
             }, Some(actual_diameter),) if (placements.is_none()) && actual_diameter.get() == 5.0)));
@@ -153,12 +157,12 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     };
     let mut edited_construction = shape.construction().clone();
     let construction = &mut edited_construction;
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Simple;
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
         shape.diameter(),
@@ -199,7 +203,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, HolePlacement, LinearTermination,
+        holes::HolePlacement, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -284,7 +288,9 @@ fn semantic_writer_round_trips_hole_placement() {
 
 #[test]
 fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, HoleKind, LinearTermination};
+    use cadmpeg_ir::features::{
+        holes::HoleKind, FeatureDefinition, FeatureOperation, LinearTermination,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -306,7 +312,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
                 length: actual_length,
             }),
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -318,7 +324,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             shape,
             extent: Some(LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Countersink {
                     diameter: actual_diameter,
                     angle: value,
@@ -337,7 +343,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         };
         let mut edited_construction = shape.construction().clone();
         let construction = &mut edited_construction;
-        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Counterbore {
@@ -346,7 +352,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         };
         *extent = Some(LinearTermination::ThroughAll {});
 
-        *shape = cadmpeg_ir::features::HoleShape::new(
+        *shape = cadmpeg_ir::features::holes::HoleShape::new(
             edited_construction,
             *shape.exit_kind(),
             shape.diameter(),
@@ -362,7 +368,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
         };
         let mut edited_construction = shape.construction().clone();
         let construction = &mut edited_construction;
-        let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+        let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
             panic!("ordinary hole form");
         };
         *kind = HoleKind::Countersink {
@@ -373,7 +379,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             length: cadmpeg_ir::scalar::NonZeroLength::new(25.0).unwrap(),
         });
 
-        *shape = cadmpeg_ir::features::HoleShape::new(
+        *shape = cadmpeg_ir::features::holes::HoleShape::new(
             edited_construction,
             *shape.exit_kind(),
             shape.diameter(),

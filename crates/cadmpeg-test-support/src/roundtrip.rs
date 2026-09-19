@@ -40,11 +40,11 @@
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
-use cadmpeg_ir::report::{ExportReport, WritePath};
+use cadmpeg_ir::report::export::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
 /// retained bytes verbatim, producing `fixture` again.

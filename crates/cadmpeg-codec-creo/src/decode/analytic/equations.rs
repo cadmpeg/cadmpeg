@@ -924,7 +924,7 @@ pub(in crate::decode) fn plane_cone_conic(
         let direction = principal_u.map(|value| value * opening.signum());
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     point(vertex_u, vertex_v),
                     axis_vector,
                     Vector3::new(direction[0], direction[1], direction[2]),
@@ -958,7 +958,7 @@ pub(in crate::decode) fn plane_cone_conic(
         };
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     center,
                     axis_vector,
                     Vector3::new(major_direction[0], major_direction[1], major_direction[2]),
@@ -985,7 +985,7 @@ pub(in crate::decode) fn plane_cone_conic(
     };
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 center,
                 axis_vector,
                 Vector3::new(major_direction[0], major_direction[1], major_direction[2]),

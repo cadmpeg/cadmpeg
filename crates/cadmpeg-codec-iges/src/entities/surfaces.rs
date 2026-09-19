@@ -13,10 +13,13 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry, SurfaceParameterAxis,
+    derive_reference_direction,
+    nurbs::{
+        knots_nondecreasing, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+        SurfaceParameterAxis,
+    },
+    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -709,7 +712,7 @@ fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
     weights: &[f64],
-) -> Result<NurbsSurface, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<NurbsSurface, cadmpeg_ir::geometry::nurbs::NurbsError> {
     let surface_weights = weights
         .iter()
         .copied()
@@ -1040,7 +1043,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin.translated(*normal, distance),
                     *normal,
                     *u_axis,
@@ -1054,7 +1057,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     *origin,
                     *axis,
                     *ref_direction,
@@ -1069,7 +1072,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     *center,
                     *axis,
                     *ref_direction,
@@ -1085,7 +1088,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     *center,
                     *axis,
                     *ref_direction,
@@ -1108,7 +1111,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     origin.translated(*axis, -distance * half_angle.sin()),
                     *axis,
                     *ref_direction,
@@ -1328,7 +1331,7 @@ pub(super) fn project(
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     transform.point(local_origin),
                     normal,
                     u_axis,

@@ -8,9 +8,9 @@ use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use crate::F3dLossCode;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
@@ -261,10 +261,9 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
         .all(|record| record.id.as_str().starts_with(&prefix)));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(
-        !validation
-            .findings
-            .iter()
-            .any(|finding| { finding.check == cadmpeg_ir::report::Check::ReferentialIntegrity }),
+        !validation.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity
+        }),
         "{validation:#?}"
     );
 }

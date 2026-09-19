@@ -20,10 +20,11 @@ use crate::decode::sketch_transfer::recipe::{
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-    FeatureTreeNodeRole, LinearTermination, PartialRevolveConstruction, PatternKind,
-    PlanarProfileRef, ProfileRef, RevolveConstruction, UnresolvedFamily,
+    patterns::PatternKind, BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+    FaceSelection, FeatureDefinition as IrFeatureDefinition,
+    FeatureOperation as IrFeatureOperation, FeatureTreeNodeRole, LinearTermination,
+    PartialRevolveConstruction, PlanarProfileRef, ProfileRef, RevolveConstruction,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;

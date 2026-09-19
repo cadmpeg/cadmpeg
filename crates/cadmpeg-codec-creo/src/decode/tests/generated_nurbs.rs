@@ -29,7 +29,7 @@ use crate::decode::uniqueness::{
 };
 use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -46,13 +46,13 @@ use std::collections::{BTreeMap, BTreeSet};
 fn generated_nurbs_translations_define_a_blind_extrusion() {
     let translated_surface = |last_z| {
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 2.0)],
                     vec![Point3::new(1.0, 1.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
@@ -107,7 +107,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -119,7 +119,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 2.0),
                     Vector3::new(0.0, 0.0, -1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -156,13 +156,13 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
     );
 
     let ambiguous = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             translated_surface(2.0).v_degree(),
             translated_surface(2.0).v_knots().to_vec(),
             false,
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             translated_surface(2.0).control_grid()[..2].to_vec(),
             None,
         ),

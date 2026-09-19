@@ -7,7 +7,7 @@ use crate::test_support::test_archive::{
     archive, assert_valid_document, rewrite_schema_version, streaming_archive,
     streaming_archive_with_options, CORE_OPERATIONS,
 };
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
@@ -334,7 +334,7 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
                 .report()
                 .losses
                 .iter()
-                .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
+                .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Blocking),
             "{name}: {:#?}",
             first.report().losses
         );

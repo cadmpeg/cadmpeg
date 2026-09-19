@@ -9,12 +9,12 @@
 //! Every offset and length argument accepts hexadecimal with an `0x` prefix or
 //! decimal, with `_` allowed between digits.
 
-pub mod container;
-pub mod diff;
-pub mod hexdump;
-pub mod layout;
-pub mod numeric;
-pub mod search;
+mod container;
+mod diff;
+mod hexdump;
+mod layout;
+mod numeric;
+mod search;
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -35,7 +35,7 @@ const DEFAULT_HEX_LEN: u64 = 256;
 
 /// A container summary or a byte tool with its own input arguments.
 #[derive(Debug)]
-pub enum InspectArgs {
+pub(crate) enum InspectArgs {
     Summary(SummaryArgs),
     Bytes(ByteCommand),
 }
@@ -43,20 +43,20 @@ pub enum InspectArgs {
 /// Arguments for a codec-aware container summary.
 #[derive(Debug, Args)]
 #[command(mut_arg("output", |arg| arg.long("report").visible_alias("output").help("Write a JSON report to this file")))]
-pub struct SummaryArgs {
+pub(crate) struct SummaryArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    pub(crate) file: FileArg,
     /// Write JSON to standard output.
     #[arg(long)]
-    pub json: bool,
+    pub(crate) json: bool,
     #[command(flatten)]
-    pub report: OptionalFileDestination,
+    pub(crate) report: OptionalFileDestination,
     /// Resource-limit profile applied during inspection.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
-    pub limits: LimitProfile,
+    pub(crate) limits: LimitProfile,
     /// Treat the input as this native format.
     #[arg(long, visible_alias = "from", value_parser = crate::input_format::native_input_parser())]
-    pub input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
+    pub(crate) input_format: Option<&'static cadmpeg_registry::NativeDescriptor>,
 }
 
 impl clap::Args for InspectArgs {
@@ -91,7 +91,7 @@ impl clap::FromArgMatches for InspectArgs {
 /// FILE`, so the guessed spelling reaches the tool and its `--help` instead of
 /// a subcommand-conflict error.
 #[derive(Debug, Subcommand)]
-pub enum ByteCommand {
+pub(crate) enum ByteCommand {
     /// One byte tool named directly under `inspect`.
     #[command(flatten)]
     Tool(ByteTool),
@@ -106,7 +106,7 @@ pub enum ByteCommand {
 
 /// One format-agnostic byte tool.
 #[derive(Debug, Subcommand)]
-pub enum ByteTool {
+pub(crate) enum ByteTool {
     /// Dump bytes as hex.
     ///
     /// Prints a hexadecimal dump with absolute offsets and an ASCII gutter.
@@ -135,13 +135,13 @@ pub enum ByteTool {
 
 /// One resolved input file.
 #[derive(Debug)]
-pub struct FileArg {
+pub(crate) struct FileArg {
     path: PathBuf,
 }
 
 impl FileArg {
     /// Returns the resolved input path.
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -199,18 +199,18 @@ impl clap::FromArgMatches for FileArg {
 
 /// Arguments for `cadmpeg inspect hex`.
 #[derive(Debug, Args)]
-pub struct HexArgs {
+pub(crate) struct HexArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    file: FileArg,
     /// First byte to print.
     #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
-    pub offset: u64,
+    offset: u64,
     /// Number of bytes to print; the dump stops early at end of file.
     #[arg(long, visible_alias = "length", value_parser = parse_offset)]
-    pub len: Option<u64>,
+    len: Option<u64>,
     /// Bytes per output line.
     #[arg(long, default_value = "16")]
-    pub width: NonZeroUsize,
+    width: NonZeroUsize,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
@@ -228,50 +228,50 @@ fn parse_limit(text: &str) -> Result<CountLimit, std::num::ParseIntError> {
 
 /// Arguments for `cadmpeg inspect read`.
 #[derive(Debug, Args)]
-pub struct ReadArgs {
+pub(crate) struct ReadArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    file: FileArg,
     /// Scalar type to decode.
     #[arg(long = "type", value_parser = numeric::ScalarTypeParser)]
-    pub ty: ScalarType,
+    ty: ScalarType,
     /// Offset of the first value.
     #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
-    pub offset: u64,
+    offset: u64,
     /// How many values to read.
     #[arg(short = 'n', long, default_value_t = 1)]
-    pub count: u64,
+    count: u64,
     /// Byte step between consecutive values; defaults to the scalar width.
     #[arg(long, alias = "step", value_parser = parse_stride)]
-    pub stride: Option<NonZeroU64>,
+    stride: Option<NonZeroU64>,
     /// Byte order for scalar reads.
     #[arg(long, value_enum, default_value_t = Endian::Le)]
-    pub endian: Endian,
+    endian: Endian,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect find`.
 #[derive(Debug, Args)]
-pub struct FindArgs {
+pub(crate) struct FindArgs {
     #[command(flatten)]
-    pub input: FindInput,
+    input: FindInput,
     /// Pattern encoding.
     #[arg(long, value_enum)]
-    pub encoding: FindEncoding,
+    encoding: FindEncoding,
     /// Stop after this many hits; 0 reports every hit.
     #[arg(long, default_value = "100", value_parser = parse_limit)]
-    pub max: CountLimit,
+    max: CountLimit,
     /// Bytes of context dumped before and after each hit; 0 prints none.
     #[arg(long, default_value = "0", value_parser = parse_offset)]
-    pub context: u64,
+    context: u64,
     /// Print the hits as JSON instead of the table.
     #[arg(long, conflicts_with = "context")]
-    pub json: bool,
+    json: bool,
 }
 
 /// A resolved search file and pattern.
 #[derive(Debug)]
-pub struct FindInput {
+struct FindInput {
     file: PathBuf,
     needle: String,
 }
@@ -350,7 +350,7 @@ impl clap::FromArgMatches for FindInput {
 
 /// Encoding of a search pattern.
 #[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum FindEncoding {
+enum FindEncoding {
     /// Hexadecimal bytes with optional `??` wildcards.
     Hex,
     /// ASCII text.
@@ -361,9 +361,9 @@ pub enum FindEncoding {
 
 /// Arguments for `cadmpeg inspect strings`.
 #[derive(Debug, Args)]
-pub struct StringsArgs {
+pub(crate) struct StringsArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    file: FileArg,
     /// Shortest run to report, in characters.
     #[arg(
         long,
@@ -371,65 +371,65 @@ pub struct StringsArgs {
         alias = "min-length",
         default_value = "4"
     )]
-    pub min: NonZeroUsize,
+    min: NonZeroUsize,
     /// Which encodings to scan for.
     #[arg(long, value_enum, default_value_t = search::StringScan::Ascii)]
-    pub encoding: search::StringScan,
+    encoding: search::StringScan,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect struct`.
 #[derive(Debug, Args)]
-pub struct StructArgs {
+pub(crate) struct StructArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    file: FileArg,
     /// Record layout, for example `u32le:count,pad4,f64le:x,f64le:y`.
     #[arg(long)]
-    pub layout: String,
+    layout: String,
     /// Offset of the first record.
     #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
-    pub offset: u64,
+    offset: u64,
     /// How many consecutive records to decode.
     #[arg(short = 'n', long, default_value_t = 1)]
-    pub count: u64,
+    count: u64,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Arguments for `cadmpeg inspect container`.
 #[derive(Debug, Args)]
-pub struct ContainerArgs {
+pub(crate) struct ContainerArgs {
     #[command(flatten)]
-    pub file: FileArg,
+    file: FileArg,
     /// Print the entries as JSON instead of the table.
     #[arg(long)]
-    pub json: bool,
+    json: bool,
     /// Resource-limit profile applied while reading the central directory.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
-    pub limits: LimitProfile,
+    limits: LimitProfile,
 }
 
 /// Arguments for `cadmpeg inspect extract`.
 #[derive(Debug, Args)]
-pub struct ExtractArgs {
+pub(crate) struct ExtractArgs {
     /// ZIP or CFB file to read.
-    pub file: PathBuf,
+    file: PathBuf,
     /// Exact entry or stream path (quotes removed).
-    pub member: String,
+    member: String,
     /// Extracted-byte destination.
     #[command(flatten)]
-    pub output: ExtractDestination,
+    output: ExtractDestination,
     /// Resource-limit profile applied while reading the archive.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
-    pub limits: LimitProfile,
+    limits: LimitProfile,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
 
 /// Extracted-byte destination and its file overwrite policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExtractDestination {
+enum ExtractDestination {
     /// Write bytes to standard output.
     Stdout,
     /// Write bytes with the file overwrite policy.
@@ -466,20 +466,20 @@ impl clap::FromArgMatches for ExtractDestination {
 
 /// Arguments for `cadmpeg inspect cmp`.
 #[derive(Debug, Args)]
-pub struct CmpArgs {
+pub(crate) struct CmpArgs {
     /// First file.
-    pub a: PathBuf,
+    a: PathBuf,
     /// Second file.
-    pub b: PathBuf,
+    b: PathBuf,
     /// Merge two differing spans separated by this many equal bytes or fewer.
     #[arg(long, default_value_t = 8)]
-    pub gap: u64,
+    gap: u64,
     /// Stop listing after this many runs; 0 lists every run.
     #[arg(long, default_value = "32", value_parser = parse_limit)]
-    pub max_runs: CountLimit,
+    max_runs: CountLimit,
     /// Bytes of context dumped on each side of the first difference.
     #[arg(long, default_value = "32", value_parser = parse_offset)]
-    pub context: u64,
+    context: u64,
     #[command(flatten)]
     _reject_json: crate::reject_json::RejectJson,
 }
@@ -490,7 +490,7 @@ pub struct CmpArgs {
 ///
 /// Returns an operational error when a file cannot be read, an argument does
 /// not parse, or a requested offset lies past end of file.
-pub fn run(command: ByteCommand) -> Result<ExitCode> {
+pub(crate) fn run(command: ByteCommand) -> Result<ExitCode> {
     let tool = match command {
         ByteCommand::Tool(tool) | ByteCommand::Bytes { tool } => tool,
     };

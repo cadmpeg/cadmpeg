@@ -2321,7 +2321,8 @@ pub(crate) fn project_fixed_fillet_with_corners(
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec, VariableRadius,
+        edge_treatments::{FilletGroup, RadiusSpec, VariableRadius},
+        FeatureDefinition, FeatureOperation,
     };
     use cadmpeg_ir::scalar::Length;
 
@@ -2357,7 +2358,8 @@ pub(crate) fn project_fixed_fillet_with_corners(
                     radius: Length::new(end.value * 10.0)?,
                 });
                 Some(RadiusSpec::Variable {
-                    points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+                    points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
+                        .ok()?,
                 })
             }
         };

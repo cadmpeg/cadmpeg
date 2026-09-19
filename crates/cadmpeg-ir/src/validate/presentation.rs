@@ -6,7 +6,10 @@ use std::collections::HashSet;
 use super::error_finding;
 use crate::document::CadIr;
 use crate::presentation::PresentationItem;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 pub(super) fn check_presentation(
     ir: &CadIr,

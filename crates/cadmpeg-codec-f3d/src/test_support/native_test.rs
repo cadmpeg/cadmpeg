@@ -2,7 +2,7 @@
 //! Typed F3D native-namespace helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::io::Write;
@@ -16,7 +16,7 @@ pub(crate) trait TestEncode {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError>;
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError>;
 }
 
 impl TestEncode for F3dCodec {
@@ -24,7 +24,7 @@ impl TestEncode for F3dCodec {
         &self,
         ir: &cadmpeg_ir::CadIr,
         output: &mut dyn Write,
-    ) -> Result<cadmpeg_ir::ExportReport, cadmpeg_core::CodecError> {
+    ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_core::CodecError> {
         self.plan(
             cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
             TargetRequest::Inherit,

@@ -18,8 +18,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Face, Sense};
 use cadmpeg_ir::{
     features::{
+        edge_treatments::{RadiusSpec, VariableRadius},
         BodySelection, DatumPlaneReference, FaceSelection, FeatureDefinition, FeatureId,
-        FeatureOperation, RadiusSpec, UnresolvedFamily, VariableRadius,
+        FeatureOperation, UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -29,7 +30,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -93,7 +94,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -149,7 +150,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -221,7 +222,7 @@ fn generic_native_offset_plane_support_stays_native() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -418,7 +419,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -686,7 +687,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             "fillet-native",
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::FilletGroup {
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
                         radius: RadiusSpec::Unresolved { form: None },
                         tangency_weight: None,
@@ -755,14 +756,14 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     ));
     assert!(matches!(
         group.side_one_faces(),
-        cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
+        cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(FaceSelection::Generated {
             faces,
             ..
         }) if faces[0].local_id == "4"
     ));
     assert!(matches!(
         group.side_two_faces(),
-        cadmpeg_ir::features::FullRoundSideSelection::Explicit(FaceSelection::Generated {
+        cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(FaceSelection::Generated {
             faces,
             ..
         }) if faces[0].local_id == "6"
@@ -1662,7 +1663,10 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
 #[test]
 fn a_sole_unresolved_fillet_group_carries_its_edges() {
-    use cadmpeg_ir::features::{EdgeSelection, FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::{FilletGroup, RadiusSpec},
+        EdgeSelection,
+    };
 
     let group = |edges: EdgeSelection, radius: RadiusSpec| FilletGroup {
         edges,
@@ -1681,7 +1685,7 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
     let carried = sole_unresolved_fillet_group(&fillet(vec![group(
         native.clone(),
         RadiusSpec::Unresolved {
-            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
         },
     )]))
     .expect("a sole group without a radius is carried out of the check");
@@ -1701,13 +1705,13 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
             group(
                 native.clone(),
                 RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
                 }
             ),
             group(
                 EdgeSelection::Unresolved,
                 RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
                 }
             ),
         ])),
@@ -1715,10 +1719,10 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
     );
     assert_eq!(
         sole_unresolved_fillet_group(&FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: vec![cadmpeg_ir::features::ChamferGroup {
+            groups: vec![cadmpeg_ir::features::edge_treatments::ChamferGroup {
                 edges: native,
-                spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::ChamferForm::Distance)
+                spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance)
                 },
             }]
             .try_into()
@@ -1731,7 +1735,10 @@ fn a_sole_unresolved_fillet_group_carries_its_edges() {
 
 #[test]
 fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
-    use cadmpeg_ir::features::{EdgeSelection, FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::{FilletGroup, RadiusSpec},
+        EdgeSelection,
+    };
 
     let weight = cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("a finite tangency weight");
     let fillet = |tangency_weight| {
@@ -1739,7 +1746,7 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
             groups: vec![FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                 },
                 tangency_weight,
             }]

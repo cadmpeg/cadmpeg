@@ -161,7 +161,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.curves.push(Curve {
             id: cube_id!(CurveId, "curve", i),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(Point3::new(ax, ay, az), unit)
+                crate::geometry::analytic::LineCurve::try_new(Point3::new(ax, ay, az), unit)
                     .map_err(ExampleError::Geometry)?,
             )),
             source_object: None,
@@ -186,7 +186,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         ir.model.surfaces.push(Surface {
             id: surf_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(origin.0, origin.1, origin.2),
                     Vector3::new(normal.0, normal.1, normal.2),
                     derive_reference_direction(Vector3::new(normal.0, normal.1, normal.2)),
@@ -296,7 +296,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         Curve {
             id: v2_id!(CurveId, "curve", crate::identity_key!("u")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -311,7 +311,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         Curve {
             id: v2_id!(CurveId, "curve", crate::identity_key!("v")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )
@@ -334,7 +334,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: Some(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),

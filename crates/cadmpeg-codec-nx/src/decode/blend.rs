@@ -21,9 +21,10 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_point_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, NurbsCurve, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve},
+    pcurve::PcurveGeometry,
+    BlendCrossSection, BlendRadiusLaw, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};

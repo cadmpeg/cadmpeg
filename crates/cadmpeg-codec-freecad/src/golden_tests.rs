@@ -16,7 +16,7 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
@@ -204,7 +204,9 @@ fn encode_snapshot(bytes: &[u8]) -> String {
 
 /// Decodes `bytes` and writes the document back, returning the export report and
 /// the produced archive, or the first refusal as text.
-fn encode_once(bytes: &[u8]) -> Result<(cadmpeg_ir::ExportReport, Vec<u8>), String> {
+fn encode_once(
+    bytes: &[u8],
+) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
         .map_err(|error| error.to_string())?;

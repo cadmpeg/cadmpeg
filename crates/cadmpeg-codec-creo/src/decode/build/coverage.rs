@@ -3,9 +3,10 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
-    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation, HoleKind,
-    PlanarProfileRef, ProfileRef, RadiusSpec, RevolveExtent, UnresolvedFamily,
+    edge_treatments::RadiusSpec, holes::HoleKind, BooleanOp, EdgeSelection, ExtrudeExtent,
+    ExtrudeStart, FaceSelection, FeatureDefinition as IrFeatureDefinition,
+    FeatureOperation as IrFeatureOperation, PlanarProfileRef, ProfileRef, RevolveExtent,
+    UnresolvedFamily,
 };
 
 use crate::container::ContainerScan;
@@ -29,7 +30,7 @@ pub(in super::super) fn collect_feature_coverage(
     geometry_generator_feature_count: usize,
     feature_result_topology_count: usize,
     feature_result_edge_count: usize,
-    coverage: &mut cadmpeg_ir::Coverage,
+    coverage: &mut cadmpeg_ir::report::decode::Coverage,
 ) {
     let native_feature_count = ir
         .model
@@ -231,13 +232,13 @@ pub(in super::super) fn collect_feature_coverage(
                     !placements.iter().any(|placement| {
                         matches!(
                             placement,
-                            cadmpeg_ir::features::HolePlacement::Directed { .. }
+                            cadmpeg_ir::features::holes::HolePlacement::Directed { .. }
                         )
                     })
                 });
                 let unresolved_kind = matches!(
                     construction,
-                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                    cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
                         if kind.is_unresolved()
                 ) || exit_kind.as_ref().is_some_and(HoleKind::is_unresolved);
                 let unresolved_diameter = diameter.is_none();
@@ -283,7 +284,7 @@ pub(in super::super) fn collect_feature_coverage(
                     matches!(
                         &group.radius,
                         RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
                         }
                     )
                 });
@@ -461,18 +462,18 @@ pub(in super::super) fn collect_feature_coverage(
                 pattern_feature_count += 1;
                 let unresolved_seeds = seeds.is_empty()
                     || seeds.iter().any(|seed| match seed {
-                        cadmpeg_ir::features::PatternSeed::Feature(_) => false,
-                        cadmpeg_ir::features::PatternSeed::Faces(faces) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                             face_selection_has_unresolved_operands(faces)
                         }
-                        cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
                             matches!(
                                 bodies,
                                 cadmpeg_ir::features::BodySelection::Unresolved
                                     | cadmpeg_ir::features::BodySelection::Native(_)
                             )
                         }
-                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
                             occurrences.is_empty()
                         }
                     });

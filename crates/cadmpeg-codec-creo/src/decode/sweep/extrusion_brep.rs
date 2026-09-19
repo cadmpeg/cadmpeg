@@ -260,7 +260,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(
                             transform.origin()[0] + offset * transform.normal()[0],
                             transform.origin()[1] + offset * transform.normal()[1],
@@ -384,7 +384,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 continue;
                             };
                             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                                cadmpeg_ir::geometry::LineCurve::try_new(
+                                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                                     Point3::new(
                                         placed_start[0] + offset * transform.normal()[0],
                                         placed_start[1] + offset * transform.normal()[1],
@@ -400,7 +400,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             let center = section_point_in_model(transform, [center.u, center.v]);
                             let (axis_sign, _) = oriented_arc_parameterization(reversed, 0.0, 0.0);
                             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                                cadmpeg_ir::geometry::CircleCurve::try_new(
+                                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                     Point3::new(
                                         center[0] + offset * transform.normal()[0],
                                         center[1] + offset * transform.normal()[1],
@@ -503,7 +503,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::LineCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                             Point3::new(
                                 origin[0] + span.lower * transform.normal()[0],
                                 origin[1] + span.lower * transform.normal()[1],

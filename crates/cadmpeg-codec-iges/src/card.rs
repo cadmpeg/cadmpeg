@@ -7,7 +7,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::Confidence;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;

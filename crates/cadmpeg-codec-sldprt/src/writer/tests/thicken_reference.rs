@@ -729,7 +729,8 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
 #[test]
 fn semantic_writer_preserves_absent_feature_selections() {
     use cadmpeg_ir::features::{
-        ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation,
+        edge_treatments::ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition,
+        FeatureOperation,
     };
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -751,7 +752,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: EdgeSelection::Unresolved, ..
         }])
     ));

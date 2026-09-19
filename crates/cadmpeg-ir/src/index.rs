@@ -13,7 +13,7 @@ use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
-use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::schema::EntitySchema;
@@ -449,7 +449,7 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     crate::math::Point3::new(0.0, 0.0, 0.0),
                     crate::math::Vector3::new(0.0, 0.0, 1.0),
                     crate::math::Vector3::new(1.0, 0.0, 0.0),

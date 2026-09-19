@@ -13,7 +13,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{model_surface_point_by_id, pcurve_uv};
-use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::ProceduralCurveId;
 use cadmpeg_ir::math::Point3;
 
@@ -287,7 +287,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
 #[test]
 fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface,
+        nurbs::NurbsSurface, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
         ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
         SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -316,13 +316,17 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                         3,
                         vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                         false,
                     ),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(-3.0, 0.0, 0.0), Point3::new(-3.0, 0.0, 1.0)],
                             vec![Point3::new(3.0, 2.0, 0.0), Point3::new(3.0, 2.0, 1.0)],
@@ -348,7 +352,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         Surface {
             id: plane.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.45),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),

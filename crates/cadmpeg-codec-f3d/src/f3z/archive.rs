@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use serde::Deserialize;
 
 use crate::container::ContainerScan;

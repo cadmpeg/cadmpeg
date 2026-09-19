@@ -6,8 +6,8 @@
 //! `cadmpeg check`, not to the four questions an embedder asks of a file.
 
 use cadmpeg_ir::{
-    validate_neutral, validate_neutral_with_source_fidelity, CadIr, Finding, SourceFidelity,
-    ValidationReport,
+    report::check::{Finding, ValidationReport},
+    validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity,
 };
 use cadmpeg_registry::InputCatalog;
 
@@ -15,7 +15,7 @@ pub(crate) fn validate_ir(
     inputs: &InputCatalog,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
-    losses: Vec<cadmpeg_ir::LossNote>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> ValidationReport {
     let mut report = match source_fidelity {
         Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
@@ -26,7 +26,7 @@ pub(crate) fn validate_ir(
 }
 
 /// Runs every registered codec's native validator over the namespace it owns.
-pub fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
+fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
     inputs
         .descriptors()
         .filter_map(|descriptor| {

@@ -8,7 +8,7 @@ use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{LossNote, Severity};
+use crate::report::{loss::LossNote, Severity};
 
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -94,88 +94,6 @@ struct DecodeReportWire {
     notes: Vec<String>,
     #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     transfer_ledger: TransferLedger,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{TransferDisposition, TransferOutcome, TransferRecord};
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn current_decode_report_schema_requires_its_format_identity() {
-        let schema = serde_json::to_value(schemars::schema_for!(super::DecodeReport))
-            .expect("decode report schema serializes");
-        let required = schema["required"]
-            .as_array()
-            .expect("decode report schema has required fields");
-        assert!(
-            required.iter().any(|field| field == "identity"),
-            "{schema:#}"
-        );
-    }
-
-    #[test]
-    fn transfer_record_keeps_the_nested_outcome_wire_shape() {
-        let record = TransferRecord {
-            source: "D1".into(),
-            outcome: TransferOutcome::Retained {
-                target: "iges:entity:directory#1".into(),
-                note: Some("retained".into()),
-            },
-        };
-        let wire = serde_json::to_value(&record).expect("transfer record serializes");
-        assert_eq!(
-            wire,
-            serde_json::json!({
-                "source": "D1",
-                "outcome": {
-                    "disposition": "retained",
-                    "target": "iges:entity:directory#1",
-                    "note": "retained"
-                }
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<TransferRecord>(wire).expect("transfer record deserializes"),
-            record
-        );
-    }
-
-    #[test]
-    fn transfer_record_wire_rejects_disposition_target_disagreement() {
-        // The disposition is the tag, so a target and a note exist only on the
-        // dispositions that carry them: each disagreement is a missing or an
-        // unknown field, not a value a reader has to refuse.
-        for wire in [
-            serde_json::json!({
-                "source": "D1",
-                "outcome": {"disposition": "retained"}
-            }),
-            serde_json::json!({
-                "source": "D1",
-                "outcome": {"disposition": "omitted", "target": "point:1"}
-            }),
-            serde_json::json!({
-                "source": "D1",
-                "outcome": {"disposition": "emitted", "target": "point:1", "note": "n"}
-            }),
-            serde_json::json!({
-                "source": "D1",
-                "outcome": {"disposition": "emitted"}
-            }),
-        ] {
-            assert!(serde_json::from_value::<TransferRecord>(wire).is_err());
-        }
-
-        let omitted: TransferRecord = serde_json::from_value(serde_json::json!({
-            "source": "D2",
-            "outcome": {"disposition": "omitted", "note": "unsupported"}
-        }))
-        .expect("omitted record has no target");
-        assert_eq!(omitted.target(), None);
-        assert_eq!(omitted.disposition(), TransferDisposition::Omitted);
-        assert_eq!(omitted.note(), Some("unsupported"));
-    }
 }
 
 impl From<DecodeReport> for DecodeReportWire {
@@ -619,3 +537,6 @@ impl DecodeReport {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_note, String, "note");
+
+#[cfg(test)]
+mod tests;

@@ -11,7 +11,11 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::document::{CadIr, CensusKey};
-use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
+use crate::report::{
+    check::{Check, Finding, ValidationReport},
+    loss::LossNote,
+    Severity,
+};
 use crate::source_fidelity::SourceFidelity;
 
 /// Frozen accept/reject IR builders for Phase 5 gate swaps.

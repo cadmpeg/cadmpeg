@@ -16,14 +16,15 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{
-    NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    nurbs::NurbsCurve,
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
@@ -2269,7 +2270,7 @@ pub(super) fn project(
                         candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                                 None,
                                 Some(parameter_range),
                                 None,

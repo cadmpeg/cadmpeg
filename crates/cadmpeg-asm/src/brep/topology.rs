@@ -7,7 +7,8 @@ use crate::ids::{brep_id, IdFormat};
 use crate::nurbs;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, EdgeId, FaceId, LoopId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
@@ -283,7 +284,7 @@ pub(super) fn walk_reachable_topology(
                                     .entry(super::PcurveRecordIndex(pc))
                                     .or_insert_with(|| {
                                         PcurveGeometry::Line(
-                                            cadmpeg_ir::geometry::LinePcurve::U_AXIS,
+                                            cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
                                         )
                                     });
                                 kept_pcurves.insert(pc);

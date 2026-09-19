@@ -48,8 +48,8 @@ fn decode_degrades_nonfinite_feature_dimensions() {
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -120,8 +120,8 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         decoded.ir().model.features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -151,8 +151,8 @@ fn decode_degrades_nonpositive_feature_dimensions() {
                 length: actual_length,
             }),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 ..
             }, None,) if actual_length.get() == 5.0)));
     assert!(matches!(
@@ -160,8 +160,8 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             ref groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::Distance) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance) },
             ..
         }])
     ));
@@ -169,7 +169,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
 
 #[test]
 fn decode_retains_invalid_feature_directions_and_angles_as_native() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PatternTransform};
+    use cadmpeg_ir::features::{patterns::PatternTransform, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -194,7 +194,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 pattern: admitted_pattern,
                 ..
-            }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
+            }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
         )
     );
     assert!(matches!(
@@ -224,8 +224,8 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             ref groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle) },
             ..
         }])
     ));

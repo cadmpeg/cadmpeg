@@ -26,7 +26,10 @@ const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 fn semantic_writer_round_trips_all_pattern_forms() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, PatternKind, PatternTransform},
+        features::{
+            patterns::{PatternKind, PatternTransform},
+            FeatureDefinition, FeatureOperation,
+        },
         scalar::{Angle, Length},
     };
 
@@ -56,7 +59,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 spacing: actual_spacing,
                 count: 3,
                 second: None,
-            } if (seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
+            } if (seeds == &[cadmpeg_ir::features::patterns::PatternSeed::Feature(seed.clone())]) && actual_spacing.get() == 10.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -194,7 +197,8 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
     use cadmpeg_ir::{
         features::{
-            FeatureDefinition, FeatureOperation, ParameterValue, PatternKind, PatternTransform,
+            patterns::{PatternKind, PatternTransform},
+            FeatureDefinition, FeatureOperation, ParameterValue,
         },
         scalar::Length,
     };
@@ -284,7 +288,8 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
 fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     use cadmpeg_ir::{
         features::{
-            FeatureDefinition, FeatureOperation, ParameterValue, PatternKind, PatternTransform,
+            patterns::{PatternKind, PatternTransform},
+            FeatureDefinition, FeatureOperation, ParameterValue,
         },
         scalar::Length,
     };
@@ -484,7 +489,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
 
 #[test]
 fn semantic_writer_retains_unresolved_native_pattern_construction() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PatternTransform};
+    use cadmpeg_ir::features::{patterns::PatternTransform, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -507,7 +512,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) } if seeds.is_empty())
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) } if seeds.is_empty())
     ));
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
@@ -532,7 +537,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 pattern: admitted_pattern,
                 ..
-            }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
+            }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
         )
     );
 }
@@ -540,7 +545,10 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
 #[test]
 fn semantic_writer_round_trips_generic_pattern_type() {
     use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, PatternKind, PatternTransform},
+        features::{
+            patterns::{PatternKind, PatternTransform},
+            FeatureDefinition, FeatureOperation,
+        },
         scalar::Length,
     };
 

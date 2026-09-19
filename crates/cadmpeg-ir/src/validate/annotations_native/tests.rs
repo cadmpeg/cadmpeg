@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::annotated_entity_json;
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
 use serde_json::{Map, Value};

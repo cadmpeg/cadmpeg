@@ -99,7 +99,8 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
 
     use cadmpeg_ir::{
         features::{
-            Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternTransform,
+            patterns::{PatternKind, PatternTransform},
+            Feature, FeatureDefinition, FeatureId, FeatureOperation,
         },
         scalar::Length,
     };

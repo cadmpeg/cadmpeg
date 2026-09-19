@@ -2,7 +2,7 @@
 //! Edge parameter ranges for lines, NURBS, and conics.
 
 use crate::vecmath::normalize;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
@@ -27,7 +27,7 @@ pub(in crate::decode) fn orient_line_edge_carrier(
     let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
     let length = dot(delta, delta).sqrt();
     let oriented = normalize(delta)?;
-    *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+    *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
         Point3::new(points[0][0], points[0][1], points[0][2]),
         Vector3::new(oriented[0], oriented[1], oriented[2]),
     )
@@ -697,7 +697,7 @@ pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
 #[cfg(test)]
 mod tests {
     use super::reverse_nonperiodic_nurbs;
-    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
     #[test]

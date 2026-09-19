@@ -234,7 +234,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .report()
         .losses
         .iter()
-        .any(|l| l.code.category() == cadmpeg_ir::report::LossCategory::Topology));
+        .any(|l| l.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology));
     assert_eq!(
         result
             .report()
@@ -361,7 +361,7 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 unresolved surface carriers")
             && loss
@@ -422,7 +422,8 @@ fn decode_standard_builds_surface_bound_topology_graph() {
     assert!(!decoded.report().losses.iter().any(|loss| {
         matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(

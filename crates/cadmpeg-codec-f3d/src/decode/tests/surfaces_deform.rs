@@ -10,8 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -100,7 +100,7 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .geometry = SurfaceGeometry::Procedural {
         construction: source_less.model.procedural_surfaces[0].id.clone(),
         cache: Some(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -139,7 +139,7 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .geometry = CurveGeometry::Procedural {
         construction: source_less.model.procedural_curves[0].id.clone(),
         cache: Some(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -372,7 +372,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         .find(|candidate| candidate.id == curve)
         .expect("surface-curve deformable curve")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
                 .unit()
@@ -450,7 +450,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             .find(|candidate| candidate.id == curve)
             .expect("full deformable curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0)
                     .unit()
@@ -593,7 +593,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
             .find(|curve| curve.id == *curve_id)
             .expect("explicit sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0)
                     .unit()
@@ -747,7 +747,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
             .find(|curve| curve.id == *curve_id)
             .expect("explicit guide sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -2.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(2.0, 4.0, -3.0)
                     .unit()
@@ -838,7 +838,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
             .find(|curve| curve.id == *curve_id)
             .expect("explicit surface sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, 1.0, -2.0),
                 cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
                     .unit()
@@ -930,7 +930,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
             .find(|curve| curve.id == *curve_id)
             .expect("law-driven sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
                 cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0)
                     .unit()

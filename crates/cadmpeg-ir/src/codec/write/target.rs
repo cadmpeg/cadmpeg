@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Write target resolution against an encoder catalog.
+//! Target domains, requests, and resolution against an encoder catalog.
 
+use crate::codec::FormatId;
 use crate::document::CadIr;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::{
@@ -246,6 +247,123 @@ impl<'a> ResolvedWrite<'a> {
     }
 }
 
+mod domain_sealed {
+    pub trait Sealed {}
+    impl Sealed for super::DialectFree {}
+    impl Sealed for super::Catalog {}
+}
+
+mod resolution_sealed {
+    pub trait Sealed {}
+    impl Sealed for () {}
+    impl Sealed for super::ResolvedWrite<'_> {}
+}
+
+/// A target-domain resolution that states the export identity it proves.
+pub trait TargetResolution: resolution_sealed::Sealed {
+    /// The native target identity, or `None` for the neutral document.
+    fn export_target(&self) -> Option<&DialectId>;
+}
+
+impl TargetResolution for () {
+    fn export_target(&self) -> Option<&DialectId> {
+        None
+    }
+}
+
+impl TargetResolution for ResolvedWrite<'_> {
+    fn export_target(&self) -> Option<&DialectId> {
+        Some(self.target_id())
+    }
+}
+
+/// Where an encoder's targets come from, and what a resolved request looks
+/// like for that encoder.
+///
+/// Implemented only by [`DialectFree`] and [`Catalog`]. A backend names one
+/// of them as its [`super::EncoderBackend::Target`], and `plan_resolved` receives that
+/// domain's resolution type and nothing else.
+pub trait TargetDomain: domain_sealed::Sealed {
+    /// The proof handed to `plan_resolved` for one request.
+    type Resolved<'a>: TargetResolution;
+
+    /// The static catalog of output flavors this domain lists.
+    fn targets(&self, format: FormatId) -> TargetCatalog;
+
+    /// Resolves one request against this domain.
+    #[doc(hidden)]
+    fn resolve<'a>(
+        &self,
+        ir: &'a CadIr,
+        request: TargetRequest<'a>,
+        format: FormatId,
+    ) -> Result<Self::Resolved<'a>, CodecError>;
+}
+
+/// The neutral representation has no dialect catalog or target identity.
+///
+/// An encoder in this domain takes [`TargetRequest::Inherit`] only and every
+/// export it plans reports no target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DialectFree;
+
+impl TargetDomain for DialectFree {
+    type Resolved<'a> = ();
+
+    fn targets(&self, format: FormatId) -> TargetCatalog {
+        TargetCatalog::empty(format.as_str())
+    }
+
+    fn resolve<'a>(
+        &self,
+        _ir: &'a CadIr,
+        request: TargetRequest<'a>,
+        format: FormatId,
+    ) -> Result<(), CodecError> {
+        match request {
+            TargetRequest::Inherit => Ok(()),
+            TargetRequest::Explicit(id) => Err(TargetRefusal::unknown_explicit(
+                id,
+                TargetCatalog::empty(format.as_str()),
+            )
+            .into()),
+        }
+    }
+}
+
+/// A native format resolves every request against this complete catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Catalog(TargetCatalog);
+
+impl Catalog {
+    /// Builds a native target domain whose optional default indexes one of
+    /// `targets`.
+    #[must_use]
+    pub const fn new(
+        targets: &'static [cadmpeg_core::target::TargetDescriptor],
+        default: Option<usize>,
+    ) -> Self {
+        Self(TargetCatalog::new(targets, default))
+    }
+}
+
+impl TargetDomain for Catalog {
+    type Resolved<'a> = ResolvedWrite<'a>;
+
+    fn targets(&self, _format: FormatId) -> TargetCatalog {
+        self.0
+    }
+
+    fn resolve<'a>(
+        &self,
+        ir: &'a CadIr,
+        request: TargetRequest<'a>,
+        _format: FormatId,
+    ) -> Result<ResolvedWrite<'a>, CodecError> {
+        resolve_write_request(ir, request, self.0)
+    }
+}
+
 fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
     let Some(source) = ir.source.as_ref() else {
         return SourceIdentity::Other(DefaultSource::NoSource);
@@ -264,7 +382,7 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 /// Native requests always name a catalog or preserved off-catalog dialect.
 /// A dialect-free neutral encoder handles its format identity locally instead
 /// of adding an identity case to every native writer.
-pub(in crate::codec) fn resolve_write_request<'a>(
+fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     catalog: TargetCatalog,
@@ -315,3 +433,5 @@ pub(in crate::codec) fn resolve_write_request<'a>(
         available: catalog,
     })
 }
+#[cfg(test)]
+mod tests;

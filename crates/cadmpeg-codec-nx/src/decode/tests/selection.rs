@@ -55,10 +55,11 @@ use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::Exactness;
 
 use crate::NxCodec;
@@ -1547,7 +1548,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let mut ir = CadIr::empty();
@@ -1593,7 +1594,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
 #[test]
 fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let feature = Feature {
@@ -1691,7 +1692,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 #[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
     use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind,
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let mut source_properties = std::collections::BTreeMap::new();

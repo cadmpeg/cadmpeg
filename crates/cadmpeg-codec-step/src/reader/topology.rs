@@ -16,8 +16,8 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityKeyTail, LoopId, PcurveId,
@@ -25,7 +25,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
@@ -3377,7 +3377,7 @@ fn implicit_face_plane(
     }
     let u_axis = u_axis?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).ok()?,
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).ok()?,
     )))
 }
 

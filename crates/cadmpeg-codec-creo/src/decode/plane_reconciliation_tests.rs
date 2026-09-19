@@ -14,7 +14,8 @@ use crate::surface::{
 };
 use crate::vecmath::dot;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -57,7 +58,7 @@ fn topology_boundary_points_define_one_plane() {
 #[test]
 fn analytic_conic_boundary_defines_its_plane() {
     let plane = analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(3.0, 4.0, 5.0),
             Vector3::new(0.0, 0.0, -2.0)
                 .unit()
@@ -72,7 +73,7 @@ fn analytic_conic_boundary_defines_its_plane() {
     assert_eq!(plane.normal, [0.0, 0.0, -1.0]);
     assert!(
         analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
@@ -163,7 +164,7 @@ fn distinct_boundary_lines_define_one_plane() {
     .is_none());
 
     let analytic = analytic_boundary_line(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(2.0, 0.0, 0.0)
                 .unit()
@@ -209,7 +210,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     ir.model.curves.push(Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(2.0, 3.0, 4.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

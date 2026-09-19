@@ -10,12 +10,13 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
-    NurbsCurve, NurbsError, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
@@ -801,7 +802,7 @@ pub(super) enum DegreeElevationError {
 pub(super) enum CompositeCurveError {
     /// A carrier the IR refuses.
     #[error(transparent)]
-    Carrier(#[from] cadmpeg_ir::geometry::NurbsError),
+    Carrier(#[from] cadmpeg_ir::geometry::nurbs::NurbsError),
     /// A child that does not raise to the composite degree.
     #[error("{0}")]
     Elevation(#[from] DegreeElevationError),

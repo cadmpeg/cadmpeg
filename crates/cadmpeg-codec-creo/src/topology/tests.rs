@@ -489,7 +489,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
             .expect("projected plane pcurve");
         assert!(matches!(
             pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Line(_)
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
         ));
         let edge = model
             .edges
@@ -517,7 +517,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
     else {
         panic!("round definition: {:#?}", feature.evaluation.definition());
     };
-    let [cadmpeg_ir::features::FilletGroup { edges, .. }] = groups.as_slice() else {
+    let [cadmpeg_ir::features::edge_treatments::FilletGroup { edges, .. }] = groups.as_slice()
+    else {
         panic!("round groups: {groups:#?}");
     };
     let cadmpeg_ir::features::EdgeSelection::Resolved { edges, native } = edges else {

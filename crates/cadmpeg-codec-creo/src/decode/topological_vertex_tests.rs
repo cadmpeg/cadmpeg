@@ -8,7 +8,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2])
                 .unit()
@@ -46,7 +46,7 @@ fn incident_lines_reject_skew_parallel_and_disagreeing_candidates() {
 #[test]
 fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -69,7 +69,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     assert!(line_conic_intersections(&skew, &circle).is_empty());
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -84,7 +84,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     );
 
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -102,7 +102,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     );
 
     let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -133,7 +133,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
             [1.0, 0.0, 0.0]
         };
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(center[0], center[1], center[2]),
                 Vector3::new(axis[0], axis[1], axis[2]),
                 Vector3::new(reference[0], reference[1], reference[2]),
@@ -169,7 +169,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     }));
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -184,7 +184,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         model_points_agree(*point, [0.0, 2.0, 0.0]) || model_points_agree(*point, [0.0, -2.0, 0.0])
     }));
     let diagonal_ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 1.0, 0.0)
@@ -204,7 +204,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     }));
 
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

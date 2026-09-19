@@ -241,7 +241,7 @@ fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
         .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
     }));
 }
 

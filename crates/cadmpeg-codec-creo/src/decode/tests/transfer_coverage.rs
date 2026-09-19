@@ -47,7 +47,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let plane = |id: &str, native_id: u32| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -139,7 +139,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         Curve {
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -226,7 +226,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
     assert_eq!(coverage.active_typed(), 1);
     assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
     assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
-    let mut report_coverage = cadmpeg_ir::Coverage::default();
+    let mut report_coverage = cadmpeg_ir::report::decode::Coverage::default();
     report_coverage.record_indexed(
         crate::coverage::ACTIVE_NATIVE_FEATURE_RELATION_TYPE_CONSTRAINT_COUNT,
         1,

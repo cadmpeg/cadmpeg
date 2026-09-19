@@ -50,7 +50,10 @@ use cadmpeg_ir::math::Vector3;
 
 #[test]
 fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec, RadiusSpec},
+        EdgeSelection,
+    };
 
     let parameter = |owner_record_index,
                      record_index,
@@ -273,7 +276,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     };
     assert!(matches!(
         groups.as_slice(),
-        [cadmpeg_ir::features::FilletGroup {
+        [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Native(selection),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
@@ -393,14 +396,14 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             shape,
 
             extent: Some(cadmpeg_ir::features::LinearTermination::Blind { length: actual_length }),
-            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Flat),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (faces == &vec![FaceId::mint(crate::ids::brep_entity_id(282)).expect("identity grammar")]
             && native == &scopes[2].id
-            && placements == &vec![cadmpeg_ir::features::HolePlacement::Directed {
+            && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
             }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
@@ -427,8 +430,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             shape,
             bottom: None,
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::SimpleDrilled { drill_point_angle },
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::SimpleDrilled { drill_point_angle },
                 ..
             },) if drill_point_angle.get() == 118.0_f64.to_radians())));
 
@@ -458,8 +461,8 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             shape,
             bottom: None,
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::CounterboreDrilled {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::CounterboreDrilled {
                     diameter: actual_diameter,
                     depth: actual_depth,
                     drill_point_angle,
@@ -489,10 +492,10 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-            bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Flat),
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Counterbore {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
                 },
@@ -924,15 +927,15 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     assert_eq!(
         points.as_slice(),
         [
-            cadmpeg_ir::features::VariableRadius {
+            cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
                 radius: Length::ZERO,
             },
-            cadmpeg_ir::features::VariableRadius {
+            cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.25,
                 radius: Length::new(4.0).unwrap(),
             },
-            cadmpeg_ir::features::VariableRadius {
+            cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 1.0,
                 radius: Length::ZERO,
             },
@@ -969,11 +972,11 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     assert_eq!(
         points.as_slice(),
         [
-            cadmpeg_ir::features::VariableRadius {
+            cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
                 radius: Length::new(2.0).unwrap(),
             },
-            cadmpeg_ir::features::VariableRadius {
+            cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 1.0,
                 radius: Length::new(4.0).unwrap(),
             },
@@ -1322,8 +1325,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::FilletGroup {
-                    radius: cadmpeg_ir::features::RadiusSpec::Chordal {
+                [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Chordal {
                         chord_length: actual_chord_length,
                     },
                     tangency_weight: Some(weight),
@@ -1365,8 +1368,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::FilletGroup {
-                    radius: cadmpeg_ir::features::RadiusSpec::Chordal {
+                [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Chordal {
                         chord_length: actual_chord_length,
                     },
                     tangency_weight: None,
@@ -1409,8 +1412,8 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::FilletGroup {
-                    radius: cadmpeg_ir::features::RadiusSpec::Asymmetric {
+                [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Asymmetric {
                         offset_one: actual_offset_one,
                         offset_two: actual_offset_two,
                     },
@@ -1441,9 +1444,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert_eq!(groups.len(), 2);
     assert!(matches!(
         &groups[0],
-        cadmpeg_ir::features::FilletGroup {
+        cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
@@ -1451,9 +1454,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     assert!(matches!(
         &groups[1],
-        cadmpeg_ir::features::FilletGroup {
+        cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
             tangency_weight: Some(weight),
@@ -1804,9 +1807,10 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
     );
     assert!(matches!(
         &groups[0].radius,
-        cadmpeg_ir::features::RadiusSpec::Variable { points } if points.as_slice().len() == 3
+        cadmpeg_ir::features::edge_treatments::RadiusSpec::Variable { points } if points.as_slice().len() == 3
     ));
-    let cadmpeg_ir::features::RadiusSpec::Variable { points } = &groups[0].radius else {
+    let cadmpeg_ir::features::edge_treatments::RadiusSpec::Variable { points } = &groups[0].radius
+    else {
         panic!("expected assigned variable radius controls");
     };
     assert_eq!(

@@ -11,9 +11,9 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection, HoleBottom,
-    HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, InnerWireTaper,
-    LinearTermination, PlanarProfileRef, ProfileRef,
+    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter},
+    BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
+    InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
 };
 
 #[allow(
@@ -585,7 +585,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             match placements.as_deref().unwrap_or_default() {
-                [cadmpeg_ir::features::HolePlacement::Directed {
+                [cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position,
                     direction,
                 }] => {
@@ -612,7 +612,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 placements
                     if existing.is_some()
                         && placements.iter().all(|placement| {
-                            matches!(placement, cadmpeg_ir::features::HolePlacement::Axis { .. })
+                            matches!(
+                                placement,
+                                cadmpeg_ir::features::holes::HolePlacement::Axis { .. }
+                            )
                         }) => {}
                 _ => {
                     return Err(CodecError::NotImplemented(format!(

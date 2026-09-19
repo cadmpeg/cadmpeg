@@ -418,7 +418,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert_eq!(result.ir().model.vertices.len(), 2);
     assert!(result.ir().model.edges.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
@@ -465,7 +465,7 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]
             && jet.stations().len() == 2));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     let point = cadmpeg_ir::eval::model_surface_point(result.ir(), &surface.geometry, 2.0, 0.5)
@@ -520,11 +520,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .iter()
         .all(|edge| edge.curve().is_some() && edge.param_range().is_some()));
     assert!(result.report().losses.iter().all(|loss| {
-        loss.code.category() != cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("two trailing orientation signs")
     }));

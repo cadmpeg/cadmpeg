@@ -14,7 +14,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::TransferLedger;
+use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
@@ -1578,9 +1578,9 @@ fn decode_container<'a>(
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let body = DecodeBody {
         transfer: if ctx.container_only() {
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
-            cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+            cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
         },
         coverage: [
             (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),

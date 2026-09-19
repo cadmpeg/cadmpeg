@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, FeatureOperation,
-    PatternSeed, UnresolvedFamily,
+    patterns::PatternSeed, BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition,
+    FeatureId, FeatureOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::BodyId;
 

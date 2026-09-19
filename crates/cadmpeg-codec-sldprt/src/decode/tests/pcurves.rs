@@ -175,7 +175,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         [1500.0, 2000.0, 0.0]
     );
     assert!(
-        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
+        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle_pcurve)
                 if {
                     let center = circle_pcurve.center();
         let y_axis = circle_pcurve.y_axis();
@@ -216,7 +216,7 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
 
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(
-        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve)
+        matches!(decoded.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve)
                 if {
                     let radial_center = polar_harmonic_pcurve.radial_center();
         let radial_cos = polar_harmonic_pcurve.radial_cos();
@@ -258,7 +258,7 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
         decoded.ir().model.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
@@ -296,7 +296,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
         decoded.ir().model.pcurves[0].geometry
     else {
         panic!("expected line pcurve");
@@ -328,7 +328,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .find(|pcurve| pcurve.id.as_str().contains("sphere-seam"))
         .expect("sphere pole pcurve");
     assert!(
-        matches!(pole.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        matches!(pole.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
                 if {
                     let origin = line_pcurve.origin();
         let direction = line_pcurve.direction();
@@ -493,7 +493,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_nurbs_isoparametric_pcurve")
-            && matches!(pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+            && matches!(pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
             if {
                 let direction = line_pcurve.direction();
                 direction.v == 0.0 && direction.u != 0.0

@@ -28,9 +28,9 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
-        BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, ParameterId,
-        ParameterValue, PlanarProfileRef, ProfileRef, RadiusSpec,
+        edge_treatments::RadiusSpec, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection,
+        ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+        LinearTermination, ParameterId, ParameterValue, PlanarProfileRef, ProfileRef,
     },
     scalar::Length,
 };
@@ -160,13 +160,15 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         "synthetic:test:id#target",
         "target-native",
         FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Constant {
+                        radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+                    },
+                    tangency_weight: None,
                 },
-                tangency_weight: None,
-            }),
+            ),
         }),
     );
     let selection = |ordinal, offset, local_edge_ids| FeatureInputEdgeSelection {
@@ -211,7 +213,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     else {
         panic!("generated edge selection");
     };
-    let [cadmpeg_ir::features::FilletGroup {
+    let [cadmpeg_ir::features::edge_treatments::FilletGroup {
         edges: EdgeSelection::Generated { edges, native },
         ..
     }] = groups.as_slice()

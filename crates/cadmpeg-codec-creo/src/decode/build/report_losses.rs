@@ -6,15 +6,15 @@ use crate::decode::surfaces::brep::{BrepTransferDiagnostics, FaceAdmissionReject
 use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
-pub(super) fn coverage_count(coverage: &cadmpeg_ir::Coverage, key: &str) -> usize {
+pub(super) fn coverage_count(coverage: &cadmpeg_ir::report::decode::Coverage, key: &str) -> usize {
     coverage.get(key).copied().unwrap_or(0)
 }
 
 pub(super) fn push_legacy_value_losses(
     losses: &mut Vec<LossNote>,
-    coverage: &cadmpeg_ir::Coverage,
+    coverage: &cadmpeg_ir::report::decode::Coverage,
 ) {
     let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
@@ -421,7 +421,7 @@ pub(super) fn push_brep_transfer_note(
 pub(super) fn push_carrier_transfer_notes(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,
-    coverage: &cadmpeg_ir::Coverage,
+    coverage: &cadmpeg_ir::report::decode::Coverage,
     container_only: bool,
     placed_plane_count: usize,
 ) {

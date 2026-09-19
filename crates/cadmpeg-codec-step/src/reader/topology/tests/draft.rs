@@ -5,7 +5,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::pcurve_uv;
-use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -28,7 +30,7 @@ fn surface_draft(id: &str) -> ModelDraft {
         .insert(Surface {
             id: SurfaceId::mint(id).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -79,7 +81,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
     let surface_id =
         SurfaceId::mint("step:data:surface#trimmed-endpoints").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -93,14 +95,14 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         source_object: None,
     });
     let pcurve = PcurveGeometry::Trimmed(
-        cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
             [
                 std::f64::consts::FRAC_PI_2,
                 5.0 * std::f64::consts::FRAC_PI_2,
             ],
             true,
             Box::new(PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::CirclePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(1.0, 0.0),
                     Point2::new(0.0, 1.0),
@@ -133,7 +135,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     let surface_id =
         SurfaceId::mint("step:data:surface#bounded-search-witness").expect("identity grammar");
     let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -151,7 +153,7 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     // exact point at pi is outside the default seed set, so the bounded
     // Newton loop cannot prove that the seed result is the global minimum.
     let pcurve = PcurveGeometry::PolarHarmonic(
-        cadmpeg_ir::geometry::PolarHarmonicPcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::PolarHarmonicPcurve::try_new(
             Point2::new(2.0, -1.0),
             Point2::new(0.0, 1.0),
             Point2::new(1.0, 0.0),
@@ -323,7 +325,7 @@ fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     );
     assert_eq!(
         admissions[0].strict_consequence(),
-        cadmpeg_ir::report::StrictConsequence::Tolerate
+        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
     );
 }
 
@@ -674,7 +676,7 @@ fn shared_surface_carrier_is_staged_once() {
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

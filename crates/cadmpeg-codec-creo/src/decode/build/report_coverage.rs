@@ -5,11 +5,11 @@ use crate::loss::CreoLossCode;
 
 use super::super::coverage::{constraint_kind_breakdown, surface_family, SURFACE_KINDS};
 use super::report_losses::coverage_count;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn push_coverage_drop_losses(
     losses: &mut Vec<LossNote>,
-    coverage: &cadmpeg_ir::Coverage,
+    coverage: &cadmpeg_ir::report::decode::Coverage,
 ) {
     let untransferred_surface_rows =
         coverage_count(coverage, "untransferred_visible_surface_row_count");

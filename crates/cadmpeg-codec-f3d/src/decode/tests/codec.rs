@@ -254,7 +254,7 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     };
     let mut control_points = nurbs.control_points();
     control_points[1].z = 4.5;
-    nurbs = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+    nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
@@ -606,7 +606,7 @@ fn decode_yields_metadata_and_honest_report() {
     assert!(result.report().error_count() >= 1);
     assert!(result.report().losses.iter().any(|l| matches!(
         l.code.category(),
-        cadmpeg_ir::report::LossCategory::Geometry
+        cadmpeg_ir::report::loss::LossCategory::Geometry
     )));
 
     let unknowns = result.ir().native_unknowns("f3d").unwrap();

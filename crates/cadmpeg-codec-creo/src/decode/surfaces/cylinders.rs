@@ -116,7 +116,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             continue;
         }
         let frame = datum.frame;
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
             Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
@@ -226,7 +226,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             continue;
         };
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
             Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
             Vector3::new(
@@ -469,7 +469,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         };
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
         let plane_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            match cadmpeg_ir::geometry::PlaneSurface::try_new(
+            match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                 normal,
                 cadmpeg_ir::geometry::derive_reference_direction(normal),
@@ -1147,7 +1147,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .find(|surface| surface.id == id)
                 {
                     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                        match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                             Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
                             Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                             Vector3::new(
@@ -1173,7 +1173,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             }
             continue;
         }
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::CylinderSurface::try_new(
+        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
             Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
@@ -1418,7 +1418,7 @@ pub(in super::super) fn transfer_positional_cones(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Ok(cone_surface) = cadmpeg_ir::geometry::ConeSurface::try_new(
+        let Ok(cone_surface) = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
             Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
             Vector3::new(
@@ -1552,7 +1552,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+        let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(normal[0], normal[1], normal[2]),
             Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
@@ -1596,7 +1596,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+        let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
             Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
             Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),

@@ -25,14 +25,14 @@ const HEX_DIGITS: [char; 16] = [
 ];
 
 /// Appends `byte` as two lowercase hexadecimal digits.
-pub fn push_hex(out: &mut String, byte: u8) {
+pub(super) fn push_hex(out: &mut String, byte: u8) {
     out.push(HEX_DIGITS[usize::from(byte >> 4)]);
     out.push(HEX_DIGITS[usize::from(byte & 0x0f)]);
 }
 
 /// A parse failure in a layout spec.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum LayoutError {
+pub(in crate::inspect) enum LayoutError {
     /// The whole spec was empty or whitespace.
     #[error("empty layout; expected fields such as `u32le:count,f64le:x`")]
     EmptySpec,
@@ -127,7 +127,7 @@ pub enum LayoutError {
 
 /// What one layout field reads out of the record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FieldKind {
+enum FieldKind {
     /// A fixed-width number in a stated byte order.
     Scalar(ScalarType, Endian),
     /// A run of raw bytes rendered as hexadecimal.
@@ -136,7 +136,7 @@ pub enum FieldKind {
 
 impl FieldKind {
     /// Returns how many bytes the field consumes.
-    pub const fn width(self) -> NonZeroUsize {
+    const fn width(self) -> NonZeroUsize {
         match self {
             Self::Scalar(ty, _) => ty.width(),
             Self::Bytes(count) => count,
@@ -161,7 +161,7 @@ impl Field {
 
 /// A parsed record layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Layout {
+pub(super) struct Layout {
     /// Fields in spec order, including `padN` runs.
     fields: Vec<Field>,
     /// Total record size, which every layout has at least one byte of.
@@ -177,7 +177,7 @@ impl Layout {
     /// token, a missing or forbidden byte-order suffix, a zero or unparsable
     /// `bytesN`/`padN` count, a name on a `padN` field, or a record whose total
     /// size overflows `usize`.
-    pub fn parse(spec: &str) -> Result<Self, LayoutError> {
+    pub(super) fn parse(spec: &str) -> Result<Self, LayoutError> {
         if spec.trim().is_empty() {
             return Err(LayoutError::EmptySpec);
         }
@@ -223,12 +223,12 @@ impl Layout {
     }
 
     /// Returns the total record size in bytes.
-    pub const fn size(&self) -> NonZeroUsize {
+    pub(super) const fn size(&self) -> NonZeroUsize {
         self.size
     }
 
     /// Splits `bytes` into whole records, dropping a trailing partial record.
-    pub fn split<'a>(&'a self, bytes: &'a [u8]) -> impl Iterator<Item = Record<'a>> {
+    pub(super) fn split<'a>(&'a self, bytes: &'a [u8]) -> impl Iterator<Item = Record<'a>> {
         bytes.chunks_exact(self.size.get()).map(|bytes| Record {
             layout: self,
             bytes,
@@ -236,7 +236,7 @@ impl Layout {
     }
 
     /// Returns the printable field names in layout order.
-    pub fn names(&self) -> impl Iterator<Item = &str> {
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> {
         self.fields.iter().filter_map(|field| match field {
             Field::Named { name, .. } => Some(name.as_str()),
             Field::Pad(_) => None,
@@ -254,14 +254,14 @@ impl Layout {
 
 /// One record-sized window of a byte buffer, paired with the layout that spans it.
 #[derive(Debug, Clone, Copy)]
-pub struct Record<'a> {
+pub(in crate::inspect) struct Record<'a> {
     layout: &'a Layout,
     bytes: &'a [u8],
 }
 
 impl<'a> Record<'a> {
     /// Returns the printable fields in layout order, dropping `padN` runs.
-    pub fn fields(&self) -> impl Iterator<Item = DecodedField<'a>> {
+    pub(super) fn fields(&self) -> impl Iterator<Item = DecodedField<'a>> {
         let bytes = self.bytes;
         self.layout
             .fields_with_offsets()
@@ -297,7 +297,7 @@ impl<'a> Record<'a> {
 
 /// A run of raw bytes covering at least one byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawBytes<'a> {
+pub(in crate::inspect) struct RawBytes<'a> {
     record: &'a [u8],
     offset: usize,
     count: NonZeroUsize,
@@ -305,19 +305,19 @@ pub struct RawBytes<'a> {
 
 impl<'a> RawBytes<'a> {
     /// Returns the field window within its admitted record.
-    pub fn as_slice(self) -> &'a [u8] {
+    fn as_slice(self) -> &'a [u8] {
         &self.record[self.offset..self.offset + self.count.get()]
     }
 
     /// Returns the nonzero width carried by the layout field.
-    pub const fn len(self) -> NonZeroUsize {
+    const fn len(self) -> NonZeroUsize {
         self.count
     }
 }
 
 /// The reading one decoded field carries.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DecodedValue<'a> {
+pub(super) enum DecodedValue<'a> {
     /// A number decoded in the byte order the layout states.
     Scalar {
         /// The decoded value, which names its own encoded type.
@@ -331,7 +331,7 @@ pub enum DecodedValue<'a> {
 
 /// One field of a decoded record, ready to print.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DecodedField<'a> {
+pub(in crate::inspect) struct DecodedField<'a> {
     name: &'a str,
     offset: usize,
     value: DecodedValue<'a>,
@@ -339,22 +339,22 @@ pub struct DecodedField<'a> {
 
 impl<'a> DecodedField<'a> {
     /// Returns the field name.
-    pub const fn name(&self) -> &'a str {
+    pub(super) const fn name(&self) -> &'a str {
         self.name
     }
 
     /// Returns the byte offset from the start of the record.
-    pub const fn offset(&self) -> usize {
+    pub(super) const fn offset(&self) -> usize {
         self.offset
     }
 
     /// Returns the reading the field carries.
-    pub const fn value(&self) -> DecodedValue<'a> {
+    pub(super) const fn value(&self) -> DecodedValue<'a> {
         self.value
     }
 
     /// Returns the type name including any byte-order suffix.
-    pub fn type_name(&self) -> String {
+    pub(super) fn type_name(&self) -> String {
         match self.value {
             DecodedValue::Scalar { value, endian } => value.ty().display_name(endian),
             DecodedValue::Bytes(raw) => format!("bytes{}", raw.len()),
@@ -362,7 +362,7 @@ impl<'a> DecodedField<'a> {
     }
 
     /// Returns the hexadecimal rendering of the encoded bytes.
-    pub fn hex(&self) -> String {
+    pub(super) fn hex(&self) -> String {
         match self.value {
             DecodedValue::Scalar { value, .. } => value.hex(),
             DecodedValue::Bytes(raw) => hex_bytes(raw.as_slice()),

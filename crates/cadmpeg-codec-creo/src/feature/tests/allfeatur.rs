@@ -901,8 +901,8 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 referenced configuration driver table(s) retain unresolved")

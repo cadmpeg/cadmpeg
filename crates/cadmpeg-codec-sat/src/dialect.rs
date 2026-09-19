@@ -40,7 +40,7 @@ use crate::{SAT_ACIS_BINARY, SAT_ASM_BINARY, SAT_TEXT};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{acis_header, asm_header, sat};
 use cadmpeg_core::dialect::{DialectId, DialectMatch};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 use crate::loss::SatLossCode;

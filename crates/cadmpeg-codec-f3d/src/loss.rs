@@ -13,7 +13,10 @@
 //! the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `f3d` namespace.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one Fusion `.f3d` transfer loss.
 ///

@@ -262,7 +262,7 @@ pub struct Provenance<Location> {
 /// Name of a container stream inside a source format.
 ///
 /// The empty string is not a stream name; the root stream is the absence of
-/// one. Build a compile-time name with [`stream_name!`].
+/// one. Build a compile-time name with [`crate::stream_name!`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct StreamName(std::borrow::Cow<'static, str>);

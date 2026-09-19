@@ -29,7 +29,7 @@ use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
 use crate::variant::Variant;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");

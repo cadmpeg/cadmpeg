@@ -6,8 +6,8 @@ use super::make_planar_nurbs_trimmed_face;
 use super::mixed_plane_nurbs_sheet;
 use super::polygon_sheet;
 use super::rectangular_nurbs_patch;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -25,7 +25,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     edge.set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -90,7 +90,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
                 .expect("projected NURBS C2");
             assert!(matches!(
                 pcurve.geometry,
-                cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
             ));
         }
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
@@ -103,7 +103,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     ir.model.edges[1].set_param_range(Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 2,
                 vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                 vec![
@@ -128,10 +128,10 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         if reversed {
             control_points.reverse();
         }
-        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
             id: id.clone(),
-            geometry: cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     2,
                     vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
                     control_points,
@@ -140,7 +140,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 )
                 .expect("valid explicit pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 Some(false),
                 Some([2.0, 5.0]),
                 Some(0.001),
@@ -183,7 +183,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 && pcurve.parameter_range() == Some([2.0, 5.0])
                 && matches!(
                     pcurve.geometry,
-                    cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+                    cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
                 )
         }));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
@@ -200,16 +200,16 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#mismatch"
         .try_into()
         .expect("valid identity");
-    ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 1.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
             None,
             ir.model.edges[0].param_range(),
             None,
@@ -250,16 +250,16 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         (first.clone(), cadmpeg_ir::math::Point2::new(0.0, 0.0)),
         (second.clone(), cadmpeg_ir::math::Point2::new(0.0, 1.0)),
     ] {
-        ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+        ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
             id,
-            geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+            geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     origin,
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some([0.0, 2.0]),
                 None,
@@ -302,16 +302,16 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
     let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#line"
         .try_into()
         .expect("valid identity");
-    ir.model.pcurves.push(cadmpeg_ir::geometry::Pcurve {
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
         id: id.clone(),
-        geometry: cadmpeg_ir::geometry::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
             None,
             Some([0.0, 2.0]),
             Some(0.002),
@@ -348,7 +348,7 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .find(|pcurve| pcurve.fit_tolerance() == Some(0.002))
             .expect("explicit line C2");
         assert_eq!(pcurve.parameter_range(), Some([0.0, 2.0]));
-        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
             panic!("line C2 must decode as NURBS");
         };
         assert_eq!(nurbs.degree(), 1);
@@ -485,7 +485,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             .expect("generated planar shared-edge pcurve");
         assert!(matches!(
             planar_shared_pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { .. }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
@@ -516,7 +516,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
     ];
     ir.model.curves[0].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 2,
                 vec![
                     domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -527,8 +527,8 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             )
             .expect("valid trimmed edge"),
         ));
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             2,
             vec![
                 domain[0], domain[0], domain[0], domain[1], domain[1], domain[1],
@@ -583,13 +583,14 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         Point3::new(2.0, 3.0, 0.0),
     ]);
     make_planar_nurbs_trimmed_face(&mut ir);
-    let cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve) = &mut ir.model.pcurves[0].geometry
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve) =
+        &mut ir.model.pcurves[0].geometry
     else {
         unreachable!()
     };
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
-    *line_pcurve = cadmpeg_ir::geometry::LinePcurve::try_new(
+    *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
         *origin,
         cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
     )
@@ -630,7 +631,7 @@ fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
 /// second time at the write site.
 #[test]
 fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
-    use cadmpeg_ir::geometry::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 
     let points = [
         Point3::new(0.0, 0.0, 0.0),

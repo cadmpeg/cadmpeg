@@ -738,8 +738,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         topology::entity_selection::DesignEntitySelectionFaceCandidate,
     };
     use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation, HoleKind, LinearTermination,
+        holes::HoleKind, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        FeatureInputTopology, FeatureOperation, LinearTermination,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -817,7 +817,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             profile_filter: None,
             face: Some(FaceSelection::Native(scope_id.into())),
             direction: None,
-            placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
+            placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -825,8 +825,8 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
                 ))
                 .unwrap(),
             }]),
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                 None,
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )

@@ -22,8 +22,8 @@ use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -524,7 +524,7 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
 #[test]
 fn analytic_line_range_uses_oriented_signed_distance() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 2.0)
                 .unit()
@@ -563,7 +563,7 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
 
     let tiny_direction = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         )
@@ -764,7 +764,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
 #[test]
 fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -798,7 +798,7 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
 
     let conflicting = CurvePlan {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1038,7 +1038,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         plan.pcurve_plan.get(&4),
         Some(&(
             PcurveGeometry::SphericalGreatCircle(
-                cadmpeg_ir::geometry::SphericalGreatCirclePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
                     0.0,
                     chart_scale.recip(),
                     0.0,
@@ -1259,7 +1259,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
         .findings
         .iter()
-        .filter(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder)
+        .filter(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
         .count();
     assert!(
         unsorted_arenas >= 6,
@@ -1341,10 +1341,10 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
 
 #[test]
 fn tensor_surface_contraction_preserves_exact_isocurve() {
-    let surface = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 2.0)],

@@ -5,7 +5,7 @@ use crate::vecmath::normalize;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -313,7 +313,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -327,7 +327,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -347,7 +347,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -385,7 +385,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 };
                 if radius1 == 0.0 {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                        match cadmpeg_ir::geometry::SphereSurface::try_new(
+                        match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                             point, axis, reference, radius2,
                         ) {
                             Ok(payload) => payload,
@@ -394,7 +394,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     ))
                 } else {
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                        match cadmpeg_ir::geometry::TorusSurface::try_new(
+                        match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                             point, axis, reference, radius1, radius2,
                         ) {
                             Ok(payload) => payload,
@@ -408,7 +408,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
                         Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
                         Vector3::new(
@@ -493,7 +493,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if scan.framing.layout != crate::container::Layout::Nd {
         return Ok(0);
@@ -625,7 +625,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     if !matches!(
         scan.framing.layout,
@@ -657,7 +657,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 u_axis,
             } if row.kind == crate::surface::SurfaceKind::Plane => {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(normal[0], normal[1], normal[2]),
                         Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
@@ -674,7 +674,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 radius,
             } if row.kind == crate::surface::SurfaceKind::Cylinder => {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    match cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -693,7 +693,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 ..
             } if row.kind == crate::surface::SurfaceKind::Cone => {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    match cadmpeg_ir::geometry::ConeSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         Point3::new(apex[0], apex[1], apex[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -714,7 +714,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 minor_radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    match cadmpeg_ir::geometry::TorusSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -733,7 +733,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    match cadmpeg_ir::geometry::SphereSurface::try_new(
+                    match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),

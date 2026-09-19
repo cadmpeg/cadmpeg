@@ -12,8 +12,8 @@ use crate::wire::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    knots_strictly_increasing, NurbsCurve, NurbsSurface, ProceduralSurfaceDefinition,
-    RollingBallJetDerivative, RollingBallJetSite,
+    nurbs::{knots_strictly_increasing, NurbsCurve, NurbsSurface},
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
@@ -1383,17 +1383,17 @@ pub(super) fn a8_surface_from_external_grid(
         identity: Some(header.object_id),
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     header.u_degree,
                     header.u_knots.expanded()?,
                     false,
                 ),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     header.v_degree,
                     header.v_knots.expanded()?,
                     false,
                 ),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     control_points
                         .clone()
                         .chunks(row_len)
@@ -1613,9 +1613,9 @@ fn a5_surface(
         identity: None,
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     control_points
                         .chunks(v_count as usize)
                         .map(<[_]>::to_vec)
@@ -1782,9 +1782,17 @@ fn a8_surface_from_parsed(
         identity: Some(object_id),
         geometry: crate::nurbs::note_refusal(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots.expanded()?, false),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots.expanded()?, false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    u_degree,
+                    u_knots.expanded()?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    v_degree,
+                    v_knots.expanded()?,
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     control_points
                         .chunks(v_count as usize)
                         .map(<[_]>::to_vec)

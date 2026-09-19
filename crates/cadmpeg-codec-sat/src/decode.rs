@@ -266,7 +266,7 @@ fn build_result(
             stats.unknown_surface_faces()
         )));
     }
-    let mut coverage = cadmpeg_ir::Coverage::default();
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
     coverage.record(
         crate::coverage::UNKNOWN_SURFACE_FACES,
@@ -275,7 +275,7 @@ fn build_result(
     let body = DecodeBody {
         coverage,
         losses,
-        ..DecodeBody::new(cadmpeg_ir::report::DecodeTransfer::full(
+        ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
             geometry_transferred,
         ))
     };

@@ -5,7 +5,7 @@
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -140,7 +140,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("line revolution writes");
         assert!(
             report.losses.iter().all(|loss| {
-                loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                loss.code.taxonomy()
+                    != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -276,9 +277,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let mut produced = Vec::new();
         let report = plan.write_to(&mut produced).expect("line extrusion writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -367,7 +367,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve");
     let source = super::super::source_pcurve(original.ir(), pcurve)
         .expect("procedural pcurve source-domain mapping");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
     assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
@@ -386,7 +386,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix pcurve without record bounds");
     let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
         .expect("derive the line carrier interval from its edge");
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
     assert!((nurbs.control_points()[0].u - 0.5).abs() < EPS_PCURVE_SOURCE_DOMAIN);
@@ -416,9 +416,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             .write_to(&mut produced)
             .expect("degree-zero output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -477,9 +476,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             .write_to(&mut produced)
             .expect("degree-zero surface output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );
@@ -559,7 +557,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
         assert!(
             report.losses.iter().all(|loss| {
                 loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
-                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                    && loss.code.taxonomy()
+                        != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -702,7 +701,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
         assert!(
             report.losses.iter().all(|loss| {
                 loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
-                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+                    && loss.code.taxonomy()
+                        != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
             }),
             "{version:?}: {:#?}",
             report.losses
@@ -828,9 +828,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             .write_to(&mut produced)
             .expect("placed NURBS Type 122 output writes");
         assert!(
-            report.losses.iter().all(
-                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
-            ),
+            report.losses.iter().all(|loss| loss.code.taxonomy()
+                != cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred),
             "{version:?}: {:#?}",
             report.losses
         );

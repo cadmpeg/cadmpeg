@@ -14,11 +14,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ChamferGroup, ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection,
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource,
-        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureResultTopology, FilletGroup, HoleKind, HolePlacement, LinearTermination,
-        ParameterValue, RadiusSpec,
+        edge_treatments::{ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
+        holes::{HoleKind, HolePlacement},
+        BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
+        ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, Feature,
+        FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
+        LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -1517,8 +1518,8 @@ fn project_hole(
                         ))?,
                         direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                     }]),
-                    shape: cadmpeg_ir::features::HoleShape::new(
-                        cadmpeg_ir::features::HoleConstruction::Form {
+                    shape: cadmpeg_ir::features::holes::HoleShape::new(
+                        cadmpeg_ir::features::holes::HoleConstruction::Form {
                             kind,
                             specification: None,
                         },
@@ -1796,9 +1797,10 @@ mod tests {
     use crate::record_identity::Located;
     use crate::test_support::test_fixtures::{content, parse};
     use cadmpeg_ir::features::{
-        BooleanOp, ChamferSpec, DesignParameter, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
-        FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
-        RadiusSpec,
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        holes::{HoleKind, HolePlacement},
+        BooleanOp, DesignParameter, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+        FeatureDefinition, FeatureOperation, LinearTermination,
     };
     use cadmpeg_ir::features::{ParameterId, ParameterValue};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -2700,7 +2702,7 @@ mod tests {
 
                 extent: Some(LinearTermination::ThroughAll {}),
                 ..
-            }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+            }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: HoleKind::CounterboreDrilled {
                         diameter: actual_diameter,
                         depth: actual_depth,

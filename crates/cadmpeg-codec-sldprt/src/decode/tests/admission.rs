@@ -108,7 +108,7 @@ fn strict_accepts_operator_requested_container_only() {
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use crate::loss::SldprtLossCode;
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
@@ -152,7 +152,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::StrictConsequence;
+    use cadmpeg_ir::report::loss::StrictConsequence;
 
     // The fixture declares a `swVersion` so this test keeps asserting what it
     // is about. A part that declares nothing classifies as `sldprt:unknown`

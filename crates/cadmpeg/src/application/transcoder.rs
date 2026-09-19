@@ -5,9 +5,9 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ExportPlan, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
@@ -19,17 +19,17 @@ use crate::application::validators::validate_ir;
 use crate::loader;
 
 /// Input path and decode options for one conversion.
-pub struct SourceRequest<'a> {
+pub(crate) struct SourceRequest<'a> {
     /// Path to the CADIR or native CAD file.
-    pub path: &'a Path,
+    pub(crate) path: &'a Path,
     /// Explicit input format selection.
-    pub forced: Option<ForcedInput>,
+    pub(crate) forced: Option<ForcedInput>,
     /// Decode options.
-    pub options: DecodeOptions,
+    pub(crate) options: DecodeOptions,
 }
 
 /// Output format with an encoder already constructed at the CLI boundary.
-pub struct ExportTarget {
+pub(crate) struct ExportTarget {
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
 }
@@ -41,23 +41,23 @@ pub struct ExportTarget {
 /// source. The encoder resolves explicit tokens, source-dependent
 /// preservation, and delivery during planning.
 #[derive(Debug, Clone)]
-pub struct TargetSelection {
+pub(crate) struct TargetSelection {
     /// Selected output format.
-    pub format: Format,
+    format: Format,
     /// Dialect token from `--to`, as a local id or catalog alias.
-    pub(crate) request: Option<String>,
+    request: Option<String>,
 }
 
 impl TargetSelection {
     /// Creates an owned output selection at the command-line boundary.
     #[must_use]
-    pub fn new(format: Format, request: Option<String>) -> Self {
+    fn new(format: Format, request: Option<String>) -> Self {
         Self { format, request }
     }
 
     /// Resolves the format half of the `--to` grammar against the output path.
     /// The encoder admits the dialect half during planning.
-    pub fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self, ApplicationError> {
+    pub(crate) fn resolve(to: Option<&str>, out: Option<&Path>) -> Result<Self, ApplicationError> {
         let inferred = format_from_path(out);
         Ok(match to {
             None => Self::new(
@@ -146,7 +146,7 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
 
 /// Which conversion losses refuse the conversion.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
-pub enum LossPolicy {
+pub(crate) enum LossPolicy {
     /// Permit losses at both phases.
     #[default]
     #[value(skip)]
@@ -165,20 +165,20 @@ pub enum LossPolicy {
 impl LossPolicy {
     /// Whether a decode loss refuses the conversion.
     #[must_use]
-    pub const fn rejects_decode(self) -> bool {
+    const fn rejects_decode(self) -> bool {
         matches!(self, Self::RejectDecode | Self::RejectAny)
     }
 
     /// Whether an export loss refuses the conversion.
     #[must_use]
-    pub const fn rejects_export(self) -> bool {
+    const fn rejects_export(self) -> bool {
         matches!(self, Self::RejectExport | Self::RejectAny)
     }
 }
 
 /// Destination and overwrite rules for a conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DestinationPolicy {
+pub(crate) enum DestinationPolicy {
     /// Write to standard output.
     Stdout {
         /// Permit a binary format on standard output.
@@ -192,9 +192,9 @@ pub enum DestinationPolicy {
 #[derive(Debug)]
 pub(crate) struct ConversionDestinations {
     /// Primary output destination.
-    pub destination: DestinationPolicy,
+    pub(crate) destination: DestinationPolicy,
     /// Optional command report output.
-    pub report: Option<FileDestination>,
+    pub(crate) report: Option<FileDestination>,
 }
 
 impl clap::Args for ConversionDestinations {
@@ -277,15 +277,15 @@ impl DestinationPolicy {
 
 /// Policy controlling the independent conversion phases.
 #[derive(Debug, Clone)]
-pub struct ConversionPolicy {
+pub(crate) struct ConversionPolicy {
     /// Decode and export loss refusal.
-    pub losses: LossPolicy,
+    pub(crate) losses: LossPolicy,
     /// Permit export when validation reports errors.
-    pub allow_errors: bool,
+    pub(crate) allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
-    pub allow_empty: bool,
+    pub(crate) allow_empty: bool,
     /// Output destination rules.
-    pub destination: DestinationPolicy,
+    pub(crate) destination: DestinationPolicy,
 }
 
 #[derive(Debug, Clone)]
@@ -304,11 +304,11 @@ impl ResolvedDestination {
 }
 
 /// A loaded and validated conversion ready for export planning.
-pub struct PreparedConversion {
+pub(crate) struct PreparedConversion {
     /// Loaded source document.
-    pub document: LoadedDocument,
+    pub(crate) document: LoadedDocument,
     /// Validation report.
-    pub validation: ValidationReport,
+    pub(crate) validation: ValidationReport,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     destination: ResolvedDestination,
@@ -321,7 +321,7 @@ pub struct PreparedConversion {
 /// respect to presentation and destination artifact writes; an explicitly
 /// requested command `--report` may still be written by the CLI after a
 /// loss/validation/empty-geometry refusal.
-pub fn prepare(
+pub(crate) fn prepare(
     inputs: &InputCatalog,
     source: &SourceRequest<'_>,
     target: ExportTarget,
@@ -384,7 +384,7 @@ pub fn prepare(
 
 impl PreparedConversion {
     /// Plans the export and applies the plan-time refusals.
-    pub fn plan(self) -> Result<PlannedConversion, ApplicationError> {
+    pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
@@ -418,7 +418,7 @@ impl PreparedConversion {
 }
 
 /// One planned export and the source state from which it was produced.
-pub struct PlannedConversion {
+pub(crate) struct PlannedConversion {
     plan: ExportPlan,
     prepared: PreparedConversion,
 }
@@ -426,12 +426,12 @@ pub struct PlannedConversion {
 impl PlannedConversion {
     /// Returns the loaded source state retained for reporting.
     #[must_use]
-    pub const fn prepared(&self) -> &PreparedConversion {
+    pub(crate) const fn prepared(&self) -> &PreparedConversion {
         &self.prepared
     }
 
     /// Writes the destination artifact and optional CADIR sidecar.
-    pub fn write(self) -> AnyResult<ExportEmission> {
+    pub(crate) fn write(self) -> AnyResult<ExportEmission> {
         emit_export_plan(
             self.plan,
             self.prepared.selection.format,
@@ -553,7 +553,7 @@ pub(crate) fn emit_export_plan(
 /// `convert a.step -o b.step --reject-lossy=export` into an explicit AP214
 /// request, silently rewriting the schema of a file the caller only asked to
 /// check for losses.
-pub fn export_target(selection: TargetSelection) -> ExportTarget {
+pub(crate) fn export_target(selection: TargetSelection) -> ExportTarget {
     let encoder = cadmpeg_registry::build_encoder(selection.format);
     ExportTarget { encoder, selection }
 }

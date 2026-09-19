@@ -337,15 +337,15 @@ fn generated_sweep_sections_round_trip_and_validate() {
 #[test]
 fn full_round_fillet_keeps_automatic_side_semantics() {
     use crate::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        FullRoundSideSelection,
+        edge_treatments::FullRoundSideSelection, FaceSelection, Feature, FeatureDefinition,
+        FeatureId, FeatureOperation,
     };
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let center = ir.model.faces[0].id.clone();
     let definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
         groups: crate::features::NonEmptyMembers::one(
-            crate::features::FullRoundFilletGroup::new(
+            crate::features::edge_treatments::FullRoundFilletGroup::new(
                 FaceSelection::Faces(vec![center.clone()]),
                 FullRoundSideSelection::Automatic,
                 FullRoundSideSelection::Automatic,
@@ -380,7 +380,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
                 && finding.message == "full-round fillet face sets are invalid"
         }));
 
-    assert!(crate::features::FullRoundFilletGroup::new(
+    assert!(crate::features::edge_treatments::FullRoundFilletGroup::new(
         FaceSelection::Faces(vec![center.clone()]),
         FullRoundSideSelection::Explicit(FaceSelection::Faces(vec![center])),
         FullRoundSideSelection::Automatic,
@@ -415,7 +415,10 @@ fn flex_modes_round_trip_and_validate() {
 
 #[test]
 fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
-    use crate::features::{FlexMode, HoleKind, PartialPair};
+    use crate::features::{
+        holes::{HoleKind, PartialPair},
+        FlexMode,
+    };
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
@@ -443,7 +446,7 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
 
 #[test]
 fn an_unresolved_hole_wire_keeps_its_form_and_carries_no_dimensions() {
-    use crate::features::{HoleForm, HoleKind};
+    use crate::features::holes::{HoleForm, HoleKind};
 
     let unresolved = serde_json::json!({"kind": "unresolved", "form": "counterbore"});
     let kind: HoleKind = serde_json::from_value(unresolved.clone()).unwrap();
@@ -478,7 +481,8 @@ fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
 #[test]
 fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
     use crate::features::{
-        FeatureDefinition, FeatureOperation, HoleConstruction, HoleKind, HoleSpecification,
+        holes::{HoleConstruction, HoleKind, HoleSpecification},
+        FeatureDefinition, FeatureOperation,
     };
 
     let standard = serde_json::json!({
@@ -532,7 +536,7 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
 
 #[test]
 fn unit_hole_wire_variants_reject_an_unknown_key_by_name() {
-    use crate::features::{HoleBottom, HoleKind, HoleThreadDepth};
+    use crate::features::holes::{HoleBottom, HoleKind, HoleThreadDepth};
 
     fn round_trips_and_rejects_unknown_keys<T>(wire: serde_json::Value)
     where
@@ -586,7 +590,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
 #[test]
 fn hole_wire_rejects_cross_form_thread_fields() {
-    use crate::features::{FeatureDefinition, HoleSpecification};
+    use crate::features::{holes::HoleSpecification, FeatureDefinition};
 
     let specification = |kind| {
         serde_json::json!({
@@ -1068,7 +1072,10 @@ fn sweep_mode_spells_new_body_once_and_refuses_a_key_beside_op() {
 /// IR, so a dimension beside it is refused by name.
 #[test]
 fn an_unresolved_form_refuses_a_dimension_beside_it() {
-    use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
+    use crate::features::{
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        patterns::PatternKind,
+    };
 
     let error = serde_json::from_value::<RadiusSpec>(
         serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
@@ -1094,7 +1101,10 @@ fn an_unresolved_form_refuses_a_dimension_beside_it() {
 
 #[test]
 fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
-    use crate::features::{ChamferSpec, PatternKind, RadiusSpec};
+    use crate::features::{
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        patterns::PatternKind,
+    };
 
     for (wire, expected) in [
         (
@@ -1104,13 +1114,13 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         (
             serde_json::json!({"kind": "unresolved", "form": "constant"}),
             RadiusSpec::Unresolved {
-                form: Some(crate::features::RadiusForm::Constant),
+                form: Some(crate::features::edge_treatments::RadiusForm::Constant),
             },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "variable"}),
             RadiusSpec::Unresolved {
-                form: Some(crate::features::RadiusForm::Variable),
+                form: Some(crate::features::edge_treatments::RadiusForm::Variable),
             },
         ),
     ] {
@@ -1129,13 +1139,13 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
         (
             serde_json::json!({"kind": "unresolved", "form": "distance"}),
             ChamferSpec::Unresolved {
-                form: Some(crate::features::ChamferForm::Distance),
+                form: Some(crate::features::edge_treatments::ChamferForm::Distance),
             },
         ),
         (
             serde_json::json!({"kind": "unresolved", "form": "distance_angle"}),
             ChamferSpec::Unresolved {
-                form: Some(crate::features::ChamferForm::DistanceAngle),
+                form: Some(crate::features::edge_treatments::ChamferForm::DistanceAngle),
             },
         ),
     ] {
@@ -1170,7 +1180,7 @@ fn unresolved_feature_forms_preserve_the_legacy_wire_shape() {
 
 #[test]
 fn an_unknown_hole_wire_key_is_rejected_by_name() {
-    use crate::features::{HoleKind, HoleShape, HoleSpecification};
+    use crate::features::holes::{HoleKind, HoleShape, HoleSpecification};
 
     let error = serde_json::from_value::<HoleKind>(serde_json::json!({
         "kind": "partial_counterbore",
@@ -1230,7 +1240,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
 
 #[test]
 fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
-    use crate::features::{HoleKind, PartialPair};
+    use crate::features::holes::{HoleKind, PartialPair};
 
     let diameter = crate::scalar::PositiveLength::new(10.0).unwrap();
     let depth = crate::scalar::PositiveLength::new(4.0).unwrap();
@@ -1274,7 +1284,7 @@ fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
 
 #[test]
 fn a_partial_hole_dimension_carries_exactly_one_measurement() {
-    use crate::features::HoleKind;
+    use crate::features::holes::HoleKind;
 
     for (wire, rejected) in [
         (

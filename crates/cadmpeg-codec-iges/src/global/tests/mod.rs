@@ -50,7 +50,7 @@ fn valid_global_fields() -> Vec<String> {
 
 type ParsedGlobal = (
     crate::global::ResolvedGlobal,
-    Vec<cadmpeg_ir::report::LossNote>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
 );
 
 fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
@@ -60,14 +60,17 @@ fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
     crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap()
 }
 
-fn code_count(losses: &[cadmpeg_ir::report::LossNote], code: IgesLossCode) -> usize {
+fn code_count(losses: &[cadmpeg_ir::report::loss::LossNote], code: IgesLossCode) -> usize {
     losses
         .iter()
         .filter(|loss| loss.code == code.kind())
         .count()
 }
 
-fn report_code_count(report: &cadmpeg_ir::report::DecodeReport, code: IgesLossCode) -> usize {
+fn report_code_count(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+    code: IgesLossCode,
+) -> usize {
     code_count(&report.losses, code)
 }
 

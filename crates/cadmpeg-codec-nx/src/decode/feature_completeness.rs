@@ -414,20 +414,22 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     let exit_kind = shape.exit_kind();
     let diameter = shape.diameter();
     let construction_incomplete = match construction {
-        cadmpeg_ir::features::HoleConstruction::Form { kind, .. } => hole_feature_is_incomplete(
-            profile.as_ref(),
-            face.as_ref(),
-            placements.as_deref(),
-            (kind, exit_kind.as_ref()),
-            diameter.map(Into::into),
-            extent.as_ref(),
-        ),
-        cadmpeg_ir::features::HoleConstruction::NativeThread {
+        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
+            hole_feature_is_incomplete(
+                profile.as_ref(),
+                face.as_ref(),
+                placements.as_deref(),
+                (kind, exit_kind.as_ref()),
+                diameter.map(Into::into),
+                extent.as_ref(),
+            )
+        }
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
             major_diameter,
             drill_point_angle,
             ..
         } => {
-            let kind = cadmpeg_ir::features::HoleKind::SimpleDrilled {
+            let kind = cadmpeg_ir::features::holes::HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
             };
             hole_feature_is_incomplete(

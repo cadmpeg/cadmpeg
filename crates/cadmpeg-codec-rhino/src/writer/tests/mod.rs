@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writer unit tests.
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -161,7 +161,7 @@ pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
     ir.model.surfaces.push(Surface {
         id: surface,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 points[0],
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -191,7 +191,8 @@ pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(points[index], direction).unwrap(),
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(points[index], direction)
+                    .unwrap(),
             )),
             source_object: None,
         });
@@ -296,7 +297,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     points[index],
                     Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                 )
@@ -436,7 +437,7 @@ pub(super) fn adjacent_quad_sheet() -> CadIr {
         ir.model.surfaces.push(Surface {
             id: surface_ids[index].clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     positions[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -483,7 +484,7 @@ pub(super) fn adjacent_quad_sheet() -> CadIr {
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(
                         positions[start].x - 2.0 * delta.x,
                         positions[start].y - 2.0 * delta.y,
@@ -660,7 +661,7 @@ fn planar_tetrahedron() -> CadIr {
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(
                         positions[start].x - 2.0 * direction.x,
                         positions[start].y - 2.0 * direction.y,
@@ -743,7 +744,7 @@ fn planar_tetrahedron() -> CadIr {
         ir.model.surfaces.push(Surface {
             id: surface_ids[face].clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     positions[face_uses[face][0].0],
                     planes[face].0,
                     planes[face].1,
@@ -783,8 +784,9 @@ fn planar_tetrahedron() -> CadIr {
 
 fn rectangular_nurbs_patch() -> CadIr {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
+        nurbs::{NurbsCurve, NurbsSurface},
+        pcurve::{Pcurve, PcurveGeometry},
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     let points = [
@@ -796,9 +798,13 @@ fn rectangular_nurbs_patch() -> CadIr {
     let mut ir = polygon_sheet(&points);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![7.0, 7.0, 11.0, 11.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![vec![points[0], points[3]], vec![points[1], points[2]]],
                 Some(vec![1.0, 0.8, 1.2, 1.0])
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
@@ -857,9 +863,9 @@ fn rectangular_nurbs_patch() -> CadIr {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.001),
@@ -878,8 +884,9 @@ fn rectangular_nurbs_patch() -> CadIr {
 
 fn mixed_plane_nurbs_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
+        nurbs::{NurbsCurve, NurbsSurface},
+        pcurve::{Pcurve, PcurveGeometry},
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     let mut ir = adjacent_quad_sheet();
@@ -891,9 +898,13 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
     ];
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![7.0, 7.0, 11.0, 11.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![7.0, 7.0, 11.0, 11.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![vec![points[0], points[3]], vec![points[1], points[2]]],
                 Some(vec![1.0, 0.8, 1.2, 1.0])
                     .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
@@ -952,9 +963,9 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.001),
@@ -973,14 +984,16 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
 
 fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     use cadmpeg_ir::geometry::{
-        NurbsSurface, Pcurve, PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+        nurbs::NurbsSurface,
+        pcurve::{Pcurve, PcurveGeometry},
+        SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 4.0, 4.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 4.0, 0.0)],
                     vec![Point3::new(4.0, 0.0, 0.0), Point3::new(4.0, 4.0, 0.0)],
@@ -1028,9 +1041,9 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
         ir.model.pcurves.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).unwrap(),
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some(domain),
                 Some(0.0001),

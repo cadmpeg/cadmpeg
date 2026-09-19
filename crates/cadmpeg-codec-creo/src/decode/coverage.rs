@@ -323,7 +323,10 @@ pub(super) fn design_constraint_transfer_coverage(
         )
 }
 
-pub(super) fn constraint_kind_breakdown(coverage: &cadmpeg_ir::Coverage, prefix: &str) -> String {
+pub(super) fn constraint_kind_breakdown(
+    coverage: &cadmpeg_ir::report::decode::Coverage,
+    prefix: &str,
+) -> String {
     coverage
         .iter()
         .filter_map(|(key, count)| {

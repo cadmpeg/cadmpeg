@@ -2,7 +2,9 @@
 //! STEP target resolution and export reporting.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
+use cadmpeg_ir::codec::write::{
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, WritePath,
+};
 
 use crate::export::write_step_outcome;
 use crate::loss::StepLossCode;

@@ -256,7 +256,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            crate::geometry::PlaneSurface::try_new(
+            crate::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

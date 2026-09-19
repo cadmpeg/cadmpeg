@@ -829,7 +829,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
             id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(19.5, y, z),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),

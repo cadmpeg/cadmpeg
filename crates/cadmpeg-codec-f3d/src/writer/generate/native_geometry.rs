@@ -4,9 +4,10 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface,
-    PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
+    pcurve::{PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles},
+    BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -3383,7 +3384,7 @@ fn native_radius_function_pcurve_block(
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
@@ -4627,7 +4628,7 @@ mod native_interval_curve_tests {
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
         let curve = native_interval_curve(
             &SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(2.0, 3.0, 4.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4660,7 +4661,7 @@ mod native_interval_curve_tests {
     #[test]
     fn the_shortest_admitted_conic_range_states_one_span() {
         let circle = SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4686,7 +4687,7 @@ mod native_interval_curve_tests {
     fn generated_ellipse_interval_preserves_both_radii() {
         let curve = native_interval_curve(
             &SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     Point3::new(-1.0, 2.0, 0.5),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4718,7 +4719,7 @@ mod native_interval_curve_tests {
     #[test]
     fn generated_domainless_circle_uses_its_full_natural_domain() {
         let geometry = SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4737,7 +4738,7 @@ mod native_interval_curve_tests {
     #[test]
     fn generated_domainless_line_remains_rejected() {
         let geometry = SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -4748,10 +4749,10 @@ mod native_interval_curve_tests {
 
     #[test]
     fn source_less_sweep_refuses_unallocatable_conic_intervals_before_writing() {
-        use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
-        use cadmpeg_ir::geometry::{CircleCurve, SweepSurfaceLayout};
+        use cadmpeg_ir::geometry::{analytic::CircleCurve, SweepSurfaceLayout};
         use std::io::Cursor;
 
         let decoded = crate::F3dCodec
@@ -5907,7 +5908,7 @@ fn native_support_pcurve_for_range(
 mod pcurve_chart_tests {
     use super::native_support_pcurve;
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -5915,7 +5916,7 @@ mod pcurve_chart_tests {
     fn generated_spring_refuses_overflowing_pcurve_poles_before_writing() {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         use cadmpeg_ir::geometry::{
-            LinePcurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve,
+            pcurve::LinePcurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve,
         };
         use std::io::Cursor;
 
@@ -5970,7 +5971,7 @@ mod pcurve_chart_tests {
     fn cone_writer_inverts_signed_axial_projection() {
         for half_angle in [0.5_f64, -0.5] {
             let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -5981,7 +5982,7 @@ mod pcurve_chart_tests {
                 .unwrap(),
             ));
             let pcurve = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(1.25, 15.0), Point2::new(2.5, -3.0)],
@@ -6386,7 +6387,7 @@ fn native_revision_surface_tail<F: Default>(
     bytes: &mut Vec<u8>,
     carrier: &str,
     form: &cadmpeg_ir::geometry::RevisionSurfaceForm<F>,
-    solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
+    solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
 ) -> Result<(), CodecError> {
     native_revision_tail_head(bytes, carrier, &form.cache, solved_cache)?;
     native_revision_tail_discontinuities(bytes, &form.discontinuities)?;
@@ -6424,7 +6425,7 @@ fn native_revision_tail_head(
     bytes: &mut Vec<u8>,
     carrier: &str,
     cache: &cadmpeg_ir::geometry::RevisionCacheForm,
-    solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
+    solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
 ) -> Result<(), CodecError> {
     match cache {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
@@ -6462,7 +6463,7 @@ fn native_revision_tail_head(
 fn native_variable_blend_revision_tail_head(
     bytes: &mut Vec<u8>,
     cache: &cadmpeg_ir::geometry::VariableBlendCache,
-    solved_cache: Option<&cadmpeg_ir::geometry::NurbsSurface>,
+    solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsSurface>,
 ) -> Result<(), CodecError> {
     match cache {
         cadmpeg_ir::geometry::VariableBlendCache::Current { fit_tolerance, .. } => {
@@ -6532,7 +6533,7 @@ fn native_cache_first_curve_context(
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
     form: &cadmpeg_ir::geometry::CacheFirstCurveForm,
-    solved_cache: Option<&cadmpeg_ir::geometry::NurbsCurve>,
+    solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve>,
 ) -> Result<(), CodecError> {
     if form.revision <= 0 {
         return Err(CodecError::Malformed(

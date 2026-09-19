@@ -5,14 +5,18 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::features::{
+    patterns::{PatternKind, PatternSeed, PatternTransform},
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    PatternKind, PatternSeed, PatternTransform, SplitFaceTool, UnresolvedFamily,
+    SplitFaceTool, UnresolvedFamily,
 };
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 use crate::topology::Coedge;
 
 fn collect_pattern_paths<'a>(
@@ -34,7 +38,7 @@ fn collect_pattern_paths<'a>(
 
 /// A composite stage applies one transform, so its paths do not recurse.
 fn collect_stage_pattern_paths<'a>(
-    pattern: &'a crate::features::StagePatternKind,
+    pattern: &'a crate::features::patterns::StagePatternKind,
     paths: &mut Vec<&'a crate::features::PathRef>,
 ) {
     if let PatternTransform::CurveDriven {
@@ -2479,7 +2483,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 for group in groups {
                     face_selections.push(group.center_faces());
                     for side in [group.side_one_faces(), group.side_two_faces()] {
-                        if let crate::features::FullRoundSideSelection::Explicit(selection) = side {
+                        if let crate::features::edge_treatments::FullRoundSideSelection::Explicit(
+                            selection,
+                        ) = side
+                        {
                             face_selections.push(selection);
                         }
                     }
@@ -3664,10 +3671,10 @@ fn regeneration_references(
         }
         crate::features::FeatureOperation::Pattern { seeds, .. } => {
             references.extend(seeds.iter().filter_map(|seed| match seed {
-                crate::features::PatternSeed::Feature(feature) => Some(feature),
-                crate::features::PatternSeed::Faces(_)
-                | crate::features::PatternSeed::Bodies(_)
-                | crate::features::PatternSeed::Occurrences(_) => None,
+                crate::features::patterns::PatternSeed::Feature(feature) => Some(feature),
+                crate::features::patterns::PatternSeed::Faces(_)
+                | crate::features::patterns::PatternSeed::Bodies(_)
+                | crate::features::patterns::PatternSeed::Occurrences(_) => None,
             }));
         }
         _ => {}

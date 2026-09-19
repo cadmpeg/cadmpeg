@@ -3,7 +3,7 @@
 //!
 //! Carriers are stored in their own arenas and referenced by id from the
 //! topology graph (a face references a [`Surface`], an edge a [`Curve`], a
-//! coedge a [`Pcurve`]). One carrier may therefore support several topological
+//! coedge a [`pcurve::Pcurve`]). One carrier may therefore support several topological
 //! entities.
 
 use crate::features::{FinitePoint3, FiniteVector3};
@@ -17,6 +17,18 @@ use crate::units::FiniteVector;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
+
+pub mod analytic;
+pub mod nurbs;
+pub mod pcurve;
+pub mod sampled;
+use analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, HyperbolaCurve,
+    LineCurve, ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
+};
+use nurbs::{NurbsCurve, NurbsSurface};
+use pcurve::PcurveGeometry;
+use sampled::{PolygonalSurface, PolylineCurve};
 
 /// Checked procedural curve payloads.
 pub mod curve_payloads;
@@ -72,20 +84,6 @@ pub enum OffsetExtension {
         form: RevisionSurfaceForm<[bool; 4]>,
     },
 }
-
-mod carriers;
-pub use carriers::{
-    knots_nondecreasing, knots_strictly_increasing, BsplineSurface, CircleCurve, CirclePcurve,
-    ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, EllipsePcurve,
-    GeometryLayoutError, HarmonicPcurve, HyperbolaCurve, HyperbolaPcurve, HyperbolicPcurve,
-    LineCurve, LinePcurve, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsPoles3, NurbsSurface,
-    NurbsSurfaceAxis, NurbsSurfaceLanes, OffsetPcurve, ParabolaCurve, ParabolaPcurve, Pcurve,
-    PcurveGeneralForm, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs,
-    PcurveNurbsPoles, PlaneSurface, PolarHarmonicPcurve, PolarNurbsPole, PolarNurbsPoles,
-    PolarPcurveNurbs, PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
-    SphereSurface, SphericalGreatCirclePcurve, SurfaceParameterAxis, TorusSurface, TrimmedPcurve,
-    WeightedPolarNurbsPole, WeightedPole2, WeightedPole3,
-};
 
 /// Analytic, NURBS, or opaque surface geometry established without a
 /// construction.

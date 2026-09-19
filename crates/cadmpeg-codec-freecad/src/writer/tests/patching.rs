@@ -9,7 +9,7 @@ use crate::test_support::test_archive::CORE_DESIGN_PRODUCT;
 use crate::writer::{serialize_property, serialize_value};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::{EncodeInput, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 

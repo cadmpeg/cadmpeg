@@ -5,7 +5,7 @@ use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Value {

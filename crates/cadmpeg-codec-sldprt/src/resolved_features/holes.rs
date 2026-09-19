@@ -26,7 +26,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use cadmpeg_ir::{
     features::{
-        FeatureDefinition, FeatureOperation, HoleBottom, HoleKind, HolePlacement, LinearTermination,
+        holes::{HoleBottom, HoleKind, HolePlacement},
+        FeatureDefinition, FeatureOperation, LinearTermination,
     },
     scalar::Length,
 };
@@ -877,13 +878,16 @@ fn profiled_hole_construction_with_evidence(
                                 diameter: cadmpeg_ir::scalar::PositiveLength::new(*diameter)?,
                                 extent: LinearTermination::ThroughAll {},
                                 kind: HoleKind::Counterdrill {
-                                    diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
-                                        cadmpeg_ir::scalar::PositiveLength::new(*recess_diameter)?,
-                                        Some(cadmpeg_ir::scalar::PositiveLength::new(
-                                            *entry_diameter,
-                                        )?),
-                                    )
-                                    .ok()?,
+                                    diameters:
+                                        cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+                                            cadmpeg_ir::scalar::PositiveLength::new(
+                                                *recess_diameter,
+                                            )?,
+                                            Some(cadmpeg_ir::scalar::PositiveLength::new(
+                                                *entry_diameter,
+                                            )?),
+                                        )
+                                        .ok()?,
 
                                     depth: cadmpeg_ir::scalar::PositiveLength::new(*recess_depth)?,
                                     angle: cadmpeg_ir::scalar::InteriorAngle::new(*entry_angle)?,
@@ -1137,19 +1141,20 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut ownership_histories = enriched_histories.clone();
     enrich_history_hole_constructions(&mut ownership_histories, lanes);
     let histories = enriched_histories.as_slice();
-    let incomplete = |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
-                      extent: &Option<LinearTermination>,
-                      construction: &cadmpeg_ir::features::HoleConstruction| {
-        diameter.is_none()
-            || extent
-                .as_ref()
-                .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
-            || matches!(
-                construction,
-                cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
-                    if kind.is_unresolved()
-            )
-    };
+    let incomplete =
+        |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
+         extent: &Option<LinearTermination>,
+         construction: &cadmpeg_ir::features::holes::HoleConstruction| {
+            diameter.is_none()
+                || extent
+                    .as_ref()
+                    .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
+                || matches!(
+                    construction,
+                    cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
+                        if kind.is_unresolved()
+                )
+        };
     let complete_native_holes = features
         .iter()
         .filter_map(|feature| {
@@ -1361,12 +1366,14 @@ pub(crate) fn project_profiled_hole_constructions(
                     *diameter = Some(construction.diameter);
                     *extent = Some(construction.extent);
                     match hole_construction {
-                        cadmpeg_ir::features::HoleConstruction::Form { kind, .. } => {
+                        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
                             *kind = construction.kind;
                         }
-                        cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+                        cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
                             *hole_construction =
-                                cadmpeg_ir::features::HoleConstruction::form(construction.kind);
+                                cadmpeg_ir::features::holes::HoleConstruction::form(
+                                    construction.kind,
+                                );
                         }
                     }
                     *bottom = construction.bottom;
@@ -2254,7 +2261,7 @@ fn project_flat_blind_topology_axes(
                 ..
             }) => match (shape.construction(), &shape.diameter()) {
                 (
-                    cadmpeg_ir::features::HoleConstruction::Form {
+                    cadmpeg_ir::features::holes::HoleConstruction::Form {
                         kind: HoleKind::Simple,
                         ..
                     },
@@ -2315,7 +2322,7 @@ fn project_drilled_hole_topology_axes(
                 ..
             }) => match (shape.construction(), &shape.diameter()) {
                 (
-                    cadmpeg_ir::features::HoleConstruction::Form {
+                    cadmpeg_ir::features::holes::HoleConstruction::Form {
                         kind: HoleKind::SimpleDrilled { drill_point_angle },
                         ..
                     },
@@ -2429,7 +2436,7 @@ fn expand_seeded_drilled_hole_topology_axes(
         else {
             continue;
         };
-        let cadmpeg_ir::features::HoleConstruction::Form {
+        let cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::SimpleDrilled { drill_point_angle },
             ..
         } = shape.construction()
@@ -2651,7 +2658,7 @@ fn counterbore_topology_candidates(
     let Some(diameter) = &shape.diameter() else {
         return None;
     };
-    let cadmpeg_ir::features::HoleConstruction::Form {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form {
         kind:
             HoleKind::Counterbore {
                 diameter: counterbore_diameter,

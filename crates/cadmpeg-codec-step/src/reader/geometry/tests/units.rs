@@ -20,7 +20,7 @@ const DECLARED_CONTEXT_UNCERTAINTY_MM: f64 = 1.0e-7;
 /// Assert one ambiguous linear-uncertainty note that names `values` in
 /// ascending order and the kept `default_linear`.
 fn assert_ambiguous_length_uncertainty(
-    losses: &[cadmpeg_ir::report::LossNote],
+    losses: &[cadmpeg_ir::report::loss::LossNote],
     values: &[f64],
     default_linear: f64,
 ) {
@@ -29,7 +29,7 @@ fn assert_ambiguous_length_uncertainty(
         .filter(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind())
         .collect::<Vec<_>>();
     assert_eq!(ambiguous.len(), 1, "{losses:#?}");
-    assert_eq!(ambiguous[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(ambiguous[0].severity, cadmpeg_ir::report::Severity::Warning);
     // The note names each distinct candidate the file declares and the
     // substituted default.
     let listed = values
@@ -71,7 +71,7 @@ fn unresolvable_length_unit_reports_an_error_loss() {
         })
         .expect("unresolved length unit loss");
     assert_eq!(loss.code, StepLossCode::DocumentLengthUnitUnresolved.kind());
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Error);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert_eq!(
         loss.message,
         "the document length unit did not resolve; coordinates are unscaled and reported as millimetres"
@@ -443,7 +443,7 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
         validation
             .findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::CarrierReachability),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::CarrierReachability),
         "{:#?}",
         validation.findings
     );

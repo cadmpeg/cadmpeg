@@ -12,8 +12,8 @@ use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, Pcurve, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    pcurve::{Pcurve, PcurveGeometry},
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -57,7 +57,7 @@ pub(in super::super) fn add_extrusion_pcurve(
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
             None,
             Some(parameter_range),
             None,

@@ -9,7 +9,8 @@ use crate::nurbs::proc_surface::{
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -86,7 +87,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
             let u_axis = unit(*c.vectors.get(1)?);
             Some((
                 SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         scale_point(origin),
                         normal,
                         u_axis,
@@ -117,7 +118,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
             if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
                     SolvedSurfaceGeometry::Cylinder(
-                        cadmpeg_ir::geometry::CylinderSurface::try_new(
+                        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                             scale_point(origin),
                             axis,
                             ref_direction,
@@ -139,7 +140,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
                 };
                 Some((
                     SolvedSurfaceGeometry::Cone(
-                        cadmpeg_ir::geometry::ConeSurface::try_new(
+                        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                             scale_point(origin),
                             axis,
                             ref_direction,
@@ -159,7 +160,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
             let polar_axis = unit(*c.vectors.get(1)?);
             Some((
                 SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         scale_point(origin),
                         polar_axis,
                         equator,
@@ -178,7 +179,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
             let minor = *c.doubles.get(1)?;
             Some((
                 SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         scale_point(origin),
                         axis,
                         ref_direction,
@@ -355,7 +356,7 @@ pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
 /// carrier's knot domain. The full knot domain is the final fallback.
 pub(crate) fn pcurve_ranges_on_domain(
-    candidate: &cadmpeg_ir::geometry::PcurveNurbs,
+    candidate: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
     let (&first, &last) = (candidate.knots().first()?, candidate.knots().last()?);
@@ -394,7 +395,7 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let base = *carrier.positions.first()?;
     match rec.head() {
         "straight" => Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 scale_point(base),
                 unit(*carrier.vectors.first()?),
             )
@@ -407,7 +408,7 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
             let major_radius = norm3(reference) * LEN_TO_MM;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         scale_point(base),
                         unit(axis),
                         unit(reference),
@@ -417,7 +418,7 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
                 )))
             } else {
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         scale_point(base),
                         unit(axis),
                         unit(reference),
@@ -429,7 +430,7 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
             }
         }
         "degenerate_curve" => Some(CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::DegenerateCurve::try_new(scale_point(base)).ok()?,
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(scale_point(base)).ok()?,
         ))),
         _ => None,
     }
@@ -597,8 +598,13 @@ pub(crate) fn analytic_procedural_surface(
                 return None;
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(center, axis, ref_direction, radius)
-                    .ok()?,
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    center,
+                    axis,
+                    ref_direction,
+                    radius,
+                )
+                .ok()?,
             )))
         }
         DecodedProceduralSurfaceDefinition::Blend {
@@ -615,7 +621,7 @@ pub(crate) fn analytic_procedural_surface(
 fn analytic_rolling_ball_surface(
     supports: &[Option<SurfaceGeometry>; 2],
     native: Option<&EmbeddedRollingBall>,
-    spine: &cadmpeg_ir::geometry::NurbsCurve,
+    spine: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     signed_radius: f64,
 ) -> Option<SurfaceGeometry> {
     let radius = signed_radius.abs();
@@ -674,7 +680,7 @@ fn analytic_rolling_ball_surface(
             }
         }
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 origin,
                 axis,
                 cadmpeg_ir::geometry::derive_reference_direction(axis),
@@ -741,7 +747,7 @@ fn analytic_rolling_ball_surface(
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             center,
             axis,
             ref_direction,
@@ -752,7 +758,9 @@ fn analytic_rolling_ball_surface(
     )))
 }
 
-fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point3, Vector3)> {
+fn linear_nurbs_spine(
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Option<(Point3, Vector3)> {
     if curve.degree() == 0
         || curve.periodic()
         || curve.knots().iter().any(|knot| !knot.is_finite())
@@ -798,7 +806,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
 }
 
 pub(crate) fn rational_four_arc_circle(
-    curve: &cadmpeg_ir::geometry::NurbsCurve,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
     let weights = curve.weights()?;
     let degree = curve.degree() as usize;

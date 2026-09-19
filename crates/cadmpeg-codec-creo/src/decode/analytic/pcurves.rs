@@ -7,8 +7,8 @@ use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, PcurveGeometry, PcurveNurbs, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -511,7 +511,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(-origin.x, -origin.y, -origin.z),
             Vector3::new(-axis.x, -axis.y, -axis.z),
             *ref_direction,
@@ -1064,7 +1064,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let [first, second] = [first?, second?];
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -1093,7 +1093,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             ];
             let direction = normalize([axis.x, axis.y, axis.z])?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(point[0], point[1], point[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -1111,7 +1111,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     offset_point(*origin, *axis, start[1]),
                     *axis,
                     *ref_direction,
@@ -1133,7 +1133,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             (ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()).then_some(())?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -1163,7 +1163,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
                 <= EPS_NEAR_ZERO * first_radius.max(second_radius).max(1.0)
             {
                 (first_radius > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         center,
                         *axis,
                         scaled_vector(*ref_direction, local_radius.signum()),
@@ -1192,7 +1192,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
                     )
                 };
                 (minor_radius > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         center,
                         *axis,
                         major_direction,
@@ -1215,7 +1215,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let radius = sphere_surface.radius();
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     offset_point(*center, *axis, radius * start[1].sin()),
                     *axis,
                     scaled_vector(*ref_direction, ring.signum()),
@@ -1245,7 +1245,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     *center,
                     Vector3::new(normal[0], normal[1], normal[2]),
                     radial,
@@ -1271,7 +1271,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             let minor_radius = torus_surface.minor_radius();
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     offset_point(*center, *axis, minor_radius * start[1].sin()),
                     *axis,
                     scaled_vector(*ref_direction, ring.signum()),
@@ -1306,7 +1306,7 @@ pub(in crate::decode) fn linear_pcurve_carrier(
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     offset_point(*center, radial, major_radius),
                     Vector3::new(normal[0], normal[1], normal[2]),
                     radial,
@@ -1774,7 +1774,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
             let direction = line_curve.direction();
             let direction = [direction.x, direction.y, direction.z];
             Some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     project_point([origin.x, origin.y, origin.z], EPS_AGREE)?,
                     project_direction(direction)?,
                 )
@@ -1798,7 +1798,8 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 radius,
             )?;
             Some(PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius).ok()?,
+                cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(center, x_axis, y_axis, radius)
+                    .ok()?,
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
@@ -1823,7 +1824,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                     center,
                     x_axis,
                     y_axis,
@@ -1850,7 +1851,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 focal_distance,
             )?;
             Some(PcurveGeometry::Parabola(
-                cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                     vertex,
                     x_axis,
                     y_axis,
@@ -1881,7 +1882,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                     center,
                     x_axis,
                     y_axis,
@@ -1936,7 +1937,7 @@ mod tests {
         PcurveCarrierStatus, PcurveCarrierUnknownReason, TwoChartEndpointSets, TwoChartMapping,
     };
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -1983,7 +1984,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -1996,7 +1997,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 1.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2025,17 +2026,17 @@ mod tests {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
-                        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
                             false,
                         ),
-                        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                             1,
                             vec![0.0, 0.0, 1.0, 1.0],
                             false,
                         ),
-                        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                             vec![
                                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -2052,7 +2053,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2118,7 +2119,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         Point3::new(-1.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, -1.0),
@@ -2134,7 +2135,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(-0.5, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -2236,7 +2237,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2249,7 +2250,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2338,7 +2339,7 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#43".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -2384,7 +2385,7 @@ mod tests {
     #[test]
     fn pcurve_plane_carrier_status_requires_a_unique_join() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -2458,7 +2459,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -2471,7 +2472,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
@@ -2496,7 +2497,7 @@ mod tests {
     #[test]
     fn support_apex_cone_mirror_is_selected_by_plane_endpoint_witness() {
         let current = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::ConeSurface::try_new(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, -1.0),

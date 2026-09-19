@@ -23,7 +23,7 @@ pub(crate) fn plan_at(
     version: crate::RhinoArchiveVersion,
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::RhinoCodec.plan(
         EncodeInput::new(ir, None),

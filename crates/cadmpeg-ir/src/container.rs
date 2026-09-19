@@ -7,7 +7,7 @@ use cadmpeg_core::ContainerEntry;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::report::LossNote;
+use crate::report::loss::LossNote;
 use serde::de::Error as _;
 use std::fmt;
 

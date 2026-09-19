@@ -5,10 +5,10 @@ use crate::document::CadIr;
 use crate::draft::tests::point;
 use crate::draft::tests::point_draft;
 use crate::draft::DraftError;
-use crate::report::TransferLedger;
+use crate::report::decode::TransferLedger;
 
 use crate::provenance::Exactness;
-use crate::report::{LossNote, TransferOutcome};
+use crate::report::{decode::TransferOutcome, loss::LossNote};
 
 fn loss_note() -> LossNote {
     serde_json::from_value(serde_json::json!({

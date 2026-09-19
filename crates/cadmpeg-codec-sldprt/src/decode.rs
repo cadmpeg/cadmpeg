@@ -175,14 +175,14 @@ fn decode_result(
     })
 }
 
-fn incomplete_pattern<C: cadmpeg_ir::features::CompositeStages>(
-    pattern: &cadmpeg_ir::features::PatternKind<C>,
+fn incomplete_pattern<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    pattern: &cadmpeg_ir::features::patterns::PatternKind<C>,
     incomplete_path: &dyn Fn(&cadmpeg_ir::features::PathRef) -> bool,
 ) -> bool {
-    use cadmpeg_ir::features::{PatternScaleCenter, PatternTransform};
+    use cadmpeg_ir::features::patterns::{PatternScaleCenter, PatternTransform};
 
     match pattern.definition() {
-        cadmpeg_ir::features::PatternTransform::Unresolved { .. } => true,
+        cadmpeg_ir::features::patterns::PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
         | PatternTransform::LinearOffsets { direction, .. } => direction.is_none(),
         PatternTransform::Circular { .. } | PatternTransform::Mirror { .. } => false,
@@ -1343,21 +1343,21 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
                         incomplete_face_selection(group.center_faces())
                             || matches!(
                                 group.side_one_faces(),
-                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
                             )
                             || matches!(
                                 group.side_two_faces(),
-                                cadmpeg_ir::features::FullRoundSideSelection::Unresolved
+                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Unresolved
                             )
                             || matches!(
                                 group.side_one_faces(),
-                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
                                     ref selection
                                 ) if incomplete_face_selection(selection)
                             )
                             || matches!(
                                 group.side_two_faces(),
-                                cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                                cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
                                     ref selection
                                 ) if incomplete_face_selection(selection)
                             )
@@ -1606,13 +1606,13 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
                 let diameter = shape.diameter();
                 let exit_kind_is_unresolved = exit_kind
                     .as_ref()
-                    .is_some_and(cadmpeg_ir::features::HoleKind::is_unresolved);
+                    .is_some_and(cadmpeg_ir::features::holes::HoleKind::is_unresolved);
                 profile.as_ref().is_some_and(incomplete_planar_profile)
                     || face.as_ref().is_some_and(incomplete_face_selection)
                     || placements.is_none()
                     || matches!(
                         construction,
-                        cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                        cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
                             if kind.is_unresolved()
                     )
                     || exit_kind_is_unresolved
@@ -1624,14 +1624,14 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
             FeatureOperation::Pattern { seeds, pattern } => {
                 seeds.is_empty()
                     || seeds.iter().any(|seed| match seed {
-                        cadmpeg_ir::features::PatternSeed::Feature(_) => false,
-                        cadmpeg_ir::features::PatternSeed::Faces(faces) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
                             incomplete_face_selection(faces)
                         }
-                        cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
                             incomplete_body_selection(bodies)
                         }
-                        cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => {
+                        cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
                             occurrences.is_empty()
                         }
                     })
@@ -2205,7 +2205,7 @@ fn build_geometry_ir(
         CadIr,
         Annotations,
         Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::LossNote>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
     ),
     CodecError,
 > {
@@ -3272,11 +3272,11 @@ fn build_geometry_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: container::notes(scan),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -3291,7 +3291,7 @@ fn build_metadata_ir(
         CadIr,
         Annotations,
         Vec<UnknownRecord>,
-        Vec<cadmpeg_ir::LossNote>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
     ),
     CodecError,
 > {
@@ -3677,7 +3677,7 @@ fn project_design_history(
     pmi_dimensions: &[crate::records::PmiDimension],
     scan: &ContainerScan,
     form_padding: Option<usize>,
-    losses: &mut Vec<cadmpeg_ir::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
@@ -4023,7 +4023,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             })
             || matches!(
                 shape.construction(),
-                cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
                     if kind.is_unresolved()
             );
         let resolved_complete = resolved_diameter.is_some()
@@ -4035,10 +4035,10 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             })
             && !matches!(
                 &resolved_construction,
-                cadmpeg_ir::features::HoleConstruction::Form {
-                    kind: cadmpeg_ir::features::HoleKind::Unresolved(_)
-                        | cadmpeg_ir::features::HoleKind::PartialCounterbore(..)
-                        | cadmpeg_ir::features::HoleKind::PartialCountersink(..),
+                cadmpeg_ir::features::holes::HoleConstruction::Form {
+                    kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(_)
+                        | cadmpeg_ir::features::holes::HoleKind::PartialCounterbore(..)
+                        | cadmpeg_ir::features::holes::HoleKind::PartialCountersink(..),
                     ..
                 }
             );
@@ -4047,8 +4047,8 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 .try_edit(|construction, _, diameter| {
                     match (&mut *construction, resolved_construction) {
                         (
-                            cadmpeg_ir::features::HoleConstruction::Form { kind, .. },
-                            cadmpeg_ir::features::HoleConstruction::Form {
+                            cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. },
+                            cadmpeg_ir::features::holes::HoleConstruction::Form {
                                 kind: resolved_kind,
                                 ..
                             },
@@ -4170,7 +4170,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
             };
             if !matches!(
                 pattern.definition(),
-                cadmpeg_ir::features::PatternTransform::Mirror { .. }
+                cadmpeg_ir::features::patterns::PatternTransform::Mirror { .. }
             ) {
                 return None;
             }
@@ -4676,15 +4676,18 @@ fn build_container_report(
     classification.append_losses(&mut losses);
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: container::notes(scan),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
-fn append_swift_pmi_losses(scan: &ContainerScan<'_>, losses: &mut Vec<cadmpeg_ir::LossNote>) {
+fn append_swift_pmi_losses(
+    scan: &ContainerScan<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     let unsupported = crate::swift::unsupported_annotation_classes(scan);
     if unsupported.is_empty() {
         return;

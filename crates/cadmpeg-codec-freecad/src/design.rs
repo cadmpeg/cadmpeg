@@ -20,19 +20,23 @@ use cadmpeg_ir::spreadsheets::{
 };
 use cadmpeg_ir::{
     features::{
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        holes::{
+            HoleBottom, HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification,
+            HoleThreadDepth, ThreadHand,
+        },
+        patterns::{PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform},
         AngularTermination, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset,
         BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
-        ChamferSpec, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent, ExtrudeSide,
+        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent, ExtrudeSide,
         ExtrusionDirectionSource, FaceMaker, Feature, FeatureContent, FeatureDefinition, FeatureId,
         FeatureOperation, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
-        HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom,
-        HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth,
-        InnerWireTaper, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
-        PatternScaleCenter, PatternSeed, PatternStage, PatternTransform, PlanarProfileRef,
-        PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RadiusSpec, RevolutionAxis,
-        RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RuledCurveOrientation,
-        ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SurfaceProjectionMode, SweepMode,
-        SweepOrientation, SweepTransformation, SweepTransition, ThreadHand, TreeChildren,
+        HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, InnerWireTaper,
+        LinearTermination, ParameterId, ParameterValue, PathRef, PlanarProfileRef, PrimitiveSolid,
+        PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
+        RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
+        SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+        TreeChildren,
     },
     scalar::Length,
 };
@@ -1748,7 +1752,7 @@ fn sketch_nurbs(
         return Ok(None);
     };
     Ok(Some(SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             lanes.degree,
             lanes.knots,
             lanes.control_points,
@@ -4296,13 +4300,15 @@ fn fillet_definition(
         scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-            edges,
-            radius: RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::FilletGroup {
+                edges,
+                radius: RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+                },
+                tangency_weight: None,
             },
-            tangency_weight: None,
-        }),
+        ),
     }))
 }
 
@@ -4351,10 +4357,9 @@ fn chamfer_definition(
             .and_then(scalar_value)
             .is_some_and(|value| value == 1.0 || value == 2.0);
     Some(FeatureDefinition::Operation(FeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
-            edges,
-            spec,
-        }),
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec },
+        ),
         flip_direction: if legacy_flip {
             !flip_direction
         } else {
@@ -5292,7 +5297,7 @@ fn hole_definition(
             angle: cut_angle()?,
         },
         3 if !legacy_cut_types => HoleKind::Counterdrill {
-            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+            diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::scalar::PositiveLength::new(positive("HoleCutDiameter")?)?,
                 None,
             )
@@ -5408,7 +5413,7 @@ fn hole_definition(
         face: None,
         direction,
         placements: None,
-        shape: cadmpeg_ir::features::HoleShape::new(
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
             HoleConstruction::Form {
                 kind,
                 specification,
@@ -5763,7 +5768,7 @@ fn pattern_definition(
                 let target = link.as_ref()?.object()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                let pattern = pattern_kind::<cadmpeg_ir::features::NoNestedComposite>(
+                let pattern = pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
                     &object.type_name,
                     owned,
                     objects,
@@ -5776,7 +5781,7 @@ fn pattern_definition(
             })
             .collect::<Option<Vec<_>>>()?;
         PatternKind::new(PatternTransform::Composite {
-            stages: cadmpeg_ir::features::CompositePattern::new(stages).ok()?,
+            stages: cadmpeg_ir::features::patterns::CompositePattern::new(stages).ok()?,
         })
         .ok()?
     } else {
@@ -5835,7 +5840,7 @@ fn implicit_body_predecessor(
     })
 }
 
-fn pattern_kind<C: cadmpeg_ir::features::CompositeStages>(
+fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
     kind: &str,
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
@@ -5967,7 +5972,7 @@ fn linear_pattern_axis(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     entries: &[EntryRecord],
-) -> Option<cadmpeg_ir::features::StagePatternKind> {
+) -> Option<cadmpeg_ir::features::patterns::StagePatternKind> {
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)

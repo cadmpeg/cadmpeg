@@ -7,14 +7,16 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsError, Pcurve, PcurveGeometry, PcurveNurbs,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsError},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{LossNote, Severity};
+use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1696,7 +1698,7 @@ impl<'a> DecodeContext<'a> {
                 });
                 if validation
                     .as_ref()
-                    .is_ok_and(cadmpeg_ir::ValidationReport::is_ok)
+                    .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)
                 {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
@@ -2338,11 +2340,13 @@ impl<'a> DecodeContext<'a> {
         Ok(Decoded {
             ir: self.ir,
             body: DecodeBody {
-                transfer: cadmpeg_ir::report::DecodeTransfer::full(self.geometry_transferred),
-                coverage: cadmpeg_ir::Coverage::default(),
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
+                    self.geometry_transferred,
+                ),
+                coverage: cadmpeg_ir::report::decode::Coverage::default(),
                 losses,
                 notes,
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
             },
             source_fidelity,
         })
@@ -2764,7 +2768,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         key: &str,
         association: SourceObjectAssociation,
-        geometry: cadmpeg_ir::geometry::NurbsSurface,
+        geometry: cadmpeg_ir::geometry::nurbs::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
     ) -> bool {
         let Some(unknown) = self
@@ -3371,7 +3375,7 @@ fn append_links(unknown_id: &UnknownId, record_links: &mut Vec<String>, links: &
     *record_links = merged;
 }
 
-fn validation_findings(report: &cadmpeg_ir::report::ValidationReport) -> String {
+fn validation_findings(report: &cadmpeg_ir::report::check::ValidationReport) -> String {
     report
         .findings
         .iter()
@@ -3448,7 +3452,7 @@ fn stage_extrusion_caps(
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                match cadmpeg_ir::geometry::PlaneSurface::try_new(
+                match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     extrusion.cap_origins[cap],
                     extrusion.cap_normals[cap],
                     extrusion.cap_u_axes[cap],
@@ -3576,7 +3580,7 @@ fn stage_extrusion_caps(
             ir.model.pcurves.push(Pcurve {
                 id: pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
-                metadata: match cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                     None,
                     Some(parameter_range),
                     None,
@@ -3760,7 +3764,7 @@ impl BrepDraft {
                 ir,
                 annotations,
                 &mut Vec::new(),
-                &mut cadmpeg_ir::report::TransferLedger::default(),
+                &mut cadmpeg_ir::report::decode::TransferLedger::default(),
             )
             .map_err(|error| error.to_string())
     }
@@ -4646,7 +4650,7 @@ fn coedge_sense(reversed_3d: bool, edge_proxy_reversed: bool) -> Sense {
 fn stage_brep_procedural_surface(
     staged: &mut BrepDraft,
     index: usize,
-    geometry: cadmpeg_ir::geometry::NurbsSurface,
+    geometry: cadmpeg_ir::geometry::nurbs::NurbsSurface,
     definition: crate::surfaces::DecodedProceduralSurface,
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
@@ -4908,7 +4912,7 @@ fn decode_pcurves(
         values.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
-            metadata: match cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 Some(trim.proxy_reversed),
                 Some(trim.domain.0),
                 finite_tolerance(trim.tolerances[0]),
@@ -5406,7 +5410,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 return Err("instance line transform collapsed its direction".to_string());
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     transformed_origin,
                     cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
                 )?,
@@ -5415,7 +5419,9 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = *degenerate_curve.point();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(placed_point(transform, point)?)?,
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(placed_point(
+                    transform, point,
+                )?)?,
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }) => {
@@ -5484,7 +5490,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 return Err("instance plane transform collapsed its frame".to_string());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin,
                     normal,
                     cadmpeg_ir::math::Vector3::new(

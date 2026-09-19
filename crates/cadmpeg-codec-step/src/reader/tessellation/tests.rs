@@ -938,7 +938,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")
     }));
 }

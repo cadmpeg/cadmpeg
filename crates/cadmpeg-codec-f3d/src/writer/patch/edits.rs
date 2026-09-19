@@ -13,8 +13,9 @@ use crate::records::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, BlendRadiusLaw, Curve, NurbsCurve, NurbsSurface, PcurveGeometry,
-    PcurveNurbs, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    BlendRadiusLaw, Curve, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -3227,7 +3228,7 @@ pub(crate) fn validate_pcurve_edits(
             .then_some(after.parameter_range())
             .flatten();
         let edit = match &before.metadata {
-            cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata }
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata }
                 if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
             {
                 PcurveEdit::Ref {
@@ -3236,8 +3237,8 @@ pub(crate) fn validate_pcurve_edits(
                     parameter_range,
                 }
             }
-            cadmpeg_ir::geometry::PcurveMetadata::AsmInline { .. }
-            | cadmpeg_ir::geometry::PcurveMetadata::General { .. } => PcurveEdit::Inline {
+            cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
+            | cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { .. } => PcurveEdit::Inline {
                 native_geometry: after_native,
                 periodic,
                 wrapper_reversed: (before.wrapper_reversed() != after.wrapper_reversed())

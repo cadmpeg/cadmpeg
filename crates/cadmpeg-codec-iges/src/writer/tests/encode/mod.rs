@@ -5,13 +5,13 @@ use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::NurbsSurface;
-use cadmpeg_ir::geometry::Pcurve;
-use cadmpeg_ir::geometry::PcurveGeometry;
-use cadmpeg_ir::geometry::PcurveNurbs;
-use cadmpeg_ir::geometry::PcurveNurbsPoles;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -21,7 +21,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
@@ -65,7 +65,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
         assert!(!report.losses.iter().any(|loss| {
-            loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
         }));
         assert!(
             round_trip
@@ -297,7 +297,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -642,7 +642,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         Surface {
             id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -655,9 +655,17 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -775,7 +783,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         Surface {
             id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -788,7 +796,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         Surface {
             id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(-1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -803,7 +811,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         Surface {
             id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(0.0, 4.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -816,7 +824,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         Surface {
             id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 5.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -851,7 +859,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
     decoded.ir_mut().model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(10.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -939,7 +947,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -964,7 +972,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ir.model.curves.push(Curve {
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     positions[index],
                     positions[index].vector_from(positions[end]),
                 )
@@ -1005,7 +1013,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 )
                 .expect("valid sheet pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some([0.0, 1.0]),
                 None,
@@ -1033,7 +1041,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     )
                     .expect("valid split sheet pcurve"),
                 },
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                     None,
                     Some([0.0, 1.0]),
                     None,
@@ -1582,8 +1590,12 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             )
             .expect("valid source-less pcurve"),
         },
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some([0.0, 1.0]), None)
-            .unwrap(),
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            None,
+            Some([0.0, 1.0]),
+            None,
+        )
+        .unwrap(),
     });
     decoded.ir_mut().model.coedges[coedge_index]
         .pcurves

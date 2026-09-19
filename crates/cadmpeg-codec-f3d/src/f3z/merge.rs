@@ -190,7 +190,7 @@ impl MergeSession<'_, '_> {
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
-                parent_report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
+                parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
             }
             parent_report
                 .losses

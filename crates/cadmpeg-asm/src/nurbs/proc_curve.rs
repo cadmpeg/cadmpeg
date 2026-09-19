@@ -25,7 +25,9 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, pcurve::PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
@@ -1575,7 +1577,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                cadmpeg_ir::geometry::NurbsPoles3::Polynomial {
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
                     points: vec![start, end],
                 },
                 false,
@@ -1599,7 +1601,7 @@ pub(crate) fn embedded_base_curve_resolving_refs(
             NurbsCurve::new(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                cadmpeg_ir::geometry::NurbsPoles3::Polynomial {
+                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
                     points: vec![at, at],
                 },
                 false,
@@ -2003,7 +2005,7 @@ pub(crate) fn par_int_cur_isoline(
 /// The support isoline a uv pcurve selects, or `None` when the pcurve is not an
 /// isoline of the support's full domain.
 fn surface_isoline_along(
-    support: &cadmpeg_ir::geometry::NurbsSurface,
+    support: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pcurve: &PcurveNurbs,
 ) -> Option<NurbsCurve> {
     use cadmpeg_ir::eval::IsolineDirection;
@@ -2866,7 +2868,8 @@ fn embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(point, normal, u_axis)
+                        .ok()?,
                 )),
                 ranges,
             ))
@@ -2894,7 +2897,7 @@ fn embedded_surface_fields(
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         point,
                         native_axis,
                         ref_direction,
@@ -2909,7 +2912,7 @@ fn embedded_surface_fields(
                     native_axis
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -2937,7 +2940,7 @@ fn embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -2964,7 +2967,7 @@ fn embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -3027,7 +3030,8 @@ fn decode_embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(point, normal, u_axis).ok()?,
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(point, normal, u_axis)
+                        .ok()?,
                 )),
                 ranges,
             ))
@@ -3055,7 +3059,7 @@ fn decode_embedded_surface_fields(
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         point,
                         native_axis,
                         ref_direction,
@@ -3070,7 +3074,7 @@ fn decode_embedded_surface_fields(
                     native_axis
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -3098,7 +3102,7 @@ fn decode_embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -3125,7 +3129,7 @@ fn decode_embedded_surface_fields(
             };
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         point,
                         axis,
                         ref_direction,
@@ -3440,7 +3444,7 @@ mod cache_form_tests {
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
-    use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveNurbs};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
 

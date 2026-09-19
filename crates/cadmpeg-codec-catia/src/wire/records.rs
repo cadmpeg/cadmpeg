@@ -13,7 +13,7 @@
 use std::{collections::HashSet, ops::Range};
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::knots_strictly_increasing;
+use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
 

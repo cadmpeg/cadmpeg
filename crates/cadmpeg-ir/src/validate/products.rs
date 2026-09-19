@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use super::error_finding;
 use crate::document::CadIr;
 use crate::products::{AssemblyGraph, OccurrenceParent, OperandContainer, PrototypeReference};
-use crate::report::{Check, Finding};
+use crate::report::check::{Check, Finding};
 
 pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
     let definitions = ir

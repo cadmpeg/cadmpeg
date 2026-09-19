@@ -608,8 +608,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
     CodecError,
 > {
     use cadmpeg_ir::features::{
-        DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
-        FeatureOperation, ParameterId, ParameterValue, PatternKind,
+        patterns::PatternKind, DesignParameter as NeutralParameter, DimensionDisplay, Feature,
+        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue,
     };
     use cadmpeg_ir::scalar::{Angle, Length};
     use std::collections::BTreeMap;
@@ -1290,7 +1290,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             continue;
         };
         for dependency in seeds.iter().filter_map(|seed| match seed {
-            cadmpeg_ir::features::PatternSeed::Feature(feature) => Some(feature),
+            cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => Some(feature),
             _ => None,
         }) {
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
@@ -1996,7 +1996,8 @@ fn project_fillet_arm(
     native_scope: &str,
 ) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::{
-        EdgeSelection, FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec,
+        edge_treatments::{FilletGroup, RadiusSpec},
+        EdgeSelection, FeatureDefinition, FeatureOperation,
     };
 
     if parameters.is_empty() {
@@ -2115,7 +2116,7 @@ fn project_fillet_arm(
 
 struct ResolvedFilletAssignment<'a> {
     assignment: &'a DesignFilletRadiusGroup,
-    radius: cadmpeg_ir::features::RadiusSpec,
+    radius: cadmpeg_ir::features::edge_treatments::RadiusSpec,
     tangency_weight: Option<cadmpeg_ir::scalar::FiniteReal>,
 }
 
@@ -2123,7 +2124,7 @@ fn resolved_fillet_assignments<'a>(
     assignments: &[&'a DesignFilletRadiusGroup],
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<Vec<ResolvedFilletAssignment<'a>>> {
-    use cadmpeg_ir::features::RadiusSpec;
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
     let by_record = parameters
         .iter()
         .map(|(_, parameter)| (parameter.record_index, *parameter))
@@ -2352,10 +2353,10 @@ fn project_full_round_fillet(
     Some(cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::FullRoundFillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::FullRoundFilletGroup::new(
+                cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
                     center_faces,
-                    cadmpeg_ir::features::FullRoundSideSelection::Automatic,
-                    cadmpeg_ir::features::FullRoundSideSelection::Automatic,
+                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
+                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Automatic,
                 )
                 .ok()?,
             ),
@@ -5335,7 +5336,10 @@ fn project_variable_fillet(
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FilletGroup, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::{FilletGroup, RadiusSpec},
+        FeatureDefinition, FeatureOperation,
+    };
 
     let stream = native_stream(&scope.id)?;
     let mut groups = construction_groups
@@ -5372,10 +5376,10 @@ fn project_variable_fillet(
 fn variable_fillet_law(
     parameters: &[(u32, &DesignParameter)],
 ) -> Option<(
-    cadmpeg_ir::features::VariableRadii,
+    cadmpeg_ir::features::edge_treatments::VariableRadii,
     Option<cadmpeg_ir::scalar::FiniteReal>,
 )> {
-    use cadmpeg_ir::features::VariableRadius;
+    use cadmpeg_ir::features::edge_treatments::VariableRadius;
 
     let unique_parameter = |kind: &str| {
         let mut matches = parameters
@@ -5438,7 +5442,7 @@ fn variable_fillet_law(
         radius: end,
     });
     Some((
-        cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?,
         tangency_weight,
     ))
 }
@@ -5492,7 +5496,10 @@ fn project_chamfer(
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        FeatureDefinition, FeatureOperation,
+    };
 
     let native_scope = native_stream(&scope.id);
     let mut edge_groups = construction_groups
@@ -5695,7 +5702,10 @@ fn project_fixed_chamfer(
     edge_treatment_vertex_operands: &[DesignEdgeTreatmentVertexOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        FeatureDefinition, FeatureOperation,
+    };
 
     let fixed = scope.fixed_chamfer_parameters()?;
     let stream = native_stream(&scope.id)?;
@@ -6553,7 +6563,8 @@ fn project_circular_pattern(
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureOperation,
     };
     use cadmpeg_ir::scalar::Angle;
 
@@ -6647,7 +6658,8 @@ fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureOperation,
     };
     use cadmpeg_ir::scalar::Length;
 
@@ -6757,7 +6769,8 @@ fn project_mirror(
     scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, PatternKind, PatternSeed, PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureOperation,
     };
 
     let construction = scope.mirror_construction()?;
@@ -7493,7 +7506,8 @@ fn project_hole(
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, HoleBottom, HoleKind, LinearTermination,
+        holes::{HoleBottom, HoleKind},
+        FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole
@@ -7561,7 +7575,7 @@ fn project_hole(
     let face = resolved_direct_face_selection(scope, face_operands)
         .unwrap_or_else(|| FaceSelection::Native(scope.id.clone()));
     let placements = if let Some(construction) = scope.hole_construction() {
-        Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
+        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 construction.position[0] * 10.0,
                 construction.position[1] * 10.0,
@@ -7582,8 +7596,8 @@ fn project_hole(
         face: Some(face),
         direction: None,
         placements,
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::Form {
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind,
                 specification: None,
             },

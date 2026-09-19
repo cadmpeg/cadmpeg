@@ -1109,7 +1109,7 @@ fn fixed_kind_edge_and_revolve_operations(
         &[cadmpeg_ir::geometry::Surface {
             id: surface_id,
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(4.0, 5.0, 6.0),
                     Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1226,7 +1226,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(1.0, 2.0, 3.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -1242,7 +1242,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         Point3::new(1.0, 2.0, 8.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -1281,7 +1281,7 @@ fn fixed_kind_edge_and_revolve_operations(
     };
     axis_surfaces[1].geometry =
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(2.0, 2.0, 8.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

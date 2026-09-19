@@ -7,8 +7,9 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
-    SolvedCurveGeometry, SolvedSurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    pcurve::PcurveGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};

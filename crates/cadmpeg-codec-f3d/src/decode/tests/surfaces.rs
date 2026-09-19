@@ -11,8 +11,8 @@
 )]
 use cadmpeg_ir::geometry::CurveGeometry;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -249,7 +249,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .find(|curve| curve.id == profile)
                 .expect("ruled profile")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
                         .unit()
@@ -334,7 +334,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .find(|curve| curve.id == source)
                 .expect("sum source curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
                     cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
                         .unit()
@@ -474,7 +474,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             .find(|curve| curve.id == directrix)
             .expect("revolution directrix")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -737,7 +737,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             .find(|curve| curve.id == reference)
             .expect("taper reference curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![
@@ -855,7 +855,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .find(|curve| curve.id == line_profile)
             .expect("loft line profile")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![-1.0, -1.0, 2.0, 2.0],
                 vec![

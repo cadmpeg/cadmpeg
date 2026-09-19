@@ -17,7 +17,7 @@ fn offset_digits(last_offset: u64) -> usize {
 /// Each line prints the absolute offset, `width` bytes in hexadecimal grouped in
 /// eights, and the printable ASCII for the same bytes between pipes. A short
 /// final line is padded so the gutter stays in one column.
-pub fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> String {
+pub(super) fn render(base: u64, bytes: &[u8], width: NonZeroUsize) -> String {
     let width = width.get();
     let last = base.saturating_add(bytes.len().saturating_sub(1) as u64);
     let digits = offset_digits(last);

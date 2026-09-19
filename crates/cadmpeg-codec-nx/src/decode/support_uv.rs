@@ -40,8 +40,8 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_surface_parameter_within_tolerance_with_budget, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    Pcurve, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::{Pcurve, PcurveGeometry},
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -502,7 +502,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface_id: &SurfaceId,
     surface: &SurfaceGeometry,
-    nurbs: &cadmpeg_ir::geometry::NurbsSurface,
+    nurbs: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     point: Point3,
     fit_tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -560,7 +560,7 @@ fn serialized_support_uv_seed_for_side(
 pub(crate) fn complete_ext11_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
+) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
 }
@@ -569,7 +569,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<(), cadmpeg_ir::geometry::NurbsError> {
+) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
@@ -633,7 +633,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
                 continue;
             };
             let replacement = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     control_points,
@@ -1389,7 +1389,7 @@ fn complete_support_uv_wave(
                         ];
                     }
                     let parameter_range = samples.parameter_range();
-                    let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                    let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                         1,
                         linear_knots(parameters),
                         uv,
@@ -1731,7 +1731,7 @@ fn complete_coupled_support_uv(
                             ]
                         });
                 let parameter_range = samples.parameter_range();
-                let nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters),
                     lanes[side].clone(),
@@ -2238,7 +2238,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                         source_index,
                         (
                             candidate.0.clone(),
-                            cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                                 None,
                                 Some(candidate.1),
                                 fit_tolerance,
@@ -2369,7 +2369,7 @@ mod tests {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -2426,10 +2426,10 @@ mod tests {
 
         let surface_id = SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
             .expect("identity grammar");
-        let nurbs = cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        let nurbs = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                     vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],

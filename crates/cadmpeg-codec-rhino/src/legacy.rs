@@ -8,15 +8,15 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, Pcurve,
-    PcurveGeometry, PcurveNurbs, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::TransferLedger;
+use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
@@ -1807,7 +1807,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                         None,
                         Some(pcurve_domain),
                         (trim.tolerance_2d > 0.0).then_some(trim.tolerance_2d),
@@ -2634,7 +2634,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
             coverage: [
                 (crate::coverage::LEGACY_V1_POINTS, decoded),
                 (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),

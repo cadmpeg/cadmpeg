@@ -7,7 +7,10 @@
 
 use crate::annotations::Annotations;
 use crate::document::CadIr;
-use crate::report::{Check, LossNote, ValidationReport};
+use crate::report::{
+    check::{Check, ValidationReport},
+    loss::LossNote,
+};
 
 /// Expand [`DRAFT_CORE_CHECKS`], optionally appending extra [`Check`] variants.
 macro_rules! with_draft_core {
@@ -107,7 +110,7 @@ mod tests {
         admit, CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS,
         RHINO_INSTANCE_CHECKS, SLDPRT_EXPORT_PRECONDITION_CHECKS,
     };
-    use crate::report::Check;
+    use crate::report::check::Check;
     use crate::validate::admissibility_freeze::{
         accepted_empty, rejected_missing_point, rejected_missing_region,
     };

@@ -983,12 +983,12 @@ pub(crate) fn bind_feature_body_selections(
             else {
                 return None;
             };
-            let cadmpeg_ir::features::PatternTransform::Circular { count, .. } =
+            let cadmpeg_ir::features::patterns::PatternTransform::Circular { count, .. } =
                 pattern.definition()
             else {
                 return None;
             };
-            let [cadmpeg_ir::features::PatternSeed::Bodies(BodySelection::Historical {
+            let [cadmpeg_ir::features::patterns::PatternSeed::Bodies(BodySelection::Historical {
                 bodies: seed_bodies,
                 ..
             })] = seeds.as_slice()
@@ -1598,7 +1598,9 @@ fn bind_pattern_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation, PatternSeed};
+    use cadmpeg_ir::features::{
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+    };
 
     let scopes = inputs.scopes;
     let groups = inputs.groups;
@@ -2226,7 +2228,7 @@ pub(crate) fn bind_feature_face_selections(
                     cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
                 ) => {
                     for seed in seeds {
-                        let cadmpeg_ir::features::PatternSeed::Faces(faces) = seed else {
+                        let cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) = seed else {
                             continue;
                         };
                         bind_face_selection(

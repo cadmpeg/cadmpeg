@@ -21,8 +21,10 @@ use crate::families::b5::transfer::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsCurve,
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{SurfaceId, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -60,7 +62,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(translated.control_points(), nurbs.control_points());
 
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(10.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -75,7 +77,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
             &mut crate::nurbs::LaneRefusals::new()
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(20.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
@@ -108,7 +110,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     assert_eq!(
         curve_on_parameter_range(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(10.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0)
                 )
@@ -601,7 +603,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .pcurves
             .iter()
-            .map(cadmpeg_ir::geometry::Pcurve::parameter_range)
+            .map(cadmpeg_ir::geometry::pcurve::Pcurve::parameter_range)
             .collect::<Vec<_>>(),
         [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
     );
@@ -667,12 +669,18 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         ),
     ]);
     let pcurve_20 = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .expect("valid LinePcurve fixture"),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid LinePcurve fixture"),
     );
     let pcurve_21 = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(1.0, 0.0))
-            .expect("valid LinePcurve fixture"),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 1.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid LinePcurve fixture"),
     );
     let pcurves = BTreeMap::from([
         (20, (pcurve_20.clone(), false, [2.0, 4.0])),
@@ -748,7 +756,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
 fn procedural_support_requires_physical_edge_endpoint_agreement() {
     let plane = || SurfacePlan {
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -763,7 +771,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
             20,
             (
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
@@ -777,7 +785,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
             21,
             (
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(1.0, 0.0),
                         Point2::new(-1.0, 0.0),
                     )
@@ -1217,7 +1225,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
         4,
         SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),

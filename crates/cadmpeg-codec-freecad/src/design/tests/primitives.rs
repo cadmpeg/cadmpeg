@@ -96,9 +96,9 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         })
-        if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::All,
-            radius: cadmpeg_ir::features::RadiusSpec::Constant { radius: actual_radius },
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius: actual_radius },
             tangency_weight: None,
         }] if actual_radius.get() == 2.0)
     ));
@@ -107,15 +107,15 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer {
             groups,
             flip_direction: true,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: actual_distance, angle }, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::DistanceAngle { distance: actual_distance, angle }, ..
         }] if ((angle.get() - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12) && actual_distance.get() == 1.5)
     ));
     assert!(matches!(
         definition("LegacyChamfer"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer { groups, .. })
-            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-                spec: cadmpeg_ir::features::ChamferSpec::Distance {
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+                spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Distance {
                     distance: actual_distance
                 },
                 ..
@@ -175,7 +175,7 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
         assert!(matches!(
             definition,
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup { edges, .. }]
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup { edges, .. }]
                     if matches!((all_edges, edges),
                         (true, cadmpeg_ir::features::EdgeSelection::All)
                             | (false, cadmpeg_ir::features::EdgeSelection::Native(_))))
@@ -189,7 +189,7 @@ fn distinguishes_absent_and_malformed_dress_up_flags() {
                 groups,
                 flip_direction: actual_flip,
             }) if *actual_flip == flip_direction
-                && matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup { edges, .. }]
+                && matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, .. }]
                     if matches!((all_edges, edges),
                         (true, cadmpeg_ir::features::EdgeSelection::All)
                             | (false, cadmpeg_ir::features::EdgeSelection::Native(_))))
@@ -375,7 +375,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_flags() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };
 
@@ -550,7 +550,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };
 
@@ -925,7 +925,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -1358,7 +1358,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };
 

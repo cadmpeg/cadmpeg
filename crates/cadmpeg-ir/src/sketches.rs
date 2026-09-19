@@ -463,7 +463,7 @@ impl SketchGeometry {
 
     /// Admit an already checked planar NURBS curve.
     #[must_use]
-    pub fn nurbs(curve: crate::geometry::PcurveNurbs) -> Self {
+    pub fn nurbs(curve: crate::geometry::pcurve::PcurveNurbs) -> Self {
         Self(SketchGeometryDefinition::Nurbs { curve })
     }
 
@@ -700,7 +700,7 @@ pub enum SketchGeometryDefinition {
     /// NURBS curve in sketch coordinates.
     Nurbs {
         /// Checked two-dimensional knot, pole, and weight payload.
-        curve: crate::geometry::PcurveNurbs,
+        curve: crate::geometry::pcurve::PcurveNurbs,
     },
     /// Text placed in sketch coordinates.
     Text {
@@ -1316,12 +1316,12 @@ pub enum SpatialSketchConstraintDefinitionInput {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct SpatialSketchNurbsCurve(crate::geometry::NurbsCurve);
+pub struct SpatialSketchNurbsCurve(crate::geometry::nurbs::NurbsCurve);
 
-impl TryFrom<crate::geometry::NurbsCurve> for SpatialSketchNurbsCurve {
+impl TryFrom<crate::geometry::nurbs::NurbsCurve> for SpatialSketchNurbsCurve {
     type Error = &'static str;
 
-    fn try_from(curve: crate::geometry::NurbsCurve) -> Result<Self, Self::Error> {
+    fn try_from(curve: crate::geometry::nurbs::NurbsCurve) -> Result<Self, Self::Error> {
         if curve.degree() == 0 {
             return Err("spatial sketch NURBS degree must be at least one");
         }
@@ -1337,13 +1337,15 @@ impl TryFrom<crate::geometry::NurbsCurve> for SpatialSketchNurbsCurve {
 
 impl<'de> Deserialize<'de> for SpatialSketchNurbsCurve {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(crate::geometry::NurbsCurve::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+        Self::try_from(crate::geometry::nurbs::NurbsCurve::deserialize(
+            deserializer,
+        )?)
+        .map_err(serde::de::Error::custom)
     }
 }
 
 impl std::ops::Deref for SpatialSketchNurbsCurve {
-    type Target = crate::geometry::NurbsCurve;
+    type Target = crate::geometry::nurbs::NurbsCurve;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -1356,8 +1358,8 @@ impl SpatialSketchNurbsCurve {
     /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_control_points(
         &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), crate::geometry::NurbsError>,
-    ) -> Result<(), crate::geometry::NurbsError> {
+        edit: impl FnMut(&mut Point3) -> Result<(), crate::geometry::nurbs::NurbsError>,
+    ) -> Result<(), crate::geometry::nurbs::NurbsError> {
         self.0.edit_control_points(edit)
     }
 }
@@ -1509,7 +1511,7 @@ pub enum SpatialSketchGeometryDefinition {
     /// Polynomial tensor-product B-spline surface embedded in model space.
     NurbsSurface {
         /// Checked rectangular control grid and full knot vectors.
-        surface: crate::geometry::BsplineSurface,
+        surface: crate::geometry::nurbs::BsplineSurface,
     },
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
@@ -1967,7 +1969,7 @@ impl SketchCircularPattern {
     /// This is the recognizer shape, for a caller that holds no channel to
     /// state a cause in. The route that has one is
     /// `TryFrom<SketchCircularPatternWire>`, which states the cause
-    /// [`Self::admit`] gives.
+    /// `Self::admit` gives.
     pub fn new(
         center: SketchEntityId,
         angle: Angle,

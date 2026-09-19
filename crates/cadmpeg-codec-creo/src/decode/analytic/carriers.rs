@@ -158,7 +158,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             continue;
         }
         let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-        let Ok(plane_surface) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+        let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
             normal,
             cadmpeg_ir::geometry::derive_reference_direction(normal),

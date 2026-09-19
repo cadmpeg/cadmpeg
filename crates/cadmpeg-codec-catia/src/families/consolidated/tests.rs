@@ -1091,7 +1091,7 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
     assert_eq!(
         decoded
             .report()
-            .coverage_count(cadmpeg_ir::CoverageKey::new(
+            .coverage_count(cadmpeg_ir::report::decode::CoverageKey::new(
                 "attached_standalone_wire_edge_count"
             )),
         1

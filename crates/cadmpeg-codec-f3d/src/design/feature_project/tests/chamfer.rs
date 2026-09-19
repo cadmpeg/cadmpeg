@@ -47,7 +47,10 @@ fn localized_chamfer_scope() -> DesignParameterScope {
 }
 #[test]
 fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
-    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection};
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        EdgeSelection,
+    };
 
     let scope = localized_chamfer_scope();
     let parameters = [localized_fillet_parameter(

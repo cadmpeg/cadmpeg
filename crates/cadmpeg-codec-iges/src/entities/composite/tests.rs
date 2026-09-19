@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy}
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -563,7 +563,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -743,7 +743,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -842,7 +842,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -909,7 +909,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -1757,7 +1757,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
     assert_eq!(result.ir().model.pcurves.len(), 1);
-    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } =
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().model.pcurves[0].geometry
     else {
         panic!("expected an elevated cubic composite pcurve");

@@ -7,7 +7,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::Point2;
 
@@ -59,8 +59,11 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
     assert_eq!(
         pcurve.geometry,
         PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(2.0, 3.0), Point2::new(2.0, 0.0))
-                .unwrap()
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(2.0, 3.0),
+                Point2::new(2.0, 0.0)
+            )
+            .unwrap()
         )
     );
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -195,7 +198,7 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("trimmed pcurve");
     assert!(
-        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Trimmed(trimmed_pcurve)
         if {
             let [start, end] = trimmed_pcurve.parameter_range();
             *start == 0.0 && *end == 1.0
@@ -263,7 +266,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("cylindrical pcurve");
     assert!(
-        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
         if {
             let direction = line_pcurve.direction();
             direction.u.abs() < EPS_PCURVE_PARAMETERS && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
@@ -381,7 +384,7 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
     assert_eq!(
         pcurve.geometry,
         PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(0.0, 0.0),
                 Point2::new(10_000.0, 1.0)
             )
@@ -409,7 +412,7 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
 
 #[test]
 fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
 
     let source =
@@ -466,7 +469,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("planar pcurve");
     assert!(
-        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
         if {
             let direction = line_pcurve.direction();
             (direction.u - 10.0).abs() < EPS_PCURVE_PARAMETERS
@@ -534,7 +537,7 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
         .expect("surface-chart pcurve");
     assert!(
-        matches!(&pcurve.geometry, cadmpeg_ir::geometry::PcurveGeometry::Line(line_pcurve)
+        matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
                 if {
                     let origin = line_pcurve.origin();
         let direction = line_pcurve.direction();
@@ -592,7 +595,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
-                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.severity == cadmpeg_ir::report::Severity::Error
                 && loss.message.contains("optional pcurve")
         }),
         "{:#?}",
@@ -772,7 +775,7 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
         "unexpected losses: {:#?}",
         decoded.report().losses
     );
-    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
     assert_eq!(
         losses[0].message,
         "curve #57 associates 2 pcurves with surface #28; Part 42 provides no non-seam selector, so the coedge has no pcurve"
@@ -903,7 +906,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         matches!(
             &pcurve.geometry,
-            cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
                 if nurbs.degree() == 1
                     && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
                     && nurbs.control_points().len() == 2
@@ -1053,7 +1056,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::report::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#83")
     }));
 }

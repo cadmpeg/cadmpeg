@@ -36,7 +36,7 @@ use cadmpeg_core::dialect::{
     Admission, DialectId, DialectLayers, DialectMatch, Grammar, LayerInstance,
 };
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 use crate::loss::F3dLossCode;

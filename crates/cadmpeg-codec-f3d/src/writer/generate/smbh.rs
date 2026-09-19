@@ -9,7 +9,8 @@ use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, PcurveMetadata, SolvedCurveGeometry, SurfaceGeometry,
+    pcurve::{PcurveGeometry, PcurveMetadata},
+    CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{ShellId, VertexId};
 use cadmpeg_ir::topology::Sense;

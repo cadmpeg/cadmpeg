@@ -18,7 +18,7 @@
 //! select a target from the codec's encoder catalog. Planning validates the
 //! request and returns the bytes with the export report.
 //!
-//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining output. Opaque
+//! Review [`cadmpeg_ir::report::export::ExportReport::losses`] before retaining output. Opaque
 //! records, source attributes, unsupported
 //! procedural definitions, and target-schema incompatibilities are reported or
 //! rejected rather than silently discarded. Body and face colors become

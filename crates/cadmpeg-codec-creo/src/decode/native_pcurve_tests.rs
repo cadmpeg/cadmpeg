@@ -9,8 +9,8 @@ use crate::decode::analytic::pcurves::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -28,7 +28,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
@@ -57,7 +57,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
 #[test]
 fn maps_linear_pcurves_to_exact_analytic_carriers() {
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -65,7 +65,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("valid PlaneSurface fixture"),
     ));
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -74,7 +74,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("valid CylinderSurface fixture"),
     ));
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -85,7 +85,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("valid ConeSurface fixture"),
     ));
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -138,7 +138,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     );
 
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -194,7 +194,7 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
     .is_empty());
 
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(a[0], a[1], a[2]),
             Vector3::new(0.0, 1.0, 0.0),
         )
@@ -234,7 +234,7 @@ fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
     let witness = [1.0, 0.0, 0.0];
     let adjacent = [2.0, 0.0, 0.0];
     let inferred = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(9.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -326,7 +326,7 @@ fn pcurve_direction_flags_assign_endpoint_order() {
 
 fn plane() -> SurfaceGeometry {
     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -394,7 +394,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
     );
 
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -424,7 +424,7 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
 #[test]
 fn projects_exact_planar_carriers_without_changing_parameters() {
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(2.0, 4.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -468,7 +468,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
     ));
 
     let off_plane = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 3.1),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -486,7 +486,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
 #[test]
 fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -495,7 +495,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
         .expect("valid CylinderSurface fixture"),
     ));
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 8.0),
             Vector3::new(0.0, 0.0, -1.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -515,7 +515,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-2.0, 0.0, 1.25, 4.0]);
 
     let off_axis = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.1, 2.0, 8.0),
             Vector3::new(0.0, 0.0, -1.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -529,7 +529,7 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
 #[test]
 fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -541,7 +541,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
     ));
     for (height, radius, expected_phase) in [(3.0, 5.0, 0.0), (-3.0, 1.0, std::f64::consts::PI)] {
         let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, height),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -564,7 +564,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
     }
 
     let elliptical = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -575,7 +575,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
         .expect("valid ConeSurface fixture"),
     ));
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -588,7 +588,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
         [(3.0, 5.0, 2.5, 0.0), (-3.0, 1.0, 0.5, std::f64::consts::PI)]
     {
         let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipseCurve::try_new(
+            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(0.0, 0.0, height),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -615,7 +615,7 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
 #[test]
 fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -625,7 +625,7 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
     ));
     for axial in [-3.0, 3.0] {
         let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0 + axial),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -647,7 +647,7 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
     }
 
     let invalid_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 6.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -665,7 +665,7 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
         (1.0, 2.0, std::f64::consts::PI, 1.0, std::f64::consts::PI),
     ] {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -675,7 +675,7 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
             .expect("valid TorusSurface fixture"),
         ));
         let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, minor_radius * polar.sin()),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -702,7 +702,7 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
 #[test]
 fn projects_torus_meridian_circles_with_native_angle_phase() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -712,7 +712,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
         .expect("valid TorusSurface fixture"),
     ));
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 6.0, 3.0),
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -732,7 +732,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
 
     let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.1, 6.0, 3.0),
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -746,7 +746,7 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
 #[test]
 fn projects_sphere_meridians_through_both_poles() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -755,7 +755,7 @@ fn projects_sphere_meridians_through_both_poles() {
         .expect("valid SphereSurface fixture"),
     ));
     let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -786,7 +786,7 @@ fn projects_sphere_meridians_through_both_poles() {
     );
 
     let small_circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -800,7 +800,7 @@ fn projects_sphere_meridians_through_both_poles() {
 #[test]
 fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -809,7 +809,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
         .expect("valid CylinderSurface fixture"),
     ));
     let cylinder_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 4.0, 8.0),
             Vector3::new(0.0, 0.0, -2.0)
                 .unit()
@@ -829,7 +829,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     assert_eq!(*direction, Point2::new(0.0, -1.0));
     assert_pcurve_matches_curve(&cylinder, &cylinder_line, &pcurve, &[-1.0, 0.0, 2.0]);
     let tiny_skew = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 4.0, 8.0),
             Vector3::new(1e-13, 0.0, 1e-13)
                 .unit()
@@ -840,7 +840,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     assert!(ruled_generator_line_pcurve(&cylinder, &tiny_skew).is_none());
 
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -851,7 +851,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
         .expect("valid ConeSurface fixture"),
     ));
     let cone_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 5.0, 3.0),
             Vector3::new(0.0, 2.0, 2.0)
                 .unit()
@@ -872,7 +872,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
 
     let elliptical_cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -884,7 +884,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     ));
     let root_half = std::f64::consts::FRAC_1_SQRT_2;
     let elliptical_generator = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
             Vector3::new(2.0 * root_half, root_half, 2.0)
                 .unit()
@@ -911,7 +911,7 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     );
 
     let skew = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 5.0, 3.0),
             Vector3::new(0.1, 2.0, 2.0)
                 .unit()

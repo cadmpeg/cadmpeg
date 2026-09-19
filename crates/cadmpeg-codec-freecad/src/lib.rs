@@ -39,14 +39,20 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::{
+    check::{Check, Finding},
+    Severity as FindingSeverity,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::ContainerSummary;
-use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
 
 use crate::loss::FreecadLossCode;
 
@@ -1131,14 +1137,14 @@ impl CodecBackend for FcstdCodec {
             ir,
             body: DecodeBody {
                 transfer: if ctx.container_only() {
-                    cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
                 } else {
-                    cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+                    cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
                 },
-                coverage: cadmpeg_ir::Coverage::default(),
+                coverage: cadmpeg_ir::report::decode::Coverage::default(),
                 losses,
                 notes: summary_notes,
-                transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
             },
             source_fidelity,
         })

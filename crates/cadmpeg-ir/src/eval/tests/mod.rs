@@ -33,12 +33,13 @@ use crate::eval::surface_point_with_budget;
 use crate::eval::surface_second_partials;
 use crate::eval::IsolineDirection;
 use crate::geometry::{
-    Curve, CurveGeometry, LawExpression, LawFormula, LegacyExtensionFlags, NurbsCurve,
-    NurbsSurface, OffsetExtension, PolylineCurve, PolylineSamples, PolylineVertex,
+    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+    Curve, CurveGeometry, LawExpression, LawFormula, LegacyExtensionFlags, OffsetExtension,
     ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm,
     RevisionSurfaceForm, RevisionSurfaceParameterization, RollingBallJetDerivative,
     RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-    SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
+    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
@@ -98,9 +99,9 @@ const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -439,9 +440,9 @@ fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
 #[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(0.5, 0.0, 0.2), Point3::new(0.5, 1.0, 0.2)],
@@ -463,9 +464,12 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
 #[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![vec![Point3::new(1.0, 2.0, 3.0)]],
+            None,
+        ),
         false,
     )
     .unwrap();
@@ -483,9 +487,9 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(1.0, 2.0, 3.0)],
                 vec![Point3::new(4.0, 5.0, 6.0)],
@@ -510,9 +514,9 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(0.5, 0.0, 0.25), Point3::new(0.5, 1.0, 0.25)],
@@ -553,14 +557,14 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
 fn direct_analytic_curve_inverses_preserve_native_parameters() {
     let geometries = [
         SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .unwrap(),
         ),
         SolvedCurveGeometry::Circle(
-            crate::geometry::CircleCurve::try_new(
+            crate::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -569,7 +573,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             .unwrap(),
         ),
         SolvedCurveGeometry::Ellipse(
-            crate::geometry::EllipseCurve::try_new(
+            crate::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -579,7 +583,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             .unwrap(),
         ),
         SolvedCurveGeometry::Parabola(
-            crate::geometry::ParabolaCurve::try_new(
+            crate::geometry::analytic::ParabolaCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -588,7 +592,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             .unwrap(),
         ),
         SolvedCurveGeometry::Hyperbola(
-            crate::geometry::HyperbolaCurve::try_new(
+            crate::geometry::analytic::HyperbolaCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -716,7 +720,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -737,7 +741,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
 #[test]
 fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let basis = SolvedCurveGeometry::Circle(
-        crate::geometry::CircleCurve::try_new(
+        crate::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -792,7 +796,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            crate::geometry::DegenerateCurve::try_new(point).unwrap(),
+            crate::geometry::analytic::DegenerateCurve::try_new(point).unwrap(),
         )),
         source_object: None,
     });
@@ -812,9 +816,9 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 4.0)],
                 vec![Point3::new(1.0, 2.0, 0.5), Point3::new(1.0, 2.0, 4.5)],
@@ -862,9 +866,9 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
@@ -883,9 +887,9 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             (0..3)
                 .map(|i| {
                     (0..3)
@@ -927,7 +931,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
         Surface {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1004,13 +1008,17 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    crate::geometry::NurbsSurfaceAxis::new(
+                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
                         2,
                         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                         false,
                     ),
-                    crate::geometry::NurbsSurfaceLanes::new(
+                    crate::geometry::nurbs::NurbsSurfaceLanes::new(
                         [0.0, 1.0]
                             .into_iter()
                             .map(|u| {
@@ -1106,7 +1114,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     let offset_construction =
         ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let plane = SolvedSurfaceGeometry::Plane(
-        crate::geometry::PlaneSurface::try_new(
+        crate::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1176,7 +1184,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         Surface {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                crate::geometry::PlaneSurface::try_new(
+                crate::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1229,7 +1237,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
             basis: Box::new(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -1352,7 +1360,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         Curve {
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -1363,7 +1371,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         Curve {
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(7.0, 11.0, 13.0),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
@@ -1457,7 +1465,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
             basis: Box::new(SolvedCurveGeometry::Line(
-                crate::geometry::LineCurve::try_new(
+                crate::geometry::analytic::LineCurve::try_new(
                     Point3::new(2.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
@@ -1520,7 +1528,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -1577,7 +1585,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -1646,7 +1654,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
 #[test]
 fn analytic_and_transformed_surface_partials_follow_parameterization() {
     let cylinder = SolvedSurfaceGeometry::Cylinder(
-        crate::geometry::CylinderSurface::try_new(
+        crate::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1655,7 +1663,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         .unwrap(),
     );
     let cone = SolvedSurfaceGeometry::Cone(
-        crate::geometry::ConeSurface::try_new(
+        crate::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1666,7 +1674,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         .unwrap(),
     );
     let sphere = SolvedSurfaceGeometry::Sphere(
-        crate::geometry::SphereSurface::try_new(
+        crate::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1675,7 +1683,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         .unwrap(),
     );
     let torus = SolvedSurfaceGeometry::Torus(
-        crate::geometry::TorusSurface::try_new(
+        crate::geometry::analytic::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1686,7 +1694,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     );
     let transformed = SolvedSurfaceGeometry::Transformed {
         basis: Box::new(SolvedSurfaceGeometry::Plane(
-            crate::geometry::PlaneSurface::try_new(
+            crate::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1739,7 +1747,7 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
 fn analytic_and_rational_curve_derivatives_are_exact() {
     let parameter = 1.0e16;
     let circle = SolvedCurveGeometry::Circle(
-        crate::geometry::CircleCurve::try_new(
+        crate::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1825,9 +1833,9 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
@@ -1854,9 +1862,9 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::NurbsSurfaceLanes::new(
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        crate::geometry::nurbs::NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
