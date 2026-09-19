@@ -351,7 +351,14 @@ pub fn unverified_message(matched: &DialectMatch) -> Option<String> {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::*;
+    use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch, LayerInstance};
+
+    use super::{
+        classify_layer, extra_layers, find_schema_token, find_u8_length_prefixed_schema_token,
+        push_extras, unverified_message, Carrier, OwnedSchemaToken, DECLARED_CARRIER,
+        DECLARED_SCHEMA, FORMAT, PARASOLID_FORMAT_13006, PARASOLID_SCH_SW_32001,
+        PARASOLID_SCH_SW_33103,
+    };
 
     const ALL_ROWS: [DialectId; 3] = [
         PARASOLID_SCH_SW_33103,
