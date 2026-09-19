@@ -4723,6 +4723,31 @@ pub struct RevisionG2BlendConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "RevisionCompoundLoftConstructionWire")]
 pub struct RevisionCompoundLoftConstruction {
+    revision: i64,
+    cache: RevisionCacheForm,
+    #[serde(default)]
+    discontinuities: [Vec<f64>; 6],
+    tail_flag: bool,
+    base_profile: Vec<LoftProfileMember>,
+    base_path: LoftPath,
+    entries: Vec<LoftSectionEntry>,
+    flags: [bool; 2],
+    kind_flags: [bool; 2],
+    direction: CompoundLoftDirection,
+    tail: RevisionCompoundLoftTail<CurveId>,
+}
+
+/// Stored fields of a revision-gated `cl_loft_spl_sur` construction before
+/// admission. This is the wire shape the deserializer reads and the only
+/// input `RevisionCompoundLoftConstruction::admit` accepts.
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(rename = "RevisionCompoundLoftConstruction")
+)]
+#[serde(deny_unknown_fields)]
+pub struct RevisionCompoundLoftConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: i64,
     /// Approximation-cache form selected by the shared tail enum.
@@ -4749,53 +4774,101 @@ pub struct RevisionCompoundLoftConstruction {
     pub tail: RevisionCompoundLoftTail<CurveId>,
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(rename = "RevisionCompoundLoftConstruction")
-)]
-#[serde(deny_unknown_fields)]
-struct RevisionCompoundLoftConstructionWire {
-    /// Positive serializer-revision integer following the subtype name.
-    revision: i64,
-    /// Approximation-cache form selected by the shared tail enum.
-    cache: RevisionCacheForm,
-    /// Six ordered discontinuity arrays following the fit tolerance.
-    #[serde(default)]
-    discontinuities: [Vec<f64>; 6],
-    /// Boolean terminating the shared tail.
-    tail_flag: bool,
-    /// Leading unparameterized scale block: ordered profile members and path.
-    base_profile: Vec<LoftProfileMember>,
-    /// Path data of the leading scale block.
-    base_path: LoftPath,
-    /// Counted parameterized entries; the native parameter trails each
-    /// entry's fields.
-    entries: Vec<LoftSectionEntry>,
-    /// Two flags following the entries.
-    flags: [bool; 2],
-    /// Two flags opening the kind-zero payload.
-    kind_flags: [bool; 2],
-    /// Direction carrier selected by the kind-zero direction tag.
-    direction: CompoundLoftDirection,
-    /// Trailing bounds and their dependent BS3 curve.
-    tail: RevisionCompoundLoftTail<CurveId>,
-}
-
 impl RevisionCompoundLoftConstruction {
-    /// Admit a construction whose stored scalars are all finite. This is the
+    /// Admit stored fields whose scalars are all finite. This is the
     /// admission of the `revision_compound_loft` procedural surface: a
-    /// decoder that builds the construction admits it here, and the
-    /// deserializer runs the same walk.
-    pub fn admit(self) -> Result<Self, ProceduralGeometryError> {
-        if self.values_are_finite() {
-            Ok(self)
+    /// decoder that reads the fields admits them here, and the deserializer
+    /// runs the same walk. The fields are private, so this and the
+    /// deserializer are the only routes to a value.
+    pub fn admit(
+        wire: RevisionCompoundLoftConstructionWire,
+    ) -> Result<Self, ProceduralGeometryError> {
+        let construction = Self {
+            revision: wire.revision,
+            cache: wire.cache,
+            discontinuities: wire.discontinuities,
+            tail_flag: wire.tail_flag,
+            base_profile: wire.base_profile,
+            base_path: wire.base_path,
+            entries: wire.entries,
+            flags: wire.flags,
+            kind_flags: wire.kind_flags,
+            direction: wire.direction,
+            tail: wire.tail,
+        };
+        if construction.values_are_finite() {
+            Ok(construction)
         } else {
             Err(ProceduralGeometryError::Payload(
                 "revision compound loft construction payload is invalid",
             ))
         }
+    }
+
+    /// Return the positive serializer-revision integer.
+    #[must_use]
+    pub const fn revision(&self) -> i64 {
+        self.revision
+    }
+
+    /// Return the approximation-cache form.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm {
+        &self.cache
+    }
+
+    /// Return the six ordered discontinuity arrays.
+    #[must_use]
+    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+        &self.discontinuities
+    }
+
+    /// Return the Boolean terminating the shared tail.
+    #[must_use]
+    pub const fn tail_flag(&self) -> bool {
+        self.tail_flag
+    }
+
+    /// Return the profile members of the leading scale block.
+    #[must_use]
+    pub fn base_profile(&self) -> &[LoftProfileMember] {
+        &self.base_profile
+    }
+
+    /// Return the path data of the leading scale block.
+    #[must_use]
+    pub const fn base_path(&self) -> &LoftPath {
+        &self.base_path
+    }
+
+    /// Return the counted parameterized entries.
+    #[must_use]
+    pub fn entries(&self) -> &[LoftSectionEntry] {
+        &self.entries
+    }
+
+    /// Return the two flags following the entries.
+    #[must_use]
+    pub const fn flags(&self) -> [bool; 2] {
+        self.flags
+    }
+
+    /// Return the two flags opening the kind-zero payload.
+    #[must_use]
+    pub const fn kind_flags(&self) -> [bool; 2] {
+        self.kind_flags
+    }
+
+    /// Return the direction carrier of the kind-zero payload.
+    #[must_use]
+    pub const fn direction(&self) -> &CompoundLoftDirection {
+        &self.direction
+    }
+
+    /// Return the trailing bounds and their dependent BS3 curve.
+    #[must_use]
+    pub const fn tail(&self) -> &RevisionCompoundLoftTail<CurveId> {
+        &self.tail
     }
 
     /// Whether every scalar this construction carries is finite.
@@ -4822,20 +4895,7 @@ impl TryFrom<RevisionCompoundLoftConstructionWire> for RevisionCompoundLoftConst
     type Error = ProceduralGeometryError;
 
     fn try_from(wire: RevisionCompoundLoftConstructionWire) -> Result<Self, Self::Error> {
-        Self {
-            revision: wire.revision,
-            cache: wire.cache,
-            discontinuities: wire.discontinuities,
-            tail_flag: wire.tail_flag,
-            base_profile: wire.base_profile,
-            base_path: wire.base_path,
-            entries: wire.entries,
-            flags: wire.flags,
-            kind_flags: wire.kind_flags,
-            direction: wire.direction,
-            tail: wire.tail,
-        }
-        .admit()
+        Self::admit(wire)
     }
 }
 

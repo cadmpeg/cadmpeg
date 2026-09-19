@@ -2183,7 +2183,7 @@ fn native_cacheless_procedural_surface_definition(
     if let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } =
         procedural.definition()
     {
-        if construction.cache.parameterization().is_some() {
+        if construction.cache().parameterization().is_some() {
             encode_native_revision_compound_loft(bytes, target, construction, None)?;
             return Ok(true);
         }
@@ -3782,7 +3782,7 @@ fn encode_native_revision_compound_loft(
     construction: &cadmpeg_ir::geometry::RevisionCompoundLoftConstruction,
     solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
-    if construction.revision <= 0 {
+    if construction.revision() <= 0 {
         return Err(CodecError::Malformed(
             "revision-gated cl_loft_spl_sur requires a positive revision".into(),
         ));
@@ -3790,40 +3790,40 @@ fn encode_native_revision_compound_loft(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
-    native_i64(bytes, construction.revision);
+    native_i64(bytes, construction.revision());
     native_revision_tail_head(
         bytes,
         "compound-loft surface",
-        &construction.cache,
+        construction.cache(),
         solved_cache,
     )?;
-    native_revision_tail_discontinuities(bytes, &construction.discontinuities)?;
-    bytes.push(native_bool(construction.tail_flag));
+    native_revision_tail_discontinuities(bytes, construction.discontinuities())?;
+    bytes.push(native_bool(construction.tail_flag()));
     native_revision_cl_scale(
         bytes,
         target,
-        &construction.base_profile,
-        &construction.base_path,
+        construction.base_profile(),
+        construction.base_path(),
     )?;
     native_i64(
         bytes,
-        i64::try_from(construction.entries.len()).map_err(|_| {
+        i64::try_from(construction.entries().len()).map_err(|_| {
             CodecError::NotImplemented("compound-loft entry count exceeds i64".into())
         })?,
     );
-    for entry in &construction.entries {
+    for entry in construction.entries() {
         native_revision_cl_scale(bytes, target, &entry.profile, &entry.path)?;
         native_f64(bytes, entry.parameter);
     }
-    for flag in construction.flags {
+    for flag in construction.flags() {
         bytes.push(native_bool(flag));
     }
     native_i64(bytes, 0);
-    for flag in construction.kind_flags {
+    for flag in construction.kind_flags() {
         bytes.push(native_bool(flag));
     }
-    native_i64(bytes, construction.direction.selector());
-    match &construction.direction {
+    native_i64(bytes, construction.direction().selector());
+    match construction.direction() {
         cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value } => {
             native_vector(bytes, [value.x, value.y, value.z]);
         }
@@ -3832,10 +3832,10 @@ fn encode_native_revision_compound_loft(
             native_nurbs_curve(bytes, &curve)?;
         }
     }
-    for value in construction.tail.interval() {
+    for value in construction.tail().interval() {
         native_optional_f64(bytes, value);
     }
-    if let Some(curve) = construction.tail.curve() {
+    if let Some(curve) = construction.tail().curve() {
         let curve = native_loft_curve(target, curve, None)?;
         native_nurbs_curve(bytes, &curve)?;
     }

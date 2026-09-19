@@ -79,8 +79,10 @@ fn path(fields: &Fields) -> LoftPath {
     }
 }
 
-fn construction(fields: &Fields) -> RevisionCompoundLoftConstruction {
-    RevisionCompoundLoftConstruction {
+// The fields are private, so the wire mirror is the only input `admit`
+// accepts and the only shape the deserializer builds.
+fn stored(fields: &Fields) -> RevisionCompoundLoftConstructionWire {
+    RevisionCompoundLoftConstructionWire {
         revision: 1,
         cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
             u_interval: fields.u_interval,
@@ -123,28 +125,14 @@ fn construction(fields: &Fields) -> RevisionCompoundLoftConstruction {
 }
 
 fn wire(fields: &Fields) -> Result<RevisionCompoundLoftConstruction, ProceduralGeometryError> {
-    let built = construction(fields);
-    RevisionCompoundLoftConstruction::try_from(RevisionCompoundLoftConstructionWire {
-        revision: built.revision,
-        cache: built.cache,
-        discontinuities: built.discontinuities,
-        tail_flag: built.tail_flag,
-        base_profile: built.base_profile,
-        base_path: built.base_path,
-        entries: built.entries,
-        flags: built.flags,
-        kind_flags: built.kind_flags,
-        direction: built.direction,
-        tail: built.tail,
-    })
+    RevisionCompoundLoftConstruction::try_from(stored(fields))
 }
 
 #[test]
 fn the_revision_compound_loft_admission_writes_every_scalar_it_admits() {
     let definition = ProceduralSurfaceDefinition::RevisionCompoundLoft {
         construction: Box::new(
-            construction(&ADMITTED)
-                .admit()
+            RevisionCompoundLoftConstruction::admit(stored(&ADMITTED))
                 .expect("every scalar is finite"),
         ),
     };
@@ -235,7 +223,7 @@ fn the_revision_compound_loft_admission_refuses_a_non_finite_scalar() {
                 ..ADMITTED
             },
         ] {
-            assert!(construction(&fields).admit().is_err());
+            assert!(RevisionCompoundLoftConstruction::admit(stored(&fields)).is_err());
             assert!(wire(&fields).is_err());
         }
     }

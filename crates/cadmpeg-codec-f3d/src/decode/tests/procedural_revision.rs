@@ -550,7 +550,7 @@ fn generated_parameterized_revision_compound_loft_round_trips() {
     else {
         panic!("expected a revision compound loft construction")
     };
-    assert_parameterized_tail(&construction.cache);
+    assert_parameterized_tail(construction.cache());
 }
 
 #[test]

@@ -2575,20 +2575,21 @@ fn emit_revision_compound_loft_surface(
     };
     Ok(ProceduralSurfaceDefinition::RevisionCompoundLoft {
         construction: Box::new(
-            cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
-                revision: construction.revision,
-                cache: construction.cache,
-                discontinuities: construction.discontinuities,
-                tail_flag: construction.tail_flag,
-                base_profile,
-                base_path,
-                entries,
-                flags: construction.flags,
-                kind_flags: construction.kind_flags,
-                direction,
-                tail,
-            }
-            .admit()
+            cadmpeg_ir::geometry::RevisionCompoundLoftConstruction::admit(
+                cadmpeg_ir::geometry::RevisionCompoundLoftConstructionWire {
+                    revision: construction.revision,
+                    cache: construction.cache,
+                    discontinuities: construction.discontinuities,
+                    tail_flag: construction.tail_flag,
+                    base_profile,
+                    base_path,
+                    entries,
+                    flags: construction.flags,
+                    kind_flags: construction.kind_flags,
+                    direction,
+                    tail,
+                },
+            )
             .map_err(cadmpeg_core::CodecError::malformed)?,
         ),
     })

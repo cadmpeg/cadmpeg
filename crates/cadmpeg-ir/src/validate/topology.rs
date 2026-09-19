@@ -779,11 +779,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
             }
             ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
-                for member in construction
-                    .base_profile
-                    .iter()
-                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
-                {
+                for member in construction.base_profile().iter().chain(
+                    construction
+                        .entries()
+                        .iter()
+                        .flat_map(|entry| &entry.profile),
+                ) {
                     if ids.curves(member.profile.id.as_str()).is_none() {
                         ref_error(
                             findings,
@@ -803,19 +804,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         }
                     }
                 }
-                for curve in std::iter::once(&construction.base_path)
-                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                for curve in std::iter::once(construction.base_path())
+                    .chain(construction.entries().iter().map(|entry| &entry.path))
                     .flat_map(|path| {
                         path.path
                             .iter()
                             .map(|curve| &curve.id)
                             .chain(path.auxiliaries.iter())
                     })
-                    .chain(match &construction.direction {
+                    .chain(match construction.direction() {
                         crate::geometry::CompoundLoftDirection::Vector { .. } => None,
                         crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
                     })
-                    .chain(construction.tail.curve())
+                    .chain(construction.tail().curve())
                 {
                     if ids.curves(curve.as_str()).is_none() {
                         ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
