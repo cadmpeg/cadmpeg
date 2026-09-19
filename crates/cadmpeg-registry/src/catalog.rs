@@ -352,7 +352,12 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use cadmpeg_ir::codec::{Confidence, FormatId};
+
+    use super::{
+        AmbiguousDetection, DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError,
+        ResolvedSource, Selection,
+    };
 
     #[test]
     fn ambiguity_requires_at_least_two_candidates() {

@@ -177,7 +177,7 @@ pub struct Disposition {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ReadDisposition, WriteDisposition};
 
     #[test]
     fn the_disposition_vocabulary_is_closed() {

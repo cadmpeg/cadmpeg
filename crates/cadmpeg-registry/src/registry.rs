@@ -275,7 +275,16 @@ pub fn support(dialect: &DialectId) -> Result<Option<Disposition>, RegistryLoadE
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::BTreeMap;
+
+    use cadmpeg_core::dialect::DialectId;
+
+    use super::{
+        dialects, is_format_name, registries, support, IdentityRegistry, Registries,
+        RegistryLoadError,
+    };
+    use crate::disposition::WriteDisposition;
+    use crate::{build_encoder, Format};
 
     fn expect_err<T, E>(result: Result<T, E>, message: &str) -> E {
         match result {
