@@ -161,7 +161,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             })
             .map_err(|error| match error {
                 TessellationError::EditRefused(message) => CodecError::malformed(message),
-                error @ TessellationError::Admission(_) => {
+                error @ TessellationError::Admission { .. } => {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
             })?;
@@ -174,9 +174,9 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 })
                 .map_err(|error| match error {
                     TessellationError::EditRefused(message) => CodecError::malformed(message),
-                    error @ TessellationError::Admission(_) => CodecError::malformed(format_args!(
-                        "invalid transformed tessellation: {error}"
-                    )),
+                    error @ TessellationError::Admission { .. } => CodecError::malformed(
+                        format_args!("invalid transformed tessellation: {error}"),
+                    ),
                 })?;
             }
         }
@@ -335,7 +335,7 @@ fn transform_surface(
                 })
                 .map_err(|error| match error {
                     GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
-                    error @ GeometryLayoutError::Layout(_) => {
+                    error @ GeometryLayoutError::Layout { .. } => {
                         CodecError::malformed(error.to_string())
                     }
                 })?;
@@ -423,7 +423,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 })
                 .map_err(|error| match error {
                     GeometryLayoutError::EditRefused(message) => CodecError::malformed(message),
-                    error @ GeometryLayoutError::Layout(_) => {
+                    error @ GeometryLayoutError::Layout { .. } => {
                         CodecError::malformed(error.to_string())
                     }
                 })?;

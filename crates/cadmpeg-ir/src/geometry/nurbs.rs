@@ -137,10 +137,23 @@ impl NurbsPoles3 {
     /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_points(
         &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut candidate = self.clone();
-        match &mut candidate {
+        candidate.apply_points(edit)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Edit every pole position in place, keeping every accepted edit.
+    ///
+    /// A refusal leaves the lane partly edited, so the caller owns the copy
+    /// that states the prior positions.
+    fn apply_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        match self {
             Self::Polynomial { points } => {
                 for point in points.iter_mut() {
                     edit(point)?;
@@ -152,7 +165,6 @@ impl NurbsPoles3 {
                 }
             }
         }
-        *self = candidate;
         Ok(())
     }
 
@@ -308,10 +320,23 @@ impl NurbsPoleGrid {
     /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_points(
         &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut candidate = self.clone();
-        match &mut candidate {
+        candidate.apply_points(edit)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Edit every pole position in place, keeping every accepted edit.
+    ///
+    /// A refusal leaves the grid partly edited, so the caller owns the copy
+    /// that states the prior positions.
+    fn apply_points(
+        &mut self,
+        mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
+    ) -> Result<(), NurbsError> {
+        match self {
             Self::Polynomial { rows } => {
                 for point in rows.iter_mut().flatten() {
                     edit(point)?;
@@ -323,7 +348,6 @@ impl NurbsPoleGrid {
                 }
             }
         }
-        *self = candidate;
         Ok(())
     }
 }
@@ -824,7 +848,7 @@ impl NurbsSurface {
         edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
-        poles.edit_points(edit)?;
+        poles.apply_points(edit)?;
         poles.require_finite_points()?;
         self.poles = poles;
         Ok(())
@@ -1041,7 +1065,7 @@ impl NurbsCurve {
         edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
-        poles.edit_points(edit)?;
+        poles.apply_points(edit)?;
         poles.require_finite_points()?;
         self.poles = poles;
         Ok(())
