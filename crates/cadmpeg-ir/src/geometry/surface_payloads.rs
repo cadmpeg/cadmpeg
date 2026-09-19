@@ -1242,6 +1242,7 @@ impl LoftSurfacePayload {
                     && entry.profile.iter().all(|member| {
                         let table = member.form.subdata();
                         table.row_values_are_finite()
+                            && member.form.direction().is_none_or(Vector3::is_finite)
                     })
             });
         let bridge_valid = bridge.iter().all(|token| match token {
@@ -1678,6 +1679,7 @@ impl NetSurfacePayload {
                     && entry.profile.iter().all(|member| {
                         let table = member.form.subdata();
                         table.row_values_are_finite()
+                            && member.form.direction().is_none_or(Vector3::is_finite)
                     })
             })
         });
