@@ -149,10 +149,7 @@ impl PcurveNurbsPoles {
 }
 
 fn require_finite_points_2(field: &str, points: &[Point2]) -> Result<(), NurbsError> {
-    if points
-        .iter()
-        .all(|point| point.u.is_finite() && point.v.is_finite())
-    {
+    if points.iter().all(Point2::is_finite) {
         Ok(())
     } else {
         Err(NurbsError::Structure(format!(
@@ -1228,9 +1225,11 @@ impl PolarPcurveNurbs {
                 "polar NURBS degree must be positive".into(),
             ));
         }
-        if !poles.poles().iter().all(|pole| {
-            pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
-        }) {
+        if !poles
+            .poles()
+            .iter()
+            .all(|pole| pole.radial.is_finite() && pole.axial.is_finite())
+        {
             return Err(NurbsError::Structure(
                 "poles contain a non-finite value".into(),
             ));
@@ -1294,9 +1293,11 @@ impl PolarPcurveNurbs {
     ) -> Result<(), NurbsError> {
         let mut poles = self.poles.clone();
         poles.edit_poles(edit)?;
-        if poles.poles().iter().all(|pole| {
-            pole.radial.u.is_finite() && pole.radial.v.is_finite() && pole.axial.is_finite()
-        }) {
+        if poles
+            .poles()
+            .iter()
+            .all(|pole| pole.radial.is_finite() && pole.axial.is_finite())
+        {
             self.poles = poles;
             Ok(())
         } else {

@@ -190,6 +190,11 @@ impl Point2 {
     pub fn new(u: f64, v: f64) -> Self {
         Point2 { u, v }
     }
+
+    /// Whether every coordinate is finite.
+    pub const fn is_finite(&self) -> bool {
+        self.u.is_finite() && self.v.is_finite()
+    }
 }
 
 #[cfg(test)]
