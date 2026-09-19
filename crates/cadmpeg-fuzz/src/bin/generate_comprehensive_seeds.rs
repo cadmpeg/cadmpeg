@@ -107,7 +107,7 @@ mod sldprt {
         world_point,
     };
 
-    pub fn sldprt_with_body_and_material(
+    pub(super) fn sldprt_with_body_and_material(
         body: &[u8],
         name: &str,
         rgb: [u8; 3],
@@ -153,7 +153,7 @@ mod sldprt {
         b
     }
 
-    pub fn sldprt_with_body_and_display_list(body: &[u8]) -> std::io::Result<Vec<u8>> {
+    pub(super) fn sldprt_with_body_and_display_list(body: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut f = sldprt_with_body(body)?;
         f.extend(make_block(
             0x41,
@@ -163,7 +163,7 @@ mod sldprt {
         Ok(f)
     }
 
-    pub fn sldprt_with_partition_and_deltas(partition: &[u8]) -> std::io::Result<Vec<u8>> {
+    pub(super) fn sldprt_with_partition_and_deltas(partition: &[u8]) -> std::io::Result<Vec<u8>> {
         let mut f = outer_header();
         f.extend_from_slice(&make_block(
             0x20,
@@ -210,7 +210,7 @@ mod sldprt {
         b
     }
 
-    pub fn triangle_body_with_overlapping_point() -> Vec<u8> {
+    pub(super) fn triangle_body_with_overlapping_point() -> Vec<u8> {
         let mut b = Vec::new();
         b.extend(plane_carrier(
             100,
@@ -236,7 +236,7 @@ mod sldprt {
         b
     }
 
-    pub fn sheet_body() -> Vec<u8> {
+    pub(super) fn sheet_body() -> Vec<u8> {
         let mut body = Vec::new();
         body.extend(entity51(2, 500, 0x0017, &[510, 700, 0, 0, 0, 0]));
         body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
@@ -292,7 +292,7 @@ mod sldprt {
         body
     }
 
-    pub fn two_owned_triangles() -> Vec<u8> {
+    pub(super) fn two_owned_triangles() -> Vec<u8> {
         let mut body = Vec::new();
         body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
         body.extend(entity51(2, 501, 0x0017, &[701, 0, 0, 0, 0, 0]));
@@ -366,7 +366,7 @@ mod sldprt {
         b
     }
 
-    pub fn triangle_with_nurbs_curve() -> Vec<u8> {
+    pub(super) fn triangle_with_nurbs_curve() -> Vec<u8> {
         let mut body = triangle_body();
 
         let wrapper_attr = 170u16;
@@ -408,7 +408,7 @@ mod sldprt {
         body
     }
 
-    pub fn triangle_with_nurbs_surface() -> Vec<u8> {
+    pub(super) fn triangle_with_nurbs_surface() -> Vec<u8> {
         let mut body = triangle_body();
 
         let wrapper_attr = 180u16;
@@ -461,7 +461,7 @@ mod sldprt {
         body
     }
 
-    pub fn face_on_untyped_surface() -> Vec<u8> {
+    pub(super) fn face_on_untyped_surface() -> Vec<u8> {
         let mut body = Vec::new();
         body.extend(bridge(10, 20, 999));
         body.extend(loop_head(20, 30, 10));
@@ -480,7 +480,7 @@ mod sldprt {
         body
     }
 
-    pub fn triangle_with_line_curve() -> Vec<u8> {
+    pub(super) fn triangle_with_line_curve() -> Vec<u8> {
         let mut body = triangle_body();
         body.extend(line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
         // The body this function just built carries the edge tag, so the
@@ -525,7 +525,7 @@ mod catia {
     fn le_f64(v: f64) -> [u8; 8] {
         v.to_le_bytes()
     }
-    pub fn zero_entity_cylinder_catpart() -> Vec<u8> {
+    pub(super) fn zero_entity_cylinder_catpart() -> Vec<u8> {
         let mut f = Vec::new();
         f.extend_from_slice(OUTER_MAGIC);
         f.extend_from_slice(&be32(0));
@@ -549,7 +549,7 @@ mod catia {
         f
     }
 
-    pub fn zero_entity_nurbs_catpart() -> Vec<u8> {
+    pub(super) fn zero_entity_nurbs_catpart() -> Vec<u8> {
         let mut f = vec![0u8; 16];
         f[..8].copy_from_slice(OUTER_MAGIC);
         let record = f.len();
@@ -600,7 +600,7 @@ mod catia {
         record
     }
 
-    pub fn e5_catpart() -> Vec<u8> {
+    pub(super) fn e5_catpart() -> Vec<u8> {
         let main = e5_circle_stream();
         let surf = vec![0u8];
         let main_off = 16u32;
@@ -655,24 +655,24 @@ fn generate_creo_seeds() -> Result<(), SeedError> {
 
 mod creo {
     use cadmpeg_fuzz::seeds::creo::{build_prt, visibgeom_payload};
-    pub fn nd_layout() -> Vec<u8> {
+    pub(super) fn nd_layout() -> Vec<u8> {
         build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))])
     }
-    pub fn depdb_layout() -> Vec<u8> {
+    pub(super) fn depdb_layout() -> Vec<u8> {
         build_prt(
             "c",
             &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", vec![0x00, 0x01])],
         )
     }
 
-    pub fn with_surface_rows() -> Vec<u8> {
+    pub(super) fn with_surface_rows() -> Vec<u8> {
         let mut payload = visibgeom_payload(2, 0);
         payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
         payload.extend_from_slice(&[8, 0x24, 4, 0xf6, 0x01, 0]);
         build_prt("c", &[("VisibGeom", payload)])
     }
 
-    pub fn with_curve_prototypes() -> Vec<u8> {
+    pub(super) fn with_curve_prototypes() -> Vec<u8> {
         let mut payload = visibgeom_payload(0, 1);
         payload.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
         build_prt("c", &[("VisibGeom", payload)])
@@ -882,10 +882,10 @@ mod nx {
         Ok(s)
     }
 
-    pub fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
+    pub(super) fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
         prt_with_partition(&topology_partition_stream()?)
     }
-    pub fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
+    pub(super) fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
         prt_with_partition(&bspline_partition_stream()?)
     }
 
