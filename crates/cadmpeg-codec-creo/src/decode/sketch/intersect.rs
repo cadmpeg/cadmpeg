@@ -769,7 +769,7 @@ mod tests {
             .expect("segments")
             .rows
             .edit_ordinary(|rows| {
-                rows[1].kind = crate::feature::definitions::FeatureSegmentKind::Line([2, 3])
+                rows[1].kind = crate::feature::definitions::FeatureSegmentKind::Line([2, 3]);
             });
         shared_point
             .trim_entities
