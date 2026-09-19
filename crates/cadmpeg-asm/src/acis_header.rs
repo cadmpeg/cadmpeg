@@ -94,7 +94,7 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> O
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{parse, record_stream_start, solved_record_limit, MAGIC};
 
     #[test]
     fn parses_32_bit_acis_header_and_record_boundary() {

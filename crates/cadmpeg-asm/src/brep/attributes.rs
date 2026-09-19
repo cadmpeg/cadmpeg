@@ -409,7 +409,8 @@ pub fn unknown_record_id(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::decode_transform;
+    use crate::sab::{Record, Token};
 
     fn transform_record(scale: f64, x: [f64; 3]) -> Record {
         Record {

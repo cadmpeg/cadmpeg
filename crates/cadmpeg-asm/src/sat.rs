@@ -1434,7 +1434,8 @@ fn type_record(head: &str, prims: &[Prim], k: f64) -> Vec<Token> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{parse, Terminator};
+    use crate::sab::Token;
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1.0e-12 * a.abs().max(b.abs()).max(1.0)

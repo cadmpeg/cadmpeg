@@ -4442,7 +4442,12 @@ fn procedural_resolving_refs(
 
 #[cfg(test)]
 mod sweep_law_tests {
-    use super::*;
+    use super::{
+        law_expression, law_formula_resolving, sweep_law_expression, EmbeddedLawExpression,
+    };
+    use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
+    use cadmpeg_ir::math::Vector3;
 
     #[test]
     fn sweep_text_law_consumes_one_serializer_token() {
@@ -4527,7 +4532,9 @@ mod sweep_law_tests {
 
 #[cfg(test)]
 mod tail_selector_tests {
-    use super::*;
+    use super::{revision_surface_tail, RevisionSurfaceCache};
+    use crate::kernel_header::RefWidth;
+    use crate::nurbs::toks::{self, Cur};
 
     /// A four-byte enum field.
     fn push_enum(span: &mut Vec<u8>, value: i32) {

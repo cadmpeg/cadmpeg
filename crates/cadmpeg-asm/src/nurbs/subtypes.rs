@@ -379,7 +379,8 @@ pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Optio
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::*;
+    use super::{find_owned_intcurve_subtype, subtype_span};
+    use crate::kernel_header::RefWidth;
 
     /// A subtype definition opening: `0x0f`, name token, length, name bytes.
     fn open(bytes: &mut Vec<u8>, name: &[u8]) {
