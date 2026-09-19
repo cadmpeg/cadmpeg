@@ -101,8 +101,10 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decode, ANONYMOUS};
+    use crate::chunks::ArchiveVersion;
     use crate::test_support::test_dump::crc_chunk;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();

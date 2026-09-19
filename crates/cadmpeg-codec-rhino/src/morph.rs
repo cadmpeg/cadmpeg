@@ -662,7 +662,10 @@ pub(crate) fn project(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{decode, localizer, project, Control, LocalizerKind, ANONYMOUS};
+    use crate::chunks::{ArchiveVersion, BoundedReader};
+    use crate::curves::GeometryError;
+    use crate::settings::MillimeterScale;
     use crate::test_support::test_dump::crc_chunk;
 
     fn anonymous(major: i32, minor: i32, suffix: &[u8]) -> Vec<u8> {

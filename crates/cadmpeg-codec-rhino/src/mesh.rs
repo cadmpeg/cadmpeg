@@ -1576,7 +1576,20 @@ mod tests {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
-    use super::*;
+    use super::{
+        consume_optional_chunk, decode, parse_f32_points, parse_mesh_correspondence_userdata,
+        quad_face_count, read_buffer, read_faces, read_mapping_tag, read_ngons, synchronization_ok,
+        triangulate_faces, MeshBudget, MeshDecodeOptions, MeshExpand, MAX_BUFFER_OUTPUT,
+        OPENNURBS4, V4V5_MESH_NGON_USERDATA, V5_MESH_DOUBLE_VERTICES,
+    };
+    use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
+    use crate::curves::GeometryError;
+    use crate::loss::Diagnostics;
+    use crate::objects::{ClassUserdata, UserdataDescriptor};
+    use crate::settings::MillimeterScale;
+    use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::math::Point3;
+    use std::ops::Range;
 
     fn with_expand<R>(data: &[u8], f: impl FnOnce(MeshExpand<'_>) -> R) -> R {
         let arena = DecodeArena::new();

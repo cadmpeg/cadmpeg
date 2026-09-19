@@ -2843,7 +2843,27 @@ fn finish_anonymous_ranges(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        body_kind_rests_on_missing_stamp, finite_tolerance, legacy_decoded_curve_endpoints,
+        ordered_interval, parse, read_children, read_faces, read_legacy_mesh_sides,
+        read_mesh_sides, read_region_records, read_region_topology_userdata, read_regions,
+        read_trims, read_vertices, serialized_body_kind, supported_class, validate_rings,
+        BrepBodyKind, RawBrep, RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge,
+        RawBrepFace, RawBrepFaceSide, RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex,
+        RawLoopKind, RawSolidFlag, RawTrimIso, RawTrimKind, ResolvedBrep, ResolvedFace,
+        ResolvedLoop, ResolvedTrim, ResolvedVertex, SolidState, ValidatedRawBrep, LEGACY_BREP,
+        LEGACY_TRIMMED_SURFACE, ON_BREP, ON_BREP_FACE_SIDE, ON_BREP_REGION,
+        ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4, TL_BREP,
+        V5_BREP_REGION_TOPOLOGY_USERDATA,
+    };
+    use crate::chunks::{ArchiveVersion, BoundedReader};
+    use crate::curves::GeometryError;
+    use crate::loss::Diagnostics;
+    use crate::objects::ClassUserdata;
+    use crate::settings::{BoundingBox, Interval, Point3};
+    use crate::wire::Uuid;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use std::ops::Range;
 
     #[test]
     fn registered_brep_aliases_share_the_brep_payload_reader() {

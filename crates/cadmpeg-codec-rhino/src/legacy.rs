@@ -2679,7 +2679,21 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        decode_v1, TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_COMMENT,
+        TCODE_ENDOFFILE, TCODE_ENDOFTABLE, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF,
+        TCODE_LEGACY_CRV, TCODE_LEGACY_CRVSTUFF, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF,
+        TCODE_LEGACY_SHL, TCODE_LEGACY_SHLSTUFF, TCODE_LEGACY_SPL, TCODE_LEGACY_SPLSTUFF,
+        TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF,
+        TCODE_LINEAR_DIMENSION, TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION,
+        TCODE_RHINOIO_OBJECT_BREP, TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
+        TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT, TCODE_TEXT_BLOCK,
+        TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT,
+    };
+    use crate::chunks::{chunk_at, ArchiveVersion};
+    use crate::loss::RhinoLossCode;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::math::Point3;
 
     fn chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = typecode.to_le_bytes().to_vec();

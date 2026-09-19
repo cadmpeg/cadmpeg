@@ -820,7 +820,7 @@ pub(crate) fn validate_eof(
 
 #[cfg(test)]
 mod direct_range_tests {
-    use super::*;
+    use super::direct_checksum_ranges;
 
     #[test]
     fn direct_checksum_ranges_exclude_complete_sorted_children() {

@@ -887,7 +887,8 @@ impl<'a> WritableModel<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{adjacent_quad_sheet, polygon_sheet};
-    use super::*;
+    use super::{WritableFaceSurface, WritableModel};
+    use cadmpeg_ir::math::Point3;
 
     #[test]
     fn single_face_resolves_arena_permutations_in_traversal_order() {
