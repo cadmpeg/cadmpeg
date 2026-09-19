@@ -30,11 +30,12 @@ fuzz_target!(|data: &[u8]| {
 
     match strategy % 13 {
         0 => {
-            // Mutate vertex positions with NaN/infinity
+            // Drive vertex positions to the finite extremes; a point refuses anything else.
+            let extreme = cadmpeg_ir::math::Point3::new(f64::MAX, f64::MIN, f64::MIN_POSITIVE);
             for point in &mut ir.model.points {
-                point.position.x = f64::NAN;
-                point.position.y = f64::INFINITY;
-                point.position.z = f64::NEG_INFINITY;
+                if point.set_position(extreme).is_err() {
+                    return;
+                }
             }
         }
         1 => {
