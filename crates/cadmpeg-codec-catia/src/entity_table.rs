@@ -1387,7 +1387,15 @@ fn compact_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval,
+        parse_reference_signature, parse_runs, unique_monotone_run, value_packets,
+        DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
+        EntityRecordCandidates, EntityRecordLayout, EntityValuePacket, NumericPacketItem,
+        NumericPair, NumericPairSlot, PathCount, RangeInterval, RangeIntervalPrefix,
+        RangeIntervalSlot, ReferenceSignature, ReferenceSignatureInstruction,
+        ReferenceSignaturePrefix, ReferenceSignatureSymbol, ReferenceSignatureWire,
+    };
     use crate::value_block;
 
     // The tuple carries one coupled result; a separate alias would add no invariant.

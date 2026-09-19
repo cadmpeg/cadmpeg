@@ -442,7 +442,12 @@ fn unordered_endpoint_pairs_match(left: [Point3; 2], right: [Point3; 2]) -> bool
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        endpoint_locus_candidates, endpoint_pair_candidates, endpoint_pair_candidates_with_budget,
+        ZeroEntityEndpointPairCandidate, ZeroEntityOrientedOccurrence,
+    };
+    use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_ir::math::Point3;
 
     fn occurrence(
         face_record_ordinal: u32,

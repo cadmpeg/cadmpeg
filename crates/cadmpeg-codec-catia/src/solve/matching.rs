@@ -516,7 +516,10 @@ pub(crate) fn unique_coordinate_bijection(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        distinct_domain_matching_with_budget, repair_distinct_domain_matching_with_budget,
+        retain_distinct_matching_supports, MatchingEdgeConstraint,
+    };
 
     #[test]
     fn repairs_matching_after_a_matched_edge_is_removed() {

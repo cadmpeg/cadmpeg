@@ -5797,7 +5797,14 @@ fn mesh_domains_have_incident_edge_support(
 
 #[cfg(test)]
 mod face_domain_support_tests {
-    use super::*;
+    use super::{
+        endpoint_pairs_respect_candidate_domains, materialize_boundary_domains,
+        mesh_domains_have_incident_edge_support, restore_unique_endpoint_pair_orientations,
+    };
+    use crate::solve::missing_edge::MeshBoundaryEdgeCandidate;
+    use crate::solve::missing_edge::MeshDeferredFaceBoundary;
+    use crate::solve::missing_edge::MeshFaceBoundaryAssignment;
+    use crate::solve::missing_edge::MeshFaceBoundaryDomain;
 
     fn assignment(edge: usize) -> MeshFaceBoundaryAssignment {
         MeshFaceBoundaryAssignment {
@@ -9925,7 +9932,13 @@ mod bitset_and_root_count_tests {
 
 #[cfg(test)]
 mod direct_matching_tests {
-    use super::*;
+    use super::{
+        initial_mesh_quotient, resolve_mesh_selection_from_quotient, MAX_MESH_CONSTRAINT_OPERATIONS,
+    };
+    use crate::families::standard::topology::EdgeBoundaryLayout;
+    use crate::families::standard::topology::EdgeRow;
+    use crate::families::standard::topology::StandardTopology;
+    use cadmpeg_core::decode::WorkBudget;
 
     #[test]
     fn direct_mesh_quotient_defers_non_unique_matching() {

@@ -1024,12 +1024,21 @@ pub(crate) fn try_decode_zero_entity(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{transfer_closed_wire_loops, WireTransferCounts};
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, NurbsCurve, ProceduralCurve, SolvedCurveGeometry,
     };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::ids::ProceduralCurveId;
+    use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::HashMap;
     use std::num::NonZeroUsize;
 
     fn support(

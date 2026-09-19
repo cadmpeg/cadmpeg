@@ -976,7 +976,19 @@ fn emit_extrusion_procedure(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{emit_extrusion_procedure, surface_carrier, B5ProceduralSurface, B5SurfaceCarrier};
+    use crate::families::b5::graph::B5Surface;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::HashMap;
 
     #[test]
     fn rejected_plane_frame_is_an_unresolved_carrier() {

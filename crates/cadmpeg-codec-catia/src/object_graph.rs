@@ -1734,7 +1734,10 @@ pub(crate) fn classify(fields: &[PayloadField]) -> PayloadSubtype {
 
 #[cfg(test)]
 mod repeated_reference_suffix_tests {
-    use super::*;
+    use super::{
+        repeated_reference_suffix, ObjectPayload, PayloadField, ReferenceSchemaPreamble,
+        RepeatedReferenceSuffix,
+    };
 
     fn atom(value: u32, offset: usize) -> PayloadField {
         PayloadField::Atom { value, offset }

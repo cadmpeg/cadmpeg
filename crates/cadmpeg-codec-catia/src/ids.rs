@@ -15,7 +15,8 @@ pub(crate) fn neutral_history_id(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::neutral_history_id;
+    use cadmpeg_core::CodecError;
 
     #[test]
     fn history_kind_replacement_preserves_colon_keys() {

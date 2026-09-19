@@ -1589,7 +1589,12 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        curve_support_reference_closes, parse_body_root, parse_jet_pcurve, parse_nurbs_pcurve,
+        parse_topology, plane_digon_orientation_hint, records, solve_absolute_orientation,
+        solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge,
+        E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite, E5Topology, Sign,
+    };
     use crate::families::e5::tests::e5_loop_members;
     use crate::test_support::test_e5::append_e5_record;
     use std::collections::BTreeMap;

@@ -872,7 +872,21 @@ fn sketch_ids_by_native_ref(ir: &CadIr) -> UniqueIndex<String, SketchId> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        transfer_constraint_ranges, transfer_native_sketch_constraints,
+        transfer_native_sketch_entities,
+    };
+    use crate::native::entity_record::CatiaEntityRecord;
+    use crate::native::CatiaConstraintRange;
+    use crate::native::CatiaNative;
+    use crate::native::CatiaObjectRecord;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::sketches::SketchEntity;
+    use cadmpeg_ir::sketches::SketchEntityId;
+    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::SketchId;
+    use std::collections::HashMap;
+    use std::collections::HashSet;
 
     use cadmpeg_ir::sketches::{Sketch, SketchConstraintDefinitionInput, SketchPlacement};
 

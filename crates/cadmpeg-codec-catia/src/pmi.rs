@@ -132,16 +132,22 @@ fn finite_length(bits: u64) -> Option<PmiValue> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::transfer_dimensions;
     use crate::entity_table::{RangeInterval, RangeIntervalPrefix, RangeIntervalSlot};
     use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
+    use crate::native::CatiaNative;
+    use crate::native::CatiaRangeInterval;
     use crate::native::{
         CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,
         CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityReference,
         CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource,
         CatiaRangeNominal, CatiaRangeNominalFraming,
     };
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::pmi::DimensionKind;
+    use cadmpeg_ir::pmi::DimensionTolerance;
     use cadmpeg_ir::pmi::PmiDefinition;
+    use std::collections::HashSet;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
         CatiaEntitySchemaValue {
