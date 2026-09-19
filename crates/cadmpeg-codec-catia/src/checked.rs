@@ -271,6 +271,38 @@ impl From<OrderedInterval> for [f64; 2] {
     }
 }
 
+/// A byte-extent width that reports its own overflow on addition.
+pub(crate) trait ByteExtent: Copy + Ord {
+    /// The sum, or `None` when the sum leaves the width.
+    fn checked_sum(self, other: Self) -> Option<Self>;
+}
+
+impl ByteExtent for u64 {
+    fn checked_sum(self, other: Self) -> Option<Self> {
+        self.checked_add(other)
+    }
+}
+
+impl ByteExtent for usize {
+    fn checked_sum(self, other: Self) -> Option<Self> {
+        self.checked_add(other)
+    }
+}
+
+/// Whether two byte extents share at least one byte. An extent whose end
+/// leaves the width overlaps nothing.
+pub(crate) fn extents_overlap<Extent: ByteExtent>(
+    first_start: Extent,
+    first_len: Extent,
+    second_start: Extent,
+    second_len: Extent,
+) -> bool {
+    first_start
+        .checked_sum(first_len)
+        .zip(second_start.checked_sum(second_len))
+        .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

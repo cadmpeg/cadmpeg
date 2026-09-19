@@ -5,6 +5,7 @@ use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::checked::extents_overlap;
 use crate::layout::outer_alias_row as alias_row;
 use crate::{catalog, entity_table, value_block};
 
@@ -719,18 +720,6 @@ pub(crate) fn extent_contains(
             .checked_add(owner_len)
             .zip(candidate_start.checked_add(candidate_len))
             .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
-}
-
-fn extents_overlap(
-    first_start: usize,
-    first_len: usize,
-    second_start: usize,
-    second_len: usize,
-) -> bool {
-    first_start
-        .checked_add(first_len)
-        .zip(second_start.checked_add(second_len))
-        .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
 }
 
 fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMembership> {

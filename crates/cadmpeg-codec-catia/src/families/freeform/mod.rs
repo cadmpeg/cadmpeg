@@ -1447,7 +1447,7 @@ pub(super) fn append_freeform_surface_pools(
                 [value[0], value[1], value[2]]
             })
             .collect::<Vec<_>>();
-        let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline3(
+        let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
             guide.degree,
             &guide.knots(),
             &points,

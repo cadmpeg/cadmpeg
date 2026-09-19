@@ -2787,8 +2787,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Cylinder {
                     origin: point(&record.payload, 1)?,
-                    reference_x: unit(stored_u)?,
-                    axis: unit(cross(stored_u, stored_v))?,
+                    reference_x: unit_by_reciprocal_multiply(stored_u)?,
+                    axis: unit_by_reciprocal_multiply(cross(stored_u, stored_v))?,
                     radius,
                     u_range,
                     v_range,
@@ -2849,9 +2849,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let azimuth_range = [azimuth_lo, azimuth_hi];
             let latitude_range = [latitude_lo, latitude_hi];
             let vector_length = |value: [f64; 3]| value[0].hypot(value[1]).hypot(value[2]);
-            let direction_x = unit(stored_x)?;
-            let direction_y = unit(stored_y)?;
-            let axis = unit(stored_axis)?;
+            let direction_x = unit_by_reciprocal_multiply(stored_x)?;
+            let direction_y = unit_by_reciprocal_multiply(stored_y)?;
+            let axis = unit_by_reciprocal_multiply(stored_axis)?;
             let expected_chart_angle =
                 (azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI;
             let expected_chart_origin = construction_radius * expected_chart_angle;
@@ -3233,8 +3233,8 @@ fn analytic_offset_magnitude_agrees(
             },
         ) => {
             let (Some(carrier_normal), Some(source_normal)) = (
-                unit(cross(*carrier_u, *carrier_v)),
-                unit(cross(*source_u, *source_v)),
+                unit_by_reciprocal_multiply(cross(*carrier_u, *carrier_v)),
+                unit_by_reciprocal_multiply(cross(*source_u, *source_v)),
             ) else {
                 return false;
             };
@@ -4085,11 +4085,16 @@ fn point(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
     ])
 }
 
-// `unit` divides by reciprocal-multiply (`scale(value, 1.0 / length)`), a
-// bit-level-distinct normalization from the transfer module's per-component
-// division. The two must NOT be unified: the affected profiles depend on the
-// exact rounding of each form. See `transfer::unit` for the sibling copy.
-fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
+/// Normalize by reciprocal-multiply: `scale(value, 1.0 / length)`.
+///
+/// This is not the same function as
+/// [`transfer::unit_by_component_division`](super::transfer). The two accept
+/// and refuse exactly the same inputs, but the results differ in the last bit
+/// on about half of all finite directions, because `1.0 / length` rounds once
+/// before the multiply. For example `[-4.898619485211566,
+/// -0.09129825816118142, -1.010178704225238]` normalizes here to a third
+/// component of `-0.20193371236201624` and there to `-0.20193371236201627`.
+fn unit_by_reciprocal_multiply(value: [f64; 3]) -> Option<[f64; 3]> {
     let length = value[0].hypot(value[1]).hypot(value[2]);
     (length.is_finite() && length != 0.0).then(|| scale(value, 1.0 / length))
 }

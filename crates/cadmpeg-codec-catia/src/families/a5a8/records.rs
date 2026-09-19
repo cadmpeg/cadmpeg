@@ -583,7 +583,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         })
         .collect::<Vec<_>>();
     let knots = jet.knots();
-    let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline3(
+    let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
         A5FreeformCurve::DEGREE,
         &knots,
         &positions,
