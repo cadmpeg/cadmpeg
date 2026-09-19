@@ -1635,14 +1635,12 @@ impl PcurveGeometry {
                 scale(*hyperbolic.sine()),
             )?),
             Self::Nurbs { nurbs } => {
-                let mut nurbs = nurbs.clone();
-                nurbs
+                return nurbs
                     .edit_control_points(|point| {
                         *point = scale(*point);
                         Ok(())
                     })
-                    .map_err(|error| error.to_string())?;
-                Self::Nurbs { nurbs }
+                    .map_err(|error| error.to_string());
             }
             Self::Trimmed(trimmed) => {
                 let mut basis = trimmed.basis.clone();
