@@ -2,11 +2,10 @@ use crate::entity_table;
 use crate::legacy_entity;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{
-    entity_suffix_value, legacy_evaluated_value_name, valid_legacy_identifier,
-    CatiaLegacyEntityRun, CatiaLegacyIntegerEncoding, CatiaLegacyRelation, CatiaLegacyRoleName,
-    CatiaLegacyRoleSelector, CatiaLegacyScalarEvaluation, CatiaLegacySchemaField,
-    CatiaLegacySchemaIdentifier, CatiaLegacySchemaProgram, CatiaLegacyTextEncoding,
-    CatiaLegacyTextField, CatiaLegacyTypeValue,
+    entity_suffix_value, legacy_evaluated_value_name, CatiaLegacyEntityRun,
+    CatiaLegacyIntegerEncoding, CatiaLegacyRelation, CatiaLegacyRoleName, CatiaLegacyRoleSelector,
+    CatiaLegacyScalarEvaluation, CatiaLegacySchemaField, CatiaLegacySchemaIdentifier,
+    CatiaLegacySchemaProgram, CatiaLegacyTextEncoding, CatiaLegacyTextField, CatiaLegacyTypeValue,
 };
 
 pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
@@ -263,7 +262,7 @@ pub(super) fn validate_legacy_entity_runs(
                     && role.byte_offset < run.catalog_offset
                     && role.selector != 0
                     && match &role.name {
-                        CatiaLegacyRoleName::Literal(name) => valid_legacy_identifier(name),
+                        CatiaLegacyRoleName::Literal(name) => legacy_entity::valid_identifier(name),
                         CatiaLegacyRoleName::Selector(selector) => *selector != 0,
                     }
                     && run
@@ -309,7 +308,9 @@ pub(super) fn validate_legacy_entity_runs(
                             && role.entity_id == field.entity_id
                             && role.selector != 0
                             && match &role.name {
-                                CatiaLegacyRoleName::Literal(name) => valid_legacy_identifier(name),
+                                CatiaLegacyRoleName::Literal(name) => {
+                                    legacy_entity::valid_identifier(name)
+                                }
                                 CatiaLegacyRoleName::Selector(selector) => *selector != 0,
                             }
                             && run.role_selectors.contains(role)
@@ -395,7 +396,9 @@ pub(super) fn validate_legacy_entity_runs(
                         .rfind(|identity| identity.byte_offset < descriptor.byte_offset)
                         .is_some_and(|identity| identity.entity_id == descriptor.entity_id)
                     && match &descriptor.value {
-                        CatiaLegacyTypeValue::Name { value } => valid_legacy_identifier(value),
+                        CatiaLegacyTypeValue::Name { value } => {
+                            legacy_entity::valid_identifier(value)
+                        }
                         CatiaLegacyTypeValue::Selector { value } => *value != 0,
                     }
             })

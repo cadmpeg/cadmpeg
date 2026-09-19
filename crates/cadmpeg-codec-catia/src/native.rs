@@ -7268,14 +7268,6 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
         .collect()
 }
 
-fn valid_legacy_identifier(value: &str) -> bool {
-    let mut characters = value.chars();
-    characters
-        .next()
-        .is_some_and(|character| character == '_' || character.is_alphabetic())
-        && characters.all(|character| character == '_' || character.is_alphanumeric())
-}
-
 pub(crate) fn legacy_evaluated_value_name<'a>(
     roles: &[CatiaLegacyRoleSelector],
     fields: &'a [CatiaLegacyTextField],
@@ -7294,7 +7286,7 @@ pub(crate) fn legacy_evaluated_value_name<'a>(
     let mut names = fields.iter().filter(|field| {
         field.entity_id == entity_id
             && field.byte_offset < evaluation_role.byte_offset
-            && valid_legacy_identifier(&field.value)
+            && legacy_entity::valid_identifier(&field.value)
             && field
                 .role
                 .as_ref()

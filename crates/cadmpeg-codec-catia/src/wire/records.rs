@@ -743,31 +743,14 @@ fn parse_consolidated_record(
     })
 }
 
-pub(crate) fn a_family_frames_from_records(
+pub(crate) fn family_frames_from_records(
     records: &[ConsolidatedRecord],
+    family: ConsolidatedFamily,
     class: u8,
 ) -> Vec<ConsolidatedFrame> {
     records
         .iter()
-        .filter(|record| record.family == ConsolidatedFamily::A && record.class == class)
-        .filter_map(|record| {
-            Some(ConsolidatedFrame {
-                pos: record.byte_offset(),
-                payload: record.payload()?.start,
-                end: record.range()?.end,
-                header_token: record.header_token,
-            })
-        })
-        .collect()
-}
-
-pub(crate) fn b_family_frames_from_records(
-    records: &[ConsolidatedRecord],
-    class: u8,
-) -> Vec<ConsolidatedFrame> {
-    records
-        .iter()
-        .filter(|record| record.family == ConsolidatedFamily::B && record.class == class)
+        .filter(|record| record.family == family && record.class == class)
         .filter_map(|record| {
             Some(ConsolidatedFrame {
                 pos: record.byte_offset(),
@@ -782,7 +765,7 @@ pub(crate) fn b_family_frames_from_records(
 #[cfg(test)]
 pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
     let records = consolidated_records(data);
-    b_family_frames_from_records(&records, class)
+    family_frames_from_records(&records, ConsolidatedFamily::B, class)
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
@@ -829,9 +812,10 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        a_family_frames_from_records, consolidated_records, consolidated_records_in_range_sources,
-        consolidated_records_in_ranges, scan_vertex_records, ConsolidatedFamily,
-        ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement, ConsolidatedRecord,
+        consolidated_records, consolidated_records_in_range_sources,
+        consolidated_records_in_ranges, family_frames_from_records, scan_vertex_records,
+        ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
+        ConsolidatedRecord,
     };
 
     #[test]
@@ -914,7 +898,7 @@ mod tests {
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
         assert!(records[1].range().is_none());
-        assert!(a_family_frames_from_records(&records, 0x34).is_empty());
+        assert!(family_frames_from_records(&records, ConsolidatedFamily::A, 0x34).is_empty());
     }
 
     #[test]

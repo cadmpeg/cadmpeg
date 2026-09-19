@@ -7,8 +7,8 @@ use super::knot_lane::{strictly_increasing_finite, A8KnotLane};
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 use crate::wire::records::{
-    a_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
-    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
+    consolidated_records, family_frames_from_records, parse_consolidated_pcurve,
+    ConsolidatedFamily, ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
@@ -488,7 +488,7 @@ pub(crate) fn a5_pcurves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<ConsolidatedPcurve> {
-    a_family_frames_from_records(records, 0x20)
+    family_frames_from_records(records, ConsolidatedFamily::A, 0x20)
         .into_iter()
         .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()
@@ -676,7 +676,7 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<A5NurbsCurve> {
-    a_family_frames_from_records(records, 0x16)
+    family_frames_from_records(records, ConsolidatedFamily::A, 0x16)
         .into_iter()
         .filter_map(|frame| parse_a5_nurbs_curve(data, frame, refusal))
         .collect()
@@ -775,7 +775,7 @@ pub(in crate::families) fn a5_guide_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5GuideCurve> {
-    a_family_frames_from_records(records, 0x39)
+    family_frames_from_records(records, ConsolidatedFamily::A, 0x39)
         .into_iter()
         .filter_map(|frame| parse_a5_guide_curve(data, frame))
         .collect()
@@ -1045,7 +1045,7 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5FreeformCurve> {
-    a_family_frames_from_records(records, 0x32)
+    family_frames_from_records(records, ConsolidatedFamily::A, 0x32)
         .into_iter()
         .filter_map(|frame| parse_a5_curve(data, frame))
         .collect()
@@ -1546,7 +1546,7 @@ pub(in crate::families) fn a5_surfaces_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Vec<FreeformSurface> {
-    a_family_frames_from_records(records, 0x34)
+    family_frames_from_records(records, ConsolidatedFamily::A, 0x34)
         .into_iter()
         .filter_map(|frame| a5_surface(data, frame, refusal))
         .collect()

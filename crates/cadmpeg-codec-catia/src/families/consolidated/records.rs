@@ -1299,7 +1299,11 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     winners.extend(
                         cones
                             .iter()
-                            .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
+                            .filter(|cone| {
+                                pcurve_endpoints_match(pcurve, &points, |uv| {
+                                    b2_cone_point(cone, uv)
+                                })
+                            })
                             .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
                     );
                     winners.extend(
@@ -1310,7 +1314,11 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                     );
                     winners.extend(
                         tori.iter()
-                            .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
+                            .filter(|torus| {
+                                pcurve_endpoints_match(pcurve, &points, |uv| {
+                                    b2_torus_point(torus, uv)
+                                })
+                            })
                             .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
                     );
                     winners.extend(
@@ -1610,10 +1618,10 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
         && (first[0].max(last[0]) - circle.range.upper()).abs() <= EPS_CIRCLE_ENDPOINT * span
 }
 
-fn pcurve_endpoints_match_cone(
+fn pcurve_endpoints_match(
     pcurve: &ConsolidatedPcurve,
-    cone: &B2Cone,
     vertices: &[Point3],
+    evaluate: impl Fn([f64; 2]) -> Option<Point3>,
 ) -> bool {
     let (Some(first), Some(last)) = (
         pcurve.sites.first().map(|site| site.point),
@@ -1622,27 +1630,7 @@ fn pcurve_endpoints_match_cone(
         return false;
     };
     [first, last].into_iter().all(|uv| {
-        b2_cone_point(cone, uv).is_some_and(|point| {
-            vertices
-                .iter()
-                .any(|vertex| point_distance(point, *vertex) < 2e-3)
-        })
-    })
-}
-
-fn pcurve_endpoints_match_torus(
-    pcurve: &ConsolidatedPcurve,
-    torus: &B2Torus,
-    vertices: &[Point3],
-) -> bool {
-    let (Some(first), Some(last)) = (
-        pcurve.sites.first().map(|site| site.point),
-        pcurve.sites.last().map(|site| site.point),
-    ) else {
-        return false;
-    };
-    [first, last].into_iter().all(|uv| {
-        b2_torus_point(torus, uv).is_some_and(|point| {
+        evaluate(uv).is_some_and(|point| {
             vertices
                 .iter()
                 .any(|vertex| point_distance(point, *vertex) < 2e-3)

@@ -601,7 +601,7 @@ pub(crate) fn parse_schema_identifiers(
             let value_offset = relative.checked_add(1)?;
             let end = value_offset.checked_add(value_len)?;
             let value = std::str::from_utf8(bytes.get(value_offset..end)?).ok()?;
-            if !valid_role_name(value) || bytes.get(end).is_some_and(|following| *following < 0x81)
+            if !valid_identifier(value) || bytes.get(end).is_some_and(|following| *following < 0x81)
             {
                 return None;
             }
@@ -685,7 +685,7 @@ fn parse_type_descriptors(
                     return None;
                 }
                 let name = text_value(data.get(payload + 1..name_end)?)?;
-                valid_role_name(&name).then_some(LegacyTypeValue::Name(name))?
+                valid_identifier(&name).then_some(LegacyTypeValue::Name(name))?
             } else if (0x81..=0xd0).contains(&first)
                 && payload.checked_add(1)? < end
                 && data.get(payload + 1) == Some(&0x83)
@@ -946,7 +946,7 @@ fn unique_evaluated_value_name<'a>(
     let mut names = fields.iter().filter(|field| {
         field.entity_id == entity_id
             && field.offset < evaluation_role.offset
-            && valid_role_name(&field.value)
+            && valid_identifier(&field.value)
             && field
                 .role
                 .as_ref()
@@ -1230,7 +1230,7 @@ fn parse_role_selectors(
                 return None;
             }
             let name = text_value(data.get(offset + 1..selector_offset)?)?;
-            if !valid_role_name(&name) {
+            if !valid_identifier(&name) {
                 return None;
             }
             let first = *data.get(selector_offset)?;
@@ -1378,7 +1378,7 @@ fn parse_role_selectors(
     roles
 }
 
-fn valid_role_name(name: &str) -> bool {
+pub(crate) fn valid_identifier(name: &str) -> bool {
     let mut characters = name.chars();
     characters
         .next()
@@ -1431,7 +1431,7 @@ fn role_tailed_text(data: &[u8], start: usize, length: usize, end: usize) -> Opt
     if tail_end > end
         || data.get(separator) != Some(&0xe3)
         || !text_value(data.get(value_end + 1..separator)?)
-            .is_some_and(|role| valid_role_name(&role))
+            .is_some_and(|role| valid_identifier(&role))
     {
         return None;
     }
