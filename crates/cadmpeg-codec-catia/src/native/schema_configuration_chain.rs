@@ -240,7 +240,8 @@ pub(super) fn derive_schema_configuration_row_chains(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::CatiaEntityReference;
+    use super::{CatiaSchemaConfigurationRowChain, CatiaSchemaConfigurationRowChainLink};
 
     #[test]
     fn wire_successors_follow_rows_and_keep_the_terminal() {

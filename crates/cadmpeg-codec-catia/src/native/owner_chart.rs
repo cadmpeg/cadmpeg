@@ -479,7 +479,9 @@ impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        CatiaOwnerChartBridgeReference, CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation,
+    };
     use serde_json::json;
 
     #[test]

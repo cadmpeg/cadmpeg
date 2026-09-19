@@ -959,7 +959,12 @@ mod tests {
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-    use super::*;
+    use super::{
+        canonical_model_curve_range, circular_helix_cache, nurbs_surface_isocurve,
+        quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
+        reverse_pcurve_geometry, LaneRefusals,
+    };
+    use cadmpeg_ir::geometry::PcurveNurbs;
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.

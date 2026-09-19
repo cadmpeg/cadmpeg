@@ -77,7 +77,11 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::CatiaConsolidatedEdgeDefinition;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionClass;
+    use crate::wire::records::ConsolidatedFrameFlag;
+    use crate::wire::records::ConsolidatedFrameWidth;
+    use crate::wire::records::ConsolidatedRawFrame;
 
     #[test]
     fn wire_data_is_derived_and_conflicts_are_rejected() {

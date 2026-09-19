@@ -114,7 +114,10 @@ impl TryFrom<Class5b5cWire> for CatiaConsolidatedClass5b5cRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CatiaClass5b5c, CatiaConsolidatedClass5b5cRecord};
+    use crate::wire::records::ConsolidatedFrameFlag;
+    use crate::wire::records::ConsolidatedFrameWidth;
+    use crate::wire::records::ConsolidatedRawFrame;
 
     #[test]
     fn frame_wire_preserves_byte_payload_and_checks_derived_length() {

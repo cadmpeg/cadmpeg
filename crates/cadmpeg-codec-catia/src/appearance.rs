@@ -301,10 +301,14 @@ fn insert_binding_record(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{insert_source_binding, packet, transfer, Packet, SourcedPacket, TransferResult};
+    use crate::native::CatiaNative;
     use crate::native::CatiaValueBlock;
+    use crate::value_block::ValueField;
+    use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::ids::{BodyId, FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Body, BodyKind, Face, Sense};
+    use cadmpeg_ir::CadIr;
 
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();

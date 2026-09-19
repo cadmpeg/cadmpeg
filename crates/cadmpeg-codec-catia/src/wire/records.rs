@@ -828,7 +828,11 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        a_family_frames_from_records, consolidated_records, consolidated_records_in_range_sources,
+        consolidated_records_in_ranges, scan_vertex_records, ConsolidatedFamily,
+        ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement, ConsolidatedRecord,
+    };
 
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {

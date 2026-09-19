@@ -923,8 +923,17 @@ mod tests {
     };
     use cadmpeg_ir::math::Vector3;
 
+    use super::super::records::ZeroEntityLoopClass;
+    use super::super::records::ZeroEntityOwnershipRoot;
     use super::super::records::ZeroEntitySupportOccurrence;
-    use super::*;
+    use super::super::records::ZeroEntitySupportRun;
+    use super::{transfer_closed_face_topology, ZeroEntityClosedTopology};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::AnnotationBuilder;
 
     fn support(ordinal: u32, start: Point3, end: Point3) -> ZeroEntitySupportOccurrence {
         ZeroEntitySupportOccurrence {

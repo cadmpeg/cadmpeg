@@ -120,7 +120,9 @@ impl B5Vertices {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::B5LogicalVertex;
+    use super::{B5VertexRef, B5Vertices};
+    use std::collections::BTreeMap;
 
     #[test]
     fn vertex_binding_admission_keeps_raw_and_logical_bounds_separate() {

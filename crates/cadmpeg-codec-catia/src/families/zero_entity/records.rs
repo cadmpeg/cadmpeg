@@ -2201,7 +2201,27 @@ fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        oriented_closed_model_endpoints, zero_entity_cone, zero_entity_cylinder,
+        zero_entity_edge_strides, zero_entity_fixed_logical_length, zero_entity_loops_from_records,
+        zero_entity_model_curve, zero_entity_model_curve_construction, zero_entity_neutral_pcurve,
+        zero_entity_nurbs_layout, zero_entity_nurbs_shape, zero_entity_oriented_use_pairs,
+        zero_entity_ownership_root, zero_entity_ownership_roots, zero_entity_record_inventory,
+        zero_entity_records, zero_entity_support_occurrence, zero_entity_support_runs,
+        zero_entity_surface_at, zero_entity_surface_point, zero_entity_surfaces, zero_entity_torus,
+        zero_entity_vertex_incidences, ZeroEntityFaceControl, ZeroEntityLoopMembers,
+        ZeroEntityUseSlot,
+    };
+    use cadmpeg_ir::geometry::CurveGeometry;
+    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::PcurveNurbs;
+    use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::Point3;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn loop_member_run_bounds_preserve_zero_members_and_terminal_slots() {

@@ -3047,7 +3047,15 @@ pub(crate) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        append_consolidated_line_profiles, append_consolidated_revolutions,
+        append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
+        attach_standalone_wires, consolidated_line_profiles, freeform_surface_carriers,
+        pcurve_lift_reaches_endpoints, rechart_equivalent_surface_pcurve, same_surface_locus,
+        solve_planar_chart_rechart, standard_carrier_surface_ids, typed_face_counts,
+        unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
+        FreeformSurfacePool, RechartFailure,
+    };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve,
@@ -3061,6 +3069,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::HashMap;
 
     #[test]
     fn typed_face_counts_partition_the_parsed_record_identities() {

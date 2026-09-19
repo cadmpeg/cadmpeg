@@ -733,7 +733,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CatiaDefinitionValue, CatiaEntityRecord, CatiaSchemaConfigurationRowLink};
     use crate::native::{CatiaEntityReference, CatiaNative};
     use crate::test_support::test_formula::standard_catpart_with_formula_relation;
     use crate::test_support::test_object_graph::{

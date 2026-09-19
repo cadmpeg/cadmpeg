@@ -3371,7 +3371,18 @@ fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::Co
 
 #[cfg(test)]
 mod parser_tests {
-    use super::*;
+    use super::{
+        evaluate_formula_expression, evaluate_formula_expression_with_mode,
+        evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
+        parameter_expression, static_formula_value, string_literal_expression,
+        typed_parameter_evaluation, EvaluatedFormulaBoolean, EvaluatedFormulaString,
+        EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaParameterRole,
+        FormulaParameterType, TypedParameterEvaluation,
+    };
+    use cadmpeg_ir::features::DesignParameter;
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::features::ParameterValue;
+    use std::collections::BTreeMap;
 
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
