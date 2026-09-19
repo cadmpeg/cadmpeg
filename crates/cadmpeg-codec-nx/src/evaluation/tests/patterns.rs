@@ -17,7 +17,6 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::patterns::PatternTransform;
@@ -45,7 +44,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap(),
                 ),
-                spacing: Length::new(2.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                 count: 3,
                 second: None,
             })

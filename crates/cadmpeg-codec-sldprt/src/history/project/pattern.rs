@@ -8,7 +8,7 @@ use cadmpeg_ir::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureId, FeatureOperation, PathRef,
     },
-    scalar::{Angle, Length},
+    scalar::{PositiveAngle, PositiveLength},
 };
 use std::collections::HashMap;
 
@@ -83,7 +83,7 @@ pub(super) fn project_pattern(
                     )?),
                     None => None,
                 },
-                spacing: Length::new(parse_positive_dimension_length_mm(
+                spacing: PositiveLength::new(parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")
@@ -105,7 +105,9 @@ pub(super) fn project_pattern(
                             direction: cadmpeg_ir::features::FeatureDirection3::new(
                                 parse_valid_direction(direction)?,
                             )?,
-                            spacing: Length::new(parse_positive_dimension_length_mm(spacing)?)?,
+                            spacing: PositiveLength::new(parse_positive_dimension_length_mm(
+                                spacing,
+                            )?)?,
                             count: parse_count(count)?,
                         })
                     }
@@ -120,7 +122,7 @@ pub(super) fn project_pattern(
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
                     feature.properties.get("AxisDirection")?,
                 )?)?,
-                angle: Angle::new(
+                angle: PositiveAngle::new(
                     feature
                         .parameters
                         .get("Angle")
@@ -137,7 +139,7 @@ pub(super) fn project_pattern(
                             .map_or_else(|| source.clone(), |id| (*id).to_string()),
                     )
                 }),
-                spacing: Length::new(parse_positive_dimension_length_mm(
+                spacing: PositiveLength::new(parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")

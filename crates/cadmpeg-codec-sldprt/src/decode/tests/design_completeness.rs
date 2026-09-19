@@ -492,7 +492,7 @@ fn design_completeness_recurses_through_pattern_operands() {
             1,
             PatternKind::new(PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("path".into())),
-                spacing: Length::new(10.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 2,
             })
             .unwrap(),
@@ -514,7 +514,7 @@ fn design_completeness_recurses_through_pattern_operands() {
                         pattern: Box::new(
                             PatternKind::new(PatternTransform::CurveDriven {
                                 path: None,
-                                spacing: Length::new(10.0).unwrap(),
+                                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                                 count: 2,
                             })
                             .unwrap(),
@@ -532,7 +532,7 @@ fn design_completeness_recurses_through_pattern_operands() {
                     .unwrap(),
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                     .unwrap(),
-                angle: Angle::new(std::f64::consts::TAU).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 count: 4,
             })
             .unwrap(),

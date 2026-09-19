@@ -5947,7 +5947,9 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             PatternKind::new(PatternTransform::Circular {
                 axis_origin,
                 axis_dir,
-                angle: cadmpeg_ir::scalar::Angle::new((step * f64::from(count - 1)).to_radians())?,
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(
+                    (step * f64::from(count - 1)).to_radians(),
+                )?,
                 count,
             })
             .ok()?
@@ -5994,7 +5996,7 @@ fn linear_pattern_axis(
         Some(
             PatternKind::new(PatternTransform::Linear {
                 direction,
-                spacing: Length::new(spacing)?,
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(spacing)?,
                 count,
                 second: None,
             })

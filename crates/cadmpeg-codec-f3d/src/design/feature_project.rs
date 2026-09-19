@@ -6566,7 +6566,7 @@ fn project_circular_pattern(
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
-    use cadmpeg_ir::scalar::Angle;
+    use cadmpeg_ir::scalar::PositiveAngle;
 
     let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
@@ -6606,7 +6606,7 @@ fn project_circular_pattern(
         pattern: PatternKind::new(PatternTransform::Circular {
             axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
             axis_dir: cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?,
-            angle: Angle::new(construction.angle)?,
+            angle: PositiveAngle::new(construction.angle)?,
             count: construction.count,
         })
         .ok()?,
@@ -6661,7 +6661,7 @@ fn project_rectangular_pattern_scalars(
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
-    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::scalar::PositiveLength;
 
     let construction = scope.rectangular_pattern_construction()?;
     let active = [
@@ -6758,7 +6758,7 @@ fn project_rectangular_pattern_scalars(
         seeds,
         pattern: PatternKind::new(PatternTransform::Linear {
             direction,
-            spacing: Length::new(extent.abs() * 10.0 / f64::from(intervals.get()))?,
+            spacing: PositiveLength::new(extent.abs() * 10.0 / f64::from(intervals.get()))?,
             count: *count,
             second: None,
         })

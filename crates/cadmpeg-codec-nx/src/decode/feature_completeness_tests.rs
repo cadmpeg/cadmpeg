@@ -367,20 +367,17 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
 
 #[test]
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
-    use cadmpeg_ir::math::Vector3;
-    use cadmpeg_ir::{
-        features::{
-            patterns::{PatternKind, PatternStage, PatternTransform},
-            PathRef,
-        },
-        scalar::Length,
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternStage, PatternTransform},
+        PathRef,
     };
+    use cadmpeg_ir::math::Vector3;
 
     let linear = PatternKind::new(PatternTransform::Linear {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
         ),
-        spacing: Length::new(10.0).unwrap(),
+        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
         count: 3,
         second: None,
     })
@@ -390,7 +387,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
                 direction: None,
-                spacing: Length::new(10.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 3,
                 second: None,
             }
@@ -404,7 +401,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap()
                 ),
-                spacing: Length::new(10.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 1,
                 second: None,
             }
@@ -415,7 +412,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("nx:path".into())),
-                spacing: Length::new(10.0).unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 3,
             }
         )
@@ -427,7 +424,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Linear {
                         direction: None,
-                        spacing: Length::new(10.0).unwrap(),
+                        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                         count: 3,
                         second: None,
                     })

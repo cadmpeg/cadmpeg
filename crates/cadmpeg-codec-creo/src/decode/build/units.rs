@@ -1310,9 +1310,9 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
         PatternTransform::Linear {
             spacing, second, ..
         } => {
-            scale_length(spacing, scale)?;
+            scale_positive_length(spacing, scale)?;
             if let Some(second) = second {
-                scale_length(&mut second.spacing, scale)?;
+                scale_positive_length(&mut second.spacing, scale)?;
             }
         }
         PatternTransform::LinearOffsets { offsets, .. } => {
@@ -1320,7 +1320,7 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
                 scale_length(offset, scale)?;
             }
         }
-        PatternTransform::CurveDriven { spacing, .. } => scale_length(spacing, scale)?,
+        PatternTransform::CurveDriven { spacing, .. } => scale_positive_length(spacing, scale)?,
         PatternTransform::Circular { axis_origin, .. }
         | PatternTransform::CircularAngles { axis_origin, .. } => {
             scale_finite_point3(axis_origin, scale)?;
