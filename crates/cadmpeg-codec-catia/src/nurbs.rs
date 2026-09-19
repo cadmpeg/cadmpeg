@@ -7,7 +7,7 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
@@ -208,11 +208,10 @@ pub(crate) fn reverse_pcurve_geometry(
             if !origin.is_finite() || !direction.is_finite() {
                 return None;
             }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
+            let origin = Point2::new(
+                range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
+                range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
+            );
             origin.is_finite().then_some(PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     origin,
@@ -225,24 +224,7 @@ pub(crate) fn reverse_pcurve_geometry(
             if !valid_pcurve_nurbs(nurbs) {
                 return None;
             }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let mut reversed_knots = nurbs
-                .knots()
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            for knot in &mut reversed_knots {
-                if *knot == -0.0 {
-                    *knot = 0.0;
-                }
-            }
-            if reversed_knots.iter().copied().any(|knot| !knot.is_finite()) {
-                return None;
-            }
+            let reversed_knots = reverse_knots(nurbs.knots(), range);
             match PcurveNurbs::from_lanes(
                 nurbs.degree(),
                 reversed_knots,
@@ -339,28 +321,7 @@ pub(crate) fn reverse_curve_geometry(
             if !valid_nurbs_curve(nurbs) {
                 return None;
             }
-            let sum = range[0] + range[1];
-            if !sum.is_finite() {
-                return None;
-            }
-            let knots = nurbs
-                .knots()
-                .iter()
-                .rev()
-                .map(|knot| sum - knot)
-                .collect::<Vec<_>>();
-            if knots.iter().copied().any(|knot| !knot.is_finite()) {
-                return None;
-            }
-            match NurbsCurve::from_lanes(
-                nurbs.degree(),
-                knots,
-                nurbs.control_points().iter().rev().copied().collect(),
-                nurbs
-                    .weights()
-                    .map(|weights| weights.iter().rev().copied().collect()),
-                nurbs.periodic(),
-            ) {
+            match reverse_nurbs_curve(nurbs, range) {
                 Ok(curve) => Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     range,
@@ -370,6 +331,48 @@ pub(crate) fn reverse_curve_geometry(
         }
         _ => None,
     }
+}
+
+/// Reflect knots without summing the interval endpoints. Subtracting from
+/// the nearer endpoint preserves small spans at large parameter offsets.
+fn reverse_knots(knots: &[f64], [lower, upper]: [f64; 2]) -> Vec<f64> {
+    knots
+        .iter()
+        .rev()
+        .map(|&knot| {
+            let reflected = if (knot - lower).abs() <= (upper - knot).abs() {
+                upper - (knot - lower)
+            } else {
+                lower + (upper - knot)
+            };
+            if reflected == 0.0 {
+                0.0
+            } else {
+                reflected
+            }
+        })
+        .collect()
+}
+
+/// Reverse a NURBS carrier in the stated parameter chart.
+pub(crate) fn reverse_nurbs_curve(
+    curve: &NurbsCurve,
+    range: [f64; 2],
+) -> Result<NurbsCurve, NurbsError> {
+    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+        return Err(NurbsError::Structure(
+            "reversal range must be finite and ordered".into(),
+        ));
+    }
+    NurbsCurve::from_lanes(
+        curve.degree(),
+        reverse_knots(curve.knots(), range),
+        curve.control_points().iter().rev().copied().collect(),
+        curve
+            .weights()
+            .map(|weights| weights.iter().rev().copied().collect()),
+        curve.periodic(),
+    )
 }
 
 /// Normalize the parameter interval for a model-space carrier.
@@ -651,7 +654,8 @@ pub(crate) fn circular_helix_cache(
     {
         return None;
     }
-    let fit_tolerance = 2.0 * radius * (step * 0.25).sin().powi(2);
+    let sine = (step * 0.25).sin();
+    let fit_tolerance = (radius * sine) * (2.0 * sine);
     let mut knots = Vec::with_capacity(samples.len() + 2);
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
@@ -740,16 +744,34 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         let d1 = first[index + 1];
         let dd0 = second[index];
         let dd1 = second[index + 1];
+        // Scale derivatives before squaring the span. In particular, h*h
+        // can overflow while h*h*dd is finite, including when dd is zero.
+        let tangent = |derivative: f64| {
+            let product = h * derivative;
+            if product.is_finite() {
+                product / 5.0
+            } else {
+                (h / 5.0) * derivative
+            }
+        };
+        let curvature = |derivative: f64| {
+            let product = h * derivative;
+            if product.is_finite() {
+                (h / 20.0) * product
+            } else {
+                ((h / 20.0) * derivative) * h
+            }
+        };
         controls.extend([
             p0,
-            std::array::from_fn(|axis| p0[axis] + h * d0[axis] / 5.0),
+            std::array::from_fn(|axis| p0[axis] + tangent(d0[axis])),
             std::array::from_fn(|axis| {
-                p0[axis] + 2.0 * h * d0[axis] / 5.0 + h * h * dd0[axis] / 20.0
+                tangent(d0[axis]).mul_add(2.0, p0[axis]) + curvature(dd0[axis])
             }),
             std::array::from_fn(|axis| {
-                p1[axis] - 2.0 * h * d1[axis] / 5.0 + h * h * dd1[axis] / 20.0
+                tangent(d1[axis]).mul_add(-2.0, p1[axis]) + curvature(dd1[axis])
             }),
-            std::array::from_fn(|axis| p1[axis] - h * d1[axis] / 5.0),
+            std::array::from_fn(|axis| p1[axis] - tangent(d1[axis])),
             p1,
         ]);
         full_knots.extend([knots[index + 1]; 6]);
@@ -764,7 +786,6 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
 
 /// Contract one parameter of a tensor-product NURBS surface into its exact
 /// rational isocurve.
-/// Evaluate one isoparametric curve of a NURBS surface.
 ///
 /// The surface is a refined IR carrier and the parameter is the caller's, so
 /// every `return None` states that the isocurve is not computable for this
@@ -811,50 +832,85 @@ pub(crate) fn nurbs_surface_isocurve(
             surface.u_knots().to_vec(),
         )
     };
+    let indices = |fixed, varying| {
+        if fix_u {
+            (fixed, varying)
+        } else {
+            (varying, fixed)
+        }
+    };
+    // A common weight factor does not change a rational surface. Use one
+    // scale across all output poles to preserve their relative weights.
+    let mut weight_scale = 0.0_f64;
+    for varying in 0..varying_count {
+        for (fixed, &basis) in fixed_basis.iter().enumerate() {
+            if basis != 0.0 {
+                let (u, v) = indices(fixed, varying);
+                weight_scale = weight_scale.max(surface.weight(u, v).unwrap_or(1.0).abs());
+            }
+        }
+    }
+    if weight_scale == 0.0 {
+        return None;
+    }
     let mut control_points = Vec::with_capacity(varying_count);
     let mut weights = Vec::with_capacity(varying_count);
     for varying in 0..varying_count {
+        let mut coordinate_scale = [0.0_f64; 3];
+        for (fixed, &basis) in fixed_basis.iter().enumerate() {
+            if basis == 0.0 {
+                continue;
+            }
+            let (u, v) = indices(fixed, varying);
+            let point: [f64; 3] = surface.pole(u, v)?.into();
+            for axis in 0..3 {
+                coordinate_scale[axis] = coordinate_scale[axis].max(point[axis].abs());
+            }
+        }
         let mut numerator = [0.0; 3];
         let mut denominator = 0.0;
         for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
-            let (pole_u, pole_v) = if fix_u {
-                (fixed, varying)
-            } else {
-                (varying, fixed)
-            };
-            let point = surface.pole(pole_u, pole_v)?;
-            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
-            let factor = basis * weight;
-            numerator[0] += factor * point.x;
-            numerator[1] += factor * point.y;
-            numerator[2] += factor * point.z;
+            if basis == 0.0 {
+                continue;
+            }
+            let (u, v) = indices(fixed, varying);
+            let point: [f64; 3] = surface.pole(u, v)?.into();
+            let factor = basis * (surface.weight(u, v).unwrap_or(1.0) / weight_scale);
+            for axis in 0..3 {
+                if coordinate_scale[axis] != 0.0 {
+                    numerator[axis] += factor * (point[axis] / coordinate_scale[axis]);
+                }
+            }
             denominator += factor;
         }
-        if !denominator.is_finite()
-            || denominator == 0.0
-            || !numerator.into_iter().all(f64::is_finite)
-        {
+        if !denominator.is_finite() || denominator == 0.0 {
             return None;
         }
-        let point = Point3::new(
-            numerator[0] / denominator,
-            numerator[1] / denominator,
-            numerator[2] / denominator,
-        );
+        let point: [f64; 3] = std::array::from_fn(|axis| {
+            let quotient = numerator[axis] / denominator;
+            if quotient.is_finite() {
+                quotient * coordinate_scale[axis]
+            } else {
+                (numerator[axis] * coordinate_scale[axis]) / denominator
+            }
+        });
+        let point = Point3::from(point);
         if !point.is_finite() {
             return None;
         }
         control_points.push(point);
         weights.push(denominator);
     }
-    if !knots.iter().copied().all(f64::is_finite)
-        || !control_points
-            .iter()
-            .copied()
-            .all(|point| point.is_finite())
-        || !weights.iter().copied().all(f64::is_finite)
-    {
-        return None;
+    // Retain the source weight scale when it does not overflow or lose
+    // relative precision in the subnormal range. Otherwise keep the common
+    // normalization for the entire curve.
+    if weights.iter().all(|weight| {
+        let restored = weight * weight_scale;
+        restored.is_finite() && restored.abs() >= f64::MIN_POSITIVE
+    }) {
+        for weight in &mut weights {
+            *weight *= weight_scale;
+        }
     }
     match NurbsCurve::from_lanes(
         degree,
@@ -936,6 +992,7 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    mod numerical_limits;
     use cadmpeg_ir::eval::{curve_point, pcurve_uv};
     use cadmpeg_ir::geometry::{
         nurbs::{NurbsCurve, NurbsSurface},
@@ -1230,8 +1287,13 @@ mod tests {
         };
         assert!(nurbs_surface_isocurve(
             &surface(
-                vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
-                Some(vec![1.0e200; 4]),
+                vec![
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point3::new(-f64::MAX, 0.0, 0.0),
+                    Point3::new(-f64::MAX, 0.0, 0.0),
+                ],
+                Some(vec![1.0, 1.0, -0.5, -0.5]),
             ),
             0.5,
             true,
@@ -1421,11 +1483,11 @@ mod tests {
         )
         .is_none());
 
-        let overflowing_fit = ProceduralCurveDefinition::Helix(
+        let overflowing_points = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
                 cadmpeg_ir::geometry::HelixFrame {
-                    center: Point3::new(0.0, 0.0, 0.0),
+                    center: Point3::new(f64::MAX, 0.0, 0.0),
                     major: Vector3::new(f64::MAX, 0.0, 0.0),
                     minor: Vector3::new(0.0, f64::MAX, 0.0),
                     pitch: Vector3::new(0.0, 0.0, 0.0),
@@ -1437,7 +1499,7 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(
-            &overflowing_fit,
+            &overflowing_points,
             f64::MAX,
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
