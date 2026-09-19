@@ -69,3 +69,17 @@ fn nonempty_source_id_matches_the_uuid_rendering() {
         assert_eq!(uuid.to_nonempty().as_str(), uuid.to_string());
     }
 }
+
+/// A non-finite coordinate and an overflowing product are both refused, so the
+/// single product test covers every non-finite input.
+#[test]
+fn scaled_coordinate_refuses_nonfinite_inputs_and_overflowing_products() {
+    let scale = crate::test_support::millimeter_scale(25.4);
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(super::scaled_coordinate(value, scale), None, "{value}");
+    }
+    assert_eq!(super::scaled_coordinate(2.0, scale), Some(50.8));
+
+    let huge = crate::test_support::millimeter_scale(f64::MAX);
+    assert_eq!(super::scaled_coordinate(f64::MAX, huge), None);
+}
