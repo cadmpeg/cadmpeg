@@ -471,7 +471,7 @@ fn emit_carrier_surface(
                 emit_variable_blend_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(construction) => {
-                emit_revision_compound_loft_surface(out, i, construction, format)
+                emit_revision_compound_loft_surface(out, i, construction, format)?
             }
             DecodedProceduralSurfaceDefinition::RevisionG2Blend(construction) => {
                 emit_revision_g2_blend_surface(out, i, construction, format)
@@ -2429,7 +2429,7 @@ fn emit_revision_compound_loft_surface(
     i: i64,
     construction: Box<EmbeddedRevisionCompoundLoft>,
     format: IdFormat,
-) -> ProceduralSurfaceDefinition {
+) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     let convert_profile = |scope: cadmpeg_ir::ids::IdentityKey,
                            profile: Vec<EmbeddedLoftProfileMember>,
                            out: &mut AsmBrep|
@@ -2573,21 +2573,25 @@ fn emit_revision_compound_loft_surface(
             }
         }
     };
-    ProceduralSurfaceDefinition::RevisionCompoundLoft {
-        construction: Box::new(cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
-            revision: construction.revision,
-            cache: construction.cache,
-            discontinuities: construction.discontinuities,
-            tail_flag: construction.tail_flag,
-            base_profile,
-            base_path,
-            entries,
-            flags: construction.flags,
-            kind_flags: construction.kind_flags,
-            direction,
-            tail,
-        }),
-    }
+    Ok(ProceduralSurfaceDefinition::RevisionCompoundLoft {
+        construction: Box::new(
+            cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
+                revision: construction.revision,
+                cache: construction.cache,
+                discontinuities: construction.discontinuities,
+                tail_flag: construction.tail_flag,
+                base_profile,
+                base_path,
+                entries,
+                flags: construction.flags,
+                kind_flags: construction.kind_flags,
+                direction,
+                tail,
+            }
+            .admit()
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+        ),
+    })
 }
 
 fn emit_revision_g2_blend_surface(
