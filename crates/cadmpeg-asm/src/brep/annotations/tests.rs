@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::emit_annotation_records;
+use crate::brep::{AsmBrep, Carriers};
+use crate::sab::Record;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 
 #[test]

@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{emit_carrier_curve, emit_coedges, emit_faces, emit_vertices};
+use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
+use crate::brep::{AsmBrep, Carriers, Reachable};
+use crate::nurbs;
+use crate::nurbs::proc_curve::{
+    EmbeddedSurfaceOffset, EmbeddedSurfaceOffsetLayout, ProceduralCurveConstruction,
+};
+use crate::sab::{Record, Token};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::topology::Sense;
+use std::collections::HashSet;
 
 #[test]
 fn face_sidedness_retains_the_decode_time_carrier_flip() {
