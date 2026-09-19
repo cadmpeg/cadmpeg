@@ -1449,19 +1449,14 @@ impl ScaledCompoundLoftSurfacePayload {
                 true
             }
             crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                match direction {
-                    crate::geometry::CompoundLoftDirection::Vector { value } => value.is_finite(),
-                    crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-                }
+                direction.values_are_finite()
             }
         };
         let scales_valid = scales.iter().all(|scale| {
-            scale.members.iter().all(|member| {
-                let data = &member.data;
-                let table = &data.subdata;
-                table.row_values_are_finite()
-                    && data.direction.as_ref().is_none_or(Vector3::is_finite)
-            })
+            scale
+                .members
+                .iter()
+                .all(|member| member.data.values_are_finite())
         });
         let scalars_valid = construction
             .discontinuities
