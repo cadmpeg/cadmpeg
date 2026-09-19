@@ -8,7 +8,7 @@ use std::ops::Deref;
     try_from = "Vec<DesignDimensionLocusPair>",
     into = "Vec<DesignDimensionLocusPair>"
 )]
-pub struct DesignDimensionLocusPairs(Vec<DesignDimensionLocusPair>);
+pub(crate) struct DesignDimensionLocusPairs(Vec<DesignDimensionLocusPair>);
 
 impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionLocusPairs {
     type Error = String;
@@ -53,7 +53,7 @@ impl<'a> IntoIterator for &'a DesignDimensionLocusPairs {
     try_from = "Vec<dimension_null_locus_wire::Entry>",
     into = "Vec<dimension_null_locus_wire::Wire>"
 )]
-pub struct DesignDimensionNullLocusPairs(Vec<DesignDimensionLocusPair>);
+pub(crate) struct DesignDimensionNullLocusPairs(Vec<DesignDimensionLocusPair>);
 
 impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionNullLocusPairs {
     type Error = String;

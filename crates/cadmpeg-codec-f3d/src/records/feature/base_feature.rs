@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Encoded compact Base Feature mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum DesignBaseFeatureCompactMode {
+pub(crate) enum DesignBaseFeatureCompactMode {
     Zero = 0,
     One = 1,
 }
@@ -25,7 +25,7 @@ impl TryFrom<u8> for DesignBaseFeatureCompactMode {
 
 /// Layout of the legacy class-452/class-262 Base Feature envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DesignBaseFeatureBodyReferenceForm {
+pub(crate) enum DesignBaseFeatureBodyReferenceForm {
     /// One output body with an encoded compact mode.
     CompactOneBody {
         mode: Located<DesignBaseFeatureCompactMode>,
@@ -39,10 +39,10 @@ pub enum DesignBaseFeatureBodyReferenceForm {
 
 /// One body in a legacy Base Feature envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignLegacyBaseFeatureBody {
-    pub entity: DesignBaseFeatureEntry<u32>,
-    pub parameter_body: Located<u64>,
-    pub auxiliary: Located<u64>,
+pub(crate) struct DesignLegacyBaseFeatureBody {
+    pub(crate) entity: DesignBaseFeatureEntry<u32>,
+    pub(crate) parameter_body: Located<u64>,
+    pub(crate) auxiliary: Located<u64>,
 }
 
 impl DesignBaseFeatureBodyReferenceForm {
@@ -60,7 +60,7 @@ impl DesignBaseFeatureBodyReferenceForm {
     try_from = "DesignBaseFeatureConstructionWire",
     into = "DesignBaseFeatureConstructionWire"
 )]
-pub enum DesignBaseFeatureConstruction {
+pub(crate) enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.
     ResultBodies {
         /// Ordered body, passive-reference, result, and optional repeated-field rows.
@@ -128,15 +128,15 @@ pub enum DesignBaseFeatureConstruction {
 
 /// One aligned body, passive reference, and result record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignBaseFeatureResultBody {
-    pub entity: DesignBaseFeatureEntry<u64>,
-    pub reference: DesignBaseFeatureEntry<u32>,
-    pub result: DesignBaseFeatureEntry<u32>,
+pub(crate) struct DesignBaseFeatureResultBody {
+    pub(crate) entity: DesignBaseFeatureEntry<u64>,
+    pub(crate) reference: DesignBaseFeatureEntry<u32>,
+    pub(crate) result: DesignBaseFeatureEntry<u32>,
 }
 
 /// Result-body runs with either no repeated fields or one field per body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DesignBaseFeatureResults {
+pub(crate) enum DesignBaseFeatureResults {
     WithoutRepeatedFields(Vec<DesignBaseFeatureResultBody>),
     WithRepeatedFields {
         first: (DesignBaseFeatureResultBody, [u8; 6]),
@@ -160,10 +160,10 @@ impl DesignBaseFeatureResults {
 
 /// One Base Feature reference value, its location, and its six-byte field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignBaseFeatureEntry<T> {
-    pub value: T,
-    pub offset: u64,
-    pub field: [u8; 6],
+pub(crate) struct DesignBaseFeatureEntry<T> {
+    pub(crate) value: T,
+    pub(crate) offset: u64,
+    pub(crate) field: [u8; 6],
 }
 
 /// Wire form of the legacy class-452/class-262 Base Feature body-reference

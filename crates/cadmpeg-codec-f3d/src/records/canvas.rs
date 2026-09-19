@@ -9,7 +9,7 @@ const DESIGN_CANVAS_LENGTH_TO_MM: f64 = 10.0;
 
 /// Canvas opacity and source-space frame; the fixed payload is emitted from these values.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignCanvasGeometryPayload {
+pub(crate) struct DesignCanvasGeometryPayload {
     opacity: f32,
     origin_centimetres: [f64; 3],
     u_axis: Vector3,
@@ -68,7 +68,7 @@ impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
     }
 }
 impl DesignCanvasGeometryPayload {
-    pub fn decoded(&self) -> (f32, Point3, Vector3, Vector3) {
+    pub(crate) fn decoded(&self) -> (f32, Point3, Vector3, Vector3) {
         (
             self.opacity,
             Point3::new(
@@ -80,7 +80,7 @@ impl DesignCanvasGeometryPayload {
             self.v_axis,
         )
     }
-    pub fn bytes(&self) -> [u8; 77] {
+    pub(super) fn bytes(&self) -> [u8; 77] {
         let mut bytes = [0; 77];
         bytes[..4].copy_from_slice(&self.opacity.to_le_bytes());
         let mut at = 5;
@@ -99,7 +99,7 @@ impl DesignCanvasGeometryPayload {
 
 /// Authored Canvas boundary segments in an admitted horizontal or vertical form.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DesignCanvasBounds {
+pub(crate) struct DesignCanvasBounds {
     form: DesignCanvasBoundaryForm,
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -144,19 +144,19 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     }
 }
 impl DesignCanvasBounds {
-    pub fn segments(self) -> [[Point2; 2]; 2] {
+    pub(super) fn segments(self) -> [[Point2; 2]; 2] {
         match self.form {
             DesignCanvasBoundaryForm::Horizontal(segments)
             | DesignCanvasBoundaryForm::Vertical(segments) => segments,
         }
     }
-    pub fn mirroring(self) -> (bool, bool) {
+    pub(crate) fn mirroring(self) -> (bool, bool) {
         match self.form {
             DesignCanvasBoundaryForm::Horizontal([[a, b], [c, _]]) => (a.u > b.u, a.v > c.v),
             DesignCanvasBoundaryForm::Vertical([[a, b], [c, _]]) => (a.u > c.u, a.v > b.v),
         }
     }
-    pub fn extents(self) -> [Point2; 2] {
+    pub(crate) fn extents(self) -> [Point2; 2] {
         let [[a, b], [c, d]] = self.segments();
         let (minimum, maximum) = [b, c, d]
             .into_iter()
@@ -172,7 +172,7 @@ impl DesignCanvasBounds {
 
 /// Canvas geometry flags; all other prologue bytes are fixed zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DesignCanvasPrologue {
+pub(crate) struct DesignCanvasPrologue {
     first_flag: bool,
     visible: bool,
 }
@@ -196,10 +196,10 @@ impl TryFrom<[u8; 15]> for DesignCanvasPrologue {
     }
 }
 impl DesignCanvasPrologue {
-    pub fn visible(self) -> bool {
+    pub(crate) fn visible(self) -> bool {
         self.visible
     }
-    pub fn bytes(self) -> [u8; 15] {
+    pub(super) fn bytes(self) -> [u8; 15] {
         let mut bytes = [0; 15];
         bytes[10] = u8::from(self.first_flag);
         bytes[14] = u8::from(self.visible);
@@ -213,20 +213,20 @@ const CANVAS_IMAGE_ASSET_PREFIX_BYTES: u64 = 25;
 
 /// Canvas geometry and its same-index closing record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignCanvasGeometry {
+pub(crate) struct DesignCanvasGeometry {
     class_tags: [String; 2],
     record_index: u32,
     byte_offset: u64,
     label: String,
     /// Flags from the fixed geometry prologue.
-    pub prologue: DesignCanvasPrologue,
+    pub(crate) prologue: DesignCanvasPrologue,
     /// Authored image boundaries and their orientation.
-    pub boundary: DesignCanvasBounds,
+    pub(crate) boundary: DesignCanvasBounds,
     /// Opacity and source-space image frame.
-    pub payload: DesignCanvasGeometryPayload,
+    pub(crate) payload: DesignCanvasGeometryPayload,
 }
 impl DesignCanvasGeometry {
-    pub fn new(
+    pub(crate) fn new(
         class_tags: [String; 2],
         record_index: u32,
         byte_offset: u64,
@@ -263,7 +263,7 @@ impl DesignCanvasGeometry {
             payload,
         })
     }
-    pub fn record_index(&self) -> u32 {
+    pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
     fn frame_length(&self) -> u64 {
@@ -303,13 +303,17 @@ impl DesignCanvasGeometry {
 
 /// Canvas image-asset record with a nonempty UTF-16 name.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DesignCanvasAsset {
+pub(crate) struct DesignCanvasAsset {
     class_tag: DesignClassTag,
     record_index: u32,
     name: String,
 }
 impl DesignCanvasAsset {
-    pub fn new(class_tag: DesignClassTag, record_index: u32, name: String) -> Result<Self, String> {
+    pub(crate) fn new(
+        class_tag: DesignClassTag,
+        record_index: u32,
+        name: String,
+    ) -> Result<Self, String> {
         if name.is_empty() {
             return Err("asset_name must be nonempty".into());
         }
@@ -343,21 +347,21 @@ impl DesignCanvasScopeForm {
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignCanvasImageWire", into = "DesignCanvasImageWire")]
-pub struct DesignCanvasImage {
+pub(crate) struct DesignCanvasImage {
     /// Globally unique native binding identity.
-    pub id: String,
+    pub(crate) id: String,
     /// Owning Canvas scope.
-    pub scope_record_index: u32,
+    pub(crate) scope_record_index: u32,
     /// Supporting construction-plane entity.
-    pub plane_entity_suffix: u32,
+    pub(crate) plane_entity_suffix: u32,
     /// Component entity owning the Canvas.
-    pub component_entity_suffix: u32,
+    pub(crate) component_entity_suffix: u32,
     geometry: DesignCanvasGeometry,
     asset: DesignCanvasAsset,
     scope_form: DesignCanvasScopeForm,
 }
 impl DesignCanvasImage {
-    pub fn new(
+    pub(crate) fn new(
         id: String,
         scope_record_index: u32,
         geometry_reference_offset: u64,
@@ -392,13 +396,13 @@ impl DesignCanvasImage {
             scope_form,
         })
     }
-    pub fn geometry(&self) -> &DesignCanvasGeometry {
+    pub(crate) fn geometry(&self) -> &DesignCanvasGeometry {
         &self.geometry
     }
-    pub fn asset_name(&self) -> &str {
+    pub(crate) fn asset_name(&self) -> &str {
         &self.asset.name
     }
-    pub fn scope_byte_offset(&self) -> u64 {
+    pub(crate) fn scope_byte_offset(&self) -> u64 {
         self.asset_byte_offset() + self.asset.frame_length()
     }
     fn asset_byte_offset(&self) -> u64 {

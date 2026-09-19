@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// Domain of the two scalar limits carried by a legacy As-built scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DesignAssemblyLimitKind {
+pub(crate) enum DesignAssemblyLimitKind {
     /// Limits on the joint's angular degree of freedom.
     #[default]
     Angular,
@@ -28,34 +28,34 @@ pub enum DesignAssemblyLimitKind {
     try_from = "DesignAssemblyLimitsWire",
     into = "DesignAssemblyLimitsWire"
 )]
-pub struct DesignAssemblyLimits {
+pub(crate) struct DesignAssemblyLimits {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
-    pub kind: DesignAssemblyLimitKind,
+    pub(crate) kind: DesignAssemblyLimitKind,
     /// Lower bound in the domain's native units.
     minimum: f64,
     /// Upper bound in the domain's native units.
     maximum: f64,
     /// Parameter-owner records for the lower and upper bounds.
-    pub owner_record_indices: [u32; 2],
+    pub(crate) owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: [u64; 2],
+    pub(crate) value_offsets: [u64; 2],
 }
 
 /// Wire fields for finite ordered assembly limits.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignAssemblyLimitsWire {
+pub(crate) struct DesignAssemblyLimitsWire {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
-    pub kind: DesignAssemblyLimitKind,
+    pub(crate) kind: DesignAssemblyLimitKind,
     /// Lower bound in the domain's native units.
-    pub minimum: f64,
+    pub(crate) minimum: f64,
     /// Upper bound in the domain's native units.
-    pub maximum: f64,
+    pub(crate) maximum: f64,
     /// Parameter-owner records for the lower and upper bounds.
-    pub owner_record_indices: [u32; 2],
+    pub(crate) owner_record_indices: [u32; 2],
     /// Evaluated-value offsets parallel to `owner_record_indices`.
-    pub value_offsets: [u64; 2],
+    pub(crate) value_offsets: [u64; 2],
 }
 
 impl DesignAssemblyLimits {
@@ -96,40 +96,40 @@ impl From<DesignAssemblyLimits> for DesignAssemblyLimitsWire {
 
 /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignAssemblySolvedFrame {
+pub(crate) struct DesignAssemblySolvedFrame {
     /// Frame-carrier record named by reference-table entry eight.
-    pub reference_record_index: u32,
+    pub(crate) reference_record_index: u32,
     /// Byte offset of the frame-carrier reference in the scope.
-    pub reference_offset: u64,
+    pub(crate) reference_offset: u64,
     /// Byte offset of the frame-carrier indexed header.
-    pub record_byte_offset: u64,
+    pub(crate) record_byte_offset: u64,
     /// Dynamic class of the frame-carrier indexed record.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Row-major solved connector frame.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first matrix scalar.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
 }
 
 /// A construction and its face selection in a legacy assembly operand.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignAssemblyLegacyOperand<C> {
-    pub construction_class_tag: DesignClassTag,
-    pub construction: C,
-    pub selection: DesignAssemblyLegacySelection,
-    pub reference_offset: u64,
+pub(crate) struct DesignAssemblyLegacyOperand<C> {
+    pub(crate) construction_class_tag: DesignClassTag,
+    pub(crate) construction: C,
+    pub(crate) selection: DesignAssemblyLegacySelection,
+    pub(crate) reference_offset: u64,
 }
 
 /// The ordered point and hole constructions of a legacy 421-byte assembly.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignAssemblyLegacyOperands {
+pub(crate) struct DesignAssemblyLegacyOperands {
     point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
     hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
 }
 
 impl DesignAssemblyLegacyOperands {
     /// Admit legacy operand carriers with finite solved positions.
-    pub fn try_new(
+    pub(crate) fn try_new(
         point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
         hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
     ) -> Result<Self, String> {
@@ -299,59 +299,59 @@ enum DesignAssemblyLegacyConstruction {
 
 /// Exact face-recipe selection paired with a legacy 421-byte construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignAssemblyLegacySelection {
+pub(crate) struct DesignAssemblyLegacySelection {
     /// Indexed selection record.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Byte offset of the selection record header.
-    pub byte_offset: u64,
+    pub(crate) byte_offset: u64,
     /// Dynamic class of the selection record.
-    pub class_tag: DesignClassTag,
+    pub(crate) class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: DesignRelaxedGuidText,
+    pub(crate) asset_id: DesignRelaxedGuidText,
     /// Byte offset of the asset UUID's UTF-16LE payload.
-    pub asset_id_offset: u64,
+    pub(crate) asset_id_offset: u64,
     /// Context UUID qualifying the selection.
-    pub context_id: DesignRelaxedGuidText,
+    pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE payload.
-    pub context_id_offset: u64,
+    pub(crate) context_id_offset: u64,
     /// Indexed record containing the face recipe.
-    pub recipe_record_index: u32,
+    pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
-    pub recipe_record_byte_offset: u64,
+    pub(crate) recipe_record_byte_offset: u64,
     /// Construction-recipe arena id.
-    pub recipe_id: String,
+    pub(crate) recipe_id: String,
     /// Exact face-recipe family.
-    pub recipe_kind: ConstructionRecipeKind,
+    pub(crate) recipe_kind: ConstructionRecipeKind,
     /// Persistent selector/reference tails carried by the recipe prefix.
-    pub recipe_references: Vec<DesignRecipeReference>,
+    pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the indexed record immediately after the recipe.
-    pub next_byte_offset: u64,
+    pub(crate) next_byte_offset: u64,
 }
 
 /// Alignment scalars carried by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "DesignAssemblyAlignmentSerde")]
-pub struct DesignAssemblyAlignment {
+pub(crate) struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
     angle: f64,
     /// Signed local-frame translation in source centimetres.
     offset: [f64; 3],
     /// Parameter-owner records and their evaluated-value locations.
-    pub owners: Vec<Located<u32>>,
+    pub(crate) owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
-    pub form: Option<DesignAssemblyAlignmentForm>,
+    pub(crate) form: Option<DesignAssemblyAlignmentForm>,
 }
 
 /// One assembly operand frame and its source qualifier.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DesignQualifiedAssemblyOperand {
-    pub frame: DesignAssemblyOperandFrame,
-    pub qualifier: DesignAssemblyOperandQualifier,
+pub(crate) struct DesignQualifiedAssemblyOperand {
+    pub(crate) frame: DesignAssemblyOperandFrame,
+    pub(crate) qualifier: DesignAssemblyOperandQualifier,
 }
 
 /// Native evidence retained by an assembly-alignment form.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DesignAssemblyAlignmentForm {
+pub(crate) enum DesignAssemblyAlignmentForm {
     DatumEnvelope {
         joint_origin_scope_record_index: u32,
     },
@@ -686,7 +686,7 @@ impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignAssemblyAxialOperandTarget {
+pub(crate) enum DesignAssemblyAxialOperandTarget {
     /// Connector object selected inside a placed `Component Insert` occurrence.
     ComponentInsertOccurrence {
         /// `Component Insert` scope whose placement has the selected occurrence role.
@@ -721,71 +721,71 @@ pub enum DesignAssemblyAxialOperandTarget {
     try_from = "DesignAssemblyAxialSelectorIdentityWire",
     into = "DesignAssemblyAxialSelectorIdentityWire"
 )]
-pub struct DesignAssemblyAxialSelectorIdentity {
+pub(crate) struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
-    pub axis_record_index: u32,
+    pub(crate) axis_record_index: u32,
     /// Dynamic class of the axis record's primary indexed header.
-    pub axis_class_tag: DesignClassTag,
+    pub(crate) axis_class_tag: DesignClassTag,
     /// Byte offset of the axis record's primary indexed header.
-    pub axis_byte_offset: u64,
+    pub(crate) axis_byte_offset: u64,
     /// Dynamic class of the axis record's paired indexed header.
-    pub axis_paired_class_tag: DesignClassTag,
+    pub(crate) axis_paired_class_tag: DesignClassTag,
     /// Byte offset of the axis record's paired indexed header.
-    pub axis_paired_byte_offset: u64,
+    pub(crate) axis_paired_byte_offset: u64,
     /// Selector record three indices after the axis record.
-    pub selector_record_index: u32,
+    pub(crate) selector_record_index: u32,
     /// Dynamic class of the selector record's primary indexed header.
-    pub selector_class_tag: DesignClassTag,
+    pub(crate) selector_class_tag: DesignClassTag,
     /// Byte offset of the selector record's primary indexed header.
-    pub selector_byte_offset: u64,
+    pub(crate) selector_byte_offset: u64,
     /// Dynamic class of the selector record's paired indexed header.
-    pub selector_paired_class_tag: DesignClassTag,
+    pub(crate) selector_paired_class_tag: DesignClassTag,
     /// Byte offset of the selector record's paired indexed header.
-    pub selector_paired_byte_offset: u64,
+    pub(crate) selector_paired_byte_offset: u64,
     /// Nested record named by the selector prefix.
-    pub nested_record_index: u32,
+    pub(crate) nested_record_index: u32,
     /// Byte offset of `nested_record_index`.
-    pub nested_record_index_offset: u64,
+    pub(crate) nested_record_index_offset: u64,
     /// Asset GUID of the enclosing selector.
-    pub selector_asset_id: DesignRelaxedGuidText,
+    pub(crate) selector_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_asset_id`.
-    pub selector_asset_id_offset: u64,
+    pub(crate) selector_asset_id_offset: u64,
     /// Context GUID of the enclosing selector.
-    pub selector_context_id: DesignRelaxedGuidText,
+    pub(crate) selector_context_id: DesignRelaxedGuidText,
     /// Byte offset of `selector_context_id`.
-    pub selector_context_id_offset: u64,
+    pub(crate) selector_context_id_offset: u64,
     /// Axis-specific same-segment occurrence reference.
-    pub occurrence_reference: u64,
+    pub(crate) occurrence_reference: u64,
     /// Byte offset of `occurrence_reference`.
-    pub occurrence_reference_offset: u64,
+    pub(crate) occurrence_reference_offset: u64,
     /// Entity reference of the selected object in the referenced document.
-    pub external_object_reference: u64,
+    pub(crate) external_object_reference: u64,
     /// Byte offset of `external_object_reference`.
-    pub external_object_reference_offset: u64,
+    pub(crate) external_object_reference_offset: u64,
     /// Segment carried by the cross-document object reference.
-    pub external_segment: u32,
+    pub(crate) external_segment: u32,
     /// Byte offset of `external_segment`.
-    pub external_segment_offset: u64,
+    pub(crate) external_segment_offset: u64,
     /// Asset GUID carried by the cross-document object reference.
-    pub external_asset_id: DesignRelaxedGuidText,
+    pub(crate) external_asset_id: DesignRelaxedGuidText,
     /// Byte offset of `external_asset_id`.
-    pub external_asset_id_offset: u64,
+    pub(crate) external_asset_id_offset: u64,
     /// Link name carried by the cross-document object reference.
-    pub external_link_name: String,
+    pub(crate) external_link_name: String,
     /// Byte offset of `external_link_name`.
-    pub external_link_name_offset: u64,
+    pub(crate) external_link_name_offset: u64,
     /// Located property key and referenced-document version identity.
-    pub external_version: Option<DesignExternalVersion>,
+    pub(crate) external_version: Option<DesignExternalVersion>,
     /// Embedded record that carries the selected occurrence role.
-    pub role_record_index: u32,
+    pub(crate) role_record_index: u32,
     /// Dynamic class of the occurrence-role record.
-    pub role_class_tag: DesignClassTag,
+    pub(crate) role_class_tag: DesignClassTag,
     /// Byte offset of the occurrence-role record's indexed header.
-    pub role_byte_offset: u64,
+    pub(crate) role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
-    pub occurrence_role: DesignRelaxedGuidText,
+    pub(crate) occurrence_role: DesignRelaxedGuidText,
     /// Byte offset of `occurrence_role`.
-    pub occurrence_role_offset: u64,
+    pub(crate) occurrence_role_offset: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1014,27 +1014,27 @@ impl DesignAssemblyAxialSelectorIdentity {
 
 /// Exact reference chain from an assembly scope to one occurrence-path record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignAssemblyOperandPathLink {
+pub(crate) struct DesignAssemblyOperandPathLink {
     /// Byte offset of the locator-record index in the assembly scope.
-    pub locator_reference_offset: u64,
+    pub(crate) locator_reference_offset: u64,
     /// Locator-record index named by the assembly scope.
-    pub locator_record_index: u32,
+    pub(crate) locator_record_index: u32,
     /// Dynamic indexed-record class carrying the locator.
-    pub locator_class_tag: DesignClassTag,
+    pub(crate) locator_class_tag: DesignClassTag,
     /// Byte offset of the locator's indexed header.
-    pub locator_byte_offset: u64,
+    pub(crate) locator_byte_offset: u64,
     /// Byte offset of the assembly-scope backlink in the locator.
-    pub locator_scope_reference_offset: u64,
+    pub(crate) locator_scope_reference_offset: u64,
     /// Wrapper-record index named by the locator.
-    pub wrapper_record_index: u32,
+    pub(crate) wrapper_record_index: u32,
     /// Byte offset of the wrapper-record index in the locator.
-    pub wrapper_reference_offset: u64,
+    pub(crate) wrapper_reference_offset: u64,
     /// Dynamic indexed-record class carrying the wrapper.
-    pub wrapper_class_tag: DesignClassTag,
+    pub(crate) wrapper_class_tag: DesignClassTag,
     /// Byte offset of the wrapper's indexed header.
-    pub wrapper_byte_offset: u64,
+    pub(crate) wrapper_byte_offset: u64,
     /// Byte offset of the path-record index in the wrapper.
-    pub path_reference_offset: u64,
+    pub(crate) path_reference_offset: u64,
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -1043,9 +1043,9 @@ pub struct DesignAssemblyOperandPathLink {
     try_from = "DesignAssemblyOperandPathWire",
     into = "DesignAssemblyOperandPathWire"
 )]
-pub struct DesignAssemblyOperandPath {
+pub(crate) struct DesignAssemblyOperandPath {
     link: DesignAssemblyOperandPathLink,
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     class_tag: DesignClassTag,
     byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
@@ -1220,7 +1220,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
 /// One exact native qualifier for an assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DesignAssemblyOperandQualifier {
+pub(crate) enum DesignAssemblyOperandQualifier {
     /// Ordered occurrence path carried by a locator graph.
     OccurrencePath {
         /// Exact path and its native reference chain.
@@ -1248,7 +1248,7 @@ pub enum DesignAssemblyOperandQualifier {
 
 impl DesignAssemblyOperandQualifier {
     /// Return the occurrence path when this qualifier carries one.
-    pub(crate) fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
+    fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
         match self {
             Self::OccurrencePath { path } => Some(path),
             Self::AxialTarget { .. } | Self::JointOrigin { .. } => None,
@@ -1258,15 +1258,15 @@ impl DesignAssemblyOperandQualifier {
 
 /// One operand frame embedded by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DesignAssemblyOperandFrame {
+pub(crate) struct DesignAssemblyOperandFrame {
     /// Construction record referenced by the operand.
-    pub reference_record_index: u32,
+    pub(crate) reference_record_index: u32,
     /// Byte offset of `reference_record_index`.
-    pub reference_offset: u64,
+    pub(crate) reference_offset: u64,
     /// Row-major operand-local-to-model transform.
-    pub transform: SketchPlacementMatrix,
+    pub(crate) transform: SketchPlacementMatrix,
     /// Byte offset of the first transform scalar.
-    pub transform_offset: u64,
+    pub(crate) transform_offset: u64,
 }
 
 #[cfg(test)]

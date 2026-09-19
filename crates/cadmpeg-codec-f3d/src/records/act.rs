@@ -32,14 +32,14 @@ cadmpeg_core::named_optional_field!(
 /// ACT root-component registry flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
-pub enum ActRegistryFlag {
+pub(crate) enum ActRegistryFlag {
     Off,
     On,
 }
 
 impl ActRegistryFlag {
     #[must_use]
-    pub fn from_code(code: u32) -> Option<Self> {
+    pub(crate) fn from_code(code: u32) -> Option<Self> {
         match code {
             0 => Some(Self::Off),
             1 => Some(Self::On),
@@ -48,7 +48,7 @@ impl ActRegistryFlag {
     }
 
     #[must_use]
-    pub fn code(self) -> u32 {
+    pub(crate) fn code(self) -> u32 {
         match self {
             Self::Off => 0,
             Self::On => 1,
@@ -72,7 +72,7 @@ impl From<ActRegistryFlag> for u32 {
 
 /// Inline `ACTTable` row attached to one change group.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActTableRow {
+pub(crate) struct ActTableRow {
     record_index_offset: u64,
 }
 
@@ -93,7 +93,7 @@ impl ActTableRow {
 
 /// Non-padding bytes following an ACT channel group.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ActClassTail {
+pub(crate) struct ActClassTail {
     bytes: Vec<u8>,
     offset: u64,
 }
@@ -125,7 +125,7 @@ impl ActClassTail {
 
 /// Channel-group payload owned by one ACT entity.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ActChannelGroup {
+pub(crate) struct ActChannelGroup {
     record_index_offset: u64,
     entity_id_offset: Option<u64>,
     class_tag: DesignClassTag,
@@ -196,7 +196,7 @@ impl ActChannelGroup {
 /// One Fusion ACT change-version channel group and its optional inline table row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
-pub struct ActEntity {
+pub(crate) struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     /// Record index shared by the channel group and its optional `ACTTable` row.
@@ -276,7 +276,7 @@ impl ActEntity {
     pub(crate) fn table_entity_id_offset(&self) -> Option<u64> {
         self.table_row.as_ref().map(ActTableRow::entity_id_offset)
     }
-    pub(crate) fn channel_record_index_offset(&self) -> u64 {
+    fn channel_record_index_offset(&self) -> u64 {
         self.channel_group.record_index_offset
     }
     pub(crate) fn channel_entity_id_offset(&self) -> Option<u64> {
@@ -471,15 +471,15 @@ impl From<ActEntity> for ActEntitySerde {
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
-pub struct ActGuid {
+pub(crate) struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     /// Byte offset of the UTF-16 length prefix in the ACT `BulkStream`.
     byte_offset: u64,
     /// Position in the pool in source order; does not assign a GUID to one table entry.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// The pooled GUID string.
-    pub guid: DesignGuidText,
+    pub(crate) guid: DesignGuidText,
 }
 
 impl ActGuid {
@@ -491,7 +491,12 @@ impl ActGuid {
     pub(crate) fn stream(&self) -> &str {
         self.id.stream()
     }
-    pub fn new(id: String, byte_offset: u64, ordinal: u32, guid: String) -> Result<Self, String> {
+    pub(crate) fn new(
+        id: String,
+        byte_offset: u64,
+        ordinal: u32,
+        guid: String,
+    ) -> Result<Self, String> {
         let id = NativeRecordId::try_new(id, "act-guid", byte_offset)?;
         byte_offset
             .checked_add(4)
@@ -504,11 +509,11 @@ impl ActGuid {
         })
     }
 
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
-    pub fn guid_offset(&self) -> u64 {
+    pub(crate) fn guid_offset(&self) -> u64 {
         self.byte_offset + 4
     }
 }
@@ -550,15 +555,15 @@ impl From<ActGuid> for ActGuidWire {
 /// One reference in the ACT table run between the GUID pool and channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
-pub struct ActTableReference {
+pub(crate) struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     /// Position in the counted reference run, in source order.
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     /// Byte offset of the reference-presence marker in the ACT `BulkStream`.
     byte_offset: u64,
     /// Target ACT record index.
-    pub target_record: u32,
+    pub(crate) target_record: u32,
 }
 
 impl ActTableReference {
@@ -570,7 +575,7 @@ impl ActTableReference {
     pub(crate) fn stream(&self) -> &str {
         self.id.stream()
     }
-    pub fn new(
+    pub(crate) fn new(
         id: String,
         ordinal: u32,
         byte_offset: u64,
@@ -588,7 +593,7 @@ impl ActTableReference {
         })
     }
 
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 
@@ -634,12 +639,12 @@ impl From<ActTableReference> for ActTableReferenceWire {
 /// One named entry in the ACT table's stream-wide channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
-pub struct ActRegistryChannel {
+pub(crate) struct ActRegistryChannel {
     id: NativeRecordId,
-    pub ordinal: u32,
+    pub(crate) ordinal: u32,
     byte_offset: u64,
     name: String,
-    pub guid: DesignGuidText,
+    pub(crate) guid: DesignGuidText,
 }
 
 impl ActRegistryChannel {
@@ -651,7 +656,7 @@ impl ActRegistryChannel {
     pub(crate) fn stream(&self) -> &str {
         self.id.stream()
     }
-    pub fn new(
+    pub(crate) fn new(
         id: String,
         ordinal: u32,
         byte_offset: u64,
@@ -671,16 +676,16 @@ impl ActRegistryChannel {
             guid: guid.try_into()?,
         })
     }
-    pub fn byte_offset(&self) -> u64 {
+    pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub fn name_offset(&self) -> u64 {
+    pub(super) fn name_offset(&self) -> u64 {
         self.byte_offset + 4
     }
-    pub fn guid_offset(&self) -> u64 {
+    pub(crate) fn guid_offset(&self) -> u64 {
         self.byte_offset + 8 + self.name.len() as u64
     }
 }
@@ -732,19 +737,19 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
 /// ACT link from the document root entity to the instance/component registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
-pub struct ActRootComponent {
+pub(crate) struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
     id: NativeRecordId,
     /// Index of this record within the ACT `BulkStream`.
-    pub record_index: u32,
+    pub(crate) record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: DesignClassTag,
+    class_tag: DesignClassTag,
     /// Record index of the instance registry root.
-    pub instance_root_record: u32,
+    pub(crate) instance_root_record: u32,
     /// Record index of the components registry root.
-    pub components_root_record: u32,
+    pub(crate) components_root_record: u32,
     /// Source counter/registry flag; 0 and 1 are both valid.
-    pub registry_flag: ActRegistryFlag,
+    pub(crate) registry_flag: ActRegistryFlag,
     /// Checked source layout and the two variable-length strings.
     layout: ActRootLayout,
 }
@@ -912,7 +917,7 @@ impl From<ActRootComponent> for ActRootComponentWire {
 
 /// Source extent of an ACT root link. Offsets follow its fixed grammar.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ActRootLayout {
+pub(crate) struct ActRootLayout {
     byte_offset: u64,
     entity_id: String,
     display_name: String,
@@ -920,7 +925,7 @@ pub struct ActRootLayout {
 }
 
 impl ActRootLayout {
-    pub fn new(
+    pub(crate) fn new(
         byte_offset: u64,
         entity_id: String,
         display_name: String,
@@ -954,38 +959,38 @@ impl ActRootLayout {
         })
     }
 
-    pub fn with_strings(&self, entity_id: String, display_name: String) -> Result<Self, String> {
+    fn with_strings(&self, entity_id: String, display_name: String) -> Result<Self, String> {
         Self::new(self.byte_offset, entity_id, display_name, self.padding)
     }
 
-    pub fn byte_offset(&self) -> u64 {
+    pub(super) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    pub fn entity_id(&self) -> &str {
+    pub(crate) fn entity_id(&self) -> &str {
         &self.entity_id
     }
-    pub fn display_name(&self) -> &str {
+    pub(crate) fn display_name(&self) -> &str {
         &self.display_name
     }
-    pub fn record_index_offset(&self) -> u64 {
+    pub(super) fn record_index_offset(&self) -> u64 {
         self.byte_offset + 7
     }
-    pub fn instance_root_record_offset(&self) -> u64 {
+    pub(crate) fn instance_root_record_offset(&self) -> u64 {
         self.byte_offset + 22
     }
-    pub fn entity_id_offset(&self) -> u64 {
+    pub(crate) fn entity_id_offset(&self) -> u64 {
         self.byte_offset + 36
     }
-    pub fn tracked_entity_record_offset(&self) -> u64 {
+    pub(super) fn tracked_entity_record_offset(&self) -> u64 {
         self.entity_id_offset() + self.entity_id.encode_utf16().count() as u64 * 2 + 1
     }
-    pub fn registry_flag_offset(&self) -> u64 {
+    pub(crate) fn registry_flag_offset(&self) -> u64 {
         self.tracked_entity_record_offset() + 10
     }
-    pub fn display_name_offset(&self) -> u64 {
+    pub(crate) fn display_name_offset(&self) -> u64 {
         self.registry_flag_offset() + 8
     }
-    pub fn components_root_record_offset(&self) -> u64 {
+    pub(crate) fn components_root_record_offset(&self) -> u64 {
         self.display_name_offset()
             + self.display_name.encode_utf16().count() as u64 * 2
             + self.padding
