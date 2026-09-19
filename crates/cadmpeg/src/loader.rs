@@ -20,7 +20,7 @@ use crate::application::refusal::ApplicationError;
 ///
 /// The registry states the fact; naming `--input-format` is this crate's job,
 /// because the flag is this crate's.
-pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
+pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
     anyhow!("{error}; pass --input-format")
 }
 
@@ -32,7 +32,7 @@ pub fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
-pub fn load_artifact(
+pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
     options: DecodeOptions,
@@ -92,7 +92,7 @@ mod tests {
     use crate::application::document::LoadOrigin;
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::CadIr;
-    use cadmpeg_ir::{DecodeReport, DecodeSidecar, SourceFidelity};
+    use cadmpeg_ir::{report::decode::DecodeReport, DecodeSidecar, SourceFidelity};
     use cadmpeg_registry::{ForcedInput, InputCatalog};
 
     #[test]

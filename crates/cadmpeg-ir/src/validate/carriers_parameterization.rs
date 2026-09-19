@@ -5,10 +5,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::document::CadIr;
 use crate::geometry::{
-    CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry,
 };
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;

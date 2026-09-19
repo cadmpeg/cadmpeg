@@ -69,7 +69,7 @@ fn edgeless_doc() -> CadIr {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -353,7 +353,7 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
     .expect("report mode should record the topology loss");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::LoopNoContinuousOrdering.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("continuous vertex-to-vertex")
     }));
 }
@@ -418,7 +418,7 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             .filter(|loss| {
                 (loss.code == StepLossCode::TessellationTriangleGroups.kind()
                     || loss.code == StepLossCode::TessellationTextureAssignments.kind())
-                    && loss.severity == cadmpeg_ir::Severity::Warning
+                    && loss.severity == cadmpeg_ir::report::Severity::Warning
             })
             .count(),
         2
@@ -872,7 +872,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the surviving faces");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceNoWritableBounds.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("has no writable bounds")
     }));
 
@@ -896,7 +896,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the surviving outer loop");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::FaceOmittedInnerLoop.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("has no writable topology")
     }));
 
@@ -929,7 +929,7 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     .expect("report mode writes the outer shell");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::RegionOmittedVoidShell.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("omitted void shell")
     }));
 }
@@ -944,8 +944,8 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Harmonic(
-        cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Harmonic(
+        cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
             cadmpeg_ir::math::Point2::new(0.0, 0.0),
             cadmpeg_ir::math::Point2::new(1.0, 0.0),
             cadmpeg_ir::math::Point2::new(0.0, 1.0),
@@ -964,7 +964,7 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
 }
@@ -979,9 +979,9 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Transformed {
-        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed {
+        basis: Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 0.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
@@ -1002,7 +1002,7 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
     assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveCarrierUnwritable.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("step:data:pcurve#56")
     }));
 }
@@ -1031,7 +1031,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     .expect("report mode writes the representable subset");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
 }
@@ -1270,7 +1270,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     let curve = Curve {
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1331,21 +1331,21 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     )
     .unwrap();
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 subdivision surface(s) were omitted")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Metadata
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Metadata
             && loss
                 .message
                 .contains("2 source-object association(s) were not represented")
@@ -1405,7 +1405,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .find(|surface| surface.id == surface_id)
         .unwrap()
         .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
-        cadmpeg_ir::geometry::PolygonalSurface::new(
+        cadmpeg_ir::geometry::sampled::PolygonalSurface::new(
             vec![
                 Point3::new(0.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
@@ -1424,7 +1424,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("polygonal face is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("unknown or STEP-unsupported surface")
     }));
 
@@ -1448,7 +1448,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     )
     .expect("transformed unknown curve is reported as an export loss");
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("STEP-unsupported transform")
     }));
 }
@@ -1491,7 +1491,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural surface");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(surface_id.as_str())
     }));
 }
@@ -1526,7 +1526,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     .expect("report mode must not panic on an unwritable procedural curve");
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(curve_id.as_str())
     }));
 }
@@ -1535,7 +1535,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
 fn signed_analytic_radius_normalization_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1554,7 +1554,7 @@ fn signed_analytic_radius_normalization_is_reported() {
     .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("normalized to positive STEP radii")
     }));
 }
@@ -1563,7 +1563,7 @@ fn signed_analytic_radius_normalization_is_reported() {
 fn elliptical_cone_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1584,7 +1584,7 @@ fn elliptical_cone_reduction_is_reported() {
     .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::Geometry
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
 }

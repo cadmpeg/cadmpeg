@@ -46,7 +46,7 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(records[0].face_id, 10);
     assert_eq!(records[0].reason, "missing_loops");
     assert_eq!(records[5].face_id, 15);
-    let mut coverage = cadmpeg_ir::Coverage::default();
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_candidate_face_count"], 6);
     assert_eq!(coverage["brep_admitted_face_count"], 1);
@@ -70,7 +70,7 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
             .collect::<Vec<_>>(),
         vec![42]
     );
-    let mut coverage = cadmpeg_ir::Coverage::default();
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
     assert_eq!(coverage["brep_rejected_face_count"], 1);
     assert_eq!(
@@ -86,7 +86,7 @@ fn brep_diagnostics_report_component_gate_inputs() {
         selected_body_count: None,
         ..BrepTransferDiagnostics::default()
     };
-    let mut coverage = cadmpeg_ir::Coverage::default();
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     diagnostics.record_coverage(&mut coverage);
 
     assert_eq!(coverage["brep_admitted_component_count"], 3);
@@ -401,7 +401,7 @@ fn closed_component_counts_two_uses_of_one_face() {
 #[test]
 fn native_parameter_loops_order_non_planar_cylindrical_face() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -488,7 +488,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
 #[test]
 fn native_parameter_loops_admit_proven_two_edge_circles() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -547,7 +547,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
     let circle = |id, radius| Curve {
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -734,7 +734,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -755,7 +755,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         let curve = Curve {
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     origin,
                     direction.unit().expect("valid LineCurve fixture"),
                 )
@@ -832,7 +832,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#5".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -844,7 +844,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

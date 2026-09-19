@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::report::DecodeReport;
+use cadmpeg_ir::report::decode::DecodeReport;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::{CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES};

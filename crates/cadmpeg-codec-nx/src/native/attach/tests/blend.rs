@@ -18,11 +18,13 @@ fn nx_body_writing_blend_retains_unresolved_fillet_family() {
     assert_eq!(
         definition,
         Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
-                tangency_weight: None,
-            }),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Unresolved { form: None },
+                    tangency_weight: None,
+                }
+            ),
         }))
     );
     assert_eq!(definition.unwrap().body_output_family(), Some("fillet"));

@@ -9,7 +9,7 @@ use crate::families::standard::decode::SPHERE_SECTION_ENDPOINT_TOLERANCE;
 use crate::families::standard::records::StandardCurveGeometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::PcurveGeometry;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::RollingBallJetDerivative;
@@ -49,7 +49,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
             id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     if index == 0 {
                         Vector3::new(0.0, 0.0, 1.0)
@@ -112,7 +112,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     assert_eq!(
         ir.model.curves[0].geometry.solved_cache(),
         Some(&SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
             )
@@ -166,7 +166,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         Surface {
             id: sphere_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -179,7 +179,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         Surface {
             id: plane_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(1.0, 3.0, 3.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -253,7 +253,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         Surface {
             id: cylinder_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -266,7 +266,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         Surface {
             id: plane_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, sqrt_three / 2.0, -0.5),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -352,7 +352,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         Surface {
             id: first_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -365,7 +365,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         Surface {
             id: second_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -448,12 +448,15 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
         geometry: StandardCurveGeometry::Bspline,
     };
     let pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .expect("valid LinePcurve fixture"),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("valid LinePcurve fixture"),
     );
     let plane = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -581,7 +584,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
         )
     };
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -606,7 +609,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     .is_none());
 
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(2.0, 0.0, 2.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

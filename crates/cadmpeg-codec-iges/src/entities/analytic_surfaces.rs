@@ -225,7 +225,7 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(location, axis, u_axis),
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(location, axis, u_axis),
                     entry,
                     &mut losses,
                 ) else {
@@ -275,7 +275,7 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         location,
                         axis,
                         ref_direction,
@@ -339,7 +339,7 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         location,
                         axis,
                         ref_direction,
@@ -406,7 +406,7 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         location,
                         axis,
                         ref_direction,
@@ -470,7 +470,7 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         location,
                         axis,
                         ref_direction,

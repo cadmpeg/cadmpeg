@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -182,11 +182,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .expect("edited STEP document plan");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::WritePath::Synthesized { .. }
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert_eq!(
             &plan.report().fidelity(),
-            &cadmpeg_ir::FidelityResolution::NotConsumed {}
+            &cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
         );
         let mut edited_bytes = Vec::new();
         let export = plan
@@ -194,7 +194,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .expect("edited STEP document write");
         assert!(matches!(
             export.write_path(),
-            cadmpeg_ir::WritePath::Synthesized { .. }
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         let edited_result = codec
             .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())

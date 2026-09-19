@@ -601,13 +601,13 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             shape,
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                    cadmpeg_ir::features::HoleForm::Chamfer,
+        }) if matches!((shape.construction(), shape.exit_kind(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::holes::HoleForm::Chamfer,
                 )),
                 ..
-            }, Some(cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Chamfer,
+            }, Some(cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
+                cadmpeg_ir::features::holes::HoleForm::Chamfer,
             ))), None,))));
     assert!(matches!(
         non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None, None,),
@@ -627,9 +627,9 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                    cadmpeg_ir::features::HoleForm::Counterbore,
+        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::holes::HoleForm::Counterbore,
                 )),
                 ..
             }, None,))));
@@ -645,8 +645,8 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 
             extent: None,
             ..
-        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
+        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 ..
             }, None,))));
     assert!(matches!(
@@ -661,9 +661,9 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             ..
-        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Unresolved(Some(
-                    cadmpeg_ir::features::HoleForm::Countersink,
+        }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(Some(
+                    cadmpeg_ir::features::holes::HoleForm::Countersink,
                 )),
                 ..
             }, None,))));
@@ -686,8 +686,8 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 
                 extent: None,
                 ..
-            }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                    kind: cadmpeg_ir::features::HoleKind::Simple,
+            }) if matches!((shape.construction(), shape.exit_kind(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                    kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                     ..
                 }, None,))));
     }
@@ -933,8 +933,9 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
 #[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
-        BodySelection, BodyTrimSide, BooleanKind, BooleanOp, ChamferSpec, EdgeSelection,
-        FaceSelection, FeatureDefinition, FeatureOperation, HoleKind, PatternTransform, RibDraft,
+        edge_treatments::ChamferSpec, holes::HoleKind, patterns::PatternTransform, BodySelection,
+        BodyTrimSide, BooleanKind, BooleanOp, EdgeSelection, FaceSelection, FeatureDefinition,
+        FeatureOperation, RibDraft,
     };
 
     for (kind, op) in [
@@ -992,7 +993,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
             },))));
@@ -1007,7 +1008,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             shape,
 
             ..
-        }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((&shape.diameter(), shape.construction(),), (Some(actual_diameter), cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Unresolved(None),
                 ..
             },) if actual_diameter.get() == 8.0)));
@@ -1069,7 +1070,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             flip_direction: false,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: EdgeSelection::Unresolved,
         spec: ChamferSpec::Unresolved { form: None },
         }])
@@ -1193,7 +1194,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
                 _ => unreachable!(),
             }
             *surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .unwrap();
         }
     }
     let output = ir.model.bodies[0].id.clone();
@@ -1243,7 +1245,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let u_axis = high_y.u_axis();
     let mut origin = *origin;
     origin.y = 10.0;
-    *high_y = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+    *high_y =
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     assert_eq!(
         placement(&repeated, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
         None
@@ -1276,7 +1279,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     let u_axis = plane_surface.u_axis();
     let mut origin = *origin;
     origin.x = 5.0;
-    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+    *plane_surface =
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     stepped.model.surfaces.push(intermediate_surface);
     let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
     intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
@@ -1294,7 +1298,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
     let mut nonplanar = ir.clone();
     nonplanar.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1321,7 +1325,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     curved_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
         .expect("identity grammar");
     curved_surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1384,7 +1388,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         .surfaces
         .retain(|candidate| candidate.id == surface);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

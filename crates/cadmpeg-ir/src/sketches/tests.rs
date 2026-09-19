@@ -7,7 +7,7 @@ use super::{
 };
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 

@@ -64,11 +64,12 @@ use cadmpeg_ir::ids::{FaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        holes::{HoleBottom, HoleForm, HoleKind, HolePlacement},
+        BooleanOp, EdgeSelection, ExtrudeExtent, FaceSelection,
         FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-        HoleBottom, HoleForm, HoleKind, HolePlacement, LinearTermination,
-        PartialRevolveConstruction, PlanarProfileRef, ProfileRef, RadiusSpec, RevolveConstruction,
-        UnresolvedFamily,
+        LinearTermination, PartialRevolveConstruction, PlanarProfileRef, ProfileRef,
+        RevolveConstruction, UnresolvedFamily,
     },
     scalar::Length,
 };
@@ -393,8 +394,8 @@ pub(in super::super) fn schema_feature_definition(
             face,
             direction: None,
             placements: (!placements.is_empty()).then_some(placements),
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::Form {
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: match (
                         drilled_dimensions,
                         simple_form,
@@ -421,10 +422,10 @@ pub(in super::super) fn schema_feature_definition(
                                     HoleKind::Counterbore { diameter, depth }
                                 }
                                 (Some(diameter), None) => HoleKind::PartialCounterbore(
-                                    cadmpeg_ir::features::PartialPair::First(diameter),
+                                    cadmpeg_ir::features::holes::PartialPair::First(diameter),
                                 ),
                                 (None, Some(depth)) => HoleKind::PartialCounterbore(
-                                    cadmpeg_ir::features::PartialPair::Second(depth),
+                                    cadmpeg_ir::features::holes::PartialPair::Second(depth),
                                 ),
                                 (None, None) => HoleKind::Unresolved(Some(HoleForm::Counterbore)),
                             }
@@ -464,7 +465,7 @@ pub(in super::super) fn schema_feature_definition(
                 || {
                     if differing_positive_lengths(&observed_radii) {
                         RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                         }
                     } else {
                         RadiusSpec::Unresolved { form: None }
@@ -473,19 +474,21 @@ pub(in super::super) fn schema_feature_definition(
                 |radius| RadiusSpec::Constant { radius },
             );
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: feature_edge_selection(scan, ir, feature_id)
-                    .unwrap_or(EdgeSelection::Unresolved),
-                radius,
-                tangency_weight: None,
-            }),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: feature_edge_selection(scan, ir, feature_id)
+                        .unwrap_or(EdgeSelection::Unresolved),
+                    radius,
+                    tangency_weight: None,
+                },
+            ),
         }));
     }
     if schema_class == Some(SchemaClass::Chamfer) {
         return Ok(IrFeatureDefinition::Operation(
             IrFeatureOperation::Chamfer {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::ChamferGroup {
+                    cadmpeg_ir::features::edge_treatments::ChamferGroup {
                         edges: feature_edge_selection(scan, ir, feature_id)
                             .unwrap_or(EdgeSelection::Unresolved),
                         spec: chamfer_constant_distance(scan, ir, feature_id)

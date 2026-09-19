@@ -375,7 +375,7 @@ impl RawSolidFlag {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RawBrep {
     /// Typed losses raised while selecting writer-version-dependent layouts.
-    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Packed payload minor.
     pub(crate) minor: u8,
     /// C2 curve slots.
@@ -747,7 +747,7 @@ impl ValidatedRawBrep {
     pub(crate) fn body_kind(
         &self,
         writer_version: Option<i64>,
-    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+    ) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
         body_kind(&self.raw, &self.resolved, writer_version)
     }
 }
@@ -757,7 +757,7 @@ fn body_kind(
     raw: &RawBrep,
     resolved: &ResolvedBrep,
     writer_version: Option<i64>,
-) -> (BrepBodyKind, Option<cadmpeg_ir::report::LossNote>) {
+) -> (BrepBodyKind, Option<cadmpeg_ir::report::loss::LossNote>) {
     let closed = !raw.faces.is_empty()
         && (0..resolved.edges.len()).all(|edge| {
             resolved
@@ -1844,7 +1844,7 @@ fn unstamped_legacy_layout(
     writer_version: Option<i64>,
     count: usize,
     field: &str,
-) -> Option<cadmpeg_ir::report::LossNote> {
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
     (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
         crate::loss::writer_stamp_unverified(format!(
             "Brep {field} read with the pre-2002 layout for {count} records because the archive has no writer-version stamp"
@@ -1858,7 +1858,7 @@ fn read_edges(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<RawBrepEdge>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -1909,7 +1909,7 @@ fn read_trims(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<RawBrepTrim>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
@@ -3453,7 +3453,7 @@ mod tests {
     fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
         let circle = crate::curves::DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -3470,7 +3470,7 @@ mod tests {
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
         let degenerate = crate::curves::DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap(),
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point).unwrap(),
             )),
             Diagnostics::new(),
         );

@@ -17,9 +17,9 @@ use cadmpeg_codec_nx::{
 };
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::{CadIr, Severity};
+use cadmpeg_ir::{report::Severity, CadIr};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -581,7 +581,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     })
 }
 
-fn is_external_assembly_loss(code: &cadmpeg_ir::report::LossKind) -> bool {
+fn is_external_assembly_loss(code: &cadmpeg_ir::report::loss::LossKind) -> bool {
     code.namespace() == NX_LOSS_NAMESPACE && code.local_code() == EXTERNAL_ASSEMBLY_LOSS_CODE
 }
 
@@ -945,7 +945,7 @@ mod tests {
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::report::loss::LossCategory;
     use cadmpeg_ir::topology::Color;
     use cadmpeg_ir::CadIr;
     use std::collections::BTreeMap;
@@ -984,7 +984,7 @@ mod tests {
 
     #[test]
     fn external_assembly_applicability_uses_the_complete_local_loss_identity() {
-        use cadmpeg_ir::report::{LossKind, LossNamespace, LossTaxonomy};
+        use cadmpeg_ir::report::loss::{LossKind, LossNamespace, LossTaxonomy};
 
         const NX_NAMESPACE: LossNamespace<'static> = match LossNamespace::new(NX_LOSS_NAMESPACE) {
             Ok(namespace) => namespace,

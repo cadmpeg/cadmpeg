@@ -16,8 +16,9 @@ use std::fmt;
 
 use crate::document::CadIr;
 use crate::report::{
-    Coverage, DecodeReport, DecodeTransfer, Finding, LossNote as DecodeLoss, StrictConsequence,
-    TransferLedger,
+    check::Finding,
+    decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
+    loss::{LossNote as DecodeLoss, StrictConsequence},
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -332,7 +333,7 @@ mod sealed {
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
-///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
+///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
 ///         Vec::new()
 ///     }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)

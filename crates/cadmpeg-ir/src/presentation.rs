@@ -492,7 +492,7 @@ mod tests {
     };
     use crate::document::CadIr;
     use crate::ids::{FaceId, LayerId};
-    use crate::report::Check;
+    use crate::report::check::Check;
     use crate::validate::validate_neutral;
 
     #[test]

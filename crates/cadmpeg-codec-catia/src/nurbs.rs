@@ -7,8 +7,9 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, PcurveNurbs,
-    ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -64,7 +65,7 @@ fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
 /// carries a source location instead of a bare lane count.
 #[derive(Debug, Default)]
 pub(crate) struct LaneRefusals {
-    notes: Vec<cadmpeg_ir::report::LossNote>,
+    notes: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl LaneRefusals {
@@ -75,7 +76,7 @@ impl LaneRefusals {
 
     /// Take every refusal recorded so far, in the order the readers stated
     /// them, and leave the sink empty.
-    pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::LossNote> {
+    pub(crate) fn take_notes(&mut self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         std::mem::take(&mut self.notes)
     }
 
@@ -107,7 +108,11 @@ impl LaneRefusals {
     }
 
     /// Record one refusal against the record that stated it.
-    fn push(&mut self, record: impl std::fmt::Display, error: &cadmpeg_ir::geometry::NurbsError) {
+    fn push(
+        &mut self,
+        record: impl std::fmt::Display,
+        error: &cadmpeg_ir::geometry::nurbs::NurbsError,
+    ) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
                 "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
@@ -168,7 +173,7 @@ fn readable_range(range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, rec
 /// record of another kind: the reader answers `None` for the record it is
 /// reading, and the refusal travels, named, in the sink the caller owns.
 pub(crate) fn note_refusal<T>(
-    result: Result<T, cadmpeg_ir::geometry::NurbsError>,
+    result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
     refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
 ) -> Option<T> {
@@ -209,7 +214,7 @@ pub(crate) fn reverse_pcurve_geometry(
             }
             let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
             finite_point2(origin).then_some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     origin,
                     Point2::new(-direction.u, -direction.v),
                 )
@@ -285,7 +290,7 @@ pub(crate) fn reverse_curve_geometry(
             }
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction).ok()?,
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).ok()?,
                 )),
                 [0.0, length],
             ))
@@ -319,7 +324,7 @@ pub(crate) fn reverse_curve_geometry(
             }
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         *center,
                         (*axis).scale(-1.0),
                         ref_direction,
@@ -954,8 +959,9 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 mod tests {
     use cadmpeg_ir::eval::{curve_point, pcurve_uv};
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
-        SolvedCurveGeometry,
+        nurbs::{NurbsCurve, NurbsSurface},
+        pcurve::PcurveGeometry,
+        CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -964,7 +970,7 @@ mod tests {
         quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
         reverse_pcurve_geometry, LaneRefusals,
     };
-    use cadmpeg_ir::geometry::PcurveNurbs;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.
@@ -1016,7 +1022,7 @@ mod tests {
     #[test]
     fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
         let geometry = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(2.0, -1.0),
                 Point2::new(3.0, 4.0),
             )
@@ -1041,7 +1047,7 @@ mod tests {
     #[test]
     fn reversed_model_carriers_preserve_endpoint_geometry() {
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(2.0, -1.0, 4.0),
                 Vector3::new(3.0, 4.0, -2.0)
                     .unit()
@@ -1050,7 +1056,7 @@ mod tests {
             .expect("valid LineCurve fixture"),
         ));
         let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(2.0, -1.0, 4.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1162,9 +1168,13 @@ mod tests {
     fn surface_isocurve_preserves_tiny_weights_and_knot_domain() {
         let tiny = 1e-200;
         let surface = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, tiny, tiny], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, tiny, tiny],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                     vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
@@ -1196,9 +1206,17 @@ mod tests {
     fn surface_isocurve_rejects_nonfinite_output() {
         let surface = |control_points: Vec<Point3>, weights: Option<Vec<f64>>| {
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     control_points.chunks(2).map(<[_]>::to_vec).collect(),
                     weights.map(|values| values.chunks(2).map(<[_]>::to_vec).collect()),
                 ),
@@ -1448,8 +1466,11 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn reversing_geometry_rejects_nonfinite_reconstruction() {
         let pcurve_line = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .unwrap(),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
         );
         assert!(reverse_pcurve_geometry(
             &pcurve_line,
@@ -1460,7 +1481,7 @@ mod tests {
         .is_none());
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -1475,7 +1496,7 @@ mod tests {
         .is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 vec![-f64::MAX, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -1543,7 +1564,7 @@ mod tests {
     #[test]
     fn a_reversed_parameter_range_states_a_named_refusal() {
         let geometry = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(2.0, -1.0),
                 Point2::new(3.0, 4.0),
             )
@@ -1572,7 +1593,7 @@ mod tests {
         assert_eq!(
             reverse_curve_geometry(
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0)
                             .unit()

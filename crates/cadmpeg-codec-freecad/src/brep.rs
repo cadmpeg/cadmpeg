@@ -10,9 +10,10 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -5292,7 +5293,7 @@ pub(crate) fn append_text_curve(
 ) -> Result<CurveGeometry, CodecError> {
     let geometry = match curve {
         TextCurve::Line { origin, direction } => CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(*origin, *direction)
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(*origin, *direction)
                 .map_err(CodecError::malformed)?,
         )),
         TextCurve::Circle {
@@ -5301,7 +5302,7 @@ pub(crate) fn append_text_curve(
             ref_direction: _,
             radius,
         } if *radius == 0.0 => CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::DegenerateCurve::try_new(*center)
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(*center)
                 .map_err(CodecError::malformed)?,
         )),
         TextCurve::Circle {
@@ -5310,8 +5311,13 @@ pub(crate) fn append_text_curve(
             ref_direction,
             radius,
         } => CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(*center, *axis, *ref_direction, *radius)
-                .map_err(CodecError::malformed)?,
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                *center,
+                *axis,
+                *ref_direction,
+                *radius,
+            )
+            .map_err(CodecError::malformed)?,
         )),
         TextCurve::Ellipse {
             center,
@@ -5320,7 +5326,7 @@ pub(crate) fn append_text_curve(
             major_radius,
             minor_radius,
         } => CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipseCurve::try_new(
+            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 *center,
                 *axis,
                 *major_direction,
@@ -5335,7 +5341,7 @@ pub(crate) fn append_text_curve(
             major_direction,
             focal_distance,
         } => CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 *vertex,
                 *axis,
                 *major_direction,
@@ -5350,7 +5356,7 @@ pub(crate) fn append_text_curve(
             major_radius,
             minor_radius,
         } => CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 *center,
                 *axis,
                 *major_direction,
@@ -5506,7 +5512,7 @@ pub(crate) fn append_text_surface(
             u_axis,
             ..
         } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(*origin, *axis, *u_axis)
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(*origin, *axis, *u_axis)
                 .map_err(CodecError::malformed)?,
         )),
         TextSurface::Cylinder {
@@ -5516,8 +5522,13 @@ pub(crate) fn append_text_surface(
             radius,
             ..
         } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, *radius)
-                .map_err(CodecError::malformed)?,
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                *origin,
+                *axis,
+                *ref_direction,
+                *radius,
+            )
+            .map_err(CodecError::malformed)?,
         )),
         TextSurface::Cone {
             origin,
@@ -5527,7 +5538,7 @@ pub(crate) fn append_text_surface(
             half_angle,
             ..
         } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::ConeSurface::try_new(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 *origin,
                 *axis,
                 *ref_direction,
@@ -5544,8 +5555,13 @@ pub(crate) fn append_text_surface(
             radius,
             ..
         } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(*center, *axis, *ref_direction, *radius)
-                .map_err(CodecError::malformed)?,
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                *center,
+                *axis,
+                *ref_direction,
+                *radius,
+            )
+            .map_err(CodecError::malformed)?,
         )),
         TextSurface::Torus {
             center,
@@ -5555,7 +5571,7 @@ pub(crate) fn append_text_surface(
             minor_radius,
             ..
         } => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 *center,
                 *axis,
                 *ref_direction,
@@ -6523,7 +6539,7 @@ pub(crate) mod tests {
                 }),
             }),
         };
-        let cadmpeg_ir::geometry::PcurveGeometry::Offset(offset_pcurve) =
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Offset(offset_pcurve) =
             crate::topology_transfer::pcurve_geometry(&source)
                 .expect("recursive pcurve lanes pair")
                 .expect("valid recursive pcurve")
@@ -6534,10 +6550,10 @@ pub(crate) mod tests {
         let basis = offset_pcurve.basis();
         assert_eq!(distance, 0.25);
         assert!(
-            matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Trimmed(trimmed_pcurve)
+            matches!(basis, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Trimmed(trimmed_pcurve)
             if {
                 let basis = trimmed_pcurve.basis();
-                matches!(basis, cadmpeg_ir::geometry::PcurveGeometry::Circle(circle_pcurve)
+                matches!(basis, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle_pcurve)
                         if { circle_pcurve.radius() == 3.0 })
             })
         );
@@ -6679,7 +6695,7 @@ pub(crate) mod tests {
         assert_eq!(
             geometry,
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(center).unwrap()
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(center).unwrap()
             ))
         );
     }

@@ -16,8 +16,9 @@ use crate::decode::offset::{
 use crate::decode::pcurves::blend_boundary_parameter_from_support_spine;
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw, CurveGeometry,
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
 
@@ -27,11 +28,11 @@ fn test_surface(
     control_points: &[cadmpeg_ir::math::Point3],
     weights: Option<Vec<f64>>,
     u_periodic: bool,
-) -> cadmpeg_ir::geometry::NurbsSurface {
-    cadmpeg_ir::geometry::NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+) -> cadmpeg_ir::geometry::nurbs::NurbsSurface {
+    cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, u_knots, u_periodic),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
@@ -47,7 +48,7 @@ fn test_pcurve(
     weights: Option<Vec<f64>>,
 ) -> PcurveGeometry {
     PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             degree,
             knots,
             control_points,
@@ -105,7 +106,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -117,7 +118,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: second.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -173,7 +174,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: cylinder.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -186,7 +187,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: section_plane.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -233,7 +234,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: tangent_cylinder.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 1.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, -1.0),
@@ -246,7 +247,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: tangent_plane.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -307,7 +308,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Surface {
             id: nurbs_section.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.5),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -346,7 +347,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
         Surface {
             id: horizontal.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin,
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -358,7 +359,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
         Surface {
             id: vertical.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin,
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -526,7 +527,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
 
 #[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
-    use cadmpeg_ir::geometry::{Curve, NurbsCurve};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve};
     use cadmpeg_ir::ids::CurveId;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -634,7 +635,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     let PcurveGeometry::Nurbs { nurbs } = &mut rational_folded else {
         unreachable!("folded test pcurve is NURBS");
     };
-    *nurbs = cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs.control_points(),
@@ -697,7 +698,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let cylinder = |id, radius| Surface {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(-46.75, 0.0, -112.06),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, -1.0),
@@ -727,9 +728,13 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.y = 1.0;
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
-            .unwrap();
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     assert!(constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 
     let support_plane =
@@ -739,7 +744,7 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let plane = |id, origin| Surface {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin,
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -766,7 +771,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     let u_axis = plane_surface.u_axis();
     let mut origin = *origin;
     origin.x += 1.0;
-    *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+    *plane_surface =
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
     assert!(constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0).is_none());
 }
 
@@ -786,7 +792,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     let plane = |id, origin, normal, u_axis| Surface {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).unwrap(),
         )),
         source_object: None,
     };
@@ -931,7 +937,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     let plane = |id, origin, normal| Surface {
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1013,7 +1019,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -1097,7 +1103,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     let ellipse =
         CurveId::mint("test:model:entity#synthetic:ellipse-spine").expect("identity grammar");
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(2.0, 3.0, 4.0),
             Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1166,7 +1172,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Surface {
             id: first.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1178,7 +1184,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Surface {
             id: second.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1196,7 +1202,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Surface {
             id: first_spine_side.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1208,7 +1214,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Surface {
             id: second_spine_side.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 2.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -1222,7 +1228,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -1287,7 +1293,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                         surface: Some(first_spine_side),
                         pcurve: Some(
                             PcurveGeometry::Line(
-                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                     Point2::new(0.0, -2.0),
                                     Point2::new(1.0, 0.0),
                                 )
@@ -1300,7 +1306,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                         surface: Some(second_spine_side),
                         pcurve: Some(
                             PcurveGeometry::Line(
-                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                     Point2::new(0.0, 2.0),
                                     Point2::new(1.0, 0.0),
                                 )
@@ -1401,7 +1407,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     *cache = Some(
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1431,7 +1437,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 .edit(|context_sides, _, _| {
                     (*context_sides)[0].pcurve = Some(
                         PcurveGeometry::Offset(
-                            cadmpeg_ir::geometry::OffsetPcurve::try_new(
+                            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
                                 0.1,
                                 Box::new((*context_sides)[0].pcurve.take().unwrap().geometry),
                             )
@@ -1472,7 +1478,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             origin.y += 1.0e12;
             origin.z += 1.0e12;
             *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .unwrap();
         }
     }
     let carrier = translated
@@ -1497,7 +1504,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     origin.x += 1.0e12;
     origin.y += 1.0e12;
     origin.z += 1.0e12;
-    *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
+    *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
     *cache = geometry;
     let translated_point =
         blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
@@ -1531,7 +1538,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                             surface: Some(first.clone()),
                             pcurve: Some(
                                 PcurveGeometry::Line(
-                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                         Point2::new(0.0, -2.0),
                                         Point2::new(1.0, 0.0),
                                     )
@@ -1628,7 +1635,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     };
     *cache = Some(
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
                 vec![
@@ -1674,7 +1681,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.surfaces.push(Surface {
         id: third.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 8.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1688,7 +1695,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     ir.model.curves.push(Curve {
         id: outer_spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )

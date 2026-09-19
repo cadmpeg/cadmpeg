@@ -128,7 +128,8 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -177,7 +178,8 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -232,7 +234,8 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());

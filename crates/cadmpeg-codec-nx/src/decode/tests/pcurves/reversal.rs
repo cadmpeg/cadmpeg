@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::PcurveGeometry;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -16,7 +16,7 @@ use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve
 #[test]
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
             vec![
@@ -46,7 +46,7 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
 fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
     let carriers = [
         PcurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                 Point2::new(2.0, 3.0),
                 Point2::new(1.0, 0.0),
                 Point2::new(0.0, 1.0),
@@ -56,7 +56,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
             .unwrap(),
         ),
         PcurveGeometry::Parabola(
-            cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                 Point2::new(2.0, 3.0),
                 Point2::new(1.0, 0.0),
                 Point2::new(0.0, 1.0),
@@ -65,7 +65,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
             .unwrap(),
         ),
         PcurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                 Point2::new(2.0, 3.0),
                 Point2::new(1.0, 0.0),
                 Point2::new(0.0, 1.0),
@@ -93,7 +93,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
 fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     let carriers = [
         PcurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipsePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                 Point2::new(2.0, 3.0),
                 Point2::new(0.6, 0.8),
                 Point2::new(-0.8, 0.6),
@@ -103,7 +103,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
             .unwrap(),
         ),
         PcurveGeometry::Hyperbola(
-            cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                 Point2::new(-3.0, 5.0),
                 Point2::new(0.8, -0.6),
                 Point2::new(0.6, 0.8),
@@ -146,7 +146,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
 #[test]
 fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     let pcurve = PcurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
             Point2::new(2.0, 3.0),
             Point2::new(0.6, 0.8),
             Point2::new(-0.8, 0.6),
@@ -172,7 +172,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
     }
 
     let offset = PcurveGeometry::Offset(
-        cadmpeg_ir::geometry::OffsetPcurve::try_new(1.25, Box::new(pcurve.clone())).unwrap(),
+        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(1.25, Box::new(pcurve.clone()))
+            .unwrap(),
     );
     let PcurveGeometry::Offset(offset_pcurve) = reverse_pcurve_over_range(&offset, range)
         .expect("reversed lanes pair")
@@ -195,10 +196,10 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
 #[test]
 fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let pcurve = PcurveGeometry::Offset(
-        cadmpeg_ir::geometry::OffsetPcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
             2.5,
             Box::new(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(1.0, 3.0),
                     Point2::new(2.0, -1.0),
                 )
@@ -242,7 +243,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     ir.model.surfaces.push(Surface {
         id: support.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

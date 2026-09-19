@@ -55,7 +55,7 @@ pub(super) fn transfer_section_entities(
     materialized_saved_section_external_ids: &BTreeSet<u32>,
     mut profiles: Vec<Vec<SketchEntityUse>>,
     profile_entities: &BTreeSet<SketchEntityId>,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
     let segment_geometry = |segment: &crate::feature::FeatureSegment| {
         if section_degenerate_axis_line(definition, segment) {

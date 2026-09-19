@@ -2,8 +2,8 @@
 //! Spatial-sketch write-back and semantic-write round-trip pins.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::{collections::BTreeMap, io::Cursor};
 
 use cadmpeg_ir::codec::write::Encoder;

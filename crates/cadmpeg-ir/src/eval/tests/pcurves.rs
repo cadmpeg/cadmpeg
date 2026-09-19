@@ -3,14 +3,14 @@
 use crate::eval::pcurve_tangent;
 use crate::eval::pcurve_uv;
 use crate::eval::pcurve_uv_differential_inner;
-use crate::geometry::PcurveGeometry;
+use crate::geometry::pcurve::PcurveGeometry;
 use crate::math::Point2;
 use crate::transform::Transform2;
 
 #[test]
 fn analytic_pcurves_preserve_angular_parameterization() {
     let circle = PcurveGeometry::Circle(
-        crate::geometry::CirclePcurve::try_new(
+        crate::geometry::pcurve::CirclePcurve::try_new(
             Point2::new(2.0, 3.0),
             Point2::new(1.0, 0.0),
             Point2::new(0.0, -1.0),
@@ -19,7 +19,7 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         .unwrap(),
     );
     let ellipse = PcurveGeometry::Ellipse(
-        crate::geometry::EllipsePcurve::try_new(
+        crate::geometry::pcurve::EllipsePcurve::try_new(
             Point2::new(2.0, 3.0),
             Point2::new(0.0, 1.0),
             Point2::new(-1.0, 0.0),
@@ -29,7 +29,7 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         .unwrap(),
     );
     let polar = PcurveGeometry::PolarHarmonic(
-        crate::geometry::PolarHarmonicPcurve::try_new(
+        crate::geometry::pcurve::PolarHarmonicPcurve::try_new(
             Point2::new(0.0, 0.0),
             Point2::new(2.0, 0.0),
             Point2::new(0.0, 2.0),
@@ -40,19 +40,19 @@ fn analytic_pcurves_preserve_angular_parameterization() {
         .unwrap(),
     );
     let polar_nurbs = PcurveGeometry::PolarNurbs {
-        nurbs: crate::geometry::PolarPcurveNurbs::from_lanes(
+        nurbs: crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![
-                crate::geometry::PolarNurbsPole {
+                crate::geometry::pcurve::PolarNurbsPole {
                     radial: Point2::new(2.0, 0.0),
                     axial: 3.0,
                 },
-                crate::geometry::PolarNurbsPole {
+                crate::geometry::pcurve::PolarNurbsPole {
                     radial: Point2::new(2.0, 2.0),
                     axial: 4.0,
                 },
-                crate::geometry::PolarNurbsPole {
+                crate::geometry::pcurve::PolarNurbsPole {
                     radial: Point2::new(0.0, 2.0),
                     axial: 5.0,
                 },
@@ -81,7 +81,8 @@ fn analytic_pcurves_preserve_angular_parameterization() {
 #[test]
 fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
     let geometry = PcurveGeometry::SphericalGreatCircle(
-        crate::geometry::SphericalGreatCirclePcurve::try_new(0.25, 0.5, 1.0, -0.75).unwrap(),
+        crate::geometry::pcurve::SphericalGreatCirclePcurve::try_new(0.25, 0.5, 1.0, -0.75)
+            .unwrap(),
     );
     let point = pcurve_uv(&geometry, 1.5).expect("great-circle pcurve evaluates");
     assert_eq!(point.u, 1.0);
@@ -91,7 +92,7 @@ fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
 #[test]
 fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
     let harmonic = PcurveGeometry::Harmonic(
-        crate::geometry::HarmonicPcurve::try_new(
+        crate::geometry::pcurve::HarmonicPcurve::try_new(
             Point2::new(2.0, 3.0),
             Point2::new(4.0, -1.0),
             Point2::new(2.0, 5.0),
@@ -99,7 +100,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
         .unwrap(),
     );
     let hyperbolic = PcurveGeometry::Hyperbolic(
-        crate::geometry::HyperbolicPcurve::try_new(
+        crate::geometry::pcurve::HyperbolicPcurve::try_new(
             Point2::new(-3.0, 7.0),
             Point2::new(2.5, -4.0),
             Point2::new(1.5, 0.75),
@@ -128,7 +129,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
 fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
     let geometry = PcurveGeometry::Transformed {
         basis: Box::new(PcurveGeometry::Parabola(
-            crate::geometry::ParabolaPcurve::try_new(
+            crate::geometry::pcurve::ParabolaPcurve::try_new(
                 Point2::new(1.0, 2.0),
                 Point2::new(1.0, 0.0),
                 Point2::new(0.0, 1.0),
@@ -150,20 +151,23 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
 #[test]
 fn signed_offset_pcurves_use_the_exact_left_normal() {
     let line = PcurveGeometry::Offset(
-        crate::geometry::OffsetPcurve::try_new(
+        crate::geometry::pcurve::OffsetPcurve::try_new(
             2.0,
             Box::new(PcurveGeometry::Line(
-                crate::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
-                    .unwrap(),
+                crate::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(1.0, 2.0),
+                    Point2::new(3.0, 4.0),
+                )
+                .unwrap(),
             )),
         )
         .unwrap(),
     );
     let circle = PcurveGeometry::Offset(
-        crate::geometry::OffsetPcurve::try_new(
+        crate::geometry::pcurve::OffsetPcurve::try_new(
             1.0,
             Box::new(PcurveGeometry::Circle(
-                crate::geometry::CirclePcurve::try_new(
+                crate::geometry::pcurve::CirclePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(1.0, 0.0),
                     Point2::new(0.0, 1.0),
@@ -182,10 +186,10 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
 
     let rational_arc = PcurveGeometry::Offset(
-        crate::geometry::OffsetPcurve::try_new(
+        crate::geometry::pcurve::OffsetPcurve::try_new(
             0.25,
             Box::new(PcurveGeometry::Nurbs {
-                nurbs: crate::geometry::PcurveNurbs::from_lanes(
+                nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -210,7 +214,7 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     }
 
     let nested = PcurveGeometry::Offset(
-        crate::geometry::OffsetPcurve::try_new(1.0, Box::new(line)).unwrap(),
+        crate::geometry::pcurve::OffsetPcurve::try_new(1.0, Box::new(line)).unwrap(),
     );
     let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
     assert!((nested_point.u - 0.1).abs() < 1.0e-12);

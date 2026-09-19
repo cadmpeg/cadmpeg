@@ -85,7 +85,7 @@ ambiguity.
 use std::fs::File;
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -8,7 +8,7 @@ use crate::native::{
     CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution, CatiaConsolidatedSphere,
     CatiaConsolidatedTorus,
 };
-use cadmpeg_ir::geometry::knots_strictly_increasing;
+use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use std::collections::HashMap;
 use std::mem::size_of;
 

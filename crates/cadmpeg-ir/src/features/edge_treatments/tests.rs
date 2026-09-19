@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
 
 use crate::{
-    features::{ChamferSpec, RadiusSpec, VariableRadii, VariableRadius},
+    features::edge_treatments::{ChamferSpec, RadiusSpec, VariableRadii, VariableRadius},
     scalar::Length,
 };
 use serde_json::json;

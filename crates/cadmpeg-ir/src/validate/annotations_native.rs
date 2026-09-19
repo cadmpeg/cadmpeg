@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 
 use super::identity_order::collect_native_ids;
 use crate::document::CadIr;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 macro_rules! define_model_entity_json {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {

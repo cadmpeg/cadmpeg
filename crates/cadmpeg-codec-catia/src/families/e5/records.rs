@@ -7,7 +7,7 @@
 use crate::families::freeform::rolling_ball_derivative;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsSurface, ProceduralSurfaceDefinition, RollingBallJetSite,
+    nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
@@ -219,7 +219,7 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
             {
                 if radius.is_finite() && radius > 0.0 {
                     if let Some(axis) = frame_u.cross(frame_v).unit() {
-                        let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
+                        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                             origin,
                             axis,
                             frame_u.unit().unwrap_or_else(|| {
@@ -653,9 +653,9 @@ fn e5_nurbs_surface(
         .then(|| {
             crate::nurbs::note_refusal(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
                         weights.map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
                     ),

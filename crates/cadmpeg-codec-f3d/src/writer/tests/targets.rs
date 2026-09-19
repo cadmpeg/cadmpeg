@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
 use crate::loss::F3dLossCode;
 use crate::F3dCodec;

@@ -9,7 +9,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::NativeRecord;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 

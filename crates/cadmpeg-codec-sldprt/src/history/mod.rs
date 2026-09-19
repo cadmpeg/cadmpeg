@@ -18,7 +18,7 @@ use crate::container::ContainerScan;
 use crate::records::FeatureSource;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
 

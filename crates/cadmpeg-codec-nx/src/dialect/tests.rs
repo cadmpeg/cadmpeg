@@ -68,7 +68,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Reject
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
 }

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use crate::directory::DirectoryEntry;

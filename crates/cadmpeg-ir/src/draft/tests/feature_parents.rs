@@ -5,7 +5,7 @@ use crate::document::CadIr;
 use crate::draft::CommitSession;
 use crate::draft::DraftError;
 use crate::draft::ModelDraft;
-use crate::report::TransferLedger;
+use crate::report::decode::TransferLedger;
 
 use crate::document::Model;
 use crate::features::{

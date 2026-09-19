@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::TransferDisposition;
+use cadmpeg_ir::report::decode::TransferDisposition;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};

@@ -6,10 +6,12 @@ use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::{Pcurve, PcurveGeometry},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -170,7 +172,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         }
         Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     circle_center,
                     Vector3::new(
                         normal.x / normal_norm,
@@ -450,7 +452,7 @@ mod consolidated_revolution_binding_tests {
             });
         }
         let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -653,7 +655,7 @@ fn refine_consolidated_analytic_surfaces(
                 .and_then(|cone| {
                     Some((
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                            cadmpeg_ir::geometry::ConeSurface::try_new(
+                            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                                 Point3::from(cone.apex),
                                 Vector3::from(cone.axis.get()),
                                 Vector3::from(cone.t1.get()),
@@ -721,7 +723,7 @@ mod consolidated_analytic_refinement_tests {
         let exact_x = 1.000_000_01_f64;
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -754,7 +756,7 @@ mod consolidated_analytic_refinement_tests {
         let exact_x = 1.000_000_01_f64;
         bytes[5..13].copy_from_slice(&exact_x.to_le_bytes());
         let coarse = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(f64::from(exact_x as f32), 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -795,7 +797,7 @@ mod consolidated_analytic_refinement_tests {
         bytes.extend_from_slice(&crate::test_support::test_b2::b2_cone_stream());
         let mut surfaces = vec![
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -804,7 +806,7 @@ mod consolidated_analytic_refinement_tests {
                 .expect("valid CylinderSurface fixture"),
             ))),
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(1.0, 2.0, 3.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1488,7 +1490,7 @@ fn try_decode_standard_populations(
             return None;
         }
         if output.report.transfer.geometry_transferred() {
-            merged.report.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
+            merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
     }
 
@@ -2603,7 +2605,7 @@ impl StandardTopologyFailure {
         Self::InadmissibleNeutralModel,
     ];
 
-    const fn coverage_key(self) -> cadmpeg_ir::CoverageKey {
+    const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
             Self::NoCurveSupports => {
                 crate::coverage::STANDARD_TOPOLOGY_FAILURE_NO_CURVE_SUPPORTS_COUNT
@@ -5410,7 +5412,7 @@ fn emit_standard_topology(
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
-                        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                             None,
                             Some(range),
                             None,
@@ -6627,22 +6629,22 @@ fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 
     Some([
         cadmpeg_ir::eval::nurbs_surface_isocurve(
             surface,
-            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             u_lower,
         )?,
         cadmpeg_ir::eval::nurbs_surface_isocurve(
             surface,
-            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             u_upper,
         )?,
         cadmpeg_ir::eval::nurbs_surface_isocurve(
             surface,
-            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
             v_lower,
         )?,
         cadmpeg_ir::eval::nurbs_surface_isocurve(
             surface,
-            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
             v_upper,
         )?,
     ])
@@ -7451,7 +7453,9 @@ pub(crate) fn standard_pcurve_geometry(
         },
     };
     on_curve.then_some((
-        PcurveGeometry::Line(cadmpeg_ir::geometry::LinePcurve::try_new(uv[0], direction).ok()?),
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(uv[0], direction).ok()?,
+        ),
         [0.0, 1.0],
     ))
 }
@@ -7743,7 +7747,11 @@ pub(crate) fn standard_spline_line(
     }
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(start, direction.scale(1.0 / length)).ok()?,
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                start,
+                direction.scale(1.0 / length),
+            )
+            .ok()?,
         )),
         [0.0, length],
     ))
@@ -7813,7 +7821,7 @@ fn standard_spline_circle(
         return None;
     }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             section_center,
             axis,
             cadmpeg_ir::geometry::derive_reference_direction(axis),
@@ -7906,7 +7914,7 @@ fn standard_spline_cylinder_plane(
     }
     if minor_norm <= CYLINDER_PLANE_CONIC_TOLERANCE {
         return Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 center,
                 plane_normal,
                 cadmpeg_ir::geometry::derive_reference_direction(plane_normal),
@@ -7939,7 +7947,7 @@ fn standard_spline_cylinder_plane(
         return None;
     }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             center,
             plane_normal,
             major_direction,
@@ -8057,7 +8065,7 @@ fn standard_spline_perpendicular_cylinders(
         };
         (endpoint_is_on_branch(start) && endpoint_is_on_branch(end)).then_some(
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     center,
                     axis,
                     major_direction,
@@ -8252,7 +8260,7 @@ pub(crate) fn build_standard_edge_curve(
             }
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    match cadmpeg_ir::geometry::LineCurve::try_new(
+                    match cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         start,
                         Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                     ) {
@@ -8298,7 +8306,7 @@ pub(crate) fn build_standard_edge_curve(
                     match full_circle_frame(*center, *radius, axis, start) {
                         Some((axis, ref_direction)) => (
                             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                                match cadmpeg_ir::geometry::CircleCurve::try_new(
+                                match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                     *center,
                                     axis,
                                     ref_direction,
@@ -8371,7 +8379,7 @@ pub(crate) fn build_standard_edge_curve(
                     };
                     (
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            match cadmpeg_ir::geometry::CircleCurve::try_new(
+                            match cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                 *center,
                                 axis,
                                 ref_direction,
@@ -9434,7 +9442,7 @@ pub(crate) fn attach_standard_circles(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "circle"),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::CircleCurve::try_new(
+        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             center,
             axis,
             cadmpeg_ir::geometry::derive_reference_direction(axis),
@@ -9650,7 +9658,8 @@ pub(crate) fn attach_standard_lines(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "line"),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::LineCurve::try_new(origin, direction) else {
+        let Ok(payload) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
+        else {
             continue;
         };
         annotate(
@@ -9752,13 +9761,13 @@ mod circle_axis_tests {
     #[test]
     fn circle_axes_follow_exact_carrier_sections() {
         let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin(), z(), x())
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin(), z(), x())
                 .expect("valid PlaneSurface fixture"),
         ));
         assert_eq!(circle_axis_from_carrier(origin(), 2.0, &plane), Some(z()));
 
         let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(origin(), z(), x(), 2.0)
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(origin(), z(), x(), 2.0)
                 .expect("valid CylinderSurface fixture"),
         ));
         assert_eq!(
@@ -9768,7 +9777,7 @@ mod circle_axis_tests {
         assert_eq!(circle_axis_from_carrier(origin(), 3.0, &cylinder), None);
 
         let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 5.0)
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(origin(), z(), x(), 5.0)
                 .expect("valid SphereSurface fixture"),
         ));
         assert_eq!(
@@ -9779,7 +9788,7 @@ mod circle_axis_tests {
 
         let tiny = 1e-200;
         let unit_sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 1.0)
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(origin(), z(), x(), 1.0)
                 .expect("valid SphereSurface fixture"),
         ));
         assert_eq!(
@@ -9788,7 +9797,7 @@ mod circle_axis_tests {
         );
 
         let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(origin(), z(), x(), 10.0, 2.0)
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(origin(), z(), x(), 10.0, 2.0)
                 .expect("valid TorusSurface fixture"),
         ));
         assert_eq!(
@@ -9805,11 +9814,11 @@ mod circle_axis_tests {
     fn centered_sphere_does_not_override_a_cylinder_axis() {
         let center = Point3::new(1e-10, 0.0, -1e-10);
         let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(origin(), z(), x(), 3.175)
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(origin(), z(), x(), 3.175)
                 .expect("valid SphereSurface fixture"),
         ));
         let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(center.x, 0.0, center.z),
                 y(),
                 x(),

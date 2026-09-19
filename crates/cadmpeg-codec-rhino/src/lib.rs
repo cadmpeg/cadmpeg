@@ -12,7 +12,10 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 

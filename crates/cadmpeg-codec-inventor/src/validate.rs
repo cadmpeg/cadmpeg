@@ -4,7 +4,13 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_asm::brep::records::FaceNativeKey;
-use cadmpeg_ir::{CadIr, Check, Finding, NativeUnknownRecord, Severity};
+use cadmpeg_ir::{
+    report::{
+        check::{Check, Finding},
+        Severity,
+    },
+    CadIr, NativeUnknownRecord,
+};
 
 use crate::design::{PmDcExpression, PmDcExpressionKind, PmDcParameter, PmDcUnit, PmDcUnitKind};
 use crate::feature::{

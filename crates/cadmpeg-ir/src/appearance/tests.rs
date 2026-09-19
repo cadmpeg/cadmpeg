@@ -103,7 +103,7 @@ fn appearance_asset_and_binding_round_trip() {
 /// mapping value is illegal.
 #[test]
 fn a_non_finite_texture_mapping_value_is_refused_by_validation() {
-    use crate::report::Check;
+    use crate::report::check::Check;
     use crate::validate::validate_neutral;
 
     let mut ir = CadIr::empty();
@@ -125,7 +125,7 @@ fn a_non_finite_texture_mapping_value_is_refused_by_validation() {
 #[test]
 fn a_non_finite_bump_map_value_is_refused_by_validation() {
     use crate::appearance::BumpMap;
-    use crate::report::Check;
+    use crate::report::check::Check;
     use crate::validate::validate_neutral;
 
     let mut ir = CadIr::empty();

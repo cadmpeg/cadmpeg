@@ -9,12 +9,13 @@ use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve},
+    Curve, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
@@ -1566,8 +1567,13 @@ pub(crate) fn project_geometry(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, ref_direction, radius)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    center,
+                    axis,
+                    ref_direction,
+                    radius,
+                )
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             )),
             source_object: Some(source_object(entry)?),
         });
@@ -1785,7 +1791,7 @@ pub(crate) fn project_geometry(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     start,
                     Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                 )

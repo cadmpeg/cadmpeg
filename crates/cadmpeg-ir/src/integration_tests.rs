@@ -15,7 +15,10 @@ use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use crate::ids::{BodyId, CurveId, PointId, RegionId, ShellId, VertexId};
 use crate::math::Point3;
 use crate::provenance::SourceObjectAssociation;
-use crate::report::{Check, Severity, ValidationReport};
+use crate::report::{
+    check::{Check, ValidationReport},
+    Severity,
+};
 use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use crate::validate::{entity_census, validate_neutral};
 
@@ -290,3 +293,9 @@ proptest! {
         );
     }
 }
+
+mod reports;
+
+mod geometry_admission;
+
+mod features_admission;

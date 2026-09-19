@@ -6404,7 +6404,7 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     pub(crate) uv_endpoints: Option<[[f64; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) pcurve: Option<cadmpeg_ir::geometry::PcurveGeometry>,
+    pub(crate) pcurve: Option<cadmpeg_ir::geometry::pcurve::PcurveGeometry>,
     /// Exact model-space carrier derived from the pcurve and owning surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) model_curve: Option<cadmpeg_ir::geometry::CurveGeometry>,

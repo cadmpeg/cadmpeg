@@ -38,7 +38,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
     features::{
-        FeatureDefinition, FeatureOperation, PathRef, PatternKind, PatternSeed, PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        FeatureDefinition, FeatureOperation, PathRef,
     },
     scalar::{Angle, Length},
 };
@@ -222,7 +223,7 @@ pub(crate) fn bind_pattern_inputs(
                         if matches!(
                             pattern.definition(),
                             PatternTransform::Unresolved {
-                                form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                                form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
                             }
                         ) =>
                     {
@@ -300,7 +301,7 @@ pub(crate) fn bind_pattern_inputs(
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
                         pattern: admitted_pattern,
                         ..
-                    }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Linear) })
+                    }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
                 ) {
                     if let Some((spacing, count)) =
                         object_start.filter(|start| *start < end).and_then(|start| {
@@ -574,7 +575,7 @@ pub(crate) fn bind_pattern_inputs(
                 [first] if direction.is_none() => *direction = Some(*first),
                 [first, second_direction] => {
                     let secondary = native.and_then(|feature| {
-                        Some(cadmpeg_ir::features::LinearPatternDirection {
+                        Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                             direction: *second_direction,
                             spacing: Length::new(feature.parameters.get("D4").and_then(
                                 |value| {
@@ -691,7 +692,7 @@ pub(crate) fn bind_pattern_inputs(
             if !matches!(
                 slot.definition(),
                 PatternTransform::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Circular)
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular)
                 }
             ) {
                 continue;

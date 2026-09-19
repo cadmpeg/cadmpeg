@@ -1347,7 +1347,7 @@ fn generated_saved_geometry_forms_closed_profiles() {
         (
             10,
             SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
-                curve: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
                     vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
@@ -1786,7 +1786,7 @@ fn placed_extrusion_line_defines_plane() {
     assert_eq!(
         extruded_segment_surface(&transform, &points, &segment),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(10.0, 22.0, 33.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(0.0, 1.0, 0.0)
@@ -1797,7 +1797,7 @@ fn placed_extrusion_line_defines_plane() {
     assert_eq!(
         placed_section_curve_geometry(&transform, &points, &segment),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(10.0, 22.0, 33.0),
                 Vector3::new(0.0, 1.0, 0.0)
             )

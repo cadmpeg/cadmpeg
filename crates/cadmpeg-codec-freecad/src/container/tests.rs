@@ -258,7 +258,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .expect("replace entries");
     assert!(crate::validate_native(&corrupted)
         .iter()
-        .any(|finding| finding.check == cadmpeg_ir::Check::ReferentialIntegrity));
+        .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity));
 }
 
 #[test]

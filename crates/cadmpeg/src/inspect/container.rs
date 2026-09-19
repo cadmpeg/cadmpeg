@@ -30,7 +30,7 @@ fn allocation_label(allocation: Option<CompoundAllocation>) -> Option<&'static s
 }
 
 /// Container members listed from a ZIP archive or a CFB file.
-pub enum Listing {
+pub(in crate::inspect) enum Listing {
     /// ZIP central-directory entries.
     Zip(Vec<EntryRecord>),
     /// CFB directory rows (storages and streams).
@@ -43,7 +43,7 @@ pub enum Listing {
 ///
 /// Returns an error when the bytes exceed the resource-limit profile or the
 /// ZIP central directory or CFB directory does not parse.
-pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
+pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,
@@ -76,7 +76,7 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
 /// Returns an error when the bytes are not a supported container within the
 /// limit profile, when no stream or entry has exactly `name`, or when opening
 /// the member fails structural, size, or integrity checks.
-pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
+pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         limits,
@@ -184,7 +184,7 @@ fn missing_member_message(snapshot: &ArchiveSnapshot<'_>, name: &str) -> String 
 /// Fusion `.f3d` entry names hold `[` and `]`, which a shell expands as a glob
 /// character class. Single quotes suppress every expansion, and an embedded
 /// single quote is closed, escaped, and reopened.
-pub fn shell_quote(name: &str) -> String {
+fn shell_quote(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 2);
     out.push('\'');
     for c in name.chars() {
@@ -202,7 +202,7 @@ pub fn shell_quote(name: &str) -> String {
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.
-pub fn render_json(listing: &Listing) -> Result<String> {
+pub(super) fn render_json(listing: &Listing) -> Result<String> {
     let (container_kind, entries): (&str, Vec<serde_json::Value>) = match listing {
         Listing::Zip(entries) => (
             "zip",
@@ -255,7 +255,7 @@ pub fn render_json(listing: &Listing) -> Result<String> {
 }
 
 /// Formats an entry listing as an aligned table.
-pub fn render(listing: &Listing) -> String {
+pub(super) fn render(listing: &Listing) -> String {
     let mut rows = Vec::new();
     match listing {
         Listing::Zip(entries) => {

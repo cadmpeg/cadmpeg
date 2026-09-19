@@ -856,16 +856,16 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 active curve-equation record(s) containing prohibited datum-curve constructs \
                  were not evaluated",
             )
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 prohibited datum-curve construct(s) across active curve-equation records were \
                  not evaluated",

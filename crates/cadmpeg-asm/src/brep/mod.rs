@@ -36,8 +36,8 @@ use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
-    SurfaceGeometry,
+    pcurve::{Pcurve, PcurveGeometry},
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};

@@ -1,5 +1,5 @@
 use crate::nurbs::{expand_knots, pole_count};
-use cadmpeg_ir::geometry::knots_strictly_increasing;
+use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 
 /// Distinct finite increasing knots paired with their multiplicities.
 #[derive(Debug, Clone, PartialEq)]

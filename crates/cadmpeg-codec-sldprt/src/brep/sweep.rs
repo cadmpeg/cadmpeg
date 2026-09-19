@@ -16,7 +16,10 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
@@ -250,13 +253,17 @@ pub(super) fn swept_nurbs(
         }
     }
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
             profile.knots().to_vec(),
             profile.periodic(),
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![v_start, v_start, v_end, v_end], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+            1,
+            vec![v_start, v_start, v_end, v_end],
+            false,
+        ),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control.chunks(2_usize).map(<[_]>::to_vec).collect(),
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
@@ -348,13 +355,13 @@ pub(super) fn spun_nurbs(
         2.0 * PI,
     ];
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
             profile.knots().to_vec(),
             profile.periodic(),
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, v_knots, true),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, true),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control.chunks(9_usize).map(<[_]>::to_vec).collect(),
             Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
         ),
@@ -375,9 +382,9 @@ mod tests {
     use cadmpeg_ir::eval::nurbs_curve_point;
 
     use super::{profile_nurbs, scan_sweep_carriers, spun_nurbs, swept_nurbs, SweepKind};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::NurbsCurve;
-    use cadmpeg_ir::geometry::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
@@ -478,7 +485,7 @@ mod tests {
     #[test]
     fn analytic_ellipse_profile_has_exact_rational_form() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipseCurve::try_new(
+            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(3.0, -2.0, 7.0),
                 Vector3::new(0.0, 0.0, 2.0).unit().unwrap(),
                 Vector3::new(4.0, 0.0, 0.0).unit().unwrap(),
@@ -514,7 +521,7 @@ mod tests {
     #[test]
     fn analytic_circle_profile_has_exact_rational_form() {
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(-1.0, 2.0, 3.0),
                 Vector3::new(0.0, 2.0, 0.0).unit().unwrap(),
                 Vector3::new(0.0, 0.0, 4.0).unit().unwrap(),

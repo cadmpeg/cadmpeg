@@ -65,7 +65,8 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
         features::{
-            FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+            holes::{HoleKind, HolePlacement},
+            FeatureDefinition, FeatureOperation, LinearTermination,
         },
         scalar::Length,
     };
@@ -91,7 +92,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     model.surfaces.push(Surface {
         id: cylinder_surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -104,7 +105,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     model.surfaces.push(Surface {
         id: cap_surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -126,7 +127,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     model.curves.push(Curve {
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            cadmpeg_ir::geometry::CircleCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                 center,
                                 Vector3::new(0.0, 0.0, 1.0),
                                 Vector3::new(1.0, 0.0, 0.0),
@@ -293,7 +294,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             extent: Some(LinearTermination::Blind { length: actual_length }),
             placements,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, Some(actual_diameter),) if (placements.as_deref() == Some(&[HolePlacement::Directed {
@@ -364,7 +365,10 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, HoleKind, HolePlacement},
+        features::{
+            holes::{HoleKind, HolePlacement},
+            FeatureDefinition, FeatureOperation,
+        },
         scalar::Length,
     };
 
@@ -413,7 +417,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                             center,
                             Vector3::new(0.0, 0.0, 1.0),
                             Vector3::new(1.0, 0.0, 0.0),
@@ -458,7 +462,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     model.surfaces.push(Surface {
         id: bore_surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -484,7 +488,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     model.surfaces.push(Surface {
         id: counterbore_surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -515,7 +519,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     model.surfaces.push(Surface {
         id: shoulder_surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -650,7 +654,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
             placements,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
@@ -1012,7 +1016,9 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::RadiusSpec, FaceSelection, FeatureDefinition, FeatureOperation,
+    };
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, BlendSupport, ProceduralSurface,
         ProceduralSurfaceDefinition,
@@ -1089,7 +1095,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
         }] if actual_radius.get() == 5.0)
@@ -1153,7 +1159,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges: EdgeSelection::Unresolved,
                 radius: RadiusSpec::Constant { .. },
                 ..
@@ -1189,7 +1195,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant { radius: actual_radius },
             ..
         }] if actual_radius.get() == 5.0)
@@ -1205,8 +1211,8 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-        radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+        radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));

@@ -5,7 +5,7 @@ use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::features::HoleForm;
+use cadmpeg_ir::features::holes::HoleForm;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
@@ -407,7 +407,7 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
     scan: &ContainerScan,
     table: &crate::feature::FeatureEntityTable,
     diameter: f64,
-) -> Option<cadmpeg_ir::features::HolePlacement> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let feature_id = table.feature_id;
     let cylinder_ids = table
         .surface_ids()
@@ -435,7 +435,7 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
 pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     frames: &[crate::surface::PositionalCylinderFrame],
     diameter: f64,
-) -> Option<cadmpeg_ir::features::HolePlacement> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let first = *frames.first()?;
     let axis = normalize(first.axis())?;
     let coordinate_scale = frames
@@ -480,7 +480,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
                 .sqrt()
                 <= EPS_COORDINATE_AGREEMENT * coordinate_scale
         })
-        .then_some(cadmpeg_ir::features::HolePlacement::Axis {
+        .then_some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 first.origin()[0],
                 first.origin()[1],

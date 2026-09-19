@@ -39,7 +39,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         }),
     );
     let sphere_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             center,
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -102,7 +102,7 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
     let center = Point3::new(0.0, 2.0, 3.0);
     let radius = 2.0;
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             center,
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

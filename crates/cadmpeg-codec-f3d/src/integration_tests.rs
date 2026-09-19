@@ -3,8 +3,8 @@
 
 use cadmpeg_core::container::ContainerRole;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -348,7 +348,7 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
 
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay { .. }
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(named_target(&plan), "f3d:unknown");
     let mut written = Vec::new();
@@ -399,7 +399,7 @@ fn an_explicit_catalog_row_does_not_replay_a_different_dialect() {
 
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
     let mut written = Vec::new();
@@ -422,7 +422,7 @@ fn a_same_dialect_request_replays_under_both_spellings() {
         let plan = plan(&result, true, request).expect("the source's own dialect is writable");
         assert!(matches!(
             plan.report().write_path(),
-            cadmpeg_ir::WritePath::VerbatimReplay { .. }
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
         ));
         assert_eq!(named_target(&plan), "f3d:manifest-3-2-0-0");
         let mut written = Vec::new();
@@ -462,7 +462,7 @@ fn the_patch_path_names_the_preserved_dialect() {
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     assert_eq!(named_target(&plan), "f3d:unknown");
 
@@ -504,15 +504,23 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
             "replay",
             &replayed,
             true,
-            (|path| matches!(path, cadmpeg_ir::WritePath::VerbatimReplay { .. }))
-                as fn(&cadmpeg_ir::WritePath) -> bool,
+            (|path| {
+                matches!(
+                    path,
+                    cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                )
+            }) as fn(&cadmpeg_ir::report::export::WritePath) -> bool,
         ),
         (
             "synthesize",
             &synthesized,
             false,
-            (|path| matches!(path, cadmpeg_ir::WritePath::Synthesized { .. }))
-                as fn(&cadmpeg_ir::WritePath) -> bool,
+            (|path| {
+                matches!(
+                    path,
+                    cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+                )
+            }) as fn(&cadmpeg_ir::report::export::WritePath) -> bool,
         ),
     ] {
         let plan = plan(result, fidelity, TargetRequest::Inherit)

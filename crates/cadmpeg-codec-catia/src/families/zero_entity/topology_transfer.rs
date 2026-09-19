@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
-use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -472,7 +472,7 @@ pub(crate) fn transfer_closed_face_topology(
         ir.model.pcurves.push(Pcurve {
             id: pcurve.id.clone(),
             geometry: pcurve.geometry.clone(),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                 None,
                 Some(pcurve.parameter_range),
                 None,
@@ -944,7 +944,7 @@ mod tests {
             uv_endpoints: None,
             pcurve: None,
             model_curve: Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     start,
                     end.vector_from(start)
                         .unit()
@@ -1055,7 +1055,7 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1070,7 +1070,7 @@ mod tests {
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::LineCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                             start,
                             end.vector_from(start)
                                 .unit()
@@ -1171,7 +1171,7 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     points[0],
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1185,7 +1185,7 @@ mod tests {
                 let [start, end] = support.model_endpoints.expect("test endpoints");
                 let geometry = if support.record_ordinal == 5 {
                     CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                        cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                             points[0],
                             Vector3::new(0.0, 0.0, 1.0),
                             Vector3::new(1.0, 0.0, 0.0),
@@ -1196,7 +1196,7 @@ mod tests {
                     ))
                 } else {
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::LineCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                             start,
                             end.vector_from(start)
                                 .unit()

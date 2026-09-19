@@ -35,8 +35,9 @@ use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve,
+    pcurve::{Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs},
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LoftPathCurve,
-    NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs,
     ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
     RollingBallRadiusSelector, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
     RollingBallSupportSurface, RollingBallThirdSide, SolvedCurveGeometry, SolvedSurfaceGeometry,

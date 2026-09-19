@@ -10,7 +10,8 @@ use super::support::{
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    BooleanOp, PatternKind, PatternSeed, PatternTransform, RibConstruction, RibDraft, RibSide,
+    patterns::{PatternKind, PatternSeed, PatternTransform},
+    BooleanOp, RibConstruction, RibDraft, RibSide,
 };
 
 #[allow(
@@ -120,8 +121,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 pattern.definition(),
                 PatternTransform::Unresolved {
                     form: Some(
-                        cadmpeg_ir::features::PatternForm::Scale
-                            | cadmpeg_ir::features::PatternForm::Composite
+                        cadmpeg_ir::features::patterns::PatternForm::Scale
+                            | cadmpeg_ir::features::patterns::PatternForm::Composite
                     )
                 } | PatternTransform::Scale { .. }
                     | PatternTransform::Composite { .. }
@@ -129,16 +130,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let expected_form = match pattern.definition() {
                 PatternTransform::Unresolved { form: None } => None,
                 PatternTransform::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Linear),
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear),
                 } => Some(NativePatternClass::Linear),
                 PatternTransform::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Circular),
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Circular),
                 } => Some(NativePatternClass::Circular),
                 PatternTransform::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::CurveDriven),
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::CurveDriven),
                 } => Some(NativePatternClass::CurveDriven),
                 PatternTransform::Unresolved {
-                    form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+                    form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror),
                 } => Some(NativePatternClass::Mirror),
                 PatternTransform::Unresolved { .. } => None,
                 PatternTransform::Linear { .. } | PatternTransform::LinearOffsets { .. } => {

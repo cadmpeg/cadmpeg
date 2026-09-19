@@ -3,7 +3,7 @@ use super::{
     blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier, CurveCarrier,
     SurfaceCarrier,
 };
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
 /// An exact carrier or a derived intersection carrier.

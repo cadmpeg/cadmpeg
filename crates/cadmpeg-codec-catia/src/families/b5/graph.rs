@@ -6,7 +6,10 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
-use cadmpeg_ir::geometry::{knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition};
+use cadmpeg_ir::geometry::{
+    nurbs::{knots_strictly_increasing, NurbsSurface},
+    ProceduralSurfaceDefinition,
+};
 use cadmpeg_ir::math::Point2;
 
 /// Admitted topology control bytes.

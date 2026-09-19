@@ -188,7 +188,7 @@ fn retains_native_for_malformed_post_process_controls() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }
 
@@ -1211,7 +1211,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }
 
@@ -1406,7 +1406,7 @@ fn rejects_noncanonical_subshape_binder_context_carrier() {
         .iter()
         .all(|loss| loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking));
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking));
 }
 
 #[test]
@@ -1569,7 +1569,7 @@ fn distinguishes_absent_and_malformed_shell_and_surface_selectors() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     }
 
@@ -1892,6 +1892,6 @@ fn rejects_ambiguous_single_source_design_operands() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
 }

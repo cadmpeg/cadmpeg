@@ -5,9 +5,9 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::{
     features::{
+        holes::{HoleBottom, HoleConstruction, HoleKind},
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
-        HoleBottom, HoleConstruction, HoleKind, LinearTermination, PlanarProfileRef, ProfileRef,
-        VertexSelection,
+        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     },
     scalar::Length,
 };
@@ -313,26 +313,26 @@ pub(in crate::history) fn project_hole(
                 },
             )),
             (Some(diameter), None) => hole_form(HoleKind::PartialCounterbore(
-                cadmpeg_ir::features::PartialPair::First(diameter),
+                cadmpeg_ir::features::holes::PartialPair::First(diameter),
             )),
             (None, Some(depth)) => hole_form(HoleKind::PartialCounterbore(
-                cadmpeg_ir::features::PartialPair::Second(depth),
+                cadmpeg_ir::features::holes::PartialPair::Second(depth),
             )),
             (None, None) => hole_form(HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Counterbore,
+                cadmpeg_ir::features::holes::HoleForm::Counterbore,
             ))),
         }
     } else if has_countersink {
         match (countersink_diameter, countersink_angle) {
             (Some(diameter), Some(angle)) => hole_form(HoleKind::Countersink { diameter, angle }),
             (Some(diameter), None) => hole_form(HoleKind::PartialCountersink(
-                cadmpeg_ir::features::PartialPair::First(diameter),
+                cadmpeg_ir::features::holes::PartialPair::First(diameter),
             )),
             (None, Some(angle)) => hole_form(HoleKind::PartialCountersink(
-                cadmpeg_ir::features::PartialPair::Second(angle),
+                cadmpeg_ir::features::holes::PartialPair::Second(angle),
             )),
             (None, None) => hole_form(HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Countersink,
+                cadmpeg_ir::features::holes::HoleForm::Countersink,
             ))),
         }
     } else if let Some(thread) = thread {
@@ -385,12 +385,12 @@ pub(in crate::history) fn project_hole(
                     .filter(|direction| valid_direction(*direction)),
             )
             .and_then(|(position, direction)| {
-                Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
+                Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                     position: cadmpeg_ir::features::FinitePoint3::new(position)?,
                     direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
                 }])
             }),
-        shape: cadmpeg_ir::features::HoleShape::new(
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
             construction,
             profile.as_ref().and_then(|profile| profile.exit_kind),
             diameter,
@@ -680,7 +680,7 @@ pub(in crate::history) fn hole_sketch_construction(
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?,
                 depth: Some(*drill_depth),
                 construction: hole_form(HoleKind::Counterdrill {
-                    diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+                    diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                         cadmpeg_ir::scalar::PositiveLength::new(recess_diameter.get())?,
                         Some(cadmpeg_ir::scalar::PositiveLength::new(
                             entry_diameter.get(),

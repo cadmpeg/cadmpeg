@@ -1518,7 +1518,8 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
-            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+            cadmpeg_ir::report::loss::LossCategory::Geometry
+                | cadmpeg_ir::report::loss::LossCategory::Topology
         ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());

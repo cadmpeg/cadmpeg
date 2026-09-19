@@ -37,10 +37,10 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsError, NurbsSurface, PcurveGeometry, PcurveNurbs,
-    PolarPcurveNurbs, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry, SurfaceParameterAxis,
-    TolerantIntersectionParameterization,
+    nurbs::{NurbsCurve, NurbsError, NurbsSurface, SurfaceParameterAxis},
+    pcurve::{PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry, TolerantIntersectionParameterization,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
@@ -800,7 +800,7 @@ pub(crate) fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            Ok(cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+            Ok(cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
                 *parameter_range,
                 same_sense,
                 Box::new(basis),
@@ -824,7 +824,7 @@ pub(crate) fn reverse_pcurve_over_range(
                 return Ok(None);
             };
             Ok(
-                cadmpeg_ir::geometry::OffsetPcurve::try_new(-distance, Box::new(basis))
+                cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(-distance, Box::new(basis))
                     .ok()
                     .map(PcurveGeometry::Offset),
             )
@@ -904,7 +904,7 @@ fn reverse_analytic_pcurve_over_range(
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
             Some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(
                         origin.u + reflection * direction.u,
                         origin.v + reflection * direction.v,
@@ -924,7 +924,7 @@ fn reverse_analytic_pcurve_over_range(
             let cosine = reflection.cos();
             let sine = reflection.sin();
             Some(PcurveGeometry::PolarHarmonic(
-                cadmpeg_ir::geometry::PolarHarmonicPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::PolarHarmonicPcurve::try_new(
                     *radial_center,
                     Point2::new(
                         cosine * radial_cos.u + sine * radial_sin.u,
@@ -948,7 +948,7 @@ fn reverse_analytic_pcurve_over_range(
             let cosine = reflection.cos();
             let sine = reflection.sin();
             Some(PcurveGeometry::Harmonic(
-                cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
                     *center,
                     combine(*source_cosine, cosine, *source_sine, sine)?,
                     combine(*source_cosine, sine, *source_sine, -cosine)?,
@@ -963,7 +963,7 @@ fn reverse_analytic_pcurve_over_range(
             let cosine = reflection.cosh();
             let sine = reflection.sinh();
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::HyperbolicPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(
                     *center,
                     combine(*source_cosine, cosine, *source_sine, sine)?,
                     combine(*source_cosine, -sine, *source_sine, -cosine)?,
@@ -982,7 +982,7 @@ fn reverse_analytic_pcurve_over_range(
                 .into_iter()
                 .all(f64::is_finite)
                 .then_some(PcurveGeometry::SphericalGreatCircle(
-                    cadmpeg_ir::geometry::SphericalGreatCirclePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
                         reversed_origin,
                         reversed_rate,
                         plane_phase,
@@ -1010,7 +1010,7 @@ fn reverse_analytic_pcurve_over_range(
                 .into_iter()
                 .all(f64::is_finite)
                 .then_some(PcurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CirclePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
                         *center, reversed_x, reversed_y, radius,
                     )
                     .ok()?,
@@ -1023,7 +1023,7 @@ fn reverse_analytic_pcurve_over_range(
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
             Some(PcurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                     *center,
                     *x_axis,
                     Point2::new(-y_axis.u, -y_axis.v),
@@ -1042,7 +1042,7 @@ fn reverse_analytic_pcurve_over_range(
             let cosine = reflection.cos();
             let sine = reflection.sin();
             Some(PcurveGeometry::Harmonic(
-                cadmpeg_ir::geometry::HarmonicPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
                     *center,
                     combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
                     combine(
@@ -1061,7 +1061,7 @@ fn reverse_analytic_pcurve_over_range(
             let y_axis = parabola_pcurve.y_axis();
             let focal_distance = parabola_pcurve.focal_distance();
             Some(PcurveGeometry::Parabola(
-                cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                     *vertex,
                     *x_axis,
                     Point2::new(-y_axis.u, -y_axis.v),
@@ -1077,7 +1077,7 @@ fn reverse_analytic_pcurve_over_range(
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
             Some(PcurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                     *center,
                     *x_axis,
                     Point2::new(-y_axis.u, -y_axis.v),
@@ -1096,7 +1096,7 @@ fn reverse_analytic_pcurve_over_range(
             let cosine = reflection.cosh();
             let sine = reflection.sinh();
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::HyperbolicPcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(
                     *center,
                     combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
                     combine(
@@ -1760,7 +1760,7 @@ fn exact_boundary_pcurve_with_index(
             && (direction.u != 0.0 || direction.v != 0.0))
             .then_some(())?;
         let candidate = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(
                     first.u - direction.u * range[0],
                     first.v - direction.v * range[0],
@@ -1803,7 +1803,7 @@ fn exact_boundary_pcurve_with_index(
         let varying_scale = (second.v - first.v) / parameter_span;
         (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
         let candidate = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(first.u, first.v - varying_scale * range[0]),
                 Point2::new(0.0, varying_scale),
             )
@@ -1917,7 +1917,7 @@ fn exact_boundary_pcurve_with_index(
                             Point2::new(delta, 0.0),
                         )
                     };
-                    cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction)
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction)
                         .ok()
                         .map(PcurveGeometry::Line)
                 }
@@ -2115,7 +2115,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     (((*varying_scale).abs() - 1.0).abs() <= angular_tolerance).then_some(())?;
     *varying_scale = varying_scale.signum();
     let candidate = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(
                 first.u - direction.u * range[0],
                 first.v - direction.v * range[0],
@@ -3774,8 +3774,9 @@ mod tests {
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
-        ProceduralCurve, ProceduralCurveDefinition,
+        pcurve::{Pcurve, PcurveGeometry},
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralCurveDefinition,
     };
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, ShellId, SurfaceId,
@@ -3902,13 +3903,13 @@ mod tests {
         ir.model.pcurves.push(Pcurve {
             id: pcurve_id,
             geometry: PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(1.0, 0.0),
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         });
 
         index.complete_from_stream(&mut ir, later_starts);
@@ -3931,7 +3932,7 @@ mod tests {
             context.sides()[1].pcurve,
             Some(
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0)
                     )

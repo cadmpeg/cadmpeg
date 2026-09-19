@@ -7,7 +7,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsSurface, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -182,7 +183,7 @@ fn extrusion_plane_boundary_curve(
     curve_row_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(CurveGeometry, NurbsBoundaryKind)>, CodecError> {
     if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, surface_id, plane, refusal) {
         return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
@@ -203,7 +204,7 @@ fn extrusion_plane_boundary_curve(
 fn note_refused_boundary_lanes(
     curve_row_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let records = refusal.take_records();
     note_boundary_lane_records(curve_row_id, &records, losses);
@@ -213,7 +214,7 @@ fn note_refused_boundary_lanes(
 fn note_boundary_lane_records(
     curve_row_id: u32,
     records: &[String],
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     for record in records {
         losses.push(
@@ -230,7 +231,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<TransferredNurbsBoundaryCurves, CodecError> {
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
@@ -373,7 +374,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        nurbs::NurbsSurface, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
         SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
@@ -497,7 +498,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 2.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -510,7 +511,7 @@ mod tests {
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(0.0, 0.0, 1.0),
                         Vector3::new(1.0, 0.0, 0.0),
@@ -596,9 +597,17 @@ mod tests {
             id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                             vec![Point3::new(1.0, 0.0, 1.0), Point3::new(1.0, 1.0, 1.0)],
@@ -614,7 +623,7 @@ mod tests {
         let plane = Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#2".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -649,7 +658,7 @@ mod tests {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         refusal.note(
             "creo VisibGeom surface row 7 boundary curve record",
-            &cadmpeg_ir::geometry::NurbsError::Structure("knot vector".to_owned()),
+            &cadmpeg_ir::geometry::nurbs::NurbsError::Structure("knot vector".to_owned()),
         );
         let mut losses = Vec::new();
 

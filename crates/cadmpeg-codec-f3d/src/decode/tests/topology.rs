@@ -10,8 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_asm::asm_header;
@@ -292,7 +292,8 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     assert_eq!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0)).unwrap()
+            cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap()
         ))
     );
     let curve_id = curve.id.clone();
@@ -305,7 +306,8 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
         .find(|curve| curve.id == curve_id)
         .expect("editable degenerate curve");
     edited_curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-        cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0))
+            .unwrap(),
     ));
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
@@ -316,7 +318,10 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     assert!(regenerated.ir().model.curves.iter().any(|curve| {
         curve.geometry
             == CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(
+                    2.0, 3.0, 4.0,
+                ))
+                .unwrap(),
             ))
     }));
 
@@ -324,7 +329,8 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-        cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(Point3::new(0.0, 0.0, 0.0))
+            .unwrap(),
     ));
     let mut encoded = Vec::new();
     F3dCodec

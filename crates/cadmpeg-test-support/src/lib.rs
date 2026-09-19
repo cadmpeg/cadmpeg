@@ -8,7 +8,7 @@ use std::ops::{Deref, DerefMut};
 
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
 
 pub mod compound;
 pub mod golden;

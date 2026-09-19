@@ -189,7 +189,7 @@ fn a_foreign_gui_schema_uses_the_schema_one_vocabulary() {
         .iter()
         .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss.message.contains("declares schema 2"));
     assert!(loss.message.contains("schema-1 vocabulary"));
 }
@@ -249,7 +249,7 @@ fn a_broken_foreign_gui_schema_degrades_to_the_default_graph() {
         .iter()
         .find(|loss| loss.code.local_code() == "source.gui-schema-unverified")
         .expect("GUI schema warning");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss
         .message
         .contains("declared schema 2 is the probable cause"));
@@ -629,7 +629,7 @@ Co 1001000 +2 0 *
             loss.code.local_code(),
             "appearance.topology-color-count-mismatch"
         );
-        assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {
             source.stream() == Some("GuiDocument.xml") && source.offset > 0
@@ -1678,7 +1678,7 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
         .iter()
         .find(|loss| loss.code.local_code() == "source.gui-property-key-blank")
         .expect("the blank key is charged");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(
         loss.message.contains("states a property with a blank key"),
         "{}",

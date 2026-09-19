@@ -6,10 +6,10 @@
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 

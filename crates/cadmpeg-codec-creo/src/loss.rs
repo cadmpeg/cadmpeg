@@ -12,7 +12,10 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 macro_rules! loss_codes {
     ($(#[$enum_attribute:meta])* pub(crate) enum $name:ident {
@@ -427,7 +430,7 @@ impl CreoLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("creo") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("creo") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

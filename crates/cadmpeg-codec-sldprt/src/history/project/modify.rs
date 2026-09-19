@@ -5,9 +5,9 @@ use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
     features::{
-        AxisAngle, BodyRetentionMode, BodySelection, ChamferSpec, EdgeSelection, FaceMotion,
-        FaceSelection, FeatureDefinition, FeatureOperation, FlexForm, FlexMode, RadiusSpec,
-        ScaleCenter, ScaleFactors, VariableRadius,
+        edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius},
+        AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
+        FeatureDefinition, FeatureOperation, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
     },
     scalar::{Angle, Length},
 };
@@ -77,7 +77,7 @@ pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition
                 .then_some(points)
             })
             .and_then(|points| {
-                cadmpeg_ir::features::VariableRadii::new(
+                cadmpeg_ir::features::edge_treatments::VariableRadii::new(
                     points.into_iter().map(|(_, point)| point).collect(),
                 )
                 .ok()
@@ -90,7 +90,7 @@ pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition
                         .any(|name| indexed_name(name.as_str(), "Radius"))
                     {
                         RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                         }
                     } else if feature
                         .parameters
@@ -98,7 +98,7 @@ pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition
                         .any(|name| matches!(name.as_str(), "Radius" | "D1"))
                     {
                         RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                         }
                     } else {
                         RadiusSpec::Unresolved { form: None }
@@ -108,15 +108,17 @@ pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition
             )
     };
     FeatureDefinition::Operation(FeatureOperation::Fillet {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-            edges: feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-            radius,
-            tangency_weight: None,
-        }),
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::FilletGroup {
+                edges: feature
+                    .properties
+                    .get("Edges")
+                    .cloned()
+                    .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+                radius,
+                tangency_weight: None,
+            },
+        ),
     })
 }
 
@@ -622,33 +624,35 @@ pub(in crate::history) fn project_chamfer(feature: &Feature) -> FeatureDefinitio
     .unwrap_or_else(|| {
         if feature.parameters.contains_key("Angle") {
             ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle),
             }
         } else if feature.parameters.contains_key("Distance1")
             || feature.parameters.contains_key("Distance2")
         {
             ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::TwoDistances),
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::TwoDistances),
             }
         } else if feature.parameters.contains_key("Distance")
             || (feature.parameters.contains_key("D1") && !feature.parameters.contains_key("D2"))
         {
             ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
+                form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance),
             }
         } else {
             ChamferSpec::Unresolved { form: None }
         }
     });
     FeatureDefinition::Operation(FeatureOperation::Chamfer {
-        groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::ChamferGroup {
-            edges: feature
-                .properties
-                .get("Edges")
-                .cloned()
-                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-            spec,
-        }),
+        groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            cadmpeg_ir::features::edge_treatments::ChamferGroup {
+                edges: feature
+                    .properties
+                    .get("Edges")
+                    .cloned()
+                    .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+                spec,
+            },
+        ),
         flip_direction: false,
     })
 }

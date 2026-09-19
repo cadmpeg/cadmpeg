@@ -37,7 +37,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for transform in &scan.features.section_transforms {
@@ -239,7 +239,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.surfaces.push(Surface {
                 id: cap_surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         Point3::new(
                             transform.origin()[0] + offset * transform.normal()[0],
                             transform.origin()[1] + offset * transform.normal()[1],
@@ -263,7 +263,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(
                             center[0] + offset * transform.normal()[0],
                             center[1] + offset * transform.normal()[1],
@@ -373,7 +373,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         ir.model.surfaces.push(Surface {
             id: side_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(center[0], center[1], center[2]),
                     Vector3::new(
                         transform.normal()[0],

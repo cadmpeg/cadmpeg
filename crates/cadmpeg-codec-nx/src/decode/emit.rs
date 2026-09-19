@@ -25,9 +25,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    pcurve::Pcurve, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
+    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -74,7 +74,7 @@ pub(super) fn emit_topology(
     completion_transfer_budget: &TransferBudget<'_>,
     adaptive_geometry_budget: &GeometryWorkBudget<'_>,
     completion_geometry_budget: &GeometryWorkBudget<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
     let scope = IdScope::stream(stream_index);
     let body_shape_shells = graph.body_shape_shells();
@@ -834,7 +834,7 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                         None,
                         Some(parameter_range),
                         fit_tolerance,
@@ -1597,7 +1597,7 @@ mod tests {
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
         let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],

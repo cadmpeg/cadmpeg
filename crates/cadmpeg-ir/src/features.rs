@@ -21,6 +21,28 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+macro_rules! selection_field_deserializer {
+    ($name:ident, $field:literal) => {
+        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+            T: Deserialize<'de>,
+        {
+            T::deserialize(deserializer)
+                .map_err(|error| serde::de::Error::custom(format!("{}: {error}", $field)))
+        }
+    };
+}
+
+pub mod edge_treatments;
+use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
+
+pub mod holes;
+use holes::{HoleBottom, HolePlacement, HoleProfileFilter, HoleShape};
+
+pub mod patterns;
+use patterns::{PatternKind, PatternSeed};
+
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal) => {
         $(#[$meta])*
@@ -1390,7 +1412,7 @@ impl FeatureReadWire {
 
 /// Read one feature outside any model.
 ///
-/// The model route does not use this: it reads [`FeatureRowWire`] and splits
+/// The model route does not use this: it reads `FeatureRowWire` and splits
 /// the row with `into_parts`. The reader is
 /// [`crate::document::Model::extend_rewritten`], whose `EntityRewrite::rewrite`
 /// bound round-trips every arena entity through serde; the catia standard
@@ -3605,7 +3627,7 @@ impl FeatureOperation {
     /// definitions that do not.
     ///
     /// A feature of one of these families carries current result bodies in its
-    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
     /// [`FeatureResultTopology`]. The returned name is the stable lowercase label for the
     /// family, suitable for grouping such features in a report.
     pub fn body_output_family(&self) -> Option<&'static str> {
@@ -3694,7 +3716,7 @@ impl FeatureDefinition {
     /// `None` for definitions that do not.
     ///
     /// A feature of one of these families carries current result bodies in its
-    /// [`Feature::outputs`] list or intermediate result identities in a
+    /// [`FeatureEvaluation::outputs`] list or intermediate result identities in a
     /// [`FeatureResultTopology`]. The returned name is the stable lowercase
     /// label for the family, suitable for grouping such features in a report.
     #[must_use]
@@ -3744,50 +3766,6 @@ impl Default for ExtrudeDirection {
     fn default() -> Self {
         Self::ProfileNormal {}
     }
-}
-
-/// One complete spatial placement in a hole operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum HolePlacement {
-    /// Position and directed drilling vector recorded by the feature definition.
-    Directed {
-        /// Hole entry position in model space.
-        position: FinitePoint3,
-        /// Directed drilling vector.
-        direction: FeatureDirection3,
-    },
-    /// Unoriented geometric axis inferred from a generated cylindrical surface.
-    Axis {
-        /// Point on the cylinder axis in model space.
-        origin: FinitePoint3,
-        /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
-        axis: FeatureDirection3,
-    },
-}
-
-/// One geometric selection repeated or reflected by a pattern operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum PatternSeed {
-    /// Complete result of a preceding construction-history feature.
-    Feature(FeatureId),
-    /// Selected faces, including faces in an intermediate regenerated result.
-    Faces(FaceSelection),
-    /// Selected bodies, including bodies in an intermediate regenerated result.
-    Bodies(BodySelection),
-    /// Selected placed component occurrences.
-    Occurrences(
-        #[serde(deserialize_with = "deserialize_local_occurrences")] SelectionMembers<OccurrenceId>,
-    ),
 }
 
 /// External model format consumed by an imported-geometry feature.
@@ -5293,9 +5271,9 @@ pub enum SheetMetalBendPosition {
 /// Dimensional owner layout carried by a sheet-metal hem.
 ///
 /// The source uses one owner layout for flat and open hems. A resolved
-/// transition projects that layout to [`Flat`] or [`Open`]; [`GapLength`]
-/// retains the dimensional owners when the transition does not prove either
-/// semantic form.
+/// transition projects that layout to [`Self::Flat`] or [`Self::Open`];
+/// [`Self::GapLength`] retains the dimensional owners when the transition does
+/// not prove either semantic form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
@@ -5473,19 +5451,6 @@ pub enum SheetMetalThicknessSide {
     Symmetric,
 }
 
-macro_rules! selection_field_deserializer {
-    ($name:ident, $field:literal) => {
-        fn $name<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-            T: Deserialize<'de>,
-        {
-            T::deserialize(deserializer)
-                .map_err(|error| serde::de::Error::custom(format!("{}: {error}", $field)))
-        }
-    };
-}
-
 selection_field_deserializer!(deserialize_selection_native, "native");
 selection_field_deserializer!(deserialize_selection_local_id, "local_id");
 selection_field_deserializer!(deserialize_selection_edges, "edges");
@@ -5507,8 +5472,6 @@ selection_field_deserializer!(deserialize_local_document, "document");
 selection_field_deserializer!(deserialize_local_object, "object");
 selection_field_deserializer!(deserialize_local_reference, "reference");
 selection_field_deserializer!(deserialize_local_subelements, "subelements");
-selection_field_deserializer!(deserialize_local_standard, "standard");
-selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
 selection_field_deserializer!(deserialize_local_value, "value");
 
 /// Edge operands resolved by the decoder or retained in native form.
@@ -8644,18 +8607,6 @@ pub enum SplitFaceTool {
     },
 }
 
-mod edge_treatments;
-pub use edge_treatments::{
-    ChamferForm, ChamferGroup, ChamferSpec, FilletGroup, FullRoundFilletGroup,
-    FullRoundSideSelection, RadiusForm, RadiusSpec, VariableRadii, VariableRadius,
-};
-
-mod holes;
-pub use holes::{
-    CounterdrillDiameters, HoleBottom, HoleConstruction, HoleForm, HoleKind, HoleProfileFilter,
-    HoleShape, HoleSpecification, HoleThreadDepth, PartialPair, ThreadHand,
-};
-
 /// Deformation applied by a flex feature.
 ///
 /// Each resolved arm carries the one magnitude its family needs, and the
@@ -8713,13 +8664,6 @@ pub enum FlexForm {
     /// Axial stretching.
     Stretching,
 }
-
-mod patterns;
-pub use patterns::{
-    CompositePattern, CompositeStages, LinearPatternDirection, NoNestedComposite, PatternForm,
-    PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination, PatternTransform,
-    StagePatternKind,
-};
 
 #[cfg(test)]
 mod tests;

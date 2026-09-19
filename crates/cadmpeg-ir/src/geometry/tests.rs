@@ -2,14 +2,8 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::geometry::{
-    CircleCurve, CirclePcurve, ConeSurface, CurveGeometry, CylinderSurface, EllipseCurve,
-    EllipsePcurve, HarmonicPcurve, LinePcurve, OffsetPcurve, PcurveGeometry, PlaneSurface,
-    SolvedSurfaceGeometry, SphereSurface, SphericalGreatCirclePcurve, SurfaceGeometry,
-    TorusSurface, TrimmedPcurve,
-};
+use crate::geometry::SurfaceGeometry;
 use crate::ids::UnknownId;
-use crate::math::{Point2, Point3, Vector3};
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 
@@ -56,24 +50,6 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 }
 
 #[test]
-fn pcurve_lift_rejects_non_finite_model_poles() {
-    let curve = crate::geometry::PcurveNurbs::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            crate::math::Point2::new(0.0, 0.0),
-            crate::math::Point2::new(1.0, 1.0),
-        ],
-        None,
-        false,
-    )
-    .unwrap();
-    assert!(curve
-        .lift(|point| crate::math::Point3::new(point.u, point.v, f64::NAN))
-        .is_err());
-}
-
-#[test]
 fn support_side_rejects_orphan_legacy_parameter_range() {
     let wire = serde_json::json!({
         "surface": null,
@@ -81,70 +57,6 @@ fn support_side_rejects_orphan_legacy_parameter_range() {
         "pcurve_parameter_range": [0.0, 1.0],
     });
     assert!(serde_json::from_value::<crate::geometry::IntcurveSupportSide>(wire).is_err());
-}
-
-#[test]
-fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
-    let pcurve = crate::geometry::Pcurve {
-        id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
-        geometry: crate::geometry::PcurveGeometry::Line(
-            crate::geometry::LinePcurve::try_new(
-                crate::math::Point2::new(1.0, 2.0),
-                crate::math::Point2::new(3.0, 4.0),
-            )
-            .unwrap(),
-        ),
-        metadata: crate::geometry::PcurveMetadata::AsmInline {
-            form: crate::geometry::PcurveInlineForm::try_new(
-                false,
-                [true, false, true, false],
-                [-1.0, 2.0],
-                0.001,
-            )
-            .unwrap(),
-        },
-    };
-    let value = serde_json::to_value(&pcurve).unwrap();
-    assert_eq!(
-        value,
-        serde_json::json!({
-            "id": "test:model:pcurve#inline",
-            "geometry": {
-                "kind": "line",
-                "origin": {"u": 1.0, "v": 2.0},
-                "direction": {"u": 3.0, "v": 4.0}
-            },
-            "metadata": {
-                "source": "asm_inline",
-                "form": {
-                    "wrapper_reversed": false,
-                    "native_tail_flags": [true, false, true, false],
-                    "parameter_range": [-1.0, 2.0],
-                    "fit_tolerance": 0.001
-                }
-            }
-        })
-    );
-    assert_eq!(
-        serde_json::from_value::<crate::geometry::Pcurve>(value).unwrap(),
-        pcurve
-    );
-}
-
-#[test]
-fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
-    let result = serde_json::from_value::<crate::geometry::Pcurve>(serde_json::json!({
-        "id": "test:model:pcurve#incomplete",
-        "geometry": {
-            "kind": "line",
-            "origin": {"u": 1.0, "v": 2.0},
-            "direction": {"u": 3.0, "v": 4.0}
-        },
-        "wrapper_reversed": false,
-        "native_tail_flags": [true, false, true, false],
-        "parameter_range": [-1.0, 2.0]
-    }));
-    assert!(result.is_err());
 }
 
 #[test]
@@ -663,8 +575,10 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
             .try_into()
             .expect("valid identity"),
         cache: Some(SolvedCurveGeometry::Degenerate(
-            crate::geometry::DegenerateCurve::try_new(crate::math::Point3::new(1.0, 2.0, 3.0))
-                .unwrap(),
+            crate::geometry::analytic::DegenerateCurve::try_new(crate::math::Point3::new(
+                1.0, 2.0, 3.0,
+            ))
+            .unwrap(),
         )),
     };
     let surface = SurfaceGeometry::Procedural {
@@ -745,8 +659,6 @@ fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
 mod compound_components;
 mod compound_loft;
 mod fit_tolerance;
-mod nurbs_invariants;
-mod pcurve_metadata;
 
 mod tspline_subtransform;
 
@@ -775,321 +687,12 @@ mod variable_blend_secondary_curve;
 mod variable_blend_value;
 
 #[test]
-fn bspline_surface_edit_refusal_keeps_control_points() {
-    use crate::geometry::{BsplineSurface, NurbsError};
-    let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
-    let knots = vec![0.0, 0.0, 1.0, 1.0];
-    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
-    let original = surface.clone();
-    let refusal = surface.edit_control_points(|point| {
-        point.z = 3.0;
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
-    });
-    assert_eq!(
-        refusal,
-        Err(NurbsError::EditRefused("caller refused this pole".into()))
-    );
-    assert_eq!(surface, original);
-}
-
-#[test]
-fn bspline_surface_numeric_admission_and_transactional_edit() {
-    use crate::geometry::BsplineSurface;
-    use crate::math::Point3;
-    let points = vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2];
-    let knots = vec![0.0, 0.0, 1.0, 1.0];
-    assert!(BsplineSurface::new(
-        1,
-        1,
-        vec![0.0, 1.0, 0.0, 1.0],
-        knots.clone(),
-        points.clone()
-    )
-    .is_err());
-    let mut surface = BsplineSurface::new(1, 1, knots.clone(), knots, points).unwrap();
-    let original = surface.clone();
-    assert!(surface
-        .edit_control_points(|point| {
-            point.x = f64::NAN;
-            Ok(())
-        })
-        .is_err());
-    assert_eq!(surface, original);
-    let mut wire = serde_json::to_value(&surface).unwrap();
-    wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
-    assert!(serde_json::from_value::<BsplineSurface>(wire).is_err());
-    surface
-        .edit_control_points(|point| {
-            point.z = 2.0;
-            Ok(())
-        })
-        .unwrap();
-    assert!(surface
-        .control_points()
-        .iter()
-        .flatten()
-        .all(|point| point.z == 2.0));
-}
-
-#[test]
-fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
-    let center = Point3::new(0.0, 0.0, 0.0);
-    let axis = Vector3::new(0.0, 0.0, 1.0);
-    let reference = Vector3::new(1.0, 0.0, 0.0);
-    for radius in [-1.0, 0.0, f64::NAN, f64::INFINITY] {
-        assert!(CircleCurve::try_new(center, axis, reference, radius).is_err());
-    }
-    assert!(CircleCurve::try_new(Point3::new(f64::NAN, 0.0, 0.0), axis, reference, 1.0).is_err());
-    assert!(CircleCurve::try_new(center, Vector3::new(0.0, 0.0, 2.0), reference, 1.0).is_err());
-    assert!(CircleCurve::try_new(center, axis, axis, 1.0).is_err());
-    let wire = serde_json::json!({
-        "kind": "circle",
-        "center": {"x": 0.0, "y": 0.0, "z": 0.0},
-        "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "ref_direction": {"x": 1.0, "y": 0.0, "z": 0.0},
-        "radius": 1.0
-    });
-    let curve: CurveGeometry = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(curve).unwrap(), wire);
-    let mut invalid = wire.clone();
-    invalid["radius"] = serde_json::json!(-1.0);
-    let error = serde_json::from_value::<CurveGeometry>(invalid)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("radius") || error.contains("did not match"),
-        "{error}"
-    );
-    let mut invalid = wire;
-    invalid["ref_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-    let error = serde_json::from_value::<CurveGeometry>(invalid)
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("frame") || error.contains("did not match"),
-        "{error}"
-    );
-}
-
-#[test]
-fn analytic_surface_admission_preserves_signed_and_zero_radius_contracts() {
-    let center = Point3::new(0.0, 0.0, 0.0);
-    let axis = Vector3::new(0.0, 0.0, 1.0);
-    let reference = Vector3::new(1.0, 0.0, 0.0);
-    let tiny = 1e-200;
-    for radius in [tiny, -tiny] {
-        let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            SphereSurface::try_new(center, axis, reference, radius).unwrap(),
-        ));
-        let wire = serde_json::to_value(&sphere).unwrap();
-        assert_eq!(
-            serde_json::from_value::<SurfaceGeometry>(wire).unwrap(),
-            sphere
-        );
-    }
-    assert!(SphereSurface::try_new(center, axis, reference, 0.0).is_err());
-    assert!(TorusSurface::try_new(center, axis, reference, tiny, -tiny).is_ok());
-    assert!(TorusSurface::try_new(center, axis, reference, -tiny, tiny).is_err());
-    assert!(ConeSurface::try_new(center, axis, reference, 0.0, 1.0, -0.5).is_ok());
-    assert!(ConeSurface::try_new(center, axis, reference, -tiny, 1.0, 0.5).is_err());
-    assert!(CylinderSurface::try_new(center, axis, reference, 0.0).is_err());
-    assert!(PlaneSurface::try_new(center, Vector3::new(0.0, 0.0, 0.0), reference).is_err());
-}
-
-#[test]
-fn analytic_pcurve_admission_preserves_nonunit_axes_and_unordered_radii() {
-    let origin = Point2::new(0.0, 0.0);
-    let x = Point2::new(2.0, 0.0);
-    let y = Point2::new(1.0, 3.0);
-    assert!(CirclePcurve::try_new(origin, x, y, 1.0).is_ok());
-    assert!(EllipsePcurve::try_new(origin, x, y, 1.0, 2.0).is_ok());
-    assert!(EllipseCurve::try_new(
-        Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        1.0,
-        2.0,
-    )
-    .is_err());
-    assert!(LinePcurve::try_new(origin, origin).is_err());
-    assert!(HarmonicPcurve::try_new(origin, origin, x).is_ok());
-    assert!(HarmonicPcurve::try_new(origin, origin, origin).is_err());
-    assert!(SphericalGreatCirclePcurve::try_new(0.0, 1e-200, 0.0, 0.0).is_ok());
-    assert!(SphericalGreatCirclePcurve::try_new(0.0, 0.0, 0.0, 0.0).is_err());
-    let line = PcurveGeometry::Line(LinePcurve::try_new(origin, x).unwrap());
-    assert!(TrimmedPcurve::try_new([2.0, 1.0], true, Box::new(line.clone())).is_err());
-    assert!(TrimmedPcurve::try_new([1.0, 1.0], false, Box::new(line.clone())).is_ok());
-    assert!(OffsetPcurve::try_new(f64::INFINITY, Box::new(line.clone())).is_err());
-    let offset = PcurveGeometry::Offset(OffsetPcurve::try_new(-2.0, Box::new(line)).unwrap());
-    let mut wire = serde_json::to_value(offset).unwrap();
-    wire["basis"]["direction"] = serde_json::json!({"u": 0.0, "v": 0.0});
-    assert!(serde_json::from_value::<PcurveGeometry>(wire).is_err());
-}
-
-#[test]
-fn pcurve_coordinate_scaling_keeps_the_original_when_a_nested_result_overflows() {
-    let mut geometry = PcurveGeometry::Offset(
-        OffsetPcurve::try_new(1e300, Box::new(PcurveGeometry::Line(LinePcurve::U_AXIS))).unwrap(),
-    );
-    let original = geometry.clone();
-    assert!(geometry.try_scale_coordinates([1e300, 1e300]).is_err());
-    assert_eq!(geometry, original);
-}
-
-#[test]
-fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
-    use super::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex};
-    let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
-    let parameterized = |parameters: [f64; 2]| PolylineSamples::Parameterized {
-        vertices: points
-            .iter()
-            .copied()
-            .zip(parameters)
-            .map(|(point, parameter)| PolylineVertex { parameter, point })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("nonempty polyline fixture"),
-    };
-    assert!(PolylineCurve::new(parameterized([1.0, 1.0]), 0.0).is_err());
-    assert!(PolylineCurve::new(parameterized([0.0, f64::INFINITY]), 0.0).is_err());
-    assert!(PolylineCurve::new(
-        PolylineSamples::Unparameterized {
-            points: points
-                .clone()
-                .try_into()
-                .expect("nonempty polyline fixture")
-        },
-        -1.0
-    )
-    .is_err());
-    let mut polyline = PolylineCurve::new(parameterized([2.0, 1.0]), 0.0).unwrap();
-    let original = polyline.clone();
-    assert!(polyline
-        .edit_samples(|samples| {
-            samples.edit_points(|point| {
-                point.x = f64::NAN;
-                Ok(())
-            })
-        })
-        .is_err());
-    assert_eq!(polyline, original);
-    assert!(polyline
-        .edit_samples(|samples| {
-            if let PolylineSamples::Parameterized { vertices } = samples {
-                vertices[1].parameter = 2.0;
-            }
-            Ok(())
-        })
-        .is_err());
-    assert_eq!(polyline, original);
-    assert!(polyline.set_chordal_deflection(f64::INFINITY).is_err());
-    assert_eq!(polyline, original);
-    let mut wire = serde_json::to_value(&polyline).unwrap();
-    assert_eq!(wire["samples"]["kind"], "parameterized");
-    assert_eq!(
-        wire["samples"]["vertices"][0]["parameter"],
-        serde_json::json!(2.0)
-    );
-    assert_eq!(
-        serde_json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
-        polyline
-    );
-    // A parameter travels in its own sample row, so a parameter list that does
-    // not match the sample count has no spelling; a repeated parameter is still
-    // refused by the monotonic mint.
-    wire["samples"]["vertices"][1]["parameter"] = serde_json::json!(2.0);
-    assert!(serde_json::from_value::<PolylineCurve>(wire.clone()).is_err());
-    wire["samples"]["parameters"] = serde_json::json!([1.0, 1.0]);
-    assert!(serde_json::from_value::<PolylineCurve>(wire).is_err());
-    let mut surface = PolygonalSurface::new(
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2]],
-        0.0,
-    )
-    .unwrap();
-    let original = surface.clone();
-    assert!(surface
-        .edit_vertices(|vertices| {
-            vertices[0].z = f64::INFINITY;
-            Ok(())
-        })
-        .is_err());
-    assert_eq!(surface, original);
-    assert!(surface.set_chordal_deflection(-1.0).is_err());
-    assert_eq!(surface, original);
-    let mut wire = serde_json::to_value(&surface).unwrap();
-    wire["chordal_deflection"] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<PolygonalSurface>(wire).is_err());
-}
-#[test]
-fn a_refused_sample_edit_keeps_the_prior_samples() {
-    use super::{GeometryLayoutError, PolylineCurve, PolylineSamples};
-
-    let mut polyline = PolylineCurve::new(
-        PolylineSamples::Unparameterized {
-            points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
-                .try_into()
-                .unwrap(),
-        },
-        0.0,
-    )
-    .unwrap();
-    let original = polyline.clone();
-    let mut seen = 0;
-    assert!(polyline
-        .edit_samples(|samples| {
-            samples.edit_points(|point| {
-                seen += 1;
-                if seen == 1 {
-                    point.x = 9.0;
-                    Ok(())
-                } else {
-                    Err(GeometryLayoutError::EditRefused(
-                        "the caller refused this sample".to_string(),
-                    ))
-                }
-            })
-        })
-        .is_err());
-    assert_eq!(seen, 2);
-    assert_eq!(polyline, original);
-}
-
-#[test]
-fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
-    use super::{GeometryLayoutError, PolygonalSurface};
-
-    let mut surface = PolygonalSurface::new(
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ],
-        vec![[0, 1, 2]],
-        0.0,
-    )
-    .unwrap();
-    let original = surface.clone();
-    assert!(surface
-        .edit_vertices(|vertices| {
-            vertices[0].z = 5.0;
-            Err(GeometryLayoutError::EditRefused(
-                "the caller refused this vertex".to_string(),
-            ))
-        })
-        .is_err());
-    assert_eq!(surface, original);
-}
-
-#[test]
 fn support_context_admission_preserves_mapping_and_numeric_invariants() {
-    use super::{
-        DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, LinePcurve,
-        PcurveGeometry, SupportPcurve,
+    use {
+        super::{
+            DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, SupportPcurve,
+        },
+        crate::geometry::pcurve::{LinePcurve, PcurveGeometry},
     };
     let sides = [
         IntcurveSupportSide {
@@ -1198,24 +801,6 @@ mod record_bounds;
 mod revolution_payloads;
 
 #[test]
-fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
-    let origin = Point2::new(0.0, 0.0);
-    let below = f64::EPSILON.sqrt() / 2.0;
-    let above = f64::EPSILON.sqrt() * 2.0;
-    for u in [0.0, 1e-300, below] {
-        assert!(LinePcurve::try_new(origin, Point2::new(u, 0.0)).is_err());
-        let wire =
-            serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": u, "v": 0.0}});
-        assert!(serde_json::from_value::<LinePcurve>(wire).is_err());
-    }
-    let wire =
-        serde_json::json!({"origin": {"u": 0.0, "v": 0.0}, "direction": {"u": above, "v": 0.0}});
-    let line = LinePcurve::try_new(origin, Point2::new(above, 0.0)).unwrap();
-    assert_eq!(serde_json::to_value(line).unwrap(), wire);
-    assert_eq!(serde_json::from_value::<LinePcurve>(wire).unwrap(), line);
-}
-
-#[test]
 fn the_nested_construction_enums_reject_an_unknown_key_by_name() {
     let cases: [(&str, serde_json::Value); 4] = [
         (
@@ -1267,141 +852,6 @@ fn a_law_surface_full_tail_states_its_solved_cache_contract() {
         serde_json::from_value::<crate::geometry::LawSurfaceTail>(wire).unwrap(),
         tail
     );
-}
-
-/// One-pcurve document built on the unit cube, used to drive the pcurve
-/// carriers over the same route a checked-in document takes.
-fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
-    let mut document = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
-    document["model"]["pcurves"] = serde_json::json!([{
-        "id": "synthetic:cube:pcurve#0",
-        "geometry": geometry.clone(),
-    }]);
-    document
-}
-
-#[test]
-fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
-    let line = serde_json::json!({
-        "kind": "line",
-        "origin": {"u": 0.0, "v": 0.0},
-        "direction": {"u": 1.0, "v": 0.0},
-    });
-    let cases: [(&str, serde_json::Value); 11] = [
-        ("line", line.clone()),
-        (
-            "polar_harmonic",
-            serde_json::json!({
-                "kind": "polar_harmonic",
-                "radial_center": {"u": 0.0, "v": 0.0},
-                "radial_cos": {"u": 1.0, "v": 0.0},
-                "radial_sin": {"u": 0.0, "v": 1.0},
-                "axial_origin": 0.0,
-                "axial_cos": 1.0,
-                "axial_sin": 0.0,
-            }),
-        ),
-        (
-            "spherical_great_circle",
-            serde_json::json!({
-                "kind": "spherical_great_circle",
-                "azimuth_origin": 0.0,
-                "azimuth_rate": 1.0,
-                "plane_phase": 0.0,
-                "plane_slope": 1.0,
-            }),
-        ),
-        (
-            "circle",
-            serde_json::json!({
-                "kind": "circle",
-                "center": {"u": 0.0, "v": 0.0},
-                "x_axis": {"u": 1.0, "v": 0.0},
-                "y_axis": {"u": 0.0, "v": 1.0},
-                "radius": 1.0,
-            }),
-        ),
-        (
-            "ellipse",
-            serde_json::json!({
-                "kind": "ellipse",
-                "center": {"u": 0.0, "v": 0.0},
-                "x_axis": {"u": 1.0, "v": 0.0},
-                "y_axis": {"u": 0.0, "v": 1.0},
-                "major_radius": 2.0,
-                "minor_radius": 1.0,
-            }),
-        ),
-        (
-            "harmonic",
-            serde_json::json!({
-                "kind": "harmonic",
-                "center": {"u": 0.0, "v": 0.0},
-                "cosine": {"u": 1.0, "v": 0.0},
-                "sine": {"u": 0.0, "v": 1.0},
-            }),
-        ),
-        (
-            "parabola",
-            serde_json::json!({
-                "kind": "parabola",
-                "vertex": {"u": 0.0, "v": 0.0},
-                "x_axis": {"u": 1.0, "v": 0.0},
-                "y_axis": {"u": 0.0, "v": 1.0},
-                "focal_distance": 1.0,
-            }),
-        ),
-        (
-            "hyperbola",
-            serde_json::json!({
-                "kind": "hyperbola",
-                "center": {"u": 0.0, "v": 0.0},
-                "x_axis": {"u": 1.0, "v": 0.0},
-                "y_axis": {"u": 0.0, "v": 1.0},
-                "major_radius": 2.0,
-                "minor_radius": 1.0,
-            }),
-        ),
-        (
-            "hyperbolic",
-            serde_json::json!({
-                "kind": "hyperbolic",
-                "center": {"u": 0.0, "v": 0.0},
-                "cosine": {"u": 1.0, "v": 0.0},
-                "sine": {"u": 0.0, "v": 1.0},
-            }),
-        ),
-        (
-            "trimmed",
-            serde_json::json!({
-                "kind": "trimmed",
-                "parameter_range": [0.0, 1.0],
-                "same_sense": true,
-                "basis": line.clone(),
-            }),
-        ),
-        (
-            "offset",
-            serde_json::json!({
-                "kind": "offset",
-                "distance": 1.0,
-                "basis": line,
-            }),
-        ),
-    ];
-    for (kind, geometry) in cases {
-        let document = document_with_pcurve(&geometry);
-        serde_json::from_value::<crate::CadIr>(document)
-            .unwrap_or_else(|error| panic!("{kind} is a legal carrier: {error}"));
-
-        let mut stray = geometry.as_object().unwrap().clone();
-        stray.insert("zz_bogus".into(), serde_json::json!(1));
-        let document = document_with_pcurve(&serde_json::Value::Object(stray));
-        let error = serde_json::from_value::<crate::CadIr>(document)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("zz_bogus"), "{kind}: {error}");
-    }
 }
 
 #[test]
@@ -1552,3 +1002,4 @@ fn the_ir_scalar_mints_name_no_native_sentinel() {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_v_lower, f64, "v_lower");
+mod support_mapping;

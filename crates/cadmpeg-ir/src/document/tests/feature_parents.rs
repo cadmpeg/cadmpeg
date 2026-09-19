@@ -69,7 +69,7 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         let report = validate_neutral(&ir, Vec::new());
         assert!(
             report.findings.iter().any(|finding| {
-                finding.check == crate::report::Check::ReferentialIntegrity
+                finding.check == crate::report::check::Check::ReferentialIntegrity
                     && finding.severity == crate::report::Severity::Error
                     && finding.entity.as_deref() == Some("test:parent-wire:feature#1-child")
             }),

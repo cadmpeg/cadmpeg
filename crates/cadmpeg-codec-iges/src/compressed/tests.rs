@@ -8,10 +8,10 @@ use crate::test_support::{global_with_version_flag, only_match};
 use crate::IgesCodec;
 use crate::IgesVersion;
 use cadmpeg_core::dialect::Admission;
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::{FidelityResolution, WritePath};
+use cadmpeg_ir::report::export::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 

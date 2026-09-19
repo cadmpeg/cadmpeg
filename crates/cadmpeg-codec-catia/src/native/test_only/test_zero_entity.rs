@@ -5,7 +5,7 @@ use crate::native::{
     CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord,
     CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
-use cadmpeg_ir::geometry::knots_nondecreasing;
+use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use std::collections::HashSet;
 
 pub(super) fn validate_zero_entity_support_runs(
@@ -224,7 +224,7 @@ pub(super) fn validate_zero_entity_support_runs(
                     let pcurve_valid = match (&support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8)],
-                            Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }),
+                            Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }),
                         ) => {
                             let (
                                 expected_degree,

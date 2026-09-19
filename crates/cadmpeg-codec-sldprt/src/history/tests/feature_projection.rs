@@ -32,9 +32,11 @@ use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::ObjectId;
 use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+use cadmpeg_ir::features::holes::HoleBottom;
+use cadmpeg_ir::features::holes::HoleKind;
 use cadmpeg_ir::features::AngularTermination;
 use cadmpeg_ir::features::BooleanOp;
-use cadmpeg_ir::features::ChamferSpec;
 use cadmpeg_ir::features::CosmeticThreadExtent;
 use cadmpeg_ir::features::ExtrudeExtent;
 use cadmpeg_ir::features::ExtrudeSide;
@@ -44,8 +46,6 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::FeatureSourceContent;
 use cadmpeg_ir::features::FeatureTreeNodeRole;
-use cadmpeg_ir::features::HoleBottom;
-use cadmpeg_ir::features::HoleKind;
 use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::features::ProfileRef;
@@ -388,7 +388,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.depth, Some(Length::new(12.0).unwrap()));
     assert!(matches!(
         construction.construction,
-        cadmpeg_ir::features::HoleConstruction::Form {
+        cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::CounterboreDrilled {
                 diameter: actual_diameter,
                 depth: actual_depth,
@@ -413,7 +413,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert!(matches!(
         construction.construction,
-        cadmpeg_ir::features::HoleConstruction::NativeThread {
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
             major_diameter: actual_major_diameter,
             thread_depth: actual_thread_depth,
             pitch: None,
@@ -437,7 +437,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.depth, Some(Length::new(11.62).unwrap()));
     assert!(matches!(
         construction.construction,
-        cadmpeg_ir::features::HoleConstruction::NativeThread {
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
             major_diameter: actual_major_diameter,
             thread_depth: actual_thread_depth,
             pitch: None,
@@ -473,7 +473,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.depth, Some(Length::new(10.0).unwrap()));
     assert_eq!(
         construction.construction,
-        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
+        cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
             diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
             depth: cadmpeg_ir::scalar::PositiveLength::new(4.6).unwrap()
         })
@@ -503,8 +503,8 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
     assert_eq!(
         construction.construction,
-        cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterdrill {
-            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+        cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterdrill {
+            diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::scalar::PositiveLength::new(9.95).unwrap(),
                 Some(cadmpeg_ir::scalar::PositiveLength::new(10.05).unwrap())
             )
@@ -603,7 +603,7 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     else {
         panic!("expected canonical threaded hole: {projected:?}");
     };
-    let cadmpeg_ir::features::HoleConstruction::NativeThread {
+    let cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
         major_diameter,
         thread_depth,
         ..
@@ -1391,7 +1391,7 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
 
             extent: None,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 ..
             }, None,))));
@@ -1448,7 +1448,7 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
                 length: actual_length,
             }),
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: HoleKind::SimpleDrilled {
                     drill_point_angle,
                 },
@@ -1588,7 +1588,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::ChamferGroup {
+                [cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     spec: ChamferSpec::DistanceAngle {
                         distance: actual_distance,
                         angle: value,
@@ -1612,7 +1612,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::ChamferGroup {
+                [cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     spec: ChamferSpec::Distance {
                         distance: actual_distance,
                     },
@@ -1633,7 +1633,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
             if matches!(
                 groups.as_slice(),
-                [cadmpeg_ir::features::ChamferGroup {
+                [cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     spec: ChamferSpec::TwoDistances {
                         first: actual_first,
                         second: actual_second,

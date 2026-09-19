@@ -12,14 +12,15 @@ use crate::decode::surfaces::intersection_resolve::{
 };
 use crate::decode::surfaces::transfer_curves::analytic_curve_branches;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn circle() -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -31,7 +32,7 @@ fn circle() -> CurveGeometry {
 
 fn ellipse() -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -63,7 +64,7 @@ fn nurbs_curve(
 #[test]
 fn preserves_unit_line_parameterization_and_orders_the_interval() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(2.0, 0.0, 0.0)
                 .unit()
@@ -80,7 +81,7 @@ fn preserves_unit_line_parameterization_and_orders_the_interval() {
 #[test]
 fn withholds_parameters_for_points_off_the_line() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(2.0, 0.0, 0.0)
                 .unit()
@@ -308,7 +309,7 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
     assert!((range[1] - (std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU)).abs() < 1.0e-12);
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -330,7 +331,7 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
 #[test]
 fn nonperiodic_conics_recover_their_native_parameters() {
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -349,7 +350,7 @@ fn nonperiodic_conics_recover_their_native_parameters() {
     );
 
     let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -372,7 +373,7 @@ fn nonperiodic_conics_recover_their_native_parameters() {
 #[test]
 fn solved_endpoints_select_one_hyperbola_branch() {
     let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -397,7 +398,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
 #[test]
 fn surface_pcurve_midpoint_retains_periodic_path() {
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -418,7 +419,7 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
 #[test]
 fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     let surface_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

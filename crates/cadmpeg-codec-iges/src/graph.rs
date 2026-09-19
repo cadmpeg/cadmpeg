@@ -8,7 +8,7 @@ use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 use std::cell::RefCell;

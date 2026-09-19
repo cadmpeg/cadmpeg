@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 
 use crate::test_support::container::make_block;
 use crate::test_support::container::outer_header;
@@ -438,7 +438,7 @@ fn face_on_untyped_surface_keeps_topology() {
 
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));

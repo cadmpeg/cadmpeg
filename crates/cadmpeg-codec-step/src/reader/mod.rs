@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -149,9 +149,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
-            cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
-            cadmpeg_ir::report::DecodeTransfer::full(false)
+            cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
         body.notes = exchange
             .references()
@@ -399,7 +399,7 @@ fn decode_exchange_mode(
         || !session.ir.model.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
-        session.body.transfer = cadmpeg_ir::report::DecodeTransfer::full(true);
+        session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     }
 
     // Keep the established report order while every pass contributes through

@@ -3,7 +3,11 @@
 
 use crate::kernel_header::RefWidth;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveNurbs, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::PcurveNurbs,
+    ProceduralCurveDefinition,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
@@ -1577,10 +1581,10 @@ fn patch_nurbs_surface_record(
         || layout.surface.v_count() != v_count
         || matches!(
             layout.surface.pole_grid(),
-            cadmpeg_ir::geometry::NurbsPoleGrid::Rational { .. }
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
         ) != matches!(
             surface.pole_grid(),
-            cadmpeg_ir::geometry::NurbsPoleGrid::Rational { .. }
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
         )
     {
         return Err(CodecError::NotImplemented(format!(
@@ -1618,7 +1622,7 @@ fn patch_nurbs_surface_record(
         }
     }
     match surface.pole_grid() {
-        cadmpeg_ir::geometry::NurbsPoleGrid::Polynomial { rows } => {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => {
             let values = (0..v_count).flat_map(|v| {
                 rows.iter().flat_map(move |row| {
                     let point = row[v];
@@ -1633,7 +1637,7 @@ fn patch_nurbs_surface_record(
                 AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
             }
         }
-        cadmpeg_ir::geometry::NurbsPoleGrid::Rational { rows } => {
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } => {
             let values = (0..v_count).flat_map(|v| {
                 rows.iter().flat_map(move |row| {
                     let pole = row[v];
@@ -2260,7 +2264,7 @@ mod tests {
 
     #[test]
     fn intcurve_uv_cache_admits_only_the_intcurve_cache_edit() {
-        use cadmpeg_ir::geometry::PcurveNurbs;
+        use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
         use cadmpeg_ir::math::Point2;
         let mut original = vec![0x0d, 8];
         original.extend_from_slice(b"intcurve");

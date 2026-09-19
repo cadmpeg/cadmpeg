@@ -13,9 +13,9 @@ use std::collections::HashMap;
 
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use super::{CurveCarrier, LEN_TO_MM};
 

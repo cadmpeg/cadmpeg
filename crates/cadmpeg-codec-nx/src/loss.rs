@@ -18,7 +18,10 @@
 //! and the categories this codec spans (carrier, topology, history, container)
 //! have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 macro_rules! loss_codes {
     ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
@@ -123,7 +126,7 @@ impl NxLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("nx") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("nx") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

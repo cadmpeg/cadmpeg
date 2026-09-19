@@ -66,7 +66,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -90,7 +90,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -747,8 +747,9 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
 #[test]
 fn supplemental_edge_paths_project_into_matching_configuration_state() {
     use cadmpeg_ir::features::{
-        ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration, EdgeSelection,
-        Feature as NeutralFeature, FeatureDefinition, FeatureId, FeatureOperation,
+        edge_treatments::{ChamferGroup, ChamferSpec},
+        ConfigurationFeatureState, DesignConfiguration, EdgeSelection, Feature as NeutralFeature,
+        FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let producer_id = FeatureId::mint("synthetic:test:id#producer").expect("identity grammar");
@@ -863,7 +864,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
 #[test]
 fn configuration_hole_inherits_shared_construction_and_placement() {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureId, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+        holes::{HoleKind, HolePlacement},
+        FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
     };
 
     let id = FeatureId::mint("test:model:feature#hole").expect("identity grammar");
@@ -894,8 +896,8 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
                     )
                     .unwrap(),
                 }]),
-                shape: cadmpeg_ir::features::HoleShape::new(
-                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
                         diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
                         depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
                     }),
@@ -923,8 +925,8 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             face: None,
             direction: None,
             placements: None,
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                 None,
                 None,
             )
@@ -949,7 +951,8 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 #[test]
 fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, HoleKind, HolePlacement, LinearTermination,
+        holes::{HoleKind, HolePlacement},
+        FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
     let placement = HolePlacement::Axis {
@@ -977,8 +980,8 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
             ))
             .unwrap(),
         }]),
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
                 depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
             }),
@@ -1000,8 +1003,8 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         face: None,
         direction: None,
         placements: Some(vec![placement.clone()]),
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
             None,
             None,
         )
@@ -1030,7 +1033,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
     assert_eq!(placements, Some(vec![placement]));
     assert!(matches!(
         construction,
-        cadmpeg_ir::features::HoleConstruction::Form {
+        cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::Counterbore {
                 diameter: actual_diameter,
                 depth: actual_depth,
@@ -1053,8 +1056,8 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
 #[test]
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
-        ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
-        FeatureOperation, HoleKind, LinearTermination,
+        holes::HoleKind, ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, FeatureOperation, LinearTermination,
     };
 
     let id = FeatureId::mint("test:model:feature#hole-lane").expect("identity grammar");
@@ -1063,7 +1066,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile_filter: None,
         face: None,
         direction: None,
-        placements: Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
+        placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.0, 2.0, 3.0,
             ))
@@ -1073,8 +1076,8 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
             ))
             .unwrap(),
         }]),
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Counterbore {
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
                 depth: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
             }),
@@ -1096,8 +1099,8 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         face: None,
         direction: None,
         placements: None,
-        shape: cadmpeg_ir::features::HoleShape::new(
-            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+        shape: cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
             None,
             None,
         )
@@ -1154,7 +1157,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         extent: None,
         ..
     }) if matches!((shape.construction(), &shape.diameter(),), (construction, None,) if placements.is_none()
-        && matches!(construction, cadmpeg_ir::features::HoleConstruction::Form {
+        && matches!(construction, cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::Simple,
             ..
         }))));
@@ -1767,7 +1770,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

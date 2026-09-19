@@ -449,7 +449,7 @@ pub(in crate::decode) fn counterbore_axis_placement(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-) -> Option<cadmpeg_ir::features::HolePlacement> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let cylinder_axis =
         counterbore_dimensions(scan, ir, feature_id).and_then(|(_, counterbore_diameter, _)| {
             let cylinder_sources = counterbore_cylinder_sources(scan, feature_id)?;
@@ -475,7 +475,7 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
     table: &crate::feature::FeatureEntityTable,
     rows: &[crate::surface::SurfaceRow],
     frames: &[crate::surface::PlaneLocalSystem],
-) -> Option<cadmpeg_ir::features::HolePlacement> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     (table.feature_id == feature_id).then_some(())?;
     let plane_ids = table
         .surface_ids()
@@ -502,7 +502,7 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
         .origin
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
     let axis = normalize(frame.normal?)?;
-    Some(cadmpeg_ir::features::HolePlacement::Axis {
+    Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             origin[0], origin[1], origin[2],
         ))?,
@@ -516,7 +516,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     cylinder_sources: &[Vec<u32>],
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     counterbore_diameter: f64,
-) -> Option<cadmpeg_ir::features::HolePlacement> {
+) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let carriers = cylinder_sources
         .iter()
         .filter_map(|ids| {
@@ -526,7 +526,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     let [carrier] = carriers.as_slice() else {
         return None;
     };
-    Some(cadmpeg_ir::features::HolePlacement::Axis {
+    Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(carrier.origin)?,
         axis: cadmpeg_ir::features::FeatureDirection3::new(carrier.axis)?,
     })

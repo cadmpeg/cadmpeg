@@ -52,8 +52,8 @@ fn decode_types_class_911_as_unresolved_hole() {
 
             extent: None,
             ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Unresolved(None),
+        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Unresolved(None),
                 ..
             }, None,))));
     assert_eq!(
@@ -156,9 +156,9 @@ fn decode_types_class_914_as_unresolved_chamfer() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Chamfer {
             ref groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+            spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { form: None },
         }])
     ));
     assert_eq!(
@@ -531,7 +531,7 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Pattern {
                 seeds: Vec::new(),
-                pattern: cadmpeg_ir::features::PatternKind::UNRESOLVED_MIRROR,
+                pattern: cadmpeg_ir::features::patterns::PatternKind::UNRESOLVED_MIRROR,
             }
         )
     );
@@ -587,9 +587,11 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::FilletGroup {
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                        radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                        radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                            form: None
+                        },
                         tangency_weight: None,
                     }
                 ),
@@ -1158,11 +1160,13 @@ fn decode_types_round_with_labeled_edge_selection() {
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::FilletGroup {
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: cadmpeg_ir::features::EdgeSelection::Native(
                             "creo:allfeatur:edgs_affected#4:44,45".to_string()
                         ),
-                        radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+                        radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
+                            form: None
+                        },
                         tangency_weight: None,
                     }
                 ),

@@ -94,7 +94,7 @@ fn placed_extrusion_arc_defines_cylinder() {
     assert_eq!(
         extruded_segment_surface(&transform, &points, &segment),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(10.0, 20.0, 30.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -106,7 +106,7 @@ fn placed_extrusion_arc_defines_cylinder() {
     assert_eq!(
         placed_section_curve_geometry(&transform, &points, &segment),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(10.0, 20.0, 30.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -125,7 +125,7 @@ fn placed_extrusion_arc_defines_cylinder() {
             .expect("valid test fixture"),
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(10.0, 23.0, 26.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),

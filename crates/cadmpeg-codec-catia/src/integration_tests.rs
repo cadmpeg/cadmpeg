@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::report::{LossCategory, Severity};
+use cadmpeg_ir::report::{loss::LossCategory, Severity};
 
 use crate::test_support::test_a5a8::{a8_catpart, inner_no_directory_a8_catpart};
 use crate::test_support::test_annotations::assert_every_entity_has_v1_annotation;

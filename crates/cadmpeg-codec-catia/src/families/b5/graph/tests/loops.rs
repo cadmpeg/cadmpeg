@@ -17,7 +17,7 @@ use crate::families::b5::graph::{
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
-use cadmpeg_ir::geometry::{NurbsSurface, ProceduralSurfaceDefinition};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[test]
@@ -620,9 +620,17 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::Nurbs(
             NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                     [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4]
                         .chunks(2_usize)
                         .map(<[_]>::to_vec)

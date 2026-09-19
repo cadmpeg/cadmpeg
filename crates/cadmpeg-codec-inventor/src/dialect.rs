@@ -66,7 +66,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::dialect::{DialectId, DialectMatch, Grammar};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::InventorContainer;
 use crate::database::RseSchema;

@@ -10,13 +10,13 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
+    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -589,11 +589,11 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -705,11 +705,11 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     ));
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -791,7 +791,7 @@ pub(crate) fn rational_pcurve_arc(
     {
         return None;
     }
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         2,
         knots,
         control_points,
@@ -814,7 +814,7 @@ pub(crate) fn quintic_jet_pcurve(
 ) -> Option<PcurveGeometry> {
     let (full_knots, controls) =
         crate::nurbs::quintic_jet_bspline(degree, knots, points, first, second)?;
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         degree,
         full_knots,
         controls
@@ -839,7 +839,7 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
 
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+        pcurve::PcurveGeometry, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
         ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
         Surface, SurfaceGeometry,
     };
@@ -900,7 +900,7 @@ mod route_tests {
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -925,7 +925,7 @@ mod route_tests {
     #[test]
     fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1047,7 +1047,7 @@ mod route_tests {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 0.0, f64::from(key)),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
@@ -1064,7 +1064,7 @@ mod route_tests {
         assert!(unsorted
             .findings
             .iter()
-            .any(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder));
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
         neutral_model_is_admissible(&mut ir, &[]);
 
@@ -1084,7 +1084,7 @@ mod route_tests {
         assert!(!sorted
             .findings
             .iter()
-            .any(|finding| finding.check == cadmpeg_ir::report::Check::ArenaOrder));
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
     }
 
     #[test]

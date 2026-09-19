@@ -7,8 +7,8 @@
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. [`model_surface_point`] resolves construction-
 //! backed carriers that require other model entities. Carriers without a typed
-//! parameterization ([`CurveGeometry::Solved(SolvedCurveGeometry::Unknown)`], [`CurveGeometry::Solved(SolvedCurveGeometry::Composite)`],
-//! [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown)`], parabolas, and hyperbolas) evaluate to `None`.
+//! parameterization ([`SolvedCurveGeometry::Unknown`], [`SolvedCurveGeometry::Composite`],
+//! [`SolvedSurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
@@ -17,10 +17,12 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    knots_nondecreasing, CurveGeometry, LawExpression, LawFormula, NurbsCurve, NurbsPoles3,
-    NurbsSurface, PcurveGeometry, PcurveNurbs, PolylineCurve, ProceduralCurveDefinition,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsPoles3, NurbsSurface, SurfaceParameterAxis},
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    sampled::PolylineCurve,
+    CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-    SurfaceParameterAxis, SweepSurfaceLayout,
+    SweepSurfaceLayout,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
@@ -2448,7 +2450,7 @@ pub fn nurbs_surface_isocurve(
             // pole lane and no weight lane for a reader to pair. `weight_sum`
             // is finite and positive above, which is what the row's weight
             // holds.
-            weighted_poles.push(crate::geometry::WeightedPole3 {
+            weighted_poles.push(crate::geometry::nurbs::WeightedPole3 {
                 point,
                 weight: crate::scalar::NonZeroReal::new(weight_sum)?,
             });

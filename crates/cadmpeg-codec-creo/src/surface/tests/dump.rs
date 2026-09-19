@@ -647,7 +647,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     assert_eq!(
         surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
@@ -687,7 +687,7 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
@@ -731,7 +731,7 @@ fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
@@ -761,7 +761,7 @@ fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
     assert_eq!(
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -812,7 +812,7 @@ fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
     assert_eq!(
         cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -874,7 +874,7 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
     assert_eq!(
         torus.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -917,7 +917,7 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
     assert_eq!(
         torus.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -985,7 +985,7 @@ fn decode_places_first_plane_instance_from_named_prototype() {
     assert_eq!(
         plane.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
@@ -1204,7 +1204,7 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
             "torus",
             vec![("radius1", 0.0), ("radius2", 1.0)],
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -1218,7 +1218,7 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
             "torus",
             vec![("radius1", 2.0), ("radius2", 1.0)],
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
@@ -1473,7 +1473,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     assert_eq!(
         cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 5.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),

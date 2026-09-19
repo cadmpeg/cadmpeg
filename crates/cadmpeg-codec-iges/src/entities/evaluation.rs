@@ -2,7 +2,7 @@
 //! Exact evaluation helpers for decoded neutral carriers.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 
 fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<Vec<f64>> {

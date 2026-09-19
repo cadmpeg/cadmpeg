@@ -589,7 +589,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, z),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -616,9 +616,13 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         let radius = circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
-        *circle_curve =
-            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-                .unwrap();
+        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            center,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .unwrap();
     }
     assert!(!sectioned_area_curves_coplanar(
         &ir,
@@ -702,9 +706,13 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         let radius = circle_curve.radius();
         let mut center = *center;
         center.z = 0.01;
-        *circle_curve =
-            cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-                .unwrap();
+        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            center,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .unwrap();
     }
     let translated_pattern_plane = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
@@ -731,7 +739,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         ir.model.curves.push(Curve {
             id: CurveId::mint(format!("iges:model:curve#D{sequence}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),

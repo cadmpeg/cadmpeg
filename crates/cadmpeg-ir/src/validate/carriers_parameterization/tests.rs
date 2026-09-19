@@ -6,7 +6,7 @@ use crate::examples::unit_cube;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
 use crate::ids::{CurveId, UnknownId};
 use crate::math::{Point3, Vector3};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 use crate::validate::validate_neutral;
@@ -145,7 +145,7 @@ fn periodic_curve_parameter_domain_is_checked() {
         .find(|curve| curve.id == curve_id)
         .unwrap()
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        crate::geometry::CircleCurve::try_new(
+        crate::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

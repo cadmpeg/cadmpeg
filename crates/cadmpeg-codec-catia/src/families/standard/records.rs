@@ -618,7 +618,7 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
 pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
     let normal = unit_vector(params.normal)?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             params.origin,
             normal,
             cadmpeg_ir::geometry::derive_reference_direction(normal),
@@ -819,7 +819,7 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
                 return None;
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::SphereSurface::try_new(
+                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     pt(cx, cy, cz),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -847,7 +847,7 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
             }
             let axis = axis_from_xy(ax, ay, major)?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     pt(cx, cy, cz),
                     axis,
                     cadmpeg_ir::geometry::derive_reference_direction(axis),
@@ -875,7 +875,7 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
             }
             let axis = axis_from_xy(ax, ay, radius)?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     pt(px, py, pz),
                     axis,
                     cadmpeg_ir::geometry::derive_reference_direction(axis),
@@ -902,7 +902,7 @@ pub(super) fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<Surfa
             }
             let axis = axis_from_xy(ax, ay, semi)?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     pt(x, y, z),
                     axis,
                     cadmpeg_ir::geometry::derive_reference_direction(axis),

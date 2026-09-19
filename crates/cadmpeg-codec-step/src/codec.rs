@@ -7,9 +7,12 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;

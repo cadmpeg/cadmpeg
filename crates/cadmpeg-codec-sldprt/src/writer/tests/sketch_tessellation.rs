@@ -23,8 +23,8 @@ use crate::test_support::tessellation::display_list_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -528,7 +528,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                     .unwrap();
                 if let Some(mut weights) = curve.weights() {
                     weights[1] = 0.75;
-                    let poles = cadmpeg_ir::geometry::PcurveNurbsPoles::from_lanes(
+                    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
                         curve.control_points(),
                         Some(weights),
                     );

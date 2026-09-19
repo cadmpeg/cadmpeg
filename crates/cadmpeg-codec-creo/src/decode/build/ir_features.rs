@@ -483,7 +483,7 @@ pub(super) fn finish_feature_transfers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    coverage: &mut cadmpeg_ir::Coverage,
+    coverage: &mut cadmpeg_ir::report::decode::Coverage,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir);

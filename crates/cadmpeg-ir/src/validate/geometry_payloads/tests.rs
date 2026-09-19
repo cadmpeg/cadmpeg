@@ -43,7 +43,7 @@ fn tessellation_counts_must_be_consistent() {
 fn tessellation_triangle_groups_and_texture_assignments_validate() {
     use crate::assets::{Asset, AssetContent, AssetId};
     use crate::math::Point3;
-    use crate::report::{Check, Severity};
+    use crate::report::{check::Check, Severity};
     use crate::tessellation::{
         Tessellation, TessellationTextureAssignment, TessellationTriangleGroup,
     };
@@ -144,7 +144,7 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
 fn finite_nonzero_signed_sphere_radius_is_valid_without_a_size_floor() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        crate::geometry::SphereSurface::try_new(
+        crate::geometry::analytic::SphereSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

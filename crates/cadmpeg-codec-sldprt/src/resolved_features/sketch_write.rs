@@ -69,7 +69,7 @@ pub(super) fn sketch_brep(
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
         )),
         source_object: None,
@@ -414,7 +414,7 @@ fn generated_sketch_curve(
                 ));
             }
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(cadmpeg_ir::geometry::LineCurve::try_new(origin, Vector3::new(
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, Vector3::new(
                         delta.x / length,
                         delta.y / length,
                         delta.z / length,
@@ -427,7 +427,7 @@ fn generated_sketch_curve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let point = offset_point(*center, Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
                 start: point,
                 end: point,
                 param_range: [0.0, std::f64::consts::TAU],
@@ -439,7 +439,7 @@ fn generated_sketch_curve(
             start_angle,
             end_angle,
         } => Ok(GeneratedSketchCurve {
-            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
             start: offset_point(*center, polar(radius.get(), start_angle.get())),
             end: offset_point(*center, polar(radius.get(), end_angle.get())),
             param_range: [start_angle.get(), end_angle.get()],
@@ -467,7 +467,7 @@ fn generated_sketch_curve(
                 });
             let full = bounds.is_none();
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::EllipseCurve::try_new(lift(*center), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(lift(*center), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
                 param_range: [start, end],
@@ -739,7 +739,7 @@ enum PatchCurve {
         end_angle: f64,
     },
     Ellipse(PatchEllipse),
-    Nurbs(cadmpeg_ir::geometry::PcurveNurbs),
+    Nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs),
 }
 
 struct PatchEllipse {
@@ -892,7 +892,7 @@ fn patch_direct_curve_body(
     };
     let center = lift_point(center_2d, request.origin, request.u_axis, request.v_axis);
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(center, axis, ref_direction, radius)
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
             .map_err(cadmpeg_core::CodecError::malformed)?,
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
@@ -992,7 +992,7 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
 fn patch_direct_nurbs(
     body: &mut [u8],
     request: &CurvePatch,
-    curve: &cadmpeg_ir::geometry::PcurveNurbs,
+    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curve = curve
         .lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis))
@@ -1044,7 +1044,7 @@ fn patch_direct_ellipse(
         request.u_axis.z * major_angle.cos() + request.v_axis.z * major_angle.sin(),
     );
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             center_3d,
             axis,
             major_direction,

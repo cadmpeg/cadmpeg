@@ -14,7 +14,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_ir::codec::write::ExportPlan;
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
 use sha2::{Digest, Sha256};
 
@@ -22,21 +22,21 @@ use super::document::LoadOrigin;
 
 /// File output path and its overwrite policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileDestination {
+pub(crate) struct FileDestination {
     /// Output path.
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
     /// Replace an existing output.
-    pub overwrite: bool,
+    pub(super) overwrite: bool,
 }
 
 impl FileDestination {
     /// Checks the file output against its source and overwrite policy.
-    pub fn check(&self, input: &Path) -> Result<()> {
+    pub(crate) fn check(&self, input: &Path) -> Result<()> {
         check_output_path(input, &self.path, self.overwrite)
     }
 
     /// Writes checked output bytes atomically.
-    pub fn write(&self, input: &Path, bytes: &[u8]) -> Result<()> {
+    pub(crate) fn write(&self, input: &Path, bytes: &[u8]) -> Result<()> {
         self.check(input)?;
         write_bytes_atomic(&self.path, bytes)
     }
@@ -44,7 +44,7 @@ impl FileDestination {
 
 /// An optional file output admitted with its overwrite policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OptionalFileDestination(pub Option<FileDestination>);
+pub(crate) struct OptionalFileDestination(pub Option<FileDestination>);
 
 impl clap::Args for OptionalFileDestination {
     fn augment_args(command: clap::Command) -> clap::Command {
@@ -89,11 +89,11 @@ impl clap::FromArgMatches for OptionalFileDestination {
 
 /// Primary and report files admitted under one overwrite policy.
 #[derive(Debug)]
-pub struct OutputDestinations {
+pub(crate) struct OutputDestinations {
     /// Optional primary file output.
-    pub output: OptionalFileDestination,
+    pub(crate) output: OptionalFileDestination,
     /// Optional command report file.
-    pub report: Option<FileDestination>,
+    pub(crate) report: Option<FileDestination>,
 }
 
 impl clap::Args for OutputDestinations {
@@ -132,7 +132,11 @@ impl clap::FromArgMatches for OutputDestinations {
 /// evidence cannot be established from a short prefix. Extend such inputs
 /// until the bounded CFB probe reaches the directory or the configured
 /// input ceiling.
-pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
+pub(crate) fn read_detection_input(
+    path: &Path,
+    prefix_len: usize,
+    max_bytes: u64,
+) -> Result<Vec<u8>> {
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     read_detection_prefix(&mut file, prefix_len, max_bytes).map_err(|error| {
         if error.kind() == io::ErrorKind::FileTooLarge {
@@ -148,7 +152,7 @@ pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> R
 }
 
 /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
-pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
+pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut limited = file.take(max_bytes.saturating_add(1));
     let mut text = String::new();
@@ -168,7 +172,7 @@ pub fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
 /// Load and parse a decode sidecar, verifying it against CADIR bytes.
 ///
 /// Mismatch is a hard error (fail-closed).
-pub fn load_matching_sidecar(
+pub(crate) fn load_matching_sidecar(
     cadir_path: &Path,
     cadir_bytes: &[u8],
     max_bytes: u64,
@@ -197,7 +201,7 @@ pub fn load_matching_sidecar(
 }
 
 /// Refuse to overwrite the input path, or an existing output without force.
-pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
+fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()> {
     // A missing source is diagnosed by the loader. It cannot alias an
     // existing source file, so output preflight must not replace that
     // input error with a canonicalization failure.
@@ -219,7 +223,7 @@ pub fn check_output_path(input: &Path, output: &Path, force: bool) -> Result<()>
 }
 
 /// Refuse two independently written outputs that resolve to one path.
-pub fn check_distinct_output_paths(
+pub(crate) fn check_distinct_output_paths(
     first: &Path,
     first_label: &str,
     second: &Path,
@@ -251,7 +255,7 @@ fn absolute_output_path(output: &Path) -> Result<PathBuf> {
 }
 
 /// Stage bytes then atomically replace `output`.
-pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
+fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -269,7 +273,10 @@ pub fn write_bytes_atomic(output: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// Stage an export plan and hash the emitted bytes.
-pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportReport, Sha256Digest)> {
+pub(super) fn write_plan_atomic(
+    output: &Path,
+    plan: ExportPlan,
+) -> Result<(ExportReport, Sha256Digest)> {
     let parent = output
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -301,7 +308,7 @@ pub fn write_plan_atomic(output: &Path, plan: ExportPlan) -> Result<(ExportRepor
 /// A decoded origin causes a second atomic rename after the CADIR write.
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
-pub fn persist_decode_sidecar(
+pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
@@ -335,7 +342,7 @@ pub fn persist_decode_sidecar(
 
 /// Result of attempting to keep a CADIR sidecar in sync with its document.
 #[derive(Debug)]
-pub enum SidecarPersistOutcome {
+pub(crate) enum SidecarPersistOutcome {
     /// Sidecar written beside the CADIR file.
     Wrote(PathBuf),
     /// Stale sidecar removed because the CADIR has no decode origin.
@@ -380,7 +387,7 @@ mod tests {
     use crate::test_support::{put_u16, put_u32};
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar};
-    use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
+    use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
     use cadmpeg_registry::{identify, InputCatalog, DETECTION_PREFIX_LEN};
 
     #[test]

@@ -10,7 +10,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256_with_charge, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::report::{LossNote, Severity, TransferLedger, TransferOutcome};
+use cadmpeg_ir::report::{
+    decode::{TransferLedger, TransferOutcome},
+    loss::LossNote,
+    Severity,
+};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -585,9 +589,9 @@ fn decode_with_occurrence_limits(
         );
     }
     let mut body = DecodeBody::new(if ctx.container_only() {
-        cadmpeg_ir::report::DecodeTransfer::ContainerOnly {}
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
     } else {
-        cadmpeg_ir::report::DecodeTransfer::full(geometry_transferred)
+        cadmpeg_ir::report::decode::DecodeTransfer::full(geometry_transferred)
     });
     body.losses = losses;
     body.notes = notes;

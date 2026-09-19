@@ -16,8 +16,8 @@
 use std::io::Write;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
-use cadmpeg_ir::{CadIr, SourceFidelity, WritePath};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
 

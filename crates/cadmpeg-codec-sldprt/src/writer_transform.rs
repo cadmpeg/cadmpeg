@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, GeometryLayoutError, NurbsError, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationError;
@@ -243,7 +243,7 @@ fn transform_surface(
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 placed_point(transform, *origin)?,
                 placed_vector(transform, *normal)?,
                 placed_vector(transform, *u_axis)?,
@@ -255,7 +255,7 @@ fn transform_surface(
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
-            *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 placed_point(transform, *origin)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
@@ -270,7 +270,7 @@ fn transform_surface(
             let radius = cone_surface.radius();
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
-            *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 placed_point(transform, *origin)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
@@ -285,7 +285,7 @@ fn transform_surface(
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
-            *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
+            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
@@ -299,7 +299,7 @@ fn transform_surface(
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
-            *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
+            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
@@ -362,7 +362,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 placed_point(transform, *origin)?,
                 placed_vector(transform, *direction)?,
             )
@@ -373,7 +373,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
-            *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
@@ -387,7 +387,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
-            *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
+            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *major_direction)?,
@@ -433,7 +433,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
-            *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 placed_point(transform, *vertex)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *major_direction)?,
@@ -447,7 +447,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let major_direction = hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
-            *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *major_direction)?,
@@ -458,9 +458,10 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point();
-            *degenerate_curve =
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(placed_point(transform, *point)?)
-                    .map_err(CodecError::malformed)?;
+            *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
+                placed_point(transform, *point)?,
+            )
+            .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
@@ -499,7 +500,7 @@ mod tests {
 
     #[test]
     fn circle_body_rotation_transforms_the_zero_angle_direction() {
-        use cadmpeg_ir::geometry::CircleCurve;
+        use cadmpeg_ir::geometry::analytic::CircleCurve;
         use cadmpeg_ir::math::{Point3, Vector3};
 
         let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(

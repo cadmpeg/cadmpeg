@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{PcurveGeneralForm, PcurveInlineForm, PcurveMetadata};
+use crate::geometry::pcurve::{PcurveGeneralForm, PcurveInlineForm, PcurveMetadata};
 
 #[test]
 fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
@@ -167,9 +167,9 @@ fn pcurve_metadata_states_its_source_and_denies_the_other_arm_s_keys() {
         },
         "metadata": {"source": "general", "form": {}},
     });
-    serde_json::from_value::<crate::geometry::Pcurve>(pcurve.clone()).unwrap();
+    serde_json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve.clone()).unwrap();
     pcurve["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<crate::geometry::Pcurve>(pcurve)
+    let error = serde_json::from_value::<crate::geometry::pcurve::Pcurve>(pcurve)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");

@@ -11,10 +11,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
+        holes::{HoleBottom, HoleKind, HolePlacement},
+        patterns::{PatternKind, PatternSeed, PatternTransform},
         BodyRetentionMode, BodySelection, ConfigurationFeatureState, ConfigurationId,
         DesignConfiguration, DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement,
-        LinearTermination, ParameterId, ParameterValue, PatternKind, PatternSeed, PatternTransform,
+        FeatureOperation, FeatureTreeNodeRole, LinearTermination, ParameterId, ParameterValue,
     },
     scalar::Length,
 };
@@ -302,8 +303,8 @@ fn active_configuration_inherits_late_feature_resolutions() {
                     axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                         .unwrap(),
                 }]),
-                shape: cadmpeg_ir::features::HoleShape::new(
-                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
                     Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
@@ -357,8 +358,8 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         face: None,
                         direction: None,
                         placements: None,
-                        shape: cadmpeg_ir::features::HoleShape::new(
-                            cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                        shape: cadmpeg_ir::features::holes::HoleShape::new(
+                            cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                             None,
                             None,
                         )
@@ -417,7 +418,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
     *extent = Some(LinearTermination::ThroughAll {});
     *bottom = None;
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         shape.construction().clone(),
         *shape.exit_kind(),
         edited_diameter,

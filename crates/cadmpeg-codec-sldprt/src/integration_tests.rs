@@ -276,7 +276,7 @@ fn versioned_part() -> Vec<u8> {
 fn plan(
     result: &cadmpeg_ir::codec::DecodeResult,
     fidelity: bool,
-    request: cadmpeg_ir::codec::write::TargetRequest<'_>,
+    request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
@@ -326,12 +326,12 @@ fn inherit_replays_a_versioned_part_and_names_its_dialect() {
     let plan = plan(
         &result,
         true,
-        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .expect("the source's own dialect is preserved");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay { .. }
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(named_target(&plan), "sldprt:sw-version-12000-plus");
 
@@ -351,7 +351,7 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
     let error = plan(
         &result,
         false,
-        cadmpeg_ir::codec::write::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .expect_err("a versioned row is not a synthesis target");
     let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
@@ -385,17 +385,17 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let plan = plan(
         &result,
         true,
-        cadmpeg_ir::codec::write::TargetRequest::Explicit("sldprt:unknown"),
+        cadmpeg_ir::codec::write::target::TargetRequest::Explicit("sldprt:unknown"),
     )
     .expect("the catalog row is synthesized from the neutral IR");
     assert_eq!(named_target(&plan), "sldprt:unknown");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert_eq!(
         plan.report().fidelity(),
-        cadmpeg_ir::FidelityResolution::NotConsumed {}
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
 
     let mut written = Vec::new();
@@ -426,14 +426,16 @@ fn the_patch_path_names_the_preserved_dialect() {
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("an edited part still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
-    let cadmpeg_ir::FidelityResolution::Degraded { reason } = &plan.report().fidelity() else {
+    let cadmpeg_ir::report::export::FidelityResolution::Degraded { reason } =
+        &plan.report().fidelity()
+    else {
         panic!("digest mismatch must report degraded fidelity");
     };
     assert!(reason.contains("digest"), "{reason}");
@@ -485,16 +487,16 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("missing retained bytes fall back to semantic writing");
     assert!(!matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::VerbatimReplay { .. }
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
         &plan.report().fidelity(),
-        &cadmpeg_ir::FidelityResolution::Degraded {
+        &cadmpeg_ir::report::export::FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }
     );
@@ -519,12 +521,12 @@ fn the_generation_path_names_the_catalog_row() {
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-            cadmpeg_ir::codec::write::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
         .expect("nothing to inherit, so the catalog default stands in");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:unknown");

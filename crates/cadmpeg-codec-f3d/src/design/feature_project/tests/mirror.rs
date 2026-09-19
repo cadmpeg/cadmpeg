@@ -10,8 +10,8 @@ use crate::records::{
     },
 };
 use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
-    PatternTransform,
+    patterns::{PatternSeed, PatternTransform},
+    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 

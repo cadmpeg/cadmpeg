@@ -32,12 +32,14 @@ use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent,
-    ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
+    edge_treatments::ChamferSpec, AngularTermination, BooleanOp, EdgeSelection, ExtrudeDirection,
+    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
     FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, LinearTermination, PathRef,
     PlanarProfileRef, ProfileRef, SurfaceBoundary, ThickenSide, UnresolvedFamily,
 };
-use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    pcurve::PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -61,7 +63,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let second_line_id =
         SketchEntityId::mint("creo:model:sketch_entity#second-line".to_string()).unwrap();
     let spline = SketchGeometry::nurbs(
-        cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             3,
             vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
             vec![
@@ -136,7 +138,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
     let diagonal = ProfileEntity::new(
         SketchGeometry::nurbs(
-            cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -629,7 +631,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1123,7 +1125,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -1330,7 +1332,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1614,7 +1616,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features.push(feature(
         IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::ChamferGroup {
+                cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Unresolved { form: None },
                 },

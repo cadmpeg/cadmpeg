@@ -294,7 +294,7 @@ pub(in crate::decode) fn conic_conic_intersections(
         ) else {
             return Vec::new();
         };
-        let Ok(line) = cadmpeg_ir::geometry::LineCurve::try_new(
+        let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(origin[0], origin[1], origin[2]),
             Vector3::new(direction[0], direction[1], direction[2]),
         ) else {
@@ -684,7 +684,7 @@ mod tests {
             Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 0.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )
@@ -695,7 +695,7 @@ mod tests {
             Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                     )

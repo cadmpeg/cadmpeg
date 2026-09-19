@@ -11,14 +11,14 @@ use std::num::NonZeroU64;
 
 /// A maximal span of differing bytes, after gap coalescing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DiffRun {
+pub(super) struct DiffRun {
     start: u64,
     len: NonZeroU64,
 }
 
 impl DiffRun {
     /// Returns a run covering the single byte at `start`.
-    pub const fn single(start: u64) -> Self {
+    const fn single(start: u64) -> Self {
         Self {
             start,
             len: NonZeroU64::MIN,
@@ -26,17 +26,17 @@ impl DiffRun {
     }
 
     /// Returns the offset of the first differing byte in the run.
-    pub const fn start(self) -> u64 {
+    pub(super) const fn start(self) -> u64 {
         self.start
     }
 
     /// Returns the number of bytes the run covers, including coalesced equal bytes.
-    pub const fn len(self) -> NonZeroU64 {
+    pub(super) const fn len(self) -> NonZeroU64 {
         self.len
     }
 
     /// Returns the exclusive end offset of the run.
-    pub const fn end(self) -> u64 {
+    pub(super) const fn end(self) -> u64 {
         self.start + self.len.get()
     }
 
@@ -50,7 +50,7 @@ impl DiffRun {
 
 /// A positional comparison of two byte strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiffSummary {
+pub(in crate::inspect) struct DiffSummary {
     /// Length of the first input.
     len_a: u64,
     /// Length of the second input.
@@ -63,37 +63,37 @@ pub struct DiffSummary {
 
 impl DiffSummary {
     /// Returns the first differing offset.
-    pub fn first(&self) -> Option<u64> {
+    pub(super) fn first(&self) -> Option<u64> {
         self.runs.first().map(|run| run.start)
     }
 
     /// Returns `len_a` for the compared inputs.
-    pub const fn len_a(&self) -> u64 {
+    pub(super) const fn len_a(&self) -> u64 {
         self.len_a
     }
 
     /// Returns `len_b` for the compared inputs.
-    pub const fn len_b(&self) -> u64 {
+    pub(super) const fn len_b(&self) -> u64 {
         self.len_b
     }
 
     /// Returns `compared` for the compared inputs.
-    pub fn compared(&self) -> u64 {
+    pub(super) fn compared(&self) -> u64 {
         self.len_a.min(self.len_b)
     }
 
     /// Returns `differing` for the compared inputs.
-    pub const fn differing(&self) -> u64 {
+    pub(super) const fn differing(&self) -> u64 {
         self.differing
     }
 
     /// Returns the coalesced differing spans.
-    pub fn runs(&self) -> &[DiffRun] {
+    pub(super) fn runs(&self) -> &[DiffRun] {
         &self.runs
     }
 
     /// Returns true when the inputs are byte identical.
-    pub const fn identical(&self) -> bool {
+    pub(super) const fn identical(&self) -> bool {
         self.len_a == self.len_b && self.differing == 0
     }
 }
@@ -103,7 +103,7 @@ impl DiffSummary {
 /// Two differing spans separated by `gap` or fewer equal bytes are reported as
 /// one run, so a changed multi-field record reads as a single region instead of
 /// one run per byte.
-pub fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
+pub(super) fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
     let compared = a.len().min(b.len());
     let mut runs: Vec<DiffRun> = Vec::new();
     let mut differing = 0u64;

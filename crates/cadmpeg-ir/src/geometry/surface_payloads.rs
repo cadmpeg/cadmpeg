@@ -10,10 +10,6 @@ use super::{
     VertexBlendConstruction,
 };
 use super::{CacheContract, LegacyCache, LegacyCacheSlot};
-use super::{
-    DirectedParameterRange, OffsetExtension, PcurveGeometry, ProceduralGeometryError,
-    RevisionSurfaceForm, TaperSurfaceKind,
-};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
@@ -23,6 +19,13 @@ use crate::units::{FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use {
+    super::{
+        DirectedParameterRange, OffsetExtension, ProceduralGeometryError, RevisionSurfaceForm,
+        TaperSurfaceKind,
+    },
+    crate::geometry::pcurve::PcurveGeometry,
+};
 
 /// Admitted support surface restriction parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -78,7 +78,7 @@ fn invalid_step_string_escape_is_reported_as_metadata_loss() {
 
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::MetadataStringInvalid.kind()
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("STEP record #1 has an invalid product identifier string")

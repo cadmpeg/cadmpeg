@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::CadIr;
 use cadmpeg_registry::Format;
 
@@ -190,8 +190,8 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
-    type Target = cadmpeg_ir::codec::write::DialectFree;
-    const TARGET: Self::Target = cadmpeg_ir::codec::write::DialectFree;
+    type Target = cadmpeg_ir::codec::write::target::DialectFree;
+    const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
     fn plan_resolved(
         &self,

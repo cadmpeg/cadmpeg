@@ -12,7 +12,10 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNamespace, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
+    Severity,
+};
 
 const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("sat") {
     Ok(namespace) => namespace,

@@ -9,7 +9,9 @@ use crate::vecmath::cross;
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    NurbsCurve, NurbsSurface, PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface},
+    pcurve::PcurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -43,7 +45,7 @@ pub(in super::super) fn extruded_geometry_surface(
             let line = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             let normal = normalize(cross(line, transform.normal()))?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(start[0], start[1], start[2]),
                     Vector3::new(normal[0], normal[1], normal[2]),
                     Vector3::new(line[0], line[1], line[2]),
@@ -55,7 +57,7 @@ pub(in super::super) fn extruded_geometry_surface(
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(center[0], center[1], center[2]),
                     Vector3::new(
                         transform.normal()[0],
@@ -295,7 +297,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         return None;
     }
     let nurbs = saved_spline_nurbs(spline, refusal)?;
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
@@ -404,9 +406,9 @@ pub(in super::super) fn interpolation_spline_surface(
     }
 
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(3, u_knots?, false),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(3, v_knots?, false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, u_knots?, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(3, v_knots?, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control_points
                 .chunks(u32::try_from(v_control_count).ok()? as usize)
                 .map(<[_]>::to_vec)
@@ -481,13 +483,13 @@ pub(in super::super) fn extruded_nurbs_surface(
         }
     }
     match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             directrix.degree(),
             directrix.knots().to_vec(),
             directrix.periodic(),
         ),
-        cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
             control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
         ),
@@ -544,7 +546,7 @@ pub(in super::super) fn sketch_nurbs_pcurve(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
@@ -901,7 +903,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
 #[cfg(test)]
 mod tests {
     use super::{extruded_nurbs_surface, signed_unit_chart, translated_nurbs_curve};
-    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Point3;
 
     #[test]

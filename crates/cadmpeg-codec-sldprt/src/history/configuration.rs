@@ -460,7 +460,7 @@ pub(crate) fn project_configuration_sketch_states(
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     annotations: &mut cadmpeg_ir::Annotations,
-) -> Result<Vec<cadmpeg_ir::report::LossNote>, cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
@@ -866,11 +866,11 @@ pub(super) fn inherit_configuration_hole_semantics(
     }
     match (&mut construction, base_construction) {
         (
-            cadmpeg_ir::features::HoleConstruction::Form {
+            cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind,
                 specification,
             },
-            cadmpeg_ir::features::HoleConstruction::Form {
+            cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: base_kind,
                 specification: base_specification,
             },
@@ -886,7 +886,7 @@ pub(super) fn inherit_configuration_hole_semantics(
             if missing_construction
                 || matches!(
                     &*construction,
-                    cadmpeg_ir::features::HoleConstruction::Form { kind, .. }
+                    cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. }
                         if kind.is_unresolved()
                 ) =>
         {
@@ -915,7 +915,7 @@ pub(super) fn inherit_configuration_hole_semantics(
     if allow_multi_profile_faces.is_none() {
         allow_multi_profile_faces.clone_from(base_allow_multi_profile_faces);
     }
-    *shape = cadmpeg_ir::features::HoleShape::new(construction, exit_kind, diameter)
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     Ok(())
 }

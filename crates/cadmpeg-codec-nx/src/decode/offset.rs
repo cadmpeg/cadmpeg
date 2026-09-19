@@ -19,8 +19,9 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, IntcurveSupportSide, NurbsSurface, PcurveGeometry,
-    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsSurface},
+    pcurve::PcurveGeometry,
+    IntcurveSupportSide, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2197,7 +2198,7 @@ pub(crate) fn intersection_side(
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[[f64; 2]], &[f64])>,
-) -> Result<IntcurveSupportSide, cadmpeg_ir::geometry::NurbsError> {
+) -> Result<IntcurveSupportSide, cadmpeg_ir::geometry::nurbs::NurbsError> {
     let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
     let lanes = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
@@ -2222,7 +2223,7 @@ pub(crate) fn intersection_side(
     });
     let pcurve = match lanes {
         Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 knots,
                 control_points,
@@ -2275,7 +2276,7 @@ pub(crate) fn normalize_pcurve_parameters(
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
             let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
             let converted_end = surface_parameters(surface, [end.u, end.v])?;
-            *line_pcurve = cadmpeg_ir::geometry::LinePcurve::try_new(
+            *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 converted_origin,
                 Point2::new(
                     converted_end.u - converted_origin.u,
@@ -2316,7 +2317,7 @@ mod tests {
         point_distance, refine_offset_surface_parameters_with_index_and_budget,
     };
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -2347,17 +2348,17 @@ mod tests {
         let coordinates = [0.0, 0.5, 1.0];
         let square_controls = [0.0, 0.0, 1.0];
         let support = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 (0..3)
                     .map(|u| {
                         (0..3)
@@ -2408,9 +2409,17 @@ mod tests {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -2457,9 +2466,17 @@ mod tests {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],

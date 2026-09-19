@@ -189,7 +189,7 @@ pub(crate) struct DecodedMesh {
     /// Per-object warnings.
     pub(crate) warnings: Diagnostics,
     /// Typed losses raised while selecting writer-version-dependent fields.
-    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
     /// Number of stored n-gon group records not represented in the IR.
@@ -221,7 +221,7 @@ struct MeshChannels {
     normals: Option<Vec<Vector3>>,
     channels: Vec<TessellationChannel>,
     warnings: Diagnostics,
-    losses: Vec<cadmpeg_ir::report::LossNote>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Returns whether a UUID is `ON_Mesh`.

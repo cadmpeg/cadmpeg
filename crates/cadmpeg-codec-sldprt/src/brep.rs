@@ -319,10 +319,14 @@ fn decode_carrier_values(
     };
     let g = match tt {
         tag::LINE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(scale_point(&v[0..3]), unit(&v[3..6])).ok()?,
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                scale_point(&v[0..3]),
+                unit(&v[3..6]),
+            )
+            .ok()?,
         ))),
         tag::CIRCLE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
                 unit(&v[6..9]),
@@ -331,7 +335,7 @@ fn decode_carrier_values(
             .ok()?,
         ))),
         tag::ELLIPSE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::EllipseCurve::try_new(
+            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
                 unit(&v[6..9]),
@@ -341,7 +345,7 @@ fn decode_carrier_values(
             .ok()?,
         ))),
         tag::PLANE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
                 unit(&v[6..9]),
@@ -349,7 +353,7 @@ fn decode_carrier_values(
             .ok()?,
         ))),
         tag::CYLINDER => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[3..6]),
                 unit(&v[7..10]),
@@ -380,7 +384,7 @@ fn decode_carrier_values(
             };
             return Some(surface(SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         scale_point(&v[0..3]),
                         unit(&v[3..6]),
                         unit(&v[9..12]),
@@ -393,7 +397,7 @@ fn decode_carrier_values(
             )));
         }
         tag::SPHERE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 scale_point(&v[0..3]),
                 unit(&v[4..7]),
                 unit(&v[7..10]),
@@ -404,7 +408,7 @@ fn decode_carrier_values(
         tag::TORUS => {
             return Some(surface(SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::TorusSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         scale_point(&v[0..3]),
                         unit(&v[3..6]),
                         unit(&v[8..11]),
@@ -448,7 +452,7 @@ pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -
 pub(crate) fn patch_nurbs_by_attr(
     body: &mut [u8],
     attr: u16,
-    new: &cadmpeg_ir::geometry::NurbsCurve,
+    new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> bool {
     let carriers = scan_carriers(body);
     let Some(indexed) = carriers.curve(attr) else {

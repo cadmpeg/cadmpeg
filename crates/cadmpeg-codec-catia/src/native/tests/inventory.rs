@@ -347,7 +347,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("1 design object(s)")
             && loss.message.contains("2 object-graph field record(s)")
@@ -356,7 +356,7 @@ fn decode_retains_outer_object_graph_order_and_references() {
     assert!(validation
         .findings
         .iter()
-        .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
+        .all(|finding| finding.check != cadmpeg_ir::report::check::Check::Identity));
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         ]
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Attribute
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Attribute
             && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains("1 visualization value block(s)")
             && loss
@@ -520,7 +520,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
                 .contains("1 schema-selected presentation value(s)")
     }));
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::DesignIntent
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
             && loss.message.contains("neutral features")
             && !loss.message.contains("value block")

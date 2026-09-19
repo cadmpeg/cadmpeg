@@ -58,7 +58,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
@@ -131,14 +131,14 @@ use cadmpeg_ir::ContainerSummary;
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
-    Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, ResolvedWrite,
-    WritePath,
+    target::{Catalog, ResolvedWrite},
+    Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::{Annotations, Finding, SourceFidelity};
+use cadmpeg_ir::{report::check::Finding, Annotations, SourceFidelity};
 
 /// Retained-record id of the whole source part, the byte-replay baseline.
 const SOURCE_IMAGE_ID: &str = "sldprt:file:source-image#0";

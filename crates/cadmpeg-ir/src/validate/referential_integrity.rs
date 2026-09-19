@@ -3,7 +3,10 @@
 
 use crate::document::CadIr;
 use crate::index::ModelIndex;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 use crate::schema::EntitySchema;
 
 pub(super) fn check_typed_references(
@@ -57,7 +60,7 @@ mod tests {
     use crate::examples::unit_cube;
     use crate::index::ModelIndex;
     use crate::math::Point3;
-    use crate::report::{Check, Severity};
+    use crate::report::{check::Check, Severity};
     use crate::tessellation::{Tessellation, TessellationMesh, TessellationTextureAssignment};
 
     #[test]

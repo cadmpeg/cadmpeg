@@ -323,7 +323,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     .expect("affine transform");
     let curve_geometry = SolvedCurveGeometry::Transformed {
         basis: Box::new(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -333,7 +333,7 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     };
     let surface_geometry = SolvedSurfaceGeometry::Transformed {
         basis: Box::new(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -515,7 +515,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     ])
     .expect("affine transform");
     let base_curve = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -531,7 +531,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     let expected_surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
         basis: Box::new(SolvedSurfaceGeometry::Transformed {
             basis: Box::new(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -643,7 +643,7 @@ fn cartesian_transformation_operator_derives_optional_axes() {
 
 #[test]
 fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 
     let source = String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

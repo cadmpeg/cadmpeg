@@ -28,7 +28,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )

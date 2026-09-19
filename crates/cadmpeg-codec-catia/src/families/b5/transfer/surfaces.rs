@@ -7,10 +7,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SupportPcurve, Surface, SurfaceGeometry,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -65,7 +66,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             axis,
             radius,
             ..
-        } => cadmpeg_ir::geometry::CylinderSurface::try_new(
+        } => cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             point3(*origin),
             vector(*axis),
             vector(*reference_x),
@@ -86,7 +87,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             ..
         } => {
             let slant = slant_range[0];
-            cadmpeg_ir::geometry::ConeSurface::try_new(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 vector(*axis),
                 vector(*direction_x),
@@ -107,7 +108,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             axis,
             radius,
             ..
-        } => cadmpeg_ir::geometry::SphereSurface::try_new(
+        } => cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             point3(*center),
             vector(*axis),
             vector(*direction_x),
@@ -126,7 +127,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             major_radius,
             minor_radius,
             ..
-        } => cadmpeg_ir::geometry::TorusSurface::try_new(
+        } => cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             point3(*center),
             vector(*axis),
             vector(*direction_x),
@@ -478,13 +479,13 @@ pub(super) fn revolve_nurbs(
     let row_len = angular_count;
     crate::nurbs::note_refusal(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 profile.degree(),
                 profile.knots().to_vec(),
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(2, v_knots, false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 control_points.chunks(row_len).map(<[_]>::to_vec).collect(),
                 Some(weights).map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
             ),
@@ -556,7 +557,7 @@ pub(super) fn orthonormal_plane(
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             point3(origin),
             vector(unit(cross(u, v))?),
             vector(u),
@@ -1005,7 +1006,7 @@ mod tests {
         ));
     }
 
-    use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};
 
     use crate::families::b5::transfer::{
@@ -1048,7 +1049,7 @@ mod tests {
                     ResolvedExtrusionSupport {
                         surface_object_id: 10,
                         surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                                 Vector3::new(1.0, 0.0, 0.0),
                                 Vector3::new(0.0, 1.0, 0.0),
@@ -1062,7 +1063,7 @@ mod tests {
                     ResolvedExtrusionSupport {
                         surface_object_id: 20,
                         surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                            cadmpeg_ir::geometry::PlaneSurface::try_new(
+                            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                                 Vector3::new(0.0, 1.0, 0.0),
                                 Vector3::new(1.0, 0.0, 0.0),

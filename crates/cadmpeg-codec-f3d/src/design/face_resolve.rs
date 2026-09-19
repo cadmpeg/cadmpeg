@@ -3128,7 +3128,7 @@ mod tests {
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin,
                     normal.unit().unwrap(),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -3275,7 +3275,7 @@ mod tests {
         let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
             id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     origin,
                     normal,
                     Vector3::new(0.0, 0.0, 1.0),

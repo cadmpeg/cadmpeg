@@ -8,7 +8,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 #[test]
 fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),

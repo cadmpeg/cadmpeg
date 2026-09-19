@@ -34,8 +34,9 @@ fn tolerant_intersection_rejects_equal_supports_and_invalid_numeric_bounds() {
 
 #[test]
 fn tolerant_parameterization_requires_a_finite_strict_interval() {
-    let pcurves =
-        || std::array::from_fn(|_| PcurveGeometry::Line(super::super::LinePcurve::U_AXIS));
+    let pcurves = || {
+        std::array::from_fn(|_| PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS))
+    };
     assert!(TolerantIntersectionParameterization::try_new(pcurves(), [-1.0, 1.0]).is_ok());
     for range in [
         [0.0, 0.0],
@@ -67,8 +68,8 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
     assert!(serde_json::from_value::<ProceduralCurveDefinition>(invalid).is_err());
     let parameterization = TolerantIntersectionParameterization::try_new(
         [
-            PcurveGeometry::Line(super::super::LinePcurve::U_AXIS),
-            PcurveGeometry::Line(super::super::LinePcurve::U_AXIS),
+            PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS),
+            PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS),
         ],
         [0.0, 1.0],
     )

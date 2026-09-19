@@ -29,8 +29,9 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::{
     features::{
+        patterns::{PatternKind, PatternSeed, PatternTransform},
         DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue, PathRef, PatternKind, PatternSeed, PatternTransform, SweepMode,
+        ParameterValue, PathRef, SweepMode,
     },
     scalar::Length,
 };
@@ -866,7 +867,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             ref seeds,
             pattern: admitted_pattern,
-        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::PatternForm::Mirror) } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
+        }) if matches!(admitted_pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Mirror) } if seeds == &[PatternSeed::Feature(features[2].id.clone())])
     ));
     assert_eq!(
         features[0].dependencies.as_slice(),

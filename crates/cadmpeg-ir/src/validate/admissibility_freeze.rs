@@ -62,7 +62,7 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
 mod tests {
     use super::{accepted_empty, rejected_missing_point, rejected_missing_region};
     use crate::annotations::Annotations;
-    use crate::report::Check;
+    use crate::report::check::Check;
     use crate::validate::{validate_neutral, validate_neutral_with_annotations};
     use crate::CadIr;
 

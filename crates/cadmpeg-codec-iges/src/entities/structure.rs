@@ -15,7 +15,9 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+};
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};

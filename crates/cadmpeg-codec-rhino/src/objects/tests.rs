@@ -1134,7 +1134,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .losses
         .iter()
         .find(|loss| {
-            loss.code.category() == cadmpeg_ir::report::LossCategory::Geometry
+            loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
                 && loss.provenance.is_some()
         })
         .and_then(|loss| loss.provenance.as_ref())

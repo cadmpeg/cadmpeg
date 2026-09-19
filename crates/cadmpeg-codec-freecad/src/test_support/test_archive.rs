@@ -54,7 +54,7 @@ pub(crate) fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate_neutral(ir, Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity >= cadmpeg_ir::Severity::Error)
+        .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }

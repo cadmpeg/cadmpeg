@@ -372,7 +372,8 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         let mut origin = *origin;
         origin.x = 25.0;
         *plane_surface =
-            cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                .unwrap();
         let line = ir_edit
             .model
             .curves
@@ -392,7 +393,8 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         let direction = line_curve.direction();
         let mut origin = *origin;
         origin.y = 12.0;
-        *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
+        *line_curve =
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
     }
 
     let mut encoded = Vec::new();

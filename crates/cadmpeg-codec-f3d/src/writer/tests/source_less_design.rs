@@ -11,8 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -1076,7 +1076,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {
-            finding.check == cadmpeg_ir::Check::NativeLinks
+            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
                 && finding.message.contains("typed operands disagree")
         }));
 

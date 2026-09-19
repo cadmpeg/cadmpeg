@@ -696,7 +696,7 @@ fn blind_and_coil_lengths_reject_zero_without_losing_signed_wire_values() {
 
 #[test]
 fn hole_profile_filters_admit_exactly_the_nonempty_family_sets() {
-    use crate::features::HoleProfileFilter;
+    use crate::features::holes::HoleProfileFilter;
     let filters = [
         (HoleProfileFilter::Points, "points"),
         (HoleProfileFilter::Circles, "circles"),
@@ -1322,9 +1322,6 @@ fn a_resolved_plane_reference_checks_the_geometry_it_carries() {
         }
     );
 }
-
-mod edge_treatments;
-mod patterns;
 
 mod selections;
 

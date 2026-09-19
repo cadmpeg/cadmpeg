@@ -24,7 +24,10 @@ use crate::decode::report::append_design_intent_losses;
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination, PlanarProfileRef},
+        features::{
+            holes::{HoleKind, HolePlacement},
+            FaceSelection, LinearTermination, PlanarProfileRef,
+        },
         scalar::Length,
     };
 
@@ -115,7 +118,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         (
             &HoleKind::Simple,
             Some(&HoleKind::Unresolved(Some(
-                cadmpeg_ir::features::HoleForm::Chamfer,
+                cadmpeg_ir::features::holes::HoleForm::Chamfer,
             ))),
         ),
         Some(Length::new(5.0).unwrap()),
@@ -149,7 +152,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
         },
         HoleKind::Counterdrill {
-            diameters: cadmpeg_ir::features::CounterdrillDiameters::new(
+            diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
                 cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 None,
             )
@@ -366,7 +369,10 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
 fn nx_pattern_completeness_requires_every_regeneration_operand() {
     use cadmpeg_ir::math::Vector3;
     use cadmpeg_ir::{
-        features::{PathRef, PatternKind, PatternStage, PatternTransform},
+        features::{
+            patterns::{PatternKind, PatternStage, PatternTransform},
+            PathRef,
+        },
         scalar::Length,
     };
 
@@ -379,25 +385,29 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     .unwrap();
     assert!(!pattern_is_incomplete(&linear));
     assert!(pattern_is_incomplete(
-        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Linear {
-            direction: None,
-            spacing: Length::new(10.0).unwrap(),
-            count: 3,
-            second: None,
-        })
+        &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+            PatternTransform::Linear {
+                direction: None,
+                spacing: Length::new(10.0).unwrap(),
+                count: 3,
+                second: None,
+            }
+        )
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
-        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Linear {
-            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
-            spacing: Length::new(10.0).unwrap(),
-            count: 1,
-            second: None,
-        })
+        &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+            PatternTransform::Linear {
+                direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                spacing: Length::new(10.0).unwrap(),
+                count: 1,
+                second: None,
+            }
+        )
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
-        &PatternKind::<cadmpeg_ir::features::CompositePattern>::new(
+        &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("nx:path".into())),
                 spacing: Length::new(10.0).unwrap(),
@@ -408,7 +418,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     ));
     assert!(pattern_is_incomplete(
         &PatternKind::new(PatternTransform::Composite {
-            stages: cadmpeg_ir::features::CompositePattern::new(vec![PatternStage {
+            stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![PatternStage {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Linear {
                         direction: None,
@@ -424,7 +434,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap()
     ));
     let composite = PatternKind::new(PatternTransform::Composite {
-        stages: cadmpeg_ir::features::CompositePattern::new(vec![
+        stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![
             PatternStage {
                 pattern: Box::new(linear),
             },
@@ -618,17 +628,18 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
 
 #[test]
 fn nx_pattern_completeness_requires_distinct_seeds() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FaceSelection};
 
     let seed_id =
         cadmpeg_ir::features::FeatureId::mint("test:test:feature#seed").expect("identity grammar");
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
-    let pattern =
-        cadmpeg_ir::features::PatternKind::new(cadmpeg_ir::features::PatternTransform::Mirror {
+    let seed = cadmpeg_ir::features::patterns::PatternSeed::Feature(seed_id.clone());
+    let pattern = cadmpeg_ir::features::patterns::PatternKind::new(
+        cadmpeg_ir::features::patterns::PatternTransform::Mirror {
             plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
 
     assert!(!pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),
@@ -992,7 +1003,10 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
-        features::{FaceSelection, HoleKind, HolePlacement, LinearTermination},
+        features::{
+            holes::{HoleKind, HolePlacement},
+            FaceSelection, LinearTermination,
+        },
         scalar::Length,
     };
 

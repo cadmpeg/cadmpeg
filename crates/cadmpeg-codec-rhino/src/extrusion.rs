@@ -5,7 +5,10 @@ use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
@@ -923,7 +926,7 @@ pub(crate) mod tests {
     use crate::test_support::test_dump::{
         crc_chunk, crc_chunk_excluding, long_chunk, push_f64, push_i32,
     };
-    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     /// Every fixture this module builds is decoded at an archive word of 50,

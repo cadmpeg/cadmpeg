@@ -9,9 +9,8 @@ use cadmpeg_core::dialect::DialectId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{LossNote, Severity};
-use crate::codec::write::WritePath as BackendWritePath;
 use crate::document::CensusKey;
+use crate::report::{loss::LossNote, Severity};
 
 /// Entity census and fidelity details from a successful export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -258,15 +257,14 @@ impl ExportReport {
     #[must_use]
     pub(crate) fn cadir(
         census: EntityCensus,
-        write_path: BackendWritePath,
-        fidelity_provided: bool,
+        write_path: WritePath,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
         Self {
             identity: ExportIdentity::Cadir {},
             census,
-            write_path: write_path.into_report(fidelity_provided),
+            write_path,
             losses,
             notes,
         }
@@ -278,15 +276,14 @@ impl ExportReport {
     pub(crate) fn native(
         target: DialectId,
         census: EntityCensus,
-        write_path: BackendWritePath,
-        fidelity_provided: bool,
+        write_path: WritePath,
         losses: Vec<LossNote>,
         notes: Vec<String>,
     ) -> Self {
         Self {
             identity: ExportIdentity::Native { target },
             census,
-            write_path: write_path.into_report(fidelity_provided),
+            write_path,
             losses,
             notes,
         }
@@ -300,3 +297,6 @@ impl ExportReport {
             .count()
     }
 }
+
+#[cfg(test)]
+mod tests;

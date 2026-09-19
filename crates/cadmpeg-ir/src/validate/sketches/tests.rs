@@ -4,7 +4,7 @@
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
 use crate::math::{Point2, Point3, Vector3};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::sketches::{SketchGeometry, SketchGeometryDefinition};
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -158,7 +158,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             source.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::PcurveNurbs::from_lanes(
+                crate::geometry::pcurve::PcurveNurbs::from_lanes(
                     2,
                     vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                     vec![
@@ -176,7 +176,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
             result.clone(),
             sketch.clone(),
             SketchGeometry::nurbs(
-                crate::geometry::PcurveNurbs::from_lanes(
+                crate::geometry::pcurve::PcurveNurbs::from_lanes(
                     3,
                     vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
                     vec![
@@ -232,7 +232,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         .iter()
         .position(|entity| entity.id() == &result)
         .expect("result entity");
-    let offset_mismatch = |report: &crate::report::ValidationReport| {
+    let offset_mismatch = |report: &crate::report::check::ValidationReport| {
         report.findings.iter().any(|finding| {
             finding.entity.as_deref() == Some(constraint.as_str())
                 && finding

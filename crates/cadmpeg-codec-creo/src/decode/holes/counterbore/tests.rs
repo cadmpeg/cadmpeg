@@ -57,7 +57,7 @@ fn boundary_circle() -> cadmpeg_ir::geometry::Curve {
     cadmpeg_ir::geometry::Curve {
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -73,7 +73,7 @@ fn model_plane(origin: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#1".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin.into(),
                 [0.0, 0.0, 1.0].into(),
                 [1.0, 0.0, 0.0].into(),
@@ -214,7 +214,7 @@ fn counterbore_dimension_tuple_restricts_source_radii() {
 #[test]
 fn counterbore_source_patches_require_a_complete_carrier_pair() {
     let carrier = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -256,7 +256,7 @@ fn corner_envelopes_construct_dimensioned_source_cylinders() {
     .expect("complete paired corner envelopes select one counterbore assignment");
     let expected = |radius| {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 820.0, -140.0),
                 Vector3::new(0.0, -1.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),

@@ -10,10 +10,10 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::{CadIr, WritePath};
+use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,

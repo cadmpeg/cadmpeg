@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::records::recipes::CreationTimestamp;
@@ -65,7 +65,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         cadmpeg_ir::validate::validate_neutral(&unordered, Vec::new())
             .findings
             .iter()
-            .any(|finding| finding.check == cadmpeg_ir::Check::ArenaOrder)
+            .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder)
     );
     let error = F3dCodec
         .plan(
@@ -85,7 +85,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         .expect("patch timestamps after record-list reordering");
     assert!(matches!(
         report.write_path(),
-        cadmpeg_ir::WritePath::Patched { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let result = F3dCodec
         .decode(&mut Cursor::new(patched), &DecodeOptions::default())

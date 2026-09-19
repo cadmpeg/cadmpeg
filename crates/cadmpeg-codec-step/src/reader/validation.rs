@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};

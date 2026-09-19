@@ -13,7 +13,7 @@ use crate::vecmath::dot;
 use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
-use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 
 const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;

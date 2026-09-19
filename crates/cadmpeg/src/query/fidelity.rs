@@ -22,26 +22,26 @@ use super::{detect, print_json, read_input, Artifact};
 #[derive(Debug, Args)]
 #[command(mut_arg("output", |arg| arg.value_name("FILE").requires("stream")),
     mut_arg("force", |arg| arg.requires("output")))]
-pub struct FidelityArgs {
+pub(crate) struct FidelityArgs {
     /// Decode sidecar (`<stem>.fidelity.json`), or `-` for standard input.
-    pub file: PathBuf,
+    pub(super) file: PathBuf,
     /// Extract the retained bytes of this source stream instead of
     /// printing the table.
     #[arg(long, value_name = "NAME")]
-    pub stream: Option<String>,
+    stream: Option<String>,
     #[command(flatten)]
-    pub output: OptionalFileDestination,
+    output: OptionalFileDestination,
     /// Stream the extracted bytes to stdout even though they are binary.
     #[arg(long, requires = "stream")]
-    pub binary_stdout: bool,
+    binary_stdout: bool,
     /// Print the projected table as JSON (record metadata, not the bytes).
     #[arg(long, conflicts_with = "stream")]
-    pub json: bool,
+    json: bool,
 }
 
 impl FidelityArgs {
     /// Resolves the flat clap fields into one fidelity operation.
-    pub(crate) fn mode(&self) -> Result<FidelityMode<'_>> {
+    pub(super) fn mode(&self) -> Result<FidelityMode<'_>> {
         let Some(stream) = self.stream.as_deref() else {
             return Ok(if self.json {
                 FidelityMode::Json
@@ -65,7 +65,7 @@ impl FidelityArgs {
 
 /// One complete fidelity query operation.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum FidelityMode<'a> {
+pub(in crate::query) enum FidelityMode<'a> {
     Table,
     Json,
     Extract { stream: &'a str, sink: Sink<'a> },
@@ -73,13 +73,13 @@ pub(crate) enum FidelityMode<'a> {
 
 /// Destination for extracted retained bytes.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Sink<'a> {
+pub(in crate::query) enum Sink<'a> {
     File(&'a FileDestination),
     Stdout,
 }
 
 /// Runs `query fidelity` against one artifact.
-pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
+pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
     let bytes = read_input(file)?;
     match detect(&bytes, file)? {
         Artifact::Sidecar(_) => {}

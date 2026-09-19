@@ -78,7 +78,7 @@ impl FeatureProjection {
     pub(crate) fn install(
         self,
         model: &mut cadmpeg_ir::document::Model,
-        losses: &mut Vec<cadmpeg_ir::LossNote>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) {
         model.features = self.features;
         for (child, parent) in self.regeneration_parents {
@@ -106,7 +106,12 @@ impl FeatureProjection {
         }
     }
 
-    pub(super) fn into_model(self) -> (cadmpeg_ir::document::Model, Vec<cadmpeg_ir::LossNote>) {
+    pub(super) fn into_model(
+        self,
+    ) -> (
+        cadmpeg_ir::document::Model,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) {
         let mut model = cadmpeg_ir::document::Model::default();
         let mut losses = Vec::new();
         self.install(&mut model, &mut losses);

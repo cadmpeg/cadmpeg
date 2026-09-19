@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{ProjectionCurvePayload, SpringCurvePayload, ThreeSurfaceIntersectionCurvePayload};
 use crate::geometry::{
-    DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, LinePcurve,
-    PcurveGeometry, ProceduralCurveDefinition, ProjectionRole, ProjectionTail, SpringLayout,
-    SpringPcurve, SpringSupport, SupportPcurve,
+    pcurve::{LinePcurve, PcurveGeometry},
+    DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurveDefinition,
+    ProjectionRole, ProjectionTail, SpringLayout, SpringPcurve, SpringSupport, SupportPcurve,
 };
 use crate::ids::CurveId;
 use crate::math::Point2;

@@ -9,8 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
 use cadmpeg_ir::features::{
+    patterns::{PatternKind, PatternTransform},
     AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    PatternKind, PatternTransform, SurfaceBoundary,
+    SurfaceBoundary,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -39,9 +40,9 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
-    pub(in super::super) coverage: cadmpeg_ir::Coverage,
+    pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
-    pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::LossNote>,
+    pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 pub(in super::super) fn build_container_ir(
@@ -106,7 +107,7 @@ pub(in super::super) fn surface_boundary_has_unresolved_operands(
 }
 
 pub(in super::super) fn pattern_kind_has_unresolved_operands<
-    C: cadmpeg_ir::features::CompositeStages,
+    C: cadmpeg_ir::features::patterns::CompositeStages,
 >(
     pattern: &PatternKind<C>,
 ) -> bool {
@@ -118,7 +119,10 @@ pub(in super::super) fn pattern_kind_has_unresolved_operands<
             path.as_ref().is_none_or(path_has_unresolved_operands)
         }
         PatternTransform::Scale { center, .. } => {
-            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+            matches!(
+                center,
+                cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
+            )
         }
         PatternTransform::Composite { stages } => stages
             .stages()
@@ -240,7 +244,7 @@ fn transfer_reference_lines(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(line.start[0], line.start[1], line.start[2]),
                     Vector3::new(direction[0], direction[1], direction[2]),
                 )
@@ -310,7 +314,7 @@ fn transfer_reference_circles(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(circle.center[0], circle.center[1], circle.center[2]),
                     Vector3::new(circle.axis[0], circle.axis[1], circle.axis[2]),
                     Vector3::new(reference[0], reference[1], reference[2]),
@@ -380,7 +384,7 @@ fn transfer_reference_ellipses(
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
                     Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
                     Vector3::new(
@@ -485,7 +489,7 @@ fn transfer_datum_plane_surfaces(
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(
                         normal[0] * plane.plane.offset,
                         normal[1] * plane.plane.offset,
@@ -556,7 +560,7 @@ fn transfer_placed_plane_surfaces_into_ir(
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                     Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
                     Vector3::new(u_axis[0], u_axis[1], u_axis[2]),

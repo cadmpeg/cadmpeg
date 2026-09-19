@@ -10,8 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -181,7 +181,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
         .find(|curve| curve.id == member_curve)
         .expect("compound-loft member curve")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0)
                 .unit()
@@ -286,7 +286,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
             id: line_curve.clone(),
             geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(4.0, -2.0, 1.0)
                         .unit()
@@ -983,7 +983,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         .find(|curve| curve.id == law_edge)
         .expect("law edge curve")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0)
                 .unit()
@@ -1062,7 +1062,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
         .find(|curve| curve.id == profile_curve)
         .expect("skin profile curve")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(2.0, -1.0, 3.0),
             cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
                 .unit()

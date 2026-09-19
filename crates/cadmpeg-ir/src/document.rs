@@ -23,7 +23,7 @@ use crate::features::{
     FeatureRowWire, FeatureWriteWire,
 };
 use crate::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
+    pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
     ProceduralSurfaceRow, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::hash::finite_json::CanonicalJsonError;
@@ -1142,7 +1142,7 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 ///
 /// Construction state machine: [`crate::draft::ModelDraft`] (mutable, indexed)
 /// commits into [`CadIr`] (structurally canonical after [`CadIr::finalize`]);
-/// [`crate::ValidationReport`] is produced separately by `validate_neutral` and
+/// [`crate::report::check::ValidationReport`] is produced separately by `validate_neutral` and
 /// is not embedded in the document.
 ///
 /// `model` holds the format-neutral graph. `native` retains typed
@@ -1513,12 +1513,12 @@ pub fn entity_census(ir: &CadIr) -> BTreeMap<CensusKey, usize> {
 
 /// Source-container metadata preserved for reporting.
 ///
-/// Attribute keys ending in [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] hold
+/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
 /// machine-local digests over decoded content for the write-path edit oracle.
 /// Not portable across platforms; not tolerance-aware. Digests over retained
 /// source bytes must not use that suffix. See
 /// [`crate::hash::document_local_sha256`] and
-/// [`cadmpeg_ir::compare::is_local_digest_attribute`].
+/// [`crate::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

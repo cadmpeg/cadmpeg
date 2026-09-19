@@ -13,7 +13,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
@@ -1375,11 +1375,11 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::DecodeTransfer::ContainerOnly {},
-            coverage: cadmpeg_ir::Coverage::default(),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes,
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         source_fidelity: cadmpeg_ir::SourceFidelity::default(),
     }

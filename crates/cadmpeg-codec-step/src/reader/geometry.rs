@@ -10,17 +10,18 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
-    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
-    NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, Pcurve, PcurveGeometry, PcurveNurbs,
-    PolylineCurve, PolylineSamples, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
+    sampled::{PolylineCurve, PolylineSamples},
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, IdentityKey, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 
@@ -722,7 +723,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                         .and_then(normalize),
                 )
                 .and_then(|(origin, direction)| {
-                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
                         .ok()
                         .map(SolvedCurveGeometry::Line)
                         .map(CurveGeometry::Solved)
@@ -732,7 +733,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         center,
                         axis,
                         ref_direction,
@@ -761,7 +762,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                                 // around its semi-major direction.
                                 (axis.cross(reference_direction), second_radius, first_radius)
                             };
-                        cadmpeg_ir::geometry::EllipseCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                             center,
                             axis,
                             major_direction,
@@ -778,7 +779,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|placement| placements.get(&placement).copied())
                 .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
                 .and_then(|((vertex, axis, major_direction), focal_distance)| {
-                    cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                         vertex,
                         axis,
                         major_direction,
@@ -795,7 +796,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                             center,
                             axis,
                             major_direction,
@@ -1346,7 +1347,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|placement| placements.get(&placement).copied());
         let geometry = match surface_kind {
             LeafSurfaceEntity::Plane => placement.and_then(|(origin, normal, u_axis)| {
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, normal, u_axis)
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
                     .ok()
                     .map(SolvedSurfaceGeometry::Plane)
                     .map(SurfaceGeometry::Solved)
@@ -1354,7 +1355,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             LeafSurfaceEntity::Cylindrical => placement
                 .zip(named_parameter(record, "CYLINDRICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((origin, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::CylinderSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         origin,
                         axis,
                         ref_direction,
@@ -1368,7 +1369,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .and_then(|(((origin, axis, ref_direction), radius), half_angle)| {
-                    cadmpeg_ir::geometry::ConeSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                         origin,
                         axis,
                         ref_direction,
@@ -1383,7 +1384,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             LeafSurfaceEntity::Spherical => placement
                 .zip(named_parameter(record, "SPHERICAL_SURFACE", 2).and_then(Value::number))
                 .and_then(|((center, axis, ref_direction), radius)| {
-                    cadmpeg_ir::geometry::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         center,
                         axis,
                         ref_direction,
@@ -1398,7 +1399,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .zip(named_parameter(record, surface_type, 3).and_then(Value::number))
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
-                        cadmpeg_ir::geometry::TorusSurface::try_new(
+                        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                             center,
                             axis,
                             ref_direction,
@@ -1959,7 +1960,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         ir.model.pcurves.push(Pcurve {
             id: PcurveId::from(ids::data(kind!("pcurve"), id)),
             geometry,
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         });
         typed.insert(id);
         if let Some(representation) =
@@ -4354,7 +4355,8 @@ fn decode_pcurve_geometry(
                         .reference()
                         .and_then(|vector| vectors.get(&vector).copied())?;
                     PcurveGeometry::Line(
-                        cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).ok()?,
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction)
+                            .ok()?,
                     )
                 }
                 "CIRCLE" => {
@@ -4363,8 +4365,10 @@ fn decode_pcurve_geometry(
                     let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Circle(
-                        cadmpeg_ir::geometry::CirclePcurve::try_new(center, x_axis, y_axis, radius)
-                            .ok()?,
+                        cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+                            center, x_axis, y_axis, radius,
+                        )
+                        .ok()?,
                     )
                 }
                 "ELLIPSE" => {
@@ -4376,7 +4380,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
-                        cadmpeg_ir::geometry::EllipsePcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                             center,
                             x_axis,
                             y_axis,
@@ -4393,7 +4397,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
-                        cadmpeg_ir::geometry::ParabolaPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                             vertex,
                             x_axis,
                             y_axis,
@@ -4411,7 +4415,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
-                        cadmpeg_ir::geometry::HyperbolaPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
                             center,
                             x_axis,
                             y_axis,
@@ -4477,7 +4481,7 @@ fn decode_pcurve_geometry(
                     let (parameter_range, same_sense) =
                         trimmed_pcurve_parameterization(&basis, start, end, sense);
                     PcurveGeometry::Trimmed(
-                        cadmpeg_ir::geometry::TrimmedPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
                             parameter_range,
                             same_sense,
                             Box::new(basis),
@@ -4509,8 +4513,11 @@ fn decode_pcurve_geometry(
                     )?;
                     records.extend(basis_records);
                     PcurveGeometry::Offset(
-                        cadmpeg_ir::geometry::OffsetPcurve::try_new(distance, Box::new(basis))
-                            .ok()?,
+                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
+                            distance,
+                            Box::new(basis),
+                        )
+                        .ok()?,
                     )
                 }
                 _ => {

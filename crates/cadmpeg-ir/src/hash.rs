@@ -48,7 +48,7 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestEr
 /// The IR carries raw `f64` in places. `serde_json` writes a non-finite one as
 /// `null`, so the digest serializes through the same adapter the document write
 /// route uses, which refuses it instead: see
-/// [`CanonicalJsonError`](finite_json::CanonicalJsonError).
+/// [`CanonicalJsonError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DigestError {
     /// A record the unknown arena cannot state.
@@ -90,7 +90,7 @@ pub const DOCUMENT_LOCAL_DIGEST_ATTRIBUTE: &str = "document_local_sha256";
 /// Bitwise SHA-256 for the write path's edit oracle. Not portable across
 /// platforms (libm last-place drift) and not tolerance-aware (tolerant equality
 /// is not transitive). Attributes with these properties use
-/// [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`]; see
+/// [`crate::compare::LOCAL_DIGEST_SUFFIX`]; see
 /// [`crate::document::SourceMeta`].
 pub fn document_local_sha256(
     ir: &CadIr,

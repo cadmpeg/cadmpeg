@@ -5,8 +5,8 @@ use super::adjacent_quad_sheet;
 use super::assert_planar_sheet_round_trip;
 use super::planar_tetrahedron;
 use super::polygon_sheet;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -298,7 +298,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     ir.model.curves.push(Curve {
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(5.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -311,7 +311,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("cadir:model:surface#free").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

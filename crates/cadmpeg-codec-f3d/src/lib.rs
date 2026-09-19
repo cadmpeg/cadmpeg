@@ -39,7 +39,7 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::codec::write::TargetRequest;
+//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
@@ -78,7 +78,7 @@
 //! ASM model-space lengths become millimetres. Directions, ratios, angles,
 //! knots, weights, and UV parameters retain their native scale.
 //!
-//! Inspect [`cadmpeg_ir::report::DecodeReport::losses`] before consuming a
+//! Inspect [`cadmpeg_ir::report::decode::DecodeReport::losses`] before consuming a
 //! decode. A stream that cannot produce geometry returns container metadata,
 //! retained source data, and blocking geometry and topology losses. Referenced
 //! carrier bytes needed for passthrough remain available as
@@ -117,7 +117,10 @@ mod zip_write;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
+use cadmpeg_ir::codec::write::{
+    target::{Catalog, ResolvedWrite},
+    EncodeInput, EncoderBackend, ExportBody,
+};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
@@ -166,7 +169,7 @@ impl F3dCodec {
 impl CodecBackend for F3dCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
-    fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
+    fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
         validate::validate_native(ir)
     }
 

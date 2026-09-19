@@ -3,7 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, ResolvedTarget, ResolvedWrite, WritePath,
+    target::{ResolvedTarget, ResolvedWrite},
+    Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -106,7 +107,7 @@ impl SynthesisCause {
         }
     }
 
-    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::LossNote>) {
+    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
             Self::Displaced(message) => (

@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::report::loss::LossTaxonomy;
 
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::bridge_owned;

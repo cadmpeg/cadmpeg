@@ -32,9 +32,10 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometryDefinition};
 use cadmpeg_ir::topology::Face;
 use cadmpeg_ir::{
     features::{
+        edge_treatments::{FilletGroup, RadiusSpec, VariableRadius},
+        patterns::PatternSeed,
         BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
-        FeatureDefinition, FeatureOperation, FilletGroup, ParameterId, ParameterValue, PatternSeed,
-        RadiusSpec, UnresolvedFamily, VariableRadius,
+        FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
     },
     scalar::{Angle, Length},
 };
@@ -890,7 +891,8 @@ fn variable_fillet_radius_groups<'a>(
                 .collect::<Option<Vec<_>>>()?;
             return Some(vec![(
                 RadiusSpec::Variable {
-                    points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+                    points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
+                        .ok()?,
                 },
                 selections,
             )]);
@@ -1017,7 +1019,7 @@ fn variable_fillet_radius_groups<'a>(
             .collect::<Option<Vec<_>>>()?;
         return Some(vec![(
             RadiusSpec::Variable {
-                points: cadmpeg_ir::features::VariableRadii::new(points).ok()?,
+                points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()?,
             },
             selections,
         )]);
@@ -1088,7 +1090,7 @@ fn variable_fillet_radius_groups<'a>(
         .map(|((first, second), selections)| {
             Some((
                 RadiusSpec::Variable {
-                    points: cadmpeg_ir::features::VariableRadii::new(vec![
+                    points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
                         VariableRadius {
                             parameter: 0.0,
                             radius: Length::new(f64::from_bits(first))?,
@@ -1378,10 +1380,14 @@ pub(crate) fn project_compact_surface_selections(
                     });
                 definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                        cadmpeg_ir::features::FullRoundFilletGroup::new(
+                        cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
                             center_faces,
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(side_one_faces),
-                            cadmpeg_ir::features::FullRoundSideSelection::Explicit(side_two_faces),
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
+                                side_one_faces,
+                            ),
+                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
+                                side_two_faces,
+                            ),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),

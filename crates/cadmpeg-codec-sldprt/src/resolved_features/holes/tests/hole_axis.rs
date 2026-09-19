@@ -4,8 +4,8 @@ use super::{cylinder, lane, model_hole, native_history, profile_reference_plane_
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, HoleBottom, HoleKind, HolePlacement,
-    LinearTermination,
+    holes::{HoleBottom, HoleKind, HolePlacement},
+    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination,
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
@@ -69,7 +69,7 @@ fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -101,9 +101,13 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     let radius = cylinder_surface.radius();
     let mut origin = *origin;
     origin.z = 20.0;
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(origin, *axis, *ref_direction, radius)
-            .unwrap();
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let mut faces = [
         Face {
             id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
@@ -152,7 +156,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 points: &[],
             },
         ),
-        Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
+        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 10.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
@@ -171,7 +175,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 points: &[],
             },
         ),
-        Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
+        Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                 .unwrap(),
@@ -192,13 +196,13 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             },
         ),
         Some(vec![
-            cadmpeg_ir::features::HolePlacement::Axis {
+            cadmpeg_ir::features::holes::HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))
                     .unwrap(),
                 axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
                     .unwrap(),
             },
-            cadmpeg_ir::features::HolePlacement::Axis {
+            cadmpeg_ir::features::holes::HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 0.0, 0.0))
                     .unwrap(),
                 axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -226,9 +230,13 @@ fn generated_face_identities_resolve_primary_bore_axes() {
     let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 3.0;
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-            .unwrap();
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let faces = surfaces
         .iter()
         .enumerate()
@@ -338,9 +346,13 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         let ref_direction = cylinder_surface.ref_direction();
 
         let radius = 3.0;
-        *cylinder_surface =
-            cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-                .unwrap();
+        *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            *origin,
+            *axis,
+            *ref_direction,
+            radius,
+        )
+        .unwrap();
     }
     let faces = surfaces
         .iter()
@@ -377,7 +389,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     };
     let mut edited_construction = shape.construction().clone();
     let construction = &mut edited_construction;
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
@@ -391,7 +403,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, -1.0))
                 .unwrap(),
         });
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
         shape.diameter(),
@@ -409,7 +421,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     };
     let mut edited_construction = shape.construction().clone();
     let construction = &mut edited_construction;
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
@@ -417,7 +429,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
     };
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
         shape.diameter(),
@@ -481,9 +493,13 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     let ref_direction = cylinder_surface.ref_direction();
 
     let radius = 4.0;
-    *cylinder_surface =
-        cadmpeg_ir::geometry::CylinderSurface::try_new(*origin, *axis, *ref_direction, radius)
-            .unwrap();
+    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        *origin,
+        *axis,
+        *ref_direction,
+        radius,
+    )
+    .unwrap();
     let unmatched_topology = HoleTopology {
         surfaces: &unmatched_surfaces,
         faces: &faces,
@@ -528,7 +544,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -541,7 +557,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let cone = Surface {
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::ConeSurface::try_new(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 Point3::new(0.0, 0.0, -10.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -698,7 +714,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
     let mut edited_construction = shape.construction().clone();
     let construction = &mut edited_construction;
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
@@ -712,7 +728,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         depth_to_tip: false,
     });
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
         shape.diameter(),
@@ -740,7 +756,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let ratio = cone_surface.ratio();
 
     let half_angle = 0.5;
-    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         *origin,
         *axis,
         *ref_direction,
@@ -793,7 +809,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         });
     *diameter = None;
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         shape.construction().clone(),
         *shape.exit_kind(),
         edited_diameter,
@@ -843,7 +859,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     };
     let mut edited_construction = shape.construction().clone();
     let construction = &mut edited_construction;
-    let cadmpeg_ir::features::HoleConstruction::Form { kind, .. } = construction else {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } = construction else {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
@@ -860,7 +876,7 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         .get_or_insert_default()
         .push(placement(0.0, 30.0, x_axis));
 
-    *shape = cadmpeg_ir::features::HoleShape::new(
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
         *shape.exit_kind(),
         shape.diameter(),
@@ -947,7 +963,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     *origin,
                     *axis,
                     if axis.z.abs() == 1.0 {

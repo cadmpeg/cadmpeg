@@ -1164,7 +1164,7 @@ fn generated_projected_brep_c2_curve(
 }
 
 fn canonicalize_native_curve_knots(
-    curve: &mut cadmpeg_ir::geometry::NurbsCurve,
+    curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), CodecError> {
     let order = curve.degree() as usize + 1;
@@ -1180,7 +1180,7 @@ fn canonicalize_native_curve_knots(
 
 fn admit_pcurve<'a>(
     edge: &WritableEdge<'_>,
-    pcurve: &'a cadmpeg_ir::geometry::Pcurve,
+    pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
 ) -> Result<WritablePcurve<'a>, CodecError> {
     if pcurve.wrapper_reversed() == Some(true)
         || pcurve.native_tail_flags().is_some()
@@ -1198,7 +1198,7 @@ fn admit_pcurve<'a>(
     }
     let domain = edge.domain;
     let (payload, domain_extent_points) = match &pcurve.geometry {
-        cadmpeg_ir::geometry::PcurveGeometry::Line(line) => {
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin();
             let direction = line.direction();
             if !origin.u.is_finite()
@@ -1230,8 +1230,8 @@ fn admit_pcurve<'a>(
                 ],
             )
         }
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } => {
-            let curve = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
+            let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
@@ -1280,7 +1280,7 @@ fn admit_pcurve<'a>(
 /// `face_tolerance` is an admitted IR-stated tolerance from
 /// `stated_write_tolerance`.
 fn validate_nurbs_trim(
-    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     face_tolerance: f64,
     edge: &WritableEdge<'_>,
     sense: cadmpeg_ir::topology::Sense,
@@ -1340,7 +1340,7 @@ fn validate_nurbs_trim(
                 }),
         );
     }
-    if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
+    if let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {
         breaks.extend(
             nurbs
                 .knots()
@@ -1739,7 +1739,7 @@ fn check_frame(
 /// from this admission instead of narrowing the population again.
 fn check_nurbs_surface(
     id: &str,
-    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
 ) -> Result<i32, CodecError> {
     let u_order = surface.u_degree() as usize + 1;
     let v_order = surface.v_degree() as usize + 1;
@@ -1780,7 +1780,10 @@ fn check_nurbs_surface(
     Ok(pole_count)
 }
 
-fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Result<(), CodecError> {
+fn check_nurbs_curve(
+    id: &str,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Result<(), CodecError> {
     let order = curve.degree() as usize + 1;
     let count = curve.control_points().len();
     if i32::try_from(order).is_err() || i32::try_from(count).is_err() || order < 2 {
@@ -1946,12 +1949,12 @@ fn circle_payload(
     payload
 }
 
-fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Vec<u8> {
+fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve) -> Vec<u8> {
     nurbs_curve_payload_dimension(curve, 3)
 }
 
 fn nurbs_curve_payload_dimension(
-    curve: &cadmpeg_ir::geometry::NurbsCurve,
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     dimension: i32,
 ) -> Vec<u8> {
     let rational = i32::from(curve.weights().is_some());
@@ -2016,7 +2019,10 @@ fn plane_surface_payload(
 ///
 /// `pole_count` is the figure `check_nurbs_surface` proved when the surface
 /// was admitted; the population is never narrowed again here.
-fn nurbs_surface_payload(surface: &cadmpeg_ir::geometry::NurbsSurface, pole_count: i32) -> Vec<u8> {
+fn nurbs_surface_payload(
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    pole_count: i32,
+) -> Vec<u8> {
     let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [

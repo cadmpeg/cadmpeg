@@ -8,7 +8,8 @@ use crate::test_support::test_bytes::record;
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::extended_bspline_surface_stream;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 

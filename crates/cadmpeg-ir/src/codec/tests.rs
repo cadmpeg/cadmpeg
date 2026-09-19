@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
-use crate::report::{LossKind, LossNote, LossTaxonomy};
+use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
@@ -22,7 +22,7 @@ use cadmpeg_core::CodecError;
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
-        body: DecodeBody::new(crate::report::DecodeTransfer::full(true)),
+        body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
         source_fidelity: SourceFidelity::default(),
     }
 }
@@ -255,9 +255,10 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
 
 #[test]
 fn a_decode_result_keeps_the_body_it_was_given() {
-    let mut body = DecodeBody::new(crate::report::DecodeTransfer::full(false));
+    let mut body = DecodeBody::new(crate::report::decode::DecodeTransfer::full(false));
     body.notes.push("kept".into());
-    body.coverage.record(crate::CoverageKey::new("entities"), 3);
+    body.coverage
+        .record(crate::report::decode::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
         Decoded {
             ir: unit_cube().expect("valid unit cube fixture"),
@@ -280,9 +281,9 @@ fn dialect_layer(id: &'static str) -> DialectMatch {
 #[test]
 fn wrapper_stamps_request_scope_for_each_backend_transfer() {
     for transfer in [
-        crate::report::DecodeTransfer::ContainerOnly {},
-        crate::report::DecodeTransfer::full(false),
-        crate::report::DecodeTransfer::full(true),
+        crate::report::decode::DecodeTransfer::ContainerOnly {},
+        crate::report::decode::DecodeTransfer::full(false),
+        crate::report::decode::DecodeTransfer::full(true),
     ] {
         for container_only in [false, true] {
             let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));

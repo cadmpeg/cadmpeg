@@ -9,8 +9,8 @@ use crate::records::{
     },
 };
 use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PatternSeed,
-    PatternTransform,
+    patterns::{PatternSeed, PatternTransform},
+    BodySelection, FaceSelection, FeatureDefinition, FeatureOperation,
 };
 
 const EPS_SPACING: f64 = 1.0e-12;

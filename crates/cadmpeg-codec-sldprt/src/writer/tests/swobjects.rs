@@ -2,8 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -43,7 +43,10 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         &mut encoded,
     )
     .unwrap();
-    assert!(matches!(path, cadmpeg_ir::WritePath::Patched { .. }));
+    assert!(matches!(
+        path,
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -98,7 +101,7 @@ fn encoder_writes_source_less_ir() {
     // No retained source content reached the writer, so it authored every byte.
     assert!(matches!(
         report.write_path(),
-        cadmpeg_ir::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     let scan = container::scan_bytes(&encoded);
     assert_eq!(scan.blocks.len(), 1);

@@ -10,14 +10,14 @@
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
 use super::write;
 use crate::native::DocumentFacts;
 
-/// What resolving a [`cadmpeg_ir::codec::write::TargetRequest`] against the source decided.
+/// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
 ///
 /// This writer has one capability. It patches the retained
 /// `Document.xml` and regenerates none, so the only dialect it can deliver is

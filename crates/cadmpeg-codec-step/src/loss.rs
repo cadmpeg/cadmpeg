@@ -13,7 +13,10 @@
 //! leaves only the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `step` namespace.
 
-use cadmpeg_ir::report::{LossKind, LossNamespace, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNamespace, LossNote, LossTaxonomy},
+    Severity,
+};
 
 const NAMESPACE: LossNamespace<'static> = match LossNamespace::new("step") {
     Ok(namespace) => namespace,
@@ -849,7 +852,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{Severity, StrictConsequence};
+    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.

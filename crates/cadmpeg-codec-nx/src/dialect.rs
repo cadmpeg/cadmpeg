@@ -50,7 +50,7 @@
 use crate::container::Container;
 use crate::loss::NxLossCode;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-use cadmpeg_ir::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use std::collections::BTreeMap;
 

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+#![allow(clippy::unwrap_used)]
 
 use crate::math::{Point3, Vector3};
 use crate::{
     features::{
-        CompositePattern, FaceSelection, LinearPatternDirection, PatternKind, PatternScaleCenter,
-        PatternStage, PatternTransform,
+        patterns::{
+            CompositePattern, LinearPatternDirection, PatternKind, PatternScaleCenter,
+            PatternStage, PatternTransform,
+        },
+        FaceSelection,
     },
     scalar::{Angle, Length},
 };
@@ -19,7 +23,9 @@ fn linear<C>(count: u32) -> PatternTransform<C> {
     }
 }
 
-fn stage(transform: PatternTransform<crate::features::NoNestedComposite>) -> PatternStage {
+fn stage(
+    transform: PatternTransform<crate::features::patterns::NoNestedComposite>,
+) -> PatternStage {
     PatternStage {
         pattern: Box::new(PatternKind::new(transform).unwrap()),
     }
@@ -195,7 +201,7 @@ fn composite_pattern_admission_enforces_stage_structure_and_counts() {
     assert!(CompositePattern::new(vec![stage(linear(4)), stage(scale())]).is_ok());
     assert!(CompositePattern::new(vec![
         PatternStage {
-            pattern: Box::new(crate::features::StagePatternKind::UNRESOLVED)
+            pattern: Box::new(crate::features::patterns::StagePatternKind::UNRESOLVED)
         },
         stage(linear(2)),
     ])

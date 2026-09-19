@@ -40,7 +40,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let direction = normalize(direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(direction[0], direction[1], direction[2]),
                     )
@@ -68,7 +68,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 });
                 return Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                        cadmpeg_ir::geometry::LineCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                             Point3::new(origin[0], origin[1], origin[2]),
                             Vector3::new(axis[0], axis[1], axis[2]),
                         )
@@ -87,7 +87,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 let reference = normalize(cylinder.ref_direction)?;
                 return Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                        cadmpeg_ir::geometry::CircleCurve::try_new(
+                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                             Point3::new(center[0], center[1], center[2]),
                             Vector3::new(normal[0], normal[1], normal[2]),
                             Vector3::new(reference[0], reference[1], reference[2]),
@@ -103,7 +103,7 @@ pub(in super::super) fn carrier_intersection_curve(
             }))?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(normal[0], normal[1], normal[2]),
                         Vector3::new(projected_axis[0], projected_axis[1], projected_axis[2]),
@@ -142,7 +142,7 @@ pub(in super::super) fn carrier_intersection_curve(
             });
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(normal[0], normal[1], normal[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -176,7 +176,7 @@ pub(in super::super) fn carrier_intersection_curve(
                     }))?;
                     return Some((
                         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                            cadmpeg_ir::geometry::LineCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                                 Point3::new(apex[0], apex[1], apex[2]),
                                 Vector3::new(direction[0], direction[1], direction[2]),
                             )
@@ -208,7 +208,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 let (geometry, tag) = if circular_cone(cone) {
                     (
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                            cadmpeg_ir::geometry::CircleCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                                 Point3::new(center[0], center[1], center[2]),
                                 Vector3::new(normal[0], normal[1], normal[2]),
                                 Vector3::new(reference[0], reference[1], reference[2]),
@@ -221,7 +221,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 } else {
                     (
                         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                            cadmpeg_ir::geometry::EllipseCurve::try_new(
+                            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                                 Point3::new(center[0], center[1], center[2]),
                                 Vector3::new(normal[0], normal[1], normal[2]),
                                 Vector3::new(reference[0], reference[1], reference[2]),
@@ -257,7 +257,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(torus.ref_direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(normal[0], normal[1], normal[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -303,7 +303,7 @@ pub(in super::super) fn carrier_intersection_curve(
             });
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(origin[0], origin[1], origin[2]),
                         Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
                     )
@@ -337,7 +337,7 @@ pub(in super::super) fn carrier_intersection_curve(
             ));
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         reference,
@@ -365,7 +365,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(cylinder.ref_direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -407,7 +407,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(cylinder.ref_direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(torus.center[0], torus.center[1], torus.center[2]),
                         Vector3::new(cylinder_axis[0], cylinder_axis[1], cylinder_axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -462,7 +462,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(cone.ref_direction())?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -514,7 +514,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(torus.ref_direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
@@ -572,7 +572,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let reference = normalize(first.ref_direction)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::CircleCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),

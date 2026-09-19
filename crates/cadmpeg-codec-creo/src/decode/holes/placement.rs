@@ -241,7 +241,7 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(center[0], center[1], center[2]),
             Vector3::new(axis[0], axis[1], axis[2]),
             Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
@@ -263,7 +263,7 @@ impl TryFrom<HoleCylinder> for SurfaceGeometry {
     type Error = &'static str;
 
     fn try_from(cylinder: HoleCylinder) -> Result<Self, Self::Error> {
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             cylinder.origin,
             cylinder.axis,
             cylinder.ref_direction,

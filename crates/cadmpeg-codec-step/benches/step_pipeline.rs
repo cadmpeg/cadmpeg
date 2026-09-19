@@ -6,7 +6,7 @@ use std::io::Cursor;
 use std::time::{Duration, Instant};
 
 use cadmpeg_codec_step::{StepCodec, StepSchema};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PointId;

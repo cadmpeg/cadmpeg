@@ -13,7 +13,7 @@ use crate::hash::digest::Sha256Digest;
 use crate::ids::UnknownId;
 use crate::native::NativeConvertError;
 use crate::provenance::SourceOwner;
-use crate::report::DecodeReport;
+use crate::report::decode::DecodeReport;
 use crate::unknown::UnknownRecord;
 
 /// A decode report and source fidelity bound to exact CADIR bytes.
@@ -503,7 +503,7 @@ mod tests {
     use crate::document::CadIr;
     use crate::hash::digest::Sha256Digest;
     use crate::ids::UnknownId;
-    use crate::report::DecodeReport;
+    use crate::report::decode::DecodeReport;
     use crate::unknown::UnknownRecord;
 
     fn record(data: &[u8]) -> RetainedSourceRecord {
@@ -517,11 +517,11 @@ mod tests {
     fn report() -> DecodeReport {
         DecodeReport::unclassified(
             "test",
-            crate::report::DecodeTransfer::full(true),
+            crate::report::decode::DecodeTransfer::full(true),
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),
-            crate::report::TransferLedger::default(),
+            crate::report::decode::TransferLedger::default(),
         )
     }
 

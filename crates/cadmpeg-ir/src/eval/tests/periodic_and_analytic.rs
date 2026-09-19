@@ -1,18 +1,18 @@
 use crate::examples::unit_cube;
+use crate::geometry::sampled::PolylineSamples;
+use crate::geometry::sampled::PolylineVertex;
 use crate::geometry::CurveGeometry;
-use crate::geometry::PolylineSamples;
-use crate::geometry::PolylineVertex;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::SolvedSurfaceGeometry;
 use crate::geometry::SurfaceGeometry;
 use crate::math::Point3;
 use crate::math::Vector3;
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 
 #[test]
 fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::NurbsCurve::from_lanes(
+    let nurbs = crate::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 2.0, 2.0],
         vec![
@@ -133,8 +133,13 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let major = Vector3::new(1.0, 0.0, 0.0);
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-        crate::geometry::ParabolaCurve::try_new(Point3::new(0.0, 0.0, 0.0), axis, major, 2.0)
-            .unwrap(),
+        crate::geometry::analytic::ParabolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            axis,
+            major,
+            2.0,
+        )
+        .unwrap(),
     ));
     assert_eq!(
         crate::eval::curve_point(&parabola, 1.5),
@@ -142,8 +147,14 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
     );
 
     let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-        crate::geometry::HyperbolaCurve::try_new(Point3::new(1.0, 2.0, 3.0), axis, major, 2.0, 3.0)
-            .unwrap(),
+        crate::geometry::analytic::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            axis,
+            major,
+            2.0,
+            3.0,
+        )
+        .unwrap(),
     ));
     let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
     assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
@@ -161,7 +172,7 @@ fn transformed_carriers_preserve_basis_parameters() {
     .expect("affine transform");
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
         basis: Box::new(SolvedCurveGeometry::Line(
-            crate::geometry::LineCurve::try_new(
+            crate::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -176,7 +187,7 @@ fn transformed_carriers_preserve_basis_parameters() {
 
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
         basis: Box::new(SolvedSurfaceGeometry::Plane(
-            crate::geometry::PlaneSurface::try_new(
+            crate::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -194,7 +205,7 @@ fn transformed_carriers_preserve_basis_parameters() {
 #[test]
 fn polyline_carriers_evaluate_in_both_parameter_directions() {
     let increasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-        crate::geometry::PolylineCurve::new(
+        crate::geometry::sampled::PolylineCurve::new(
             PolylineSamples::Parameterized {
                 vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
                     .into_iter()
@@ -214,7 +225,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
     );
 
     let decreasing = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-        crate::geometry::PolylineCurve::new(
+        crate::geometry::sampled::PolylineCurve::new(
             PolylineSamples::Parameterized {
                 vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]
                     .into_iter()

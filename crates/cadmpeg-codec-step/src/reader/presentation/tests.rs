@@ -523,7 +523,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#7")
     }));
 }

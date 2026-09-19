@@ -250,7 +250,7 @@ pub(super) fn project(
                     raw_start_parameter
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::EllipseCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                         plane_origin,
                         axis,
                         major_direction,
@@ -311,7 +311,7 @@ pub(super) fn project(
                     end_parameter = parameter(end, axis);
                 }
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                    cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                         plane_origin,
                         axis,
                         major_direction,
@@ -351,7 +351,7 @@ pub(super) fn project(
                 end_parameter = parameter(end, axis);
             }
             let Some(payload) = admit(
-                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     plane_origin,
                     axis,
                     major_direction,
@@ -389,7 +389,7 @@ pub(super) fn project(
                 end_parameter = parameter(end, axis);
             }
             let Some(payload) = admit(
-                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     plane_origin,
                     axis,
                     major_direction,

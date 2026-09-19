@@ -23,7 +23,7 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::codec::write::TargetRequest;
+    use cadmpeg_ir::codec::write::target::TargetRequest;
     use cadmpeg_ir::codec::FormatId;
 
     use super::build_encoder;

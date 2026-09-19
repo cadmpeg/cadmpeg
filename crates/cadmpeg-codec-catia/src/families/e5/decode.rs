@@ -4,10 +4,11 @@
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve,
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    NurbsCurve, Pcurve, PcurveGeometry, PcurveNurbs, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface,
-    SurfaceCurveFamily, SurfaceGeometry,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -283,11 +284,11 @@ pub(crate) fn try_decode_e5(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-            coverage: cadmpeg_ir::Coverage::default(),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         annotations,
         unknowns,
@@ -440,7 +441,7 @@ pub(crate) fn append_e5_planes(
         ) else {
             continue;
         };
-        let Ok(payload) = cadmpeg_ir::geometry::PlaneSurface::try_new(
+        let Ok(payload) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
             normal,
             u_axis,
@@ -1797,8 +1798,12 @@ fn emit_e5_pcurves(
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
-            metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some(*range), None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                None,
+                Some(*range),
+                None,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         });
     }
     Ok(())
@@ -2184,7 +2189,7 @@ pub(crate) fn e5_pcurve_on_surface(
             }
             Some((
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(origin, direction).ok()?,
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).ok()?,
                 ),
                 *range,
                 endpoints,
@@ -2400,7 +2405,7 @@ pub(crate) fn e5_boundary_curve(
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,
                     *normal,
                     u_axis.scale(uv_scale[0]),
@@ -2574,8 +2579,13 @@ pub(crate) fn e5_boundary_curve(
         };
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-                    .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    center,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .ok()?,
             )),
             *curve_range,
         ));
@@ -2602,7 +2612,7 @@ pub(crate) fn e5_boundary_curve(
     let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
     direction.is_finite().then_some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(endpoints[0], direction).ok()?,
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(endpoints[0], direction).ok()?,
         )),
         [0.0, length],
     ))
@@ -3064,8 +3074,9 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsSurface, PcurveGeometry, PcurveNurbs, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
+        nurbs::NurbsSurface,
+        pcurve::{PcurveGeometry, PcurveNurbs},
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -3299,7 +3310,7 @@ mod route_tests {
             pos: 0,
             record_id: 100,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     normal,
                     u_axis,
@@ -3337,7 +3348,7 @@ mod route_tests {
                 range: [0.0, 1.0],
             },
             &PcurveGeometry::Line(
-                cadmpeg_ir::geometry::LinePcurve::try_new(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(0.0, 0.0),
                     Point2::new(-1.0, 0.0),
                 )
@@ -3434,7 +3445,7 @@ mod route_tests {
             pos: 0,
             record_id: 100,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -3542,7 +3553,7 @@ mod route_tests {
             pos: 0,
             record_id: 100,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -3614,7 +3625,7 @@ mod route_tests {
             pos: 0,
             record_id: 100,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -3816,7 +3827,7 @@ mod route_tests {
             pos: 0,
             record_id: 100,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -3966,7 +3977,7 @@ mod route_tests {
     #[test]
     fn e5_cylinder_isoparametric_boundary_lifts_to_circle_carrier() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -3975,7 +3986,7 @@ mod route_tests {
             .expect("valid CylinderSurface fixture"),
         ));
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(0.0, 3.0),
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             )
@@ -4014,7 +4025,7 @@ mod route_tests {
     #[test]
     fn e5_nearly_isoparametric_boundary_lifts_to_circle_carrier() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4024,7 +4035,7 @@ mod route_tests {
         ));
         let transverse_noise = f64::EPSILON;
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(0.0, 3.0),
                 Point2::new(1.0, transverse_noise),
             )
@@ -4054,7 +4065,7 @@ mod route_tests {
     #[test]
     fn e5_boundary_classification_is_scale_independent() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4069,8 +4080,11 @@ mod route_tests {
             Some(super::E5IsoparametricDirection::ConstantV)
         ));
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 3.0), Point2::new(1.0, 0.0))
-                .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 3.0),
+                Point2::new(1.0, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -4096,7 +4110,7 @@ mod route_tests {
         );
 
         let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4104,8 +4118,11 @@ mod route_tests {
             .expect("valid PlaneSurface fixture"),
         ));
         let plane_pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
         );
         let plane_native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
@@ -4134,7 +4151,7 @@ mod route_tests {
     #[test]
     fn e5_boundary_line_rejects_overflowing_uv_start() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4148,7 +4165,7 @@ mod route_tests {
             range: [1.0, 2.0],
         };
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 Point2::new(f64::MAX, 0.0),
                 Point2::new(f64::MAX, 0.0),
             )
@@ -4169,7 +4186,7 @@ mod route_tests {
     #[test]
     fn e5_boundary_circle_rejects_nonfinite_radius() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4185,8 +4202,11 @@ mod route_tests {
             tail: [0.0, 0.0],
         };
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
         );
         assert!(e5_boundary_curve(
             &surface,
@@ -4203,7 +4223,7 @@ mod route_tests {
     #[test]
     fn e5_boundary_line_normalizes_subnormal_chord() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4218,8 +4238,11 @@ mod route_tests {
             range: [0.0, 1.0],
         };
         let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-                .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .expect("valid LinePcurve fixture"),
         );
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -4244,7 +4267,7 @@ mod route_tests {
     #[test]
     fn e5_plane_circle_boundary_lifts_to_world_circle_carrier() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4321,7 +4344,7 @@ mod route_tests {
     #[test]
     fn e5_plane_jet_boundary_lifts_control_net_affinely() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4378,7 +4401,7 @@ mod route_tests {
     fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
         let large = f64::MAX * 0.75;
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(large, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4418,7 +4441,7 @@ mod route_tests {
     #[test]
     fn e5_intersection_requires_equivalent_two_sided_carriers() {
         let left = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4427,7 +4450,7 @@ mod route_tests {
             .expect("valid CircleCurve fixture"),
         ));
         let right = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4437,7 +4460,7 @@ mod route_tests {
         ));
         assert!(equivalent_e5_curve_carriers(&left, &right));
         let reversed_axis = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, -1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4447,7 +4470,7 @@ mod route_tests {
         ));
         assert!(!equivalent_e5_curve_carriers(&left, &reversed_axis));
         let shifted_reference = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(0.0, 1.0, 0.0),
@@ -4469,7 +4492,7 @@ mod route_tests {
             [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2],
         ));
         let displaced = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 2.0, 3.01),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4480,14 +4503,14 @@ mod route_tests {
         assert!(!equivalent_e5_curve_carriers(&left, &displaced));
 
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("valid LineCurve fixture"),
         ));
         let parallel_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -4495,7 +4518,7 @@ mod route_tests {
         ));
         assert!(equivalent_e5_curve_carriers(&line, &parallel_line));
         let reversed_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(-1.0, 0.0, 0.0),
             )
@@ -4510,7 +4533,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4559,9 +4582,17 @@ mod route_tests {
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                             vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -4610,7 +4641,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::ConeSurface::try_new(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4681,7 +4712,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4708,7 +4739,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4737,7 +4768,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4764,7 +4795,7 @@ mod route_tests {
     #[test]
     fn e5_boundary_circle_rejects_nonfinite_center() {
         let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -4808,7 +4839,7 @@ mod route_tests {
             pos: 0,
             record_id: 7,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -4858,7 +4889,7 @@ mod route_tests {
             (
                 SurfaceId::mint("catia:test:surface#left".to_string()).expect("identity grammar"),
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(0.0, 0.0),
                         Point2::new(1.0, 0.0),
                     )
@@ -4869,7 +4900,7 @@ mod route_tests {
             (
                 SurfaceId::mint("catia:test:surface#right".to_string()).expect("identity grammar"),
                 PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         Point2::new(0.0, 1.0),
                         Point2::new(1.0, 0.0),
                     )

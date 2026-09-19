@@ -11,12 +11,12 @@ use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
 };
-use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
+use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::index::identity_hash;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
-use crate::report::{LossNote, TransferLedger};
+use crate::report::{decode::TransferLedger, loss::LossNote};
 use crate::schema::{EntityKind, EntitySchema};
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
@@ -445,7 +445,7 @@ impl ModelDraft<DraftAccounting> {
     /// Plain drafts have no accounting mutation route:
     ///
     /// ```compile_fail
-    /// fn stage(draft: &mut cadmpeg_ir::draft::ModelDraft, note: cadmpeg_ir::report::LossNote) {
+    /// fn stage(draft: &mut cadmpeg_ir::draft::ModelDraft, note: cadmpeg_ir::report::loss::LossNote) {
     ///     draft.note(note);
     /// }
     /// ```
@@ -653,7 +653,7 @@ mod tests {
     use crate::ids::PointId;
     use crate::math::Point3;
     use crate::native::NativeRecord;
-    use crate::report::TransferLedger;
+    use crate::report::decode::TransferLedger;
     use crate::topology::{Point, Vertex};
 
     fn point(id: &str) -> Point {

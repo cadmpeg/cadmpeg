@@ -4,11 +4,11 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use cadmpeg_core::decode::View;
 
@@ -983,17 +983,17 @@ pub(crate) fn scan_surface_carriers(
             continue;
         }
         let nurbs = match NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,
                 u_knots,
                 descriptor.u_periodic,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.v_degree,
                 v_knots,
                 descriptor.v_periodic,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 points
                     .chunks(descriptor.v_count as u32 as usize)
                     .map(<[_]>::to_vec)

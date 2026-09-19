@@ -14,7 +14,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
-use cadmpeg_ir::WritePath;
+use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };

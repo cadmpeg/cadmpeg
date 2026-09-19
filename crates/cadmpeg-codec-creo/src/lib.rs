@@ -33,7 +33,7 @@
 //! ```
 //!
 //! Use [`cadmpeg_ir::Codec::decode`] for a [`cadmpeg_ir::document::CadIr`] document and
-//! its [`cadmpeg_ir::report::DecodeReport`].
+//! its [`cadmpeg_ir::report::decode::DecodeReport`].
 //!
 //! # Format model
 //!

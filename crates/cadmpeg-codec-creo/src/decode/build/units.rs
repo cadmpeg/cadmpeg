@@ -758,7 +758,7 @@ fn scale_feature_operation(
                 scale_hole_kind(exit_kind, scale)?;
             }
             scale_optional_positive_length(&mut diameter, scale)?;
-            *shape = cadmpeg_ir::features::HoleShape::new(construction, exit_kind, diameter)
+            *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
                 .map_err(CodecError::malformed)?;
             if let Some(extent) = extent {
                 scale_linear_termination(extent, scale)?;
@@ -1089,10 +1089,10 @@ fn scale_sheet_metal_hem_form(
 }
 
 fn scale_radius_spec(
-    radius: &mut cadmpeg_ir::features::RadiusSpec,
+    radius: &mut cadmpeg_ir::features::edge_treatments::RadiusSpec,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::RadiusSpec;
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 
     match radius {
         RadiusSpec::Constant { radius }
@@ -1111,7 +1111,7 @@ fn scale_radius_spec(
             for point in &mut scaled {
                 scale_length(&mut point.radius, scale)?;
             }
-            *points = cadmpeg_ir::features::VariableRadii::new(scaled)
+            *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(scaled)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         RadiusSpec::Unresolved { .. } => {}
@@ -1120,10 +1120,10 @@ fn scale_radius_spec(
 }
 
 fn scale_chamfer_spec(
-    spec: &mut cadmpeg_ir::features::ChamferSpec,
+    spec: &mut cadmpeg_ir::features::edge_treatments::ChamferSpec,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::ChamferSpec;
+    use cadmpeg_ir::features::edge_treatments::ChamferSpec;
 
     match spec {
         ChamferSpec::Distance { distance } | ChamferSpec::DistanceAngle { distance, .. } => {
@@ -1133,7 +1133,7 @@ fn scale_chamfer_spec(
             scale_positive_length(first, scale)?;
             scale_positive_length(second, scale)?;
         }
-        cadmpeg_ir::features::ChamferSpec::Unresolved { .. } => {}
+        cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved { .. } => {}
     }
     Ok(())
 }
@@ -1183,22 +1183,22 @@ fn scale_flex_mode(
 }
 
 fn scale_hole_placement(
-    placement: &mut cadmpeg_ir::features::HolePlacement,
+    placement: &mut cadmpeg_ir::features::holes::HolePlacement,
     scale: f64,
 ) -> Result<(), CodecError> {
     match placement {
-        cadmpeg_ir::features::HolePlacement::Directed { position, .. }
-        | cadmpeg_ir::features::HolePlacement::Axis {
+        cadmpeg_ir::features::holes::HolePlacement::Directed { position, .. }
+        | cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: position, ..
         } => scale_finite_point3(position, scale),
     }
 }
 
 fn scale_hole_kind(
-    kind: &mut cadmpeg_ir::features::HoleKind,
+    kind: &mut cadmpeg_ir::features::holes::HoleKind,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::HoleKind;
+    use cadmpeg_ir::features::holes::HoleKind;
 
     match kind {
         HoleKind::Unresolved(_) => {}
@@ -1232,8 +1232,9 @@ fn scale_hole_kind(
             let mut entry_diameter = diameters.entry_diameter();
             scale_positive_length(&mut diameter, scale)?;
             scale_optional_positive_length(&mut entry_diameter, scale)?;
-            *diameters = cadmpeg_ir::features::CounterdrillDiameters::new(diameter, entry_diameter)
-                .map_err(CodecError::malformed)?;
+            *diameters =
+                cadmpeg_ir::features::holes::CounterdrillDiameters::new(diameter, entry_diameter)
+                    .map_err(CodecError::malformed)?;
             scale_positive_length(depth, scale)?;
         }
         HoleKind::Simple | HoleKind::SimpleDrilled { .. } => {}
@@ -1242,11 +1243,11 @@ fn scale_hole_kind(
 }
 
 fn scale_hole_construction(
-    construction: &mut cadmpeg_ir::features::HoleConstruction,
+    construction: &mut cadmpeg_ir::features::holes::HoleConstruction,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match construction {
-        cadmpeg_ir::features::HoleConstruction::Form {
+        cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind,
             specification,
         } => {
@@ -1255,7 +1256,7 @@ fn scale_hole_construction(
                 scale_hole_specification(specification, scale)?;
             }
         }
-        cadmpeg_ir::features::HoleConstruction::NativeThread {
+        cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
             major_diameter,
             thread_depth,
             pitch,
@@ -1270,14 +1271,14 @@ fn scale_hole_construction(
 }
 
 fn scale_hole_specification(
-    specification: &mut cadmpeg_ir::features::HoleSpecification,
+    specification: &mut cadmpeg_ir::features::holes::HoleSpecification,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let (pitch, major_diameter, clearance, depth) = match specification {
-        cadmpeg_ir::features::HoleSpecification::Clearance {
+        cadmpeg_ir::features::holes::HoleSpecification::Clearance {
             clearance, depth, ..
         } => (None, None, clearance, depth),
-        cadmpeg_ir::features::HoleSpecification::Threaded {
+        cadmpeg_ir::features::holes::HoleSpecification::Threaded {
             pitch,
             major_diameter,
             clearance,
@@ -1292,17 +1293,17 @@ fn scale_hole_specification(
         scale_optional_positive_length(major_diameter, scale)?;
     }
     scale_optional_length(clearance, scale)?;
-    if let cadmpeg_ir::features::HoleThreadDepth::Blind { depth } = depth {
+    if let cadmpeg_ir::features::holes::HoleThreadDepth::Blind { depth } = depth {
         scale_positive_length(depth, scale)?;
     }
     Ok(())
 }
 
-fn scale_pattern_kind<C: cadmpeg_ir::features::CompositeStages + Clone>(
-    pattern: &mut cadmpeg_ir::features::PatternKind<C>,
+fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone>(
+    pattern: &mut cadmpeg_ir::features::patterns::PatternKind<C>,
     scale: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::PatternTransform;
+    use cadmpeg_ir::features::patterns::PatternTransform;
 
     let mut transform = pattern.definition().clone();
     match &mut transform {
@@ -1332,14 +1333,14 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::CompositeStages + Clone>(
                 C::rebuild(scaled).map_err(|message| CodecError::Malformed(message.into()))?;
         }
         PatternTransform::Scale { center, .. } => {
-            if let cadmpeg_ir::features::PatternScaleCenter::Point(point) = center {
+            if let cadmpeg_ir::features::patterns::PatternScaleCenter::Point(point) = center {
                 scale_point3(point, scale);
             }
         }
-        cadmpeg_ir::features::PatternTransform::Unresolved { .. }
+        cadmpeg_ir::features::patterns::PatternTransform::Unresolved { .. }
         | PatternTransform::MirrorReference { .. } => {}
     }
-    *pattern = cadmpeg_ir::features::PatternKind::new(transform)
+    *pattern = cadmpeg_ir::features::patterns::PatternKind::new(transform)
         .map_err(|message| CodecError::Malformed(message.into()))?;
     Ok(())
 }
@@ -1353,7 +1354,7 @@ fn scale_surface_geometry(
             let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(
+            *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *normal,
                 *u_axis,
@@ -1365,7 +1366,7 @@ fn scale_surface_geometry(
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius();
-            *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
+            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
@@ -1380,7 +1381,7 @@ fn scale_surface_geometry(
             let radius = cone_surface.radius();
             let ratio = cone_surface.ratio();
             let half_angle = cone_surface.half_angle();
-            *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
                 *ref_direction,
@@ -1395,7 +1396,7 @@ fn scale_surface_geometry(
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius();
-            *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
+            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
@@ -1409,7 +1410,7 @@ fn scale_surface_geometry(
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
-            *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
+            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
@@ -1461,7 +1462,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin();
             let direction = line_curve.direction();
-            *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *direction,
             )
@@ -1472,7 +1473,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius();
-            *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *ref_direction,
@@ -1486,7 +1487,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
-            *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
+            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
@@ -1500,7 +1501,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
-            *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
+            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 Point3::new(vertex.x * scale, vertex.y * scale, vertex.z * scale),
                 *axis,
                 *major_direction,
@@ -1514,7 +1515,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             let major_direction = hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
-            *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
                 *major_direction,
@@ -1525,11 +1526,9 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let point = degenerate_curve.point();
-            *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(Point3::new(
-                point.x * scale,
-                point.y * scale,
-                point.z * scale,
-            ))
+            *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
+                Point3::new(point.x * scale, point.y * scale, point.z * scale),
+            )
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Nurbs(curve) => {
@@ -1957,7 +1956,7 @@ mod tests {
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::ParameterValue;
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -1969,9 +1968,10 @@ mod tests {
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
 
     use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternScaleCenter, PatternTransform},
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceMotion, Feature,
-        FeatureDefinition, FeatureOperation, FuzzyTolerance, LinearTermination, PatternKind,
-        PatternScaleCenter, PatternTransform, PlanarProfileRef, ProfileRef,
+        FeatureDefinition, FeatureOperation, FuzzyTolerance, LinearTermination, PlanarProfileRef,
+        ProfileRef,
     };
 
     /// The length scale and the transform both come from the file, so a scale
@@ -2099,7 +2099,7 @@ mod tests {
     fn rejects_nurbs_unit_overflow_without_committing_nonfinite_poles() {
         let curve_id = cadmpeg_ir::ids::CurveId::mint("test:model:entity#overflow-curve")
             .expect("identity grammar");
-        let curve = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
@@ -2167,13 +2167,14 @@ mod tests {
 
     #[test]
     fn scales_explicit_pattern_scale_center() {
-        let mut pattern =
-            PatternKind::<cadmpeg_ir::features::CompositePattern>::new(PatternTransform::Scale {
+        let mut pattern = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+            PatternTransform::Scale {
                 center: PatternScaleCenter::Point(Point3::new(1.0, 2.0, 3.0)),
                 final_factor: 2.0,
                 count: 3,
-            })
-            .expect("valid test fixture");
+            },
+        )
+        .expect("valid test fixture");
         scale_pattern_kind(&mut pattern, 25.4).expect("valid test fixture");
         let PatternTransform::Scale {
             center,
@@ -2350,8 +2351,11 @@ mod tests {
     #[test]
     fn scales_pcurve_coordinates_per_surface_axis() {
         let mut geometry = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(1.0, 2.0), Point2::new(3.0, 4.0))
-                .expect("valid LinePcurve fixture"),
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(1.0, 2.0),
+                Point2::new(3.0, 4.0),
+            )
+            .expect("valid LinePcurve fixture"),
         );
 
         assert!(geometry.try_scale_coordinates([25.4, 1.0]).is_ok());
@@ -2367,7 +2371,7 @@ mod tests {
     #[test]
     fn scales_analytic_surface_and_curve_without_scaling_directions() {
         let mut surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -2376,7 +2380,7 @@ mod tests {
             .expect("valid CylinderSurface fixture"),
         ));
         let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::CircleCurve::try_new(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(2.0, 3.0, 4.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),

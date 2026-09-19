@@ -9,7 +9,7 @@ use crate::nurbs::proc_curve::{
 };
 use crate::sab::{Record, Token};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};

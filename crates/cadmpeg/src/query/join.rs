@@ -18,7 +18,7 @@ use super::output::OutputArgs;
 
 /// How to emit matching rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum)]
-pub enum JoinMode {
+enum JoinMode {
     /// Inner join: one row per matching pair (one-to-many is pair rows).
     #[default]
     Matched,
@@ -30,36 +30,36 @@ pub enum JoinMode {
 
 /// Input selection for `query join`.
 #[derive(Debug, Args)]
-pub struct JoinArgs {
+pub(crate) struct JoinArgs {
     /// JSON file, or `-` for standard input.
-    pub file: PathBuf,
+    file: PathBuf,
     /// Left arena (`model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>`). Same dotted names as `query counts --json`.
-    pub left_arena: String,
+    left_arena: String,
     /// Right arena. Same spelling as the left arena.
-    pub right_arena: String,
+    right_arena: String,
     /// Dotted path in each left record. Required; there is no default.
     #[arg(long, required = true, value_name = "PATH")]
-    pub left_key: String,
+    left_key: String,
     /// Dotted path in each right record. Required; there is no default.
     #[arg(long, required = true, value_name = "PATH")]
-    pub right_key: String,
+    right_key: String,
     /// `matched` (default) is an inner join. `unmatched` is a left
     /// anti-join. `all` keeps every left record with matching rights as an
     /// array.
     #[arg(long, value_enum, default_value_t = JoinMode::Matched)]
-    pub mode: JoinMode,
+    mode: JoinMode,
     /// Join against this second CADIR document. Matching is by key value
     /// only; local ids are not unique across files.
     #[arg(long, value_name = "FILE")]
-    pub right_file: Option<PathBuf>,
+    right_file: Option<PathBuf>,
     /// Print the first N output rows (left arena order, then right arena
     /// order).
     #[arg(long, value_name = "N")]
-    pub head: Option<usize>,
+    head: Option<usize>,
     /// Record output selection.
     #[command(flatten)]
-    pub(crate) output: OutputArgs,
+    output: OutputArgs,
 }
 
 struct JoinSpec<'a> {
@@ -74,7 +74,7 @@ struct JoinSpec<'a> {
 }
 
 /// Runs `query join` against one or two CADIR documents.
-pub fn run(args: &JoinArgs) -> Result<()> {
+pub(super) fn run(args: &JoinArgs) -> Result<()> {
     let output = args.output.mode();
     let left_doc = CadirDocument::load(&args.file, "join")?;
     let left_target = ArenaTarget::parse(&args.left_arena)?;
@@ -235,7 +235,7 @@ fn attach_files(map: &mut Map<String, Value>, spec: &JoinSpec<'_>) {
 /// Canonical compare strings for a key path. Missing, null, and object
 /// values contribute nothing. An array fans out: string elements are keys,
 /// and objects continue the remaining path (`pcurves.pcurve`).
-pub(crate) fn key_values(record: &Value, path: &str) -> Vec<String> {
+fn key_values(record: &Value, path: &str) -> Vec<String> {
     let mut keys = Vec::new();
     let mut seen = BTreeSet::new();
     collect_keys(record, path, &mut keys, &mut seen);

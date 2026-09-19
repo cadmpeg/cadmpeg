@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 

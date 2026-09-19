@@ -2,7 +2,8 @@
 //! Revolution, meridian, and ruled pcurve geometry.
 
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point2;
 
@@ -227,7 +228,7 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
     let orientation = radius_sign * dot(conic_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= EPS_ORTHO).then_some(())?;
     Some(PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(phase, v),
             Point2::new(orientation.signum(), 0.0),
         )
@@ -330,7 +331,7 @@ pub(in crate::decode) fn meridian_circle_pcurve(
     let orientation = dot(circle_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= EPS_ORTHO).then_some(())?;
     Some(PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(u, phase),
             Point2::new(0.0, orientation.signum()),
         )
@@ -434,7 +435,7 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
         && dot(residual, residual).sqrt() <= EPS_ORTHO * direction_length)
         .then_some(())?;
     Some(PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(u, v),
             Point2::new(0.0, parameter_scale),
         )

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
+    pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{
@@ -914,7 +914,7 @@ pub(crate) fn try_decode_zero_entity(
     };
 
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
-    let mut coverage: cadmpeg_ir::Coverage = [
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = [
         (
             crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
             transferred_support_curves,
@@ -1011,11 +1011,11 @@ pub(crate) fn try_decode_zero_entity(
     Some(FamilyOutput {
         ir,
         report: DecodeBody {
-            transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             coverage,
             losses: vec![topology_loss.note(topology_message)],
             notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         annotations: annotations.build(),
         unknowns,
@@ -1029,7 +1029,7 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, NurbsCurve, ProceduralCurve, SolvedCurveGeometry,
+        nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::ids::CurveId;
@@ -1092,8 +1092,11 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(corner, Vector3::new(-1.0, 0.0, 0.0))
-                    .expect("valid LineCurve fixture"),
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    corner,
+                    Vector3::new(-1.0, 0.0, 0.0),
+                )
+                .expect("valid LineCurve fixture"),
             )),
             source_object: None,
         });
@@ -1179,7 +1182,7 @@ mod tests {
             ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("catia:test:curve#{index}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::LineCurve::try_new(origin, direction)
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction)
                         .expect("valid LineCurve fixture"),
                 )),
                 source_object: None,
@@ -1341,7 +1344,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:circle#0".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1354,7 +1357,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("catia:test:line#1".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     corner,
                     first.vector_from(corner).scale(1.0 / chord),
                 )

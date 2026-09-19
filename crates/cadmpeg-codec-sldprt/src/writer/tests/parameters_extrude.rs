@@ -1237,7 +1237,10 @@ fn semantic_writer_round_trips_extrusion_to_face() {
 
 #[test]
 fn semantic_writer_retains_unresolved_native_edge_treatments() {
-    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, FeatureOperation, RadiusSpec};
+    use cadmpeg_ir::features::{
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        FeatureDefinition, FeatureOperation,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1262,8 +1265,8 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Constant) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
             ..
         }])
     ));
@@ -1272,8 +1275,8 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
-            spec: ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::ChamferForm::Distance) },
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
+            spec: ChamferSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance) },
             ..
         }])
     ));
@@ -1332,9 +1335,9 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         decoded.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: cadmpeg_ir::features::EdgeSelection::Native(selection),
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
             ..
@@ -1350,7 +1353,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
             else {
                 panic!("typed fillet feature");
             };
-            groups[0].radius = cadmpeg_ir::features::RadiusSpec::Constant {
+            groups[0].radius = cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
             };
             groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
@@ -1379,8 +1382,8 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
         regenerated.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius: actual_radius,
             },
             ..
@@ -1392,8 +1395,8 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
 fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimensions() {
     use cadmpeg_ir::{
         features::{
-            ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue,
-            RadiusSpec,
+            edge_treatments::{ChamferSpec, RadiusSpec},
+            EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue,
         },
         scalar::Length,
     };
@@ -1424,7 +1427,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Constant {
                 radius: actual_radius
@@ -1436,7 +1439,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
@@ -1494,7 +1497,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             },
@@ -1506,7 +1509,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
                 angle,
@@ -1520,7 +1523,8 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 fn semantic_writer_round_trips_variable_radius_fillet() {
     use cadmpeg_ir::{
         features::{
-            EdgeSelection, FeatureDefinition, FeatureOperation, RadiusSpec, VariableRadius,
+            edge_treatments::{RadiusSpec, VariableRadius},
+            EdgeSelection, FeatureDefinition, FeatureOperation,
         },
         scalar::Length,
     };
@@ -1539,7 +1543,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
         }] if points.as_slice() == [
@@ -1563,7 +1567,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         let mut samples = points.as_slice().to_vec();
         samples[1].parameter = 0.4;
         samples[1].radius = Length::new(5.0).unwrap();
-        *points = cadmpeg_ir::features::VariableRadii::new(samples).unwrap();
+        *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
@@ -1620,7 +1624,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
 
 #[test]
 fn semantic_writer_round_trips_all_typed_chamfer_forms() {
-    use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{
+        edge_treatments::ChamferSpec, EdgeSelection, FeatureDefinition, FeatureOperation,
+    };
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1641,7 +1647,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             edges: EdgeSelection::Native(edges),
             spec: ChamferSpec::Distance {
                 distance: actual_distance,
@@ -1654,7 +1660,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             spec: ChamferSpec::TwoDistances {
                 first: actual_first,
                 second: actual_second,
@@ -1667,7 +1673,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups,
             ..
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::ChamferGroup {
             spec: ChamferSpec::DistanceAngle {
                 distance: actual_distance,
                 angle,

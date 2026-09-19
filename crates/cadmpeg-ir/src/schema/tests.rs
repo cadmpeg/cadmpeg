@@ -4,7 +4,7 @@
 #[cfg(feature = "schema")]
 use crate::examples::unit_cube;
 use crate::products::{ProductDefinition, ProductDefinitionKind};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
@@ -47,8 +47,9 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 #[test]
 fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::features::{
+        edge_treatments::{FilletGroup, RadiusSpec},
         EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation, FilletGroup, RadiusSpec,
+        FeatureOperation,
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;

@@ -12,8 +12,8 @@
 )]
 use cadmpeg_ir::geometry::CurveGeometry;
 
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::TargetRequest;
 use std::io::{Cursor, Read};
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -47,7 +47,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             cadmpeg_ir::math::Point3::new(3.0, -6.0, 9.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -74,7 +74,7 @@ fn generated_source_less_face_writes_signed_torus_surface_carrier() {
 
 #[test]
 fn generated_source_less_face_writes_nurbs_surface_carrier() {
-    use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -85,9 +85,13 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![-1.0, -1.0, 2.0, 2.0], true),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-1.0, -1.0, 2.0, 2.0], true),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![-2.0, -2.0, 3.0, 3.0],
+                false,
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
@@ -125,7 +129,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
 
 #[test]
 fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
-    use cadmpeg_ir::geometry::{NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
 
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
@@ -136,9 +140,9 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected = SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -177,7 +181,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
 
 #[test]
 fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::CurveId;
 
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
@@ -298,7 +302,7 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
 
 #[test]
 fn generated_source_less_face_lowers_line_pcurve_exactly() {
-    use cadmpeg_ir::geometry::PcurveGeometry;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh());
@@ -310,10 +314,14 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let pcurve = &mut source_less.model.pcurves[0];
     pcurve.geometry = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(2.0, -1.0), Point2::new(0.5, 2.0))
-            .unwrap(),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(2.0, -1.0),
+            Point2::new(0.5, 2.0),
+        )
+        .unwrap(),
     );
-    let cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } = &mut pcurve.metadata
+    let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
+        &mut pcurve.metadata
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
@@ -334,7 +342,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     assert_eq!(
         round_trip.ir().model.pcurves[0].geometry,
         PcurveGeometry::Nurbs {
-            nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
                 vec![-2.0, -2.0, 3.0, 3.0],
                 vec![Point2::new(1.0, -5.0), Point2::new(3.5, 5.0)],
@@ -358,7 +366,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let expected = source_less.model.pcurves[0].clone();
     assert!(matches!(
         &expected.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { nurbs }
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
             if nurbs.weights() == Some(vec![1.0, 0.5])
     ));
 
@@ -394,7 +402,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -405,7 +413,7 @@ fn generated_source_less_two_faces_preserve_shared_radial_edge() {
     source_less.model.surfaces[1].geometry = SurfaceGeometry::Solved(expected_surface.clone());
     let curve_id = CurveId::mint("generated:test:shared_line#0").expect("identity grammar");
     let expected_curve = SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         )
@@ -573,8 +581,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
 #[test]
 fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
     use cadmpeg_ir::geometry::{
-        Curve, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
-        SurfaceGeometry,
+        nurbs::{NurbsCurve, NurbsSurface},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, PcurveId};
 
@@ -599,9 +607,9 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 
     let expected_surface = SolvedSurfaceGeometry::Nurbs(
         NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![
                     vec![
                         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -808,7 +816,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let expected_surface = SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -820,7 +828,7 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     source_less.model.surfaces[1].geometry = SurfaceGeometry::Solved(expected_surface.clone());
     let curve_id = CurveId::mint("generated:test:shared_circle#0").expect("identity grammar");
     let expected_curve = SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -878,7 +886,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(1.0, 2.0, 3.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -889,7 +897,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
         .unwrap(),
     ));
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             Point3::new(-1.0, 4.0, 2.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -901,7 +909,7 @@ fn generated_source_less_multi_face_writes_cone_sphere_and_ellipse_carriers() {
     source_less.model.surfaces[1].geometry = sphere.clone();
     let curve_id = CurveId::mint("generated:test:shared_ellipse#0").expect("identity grammar");
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -958,7 +966,7 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         .find(|curve| curve.id == directrix_id)
         .expect("extrusion directrix")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![0.25, 0.25, 0.75, 0.75],
             vec![
@@ -1320,7 +1328,7 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
         .find(|curve| curve.id == directrix)
         .expect("extrusion directrix")
         .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(2.0, 3.0, 4.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -1404,7 +1412,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     };
     let support_geometries = [
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1412,7 +1420,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             .unwrap(),
         )),
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 cadmpeg_ir::math::Point3::new(10.0, -5.0, 2.0),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -1437,7 +1445,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
         .find(|curve| curve.id == spine)
         .expect("rolling-ball spine carrier")
         .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![

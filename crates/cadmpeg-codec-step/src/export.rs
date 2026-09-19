@@ -6,11 +6,11 @@ use std::io::Write;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 #[cfg(test)]
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
@@ -20,8 +20,8 @@ use cadmpeg_ir::pmi::{
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
 #[cfg(test)]
-use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
@@ -68,7 +68,7 @@ pub(crate) fn write_step(
 /// Report components produced by the STEP writer before the caller fixes its
 /// fidelity and source-target context.
 pub(crate) struct StepWriteOutcome {
-    pub(crate) census: cadmpeg_ir::EntityCensus,
+    pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) notes: Vec<String>,
 }
@@ -4545,8 +4545,8 @@ impl<'a> Builder<'a> {
 
     fn finish_outcome(&self) -> StepWriteOutcome {
         StepWriteOutcome {
-            census: cadmpeg_ir::EntityCensus {
-                basis: cadmpeg_ir::CensusBasis::TargetRecords,
+            census: cadmpeg_ir::report::export::EntityCensus {
+                basis: cadmpeg_ir::report::export::CensusBasis::TargetRecords,
                 counts: cadmpeg_ir::CensusKey::count_map(self.emitter.counts()),
             },
             losses: self.losses.clone(),

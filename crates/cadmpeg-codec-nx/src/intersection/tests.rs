@@ -17,14 +17,17 @@ use crate::test_support::test_streams::deltas_intersection_curve_stream;
 use crate::test_support::test_streams::ext11_charted_intersection_curve_stream;
 use crate::test_support::test_streams::two_support_charted_intersection_curve_stream;
 
-use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    pcurve::{PcurveGeometry, PcurveNurbs},
+    ProceduralCurveDefinition,
+};
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
     use cadmpeg_ir::geometry::{
-        IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
+        pcurve::Pcurve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
     };
     use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
@@ -88,14 +91,21 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     let pcurve_id = PcurveId::mint("nx:test:pcurve#0").expect("identity grammar");
     let pcurve_geometry = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .unwrap(),
     );
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
-        metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(None, Some([0.0, 1.0]), None)
-            .unwrap(),
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            None,
+            Some([0.0, 1.0]),
+            None,
+        )
+        .unwrap(),
     });
     let second_face = ir
         .model

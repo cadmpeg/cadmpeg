@@ -13,13 +13,18 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, GeometryLayoutError, NurbsCurve, NurbsError, NurbsSurface,
-    Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError, NurbsSurface},
+    pcurve::{Pcurve, PcurveGeometry},
+    sampled::GeometryLayoutError,
+    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::{CensusBasis, EntityCensus, LossNote};
+use cadmpeg_ir::report::{
+    export::{CensusBasis, EntityCensus},
+    loss::LossNote,
+};
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -3283,7 +3288,7 @@ fn oriented_curve_entity(
             // reflected interval so the Type 104 endpoints follow the
             // reversed coedge without introducing an approximation.
             let reversed_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                     *center,
                     axis.scale(-1.0),
                     *major_direction,
@@ -4814,7 +4819,7 @@ fn revolution_surface_entities(
     let axis_direction = unit(*axis_direction, "Type 120 axis direction")?;
     let axis_end = axis_origin.translated(axis_direction, 1.0);
     let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(*axis_origin, axis_direction)
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(*axis_origin, axis_direction)
             .map_err(cadmpeg_core::CodecError::malformed)?,
     ));
     let axis_span = CurveSpan {
@@ -6167,7 +6172,7 @@ fn apply_rigid_transform(
             let origin = *line_curve.origin();
             let direction = *line_curve.direction();
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     point(origin)?,
                     vector(direction, "transformed line direction")?,
                 )
@@ -6180,7 +6185,7 @@ fn apply_rigid_transform(
             let ref_direction = *circle_curve.ref_direction();
             let radius = circle_curve.radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     point(center)?,
                     vector(axis, "transformed circle axis")?,
                     vector(ref_direction, "transformed circle reference")?,
@@ -6196,7 +6201,7 @@ fn apply_rigid_transform(
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::EllipseCurve::try_new(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     point(center)?,
                     vector(axis, "transformed ellipse axis")?,
                     vector(major_direction, "transformed ellipse major")?,
@@ -6212,7 +6217,7 @@ fn apply_rigid_transform(
             let major_direction = *parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
             CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-                cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     point(vertex)?,
                     vector(axis, "transformed parabola axis")?,
                     vector(major_direction, "transformed parabola major")?,
@@ -6228,7 +6233,7 @@ fn apply_rigid_transform(
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                     point(center)?,
                     vector(axis, "transformed hyperbola axis")?,
                     vector(major_direction, "transformed hyperbola major")?,
@@ -6241,7 +6246,7 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let value = *degenerate_curve.point();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::DegenerateCurve::try_new(point(value)?)
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point(value)?)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ))
         }

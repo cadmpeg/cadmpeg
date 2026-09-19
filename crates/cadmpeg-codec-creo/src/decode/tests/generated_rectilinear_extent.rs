@@ -85,7 +85,7 @@ fn generated_fixture(
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),
@@ -270,7 +270,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),

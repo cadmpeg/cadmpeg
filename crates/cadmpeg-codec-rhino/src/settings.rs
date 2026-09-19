@@ -683,7 +683,7 @@ pub(crate) struct EmbeddedDescriptor {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DocumentMetadata {
     /// Typed losses raised while decoding metadata.
-    pub(crate) losses: Vec<cadmpeg_ir::report::LossNote>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Document properties.
     pub(crate) properties: Properties,
     /// Document settings.
@@ -1991,7 +1991,7 @@ fn parse_layer(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     warnings: &mut Diagnostics,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
         parse_class_wrapper_with_userdata(data, record.body(), archive, warnings)?;

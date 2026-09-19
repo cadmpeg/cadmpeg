@@ -144,7 +144,7 @@ fn rejects_noncanonical_feature_base_carriers() {
         .iter()
         .all(|loss| loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking));
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking));
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn rejects_ambiguous_body_history_carriers() {
     assert!(result.report().losses.iter().all(|loss| {
         loss.code.namespace() == "fcstd"
             && loss.code.local_code() == "feature.native-kind-retained"
-            && loss.severity == cadmpeg_ir::Severity::Blocking
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_valid_document(result.ir());
 }
@@ -489,7 +489,7 @@ fn reports_attributable_native_design_blockers() {
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].severity,
-        cadmpeg_ir::Severity::Blocking
+        cadmpeg_ir::report::Severity::Blocking
     );
     assert_eq!(
         result.report().losses[0]

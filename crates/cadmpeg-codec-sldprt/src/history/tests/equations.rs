@@ -726,7 +726,9 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 #[test]
 fn decode_preserves_configuration_local_parameter_values() {
     use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, ParameterValue, RadiusSpec},
+        features::{
+            edge_treatments::RadiusSpec, FeatureDefinition, FeatureOperation, ParameterValue,
+        },
         scalar::Length,
     };
 
@@ -910,7 +912,7 @@ fn decode_preserves_configuration_local_parameter_values() {
         regenerated.ir().model.configurations[1].feature_states[&regenerated_feature.id].definition,
         FeatureDefinition::Operation(FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             },

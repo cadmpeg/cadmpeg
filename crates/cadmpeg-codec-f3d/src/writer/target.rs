@@ -3,7 +3,7 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    Consumption, EncodeInput, ExportBody, PatchConsumption, ResolvedWrite, WritePath,
+    target::ResolvedWrite, Consumption, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -129,7 +129,7 @@ enum SynthesisCause {
 }
 
 impl SynthesisCause {
-    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::LossNote>) {
+    fn into_fidelity(self) -> (Consumption, Option<cadmpeg_ir::report::loss::LossNote>) {
         match self {
             Self::Fresh => (Consumption::NotConsumed, None),
             Self::Displaced(message) => (
@@ -168,7 +168,7 @@ fn synthesized_body(
 fn body(
     ir: &CadIr,
     write_path: WritePath,
-    losses: Vec<cadmpeg_ir::LossNote>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     bytes: Vec<u8>,
 ) -> ExportBody {
     let path_note = match &write_path {
@@ -178,8 +178,8 @@ fn body(
     };
     ExportBody {
         bytes,
-        census: cadmpeg_ir::EntityCensus {
-            basis: cadmpeg_ir::CensusBasis::IrArenas,
+        census: cadmpeg_ir::report::export::EntityCensus {
+            basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: ir.census(),
         },
         write_path,

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use crate::examples::unit_cube;
 use crate::features::ExtrudeDirection;
 use crate::math::{Point3, Vector3};
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
@@ -711,8 +711,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
 #[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
     use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternSeed,
-        PatternTransform,
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -779,11 +779,11 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
     use crate::{
         features::{
+            patterns::{PatternKind, PatternSeed, PatternTransform},
             BooleanOp, ConfigurationFeatureState, ConfigurationId, DatumPlaneReference,
             DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
             Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedCurveRef,
-            LinearTermination, PatternKind, PatternSeed, PatternTransform, PlanarProfileRef,
-            ProfileRef,
+            LinearTermination, PlanarProfileRef, ProfileRef,
         },
         scalar::Length,
     };

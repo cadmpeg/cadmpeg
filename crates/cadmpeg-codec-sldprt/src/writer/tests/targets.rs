@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::{FidelityResolution, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
 use std::io::Cursor;
 
 use crate::test_support::container::make_block;
@@ -104,7 +104,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     );
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     let displacement = plan
         .report()

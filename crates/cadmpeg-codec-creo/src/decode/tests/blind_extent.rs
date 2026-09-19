@@ -141,7 +141,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(4.0, -2.0, z),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -204,7 +204,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     let plane = |id, origin, normal| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 origin,
                 normal,
                 Vector3::new(0.0, 0.0, 1.0),

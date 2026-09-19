@@ -5,7 +5,7 @@
 //! the presentation policy: how many relations the one document warning names,
 //! and the text of that warning.
 
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::StepLossCode;
 

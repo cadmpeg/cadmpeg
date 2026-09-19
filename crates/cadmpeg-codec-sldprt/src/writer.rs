@@ -12,8 +12,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::Annotations;
@@ -3760,7 +3760,7 @@ mod nurbs_write_tests {
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::geometry::NurbsSurface;
+    use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::Annotations;
@@ -3815,9 +3815,9 @@ mod nurbs_write_tests {
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
         let surface = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![Point3::new(0.0, 0.0, 0.0); 20]
                     .chunks(2_usize)
                     .map(<[_]>::to_vec)
@@ -3851,17 +3851,17 @@ mod nurbs_write_tests {
     #[test]
     fn writes_surface_shape_from_stored_counts() {
         let surface = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,
                 vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceAxis::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 1,
                 vec![0.0, 0.0, 0.25, 0.75, 1.0, 1.0],
                 false,
             ),
-            cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                 vec![Point3::new(0.0, 0.0, 0.0); 12]
                     .chunks(4_usize)
                     .map(<[_]>::to_vec)

@@ -4,7 +4,7 @@
 use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
@@ -32,15 +32,17 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
-        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
-        ConfigurationFeatureState, ConfigurationId, CurveProjectionDirection,
-        CurveProjectionDirectionState, DesignConfiguration, DesignParameter, DistinctMembers,
-        EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureContent,
-        FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, HolePlacement,
-        LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind, PlanarProfileRef,
-        ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, ThickenSide,
-        TreeChildren, TrimRegion, UnresolvedFamily,
+        edge_treatments::{ChamferSpec, RadiusSpec},
+        holes::{HoleForm, HoleKind, HolePlacement},
+        patterns::PatternKind,
+        BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationFeatureState,
+        ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
+        DesignConfiguration, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent,
+        ExtrudeSide, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureId,
+        FeatureOperation, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
+        LinearTermination, ParameterId, ParameterValue, PathRef, PlanarProfileRef, ProfileRef,
+        RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
+        UnresolvedFamily,
     },
     scalar::{Angle, Length},
 };
@@ -5414,7 +5416,7 @@ fn blend_feature_definition(
             || {
                 if constant_radii.is_some() {
                     RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                     }
                 } else if laws.iter().all(|law| {
                     matches!(
@@ -5423,7 +5425,7 @@ fn blend_feature_definition(
                     )
                 }) {
                     RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                     }
                 } else {
                     RadiusSpec::Unresolved { form: None }
@@ -5432,7 +5434,7 @@ fn blend_feature_definition(
             |radii| match cadmpeg_ir::scalar::PositiveLength::new(radii[0]) {
                 Some(radius) => RadiusSpec::Constant { radius },
                 None => RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
                 },
             },
         );
@@ -5479,11 +5481,13 @@ fn blend_feature_definition(
         .flatten();
     let unresolved = match family {
         NxBlendFamily::Edge => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius,
-                tangency_weight: None,
-            }),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius,
+                    tangency_weight: None,
+                },
+            ),
         }),
         NxBlendFamily::Face => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
@@ -6133,11 +6137,13 @@ fn body_writing_unresolved_feature_definition(
             family: UnresolvedFamily::Sphere,
         })),
         "BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
-                tangency_weight: None,
-            }),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Unresolved { form: None },
+                    tangency_weight: None,
+                },
+            ),
         })),
         "FACE_BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(
@@ -6452,8 +6458,8 @@ fn non_boolean_feature_definition_with_parameters(
                 face: None,
                 direction: None,
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-                shape: cadmpeg_ir::features::HoleShape::new(
-                    cadmpeg_ir::features::HoleConstruction::Form {
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::Form {
                         kind: match (measured_chamfer, hole_template) {
                             (
                                 Some(chamfer),
@@ -6498,8 +6504,8 @@ fn non_boolean_feature_definition_with_parameters(
             face: None,
             direction: None,
             placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::Form {
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: if hole.grouped_simple_through {
                         hole.chamfer.unwrap_or(HoleKind::Simple)
                     } else {
@@ -6536,7 +6542,7 @@ fn non_boolean_feature_definition_with_parameters(
         "ENLARGE" => enlarge_feature_definition(),
         "CHAMFER" => FeatureDefinition::Operation(FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::ChamferGroup {
+                cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Unresolved { form: None },
                 },
@@ -6544,11 +6550,13 @@ fn non_boolean_feature_definition_with_parameters(
             flip_direction: false,
         }),
         "BLEND" => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
-                tangency_weight: None,
-            }),
+            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Unresolved { form: None },
+                    tangency_weight: None,
+                },
+            ),
         }),
         "FACE_BLEND" => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands: cadmpeg_ir::features::FaceBlendOperands::new(

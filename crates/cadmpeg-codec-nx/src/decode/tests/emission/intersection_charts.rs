@@ -3,11 +3,11 @@ use crate::decode::tests::emission::EPS_TOPOLOGY_TOLERANCE;
 use crate::decode::tests::emission::TOLERANT_INTERSECTION_FIT;
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::BlendCrossSection;
 use cadmpeg_ir::geometry::BlendRadiusLaw;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::PcurveGeometry;
-use cadmpeg_ir::geometry::PcurveNurbs;
 use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -256,8 +256,11 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
     const CANDIDATE_COUNT: usize = 300;
 
     let source_pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .unwrap(),
     );
     let mut ir = blend_contact_transfer_fixture(
         CANDIDATE_COUNT,
@@ -327,8 +330,11 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
     const CANDIDATE_COUNT: usize = 300;
 
     let source_pcurve = PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
-            .unwrap(),
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .unwrap(),
     );
     let mut ir = blend_contact_transfer_fixture(
         CANDIDATE_COUNT,
@@ -432,7 +438,7 @@ fn cylinder_plane_transfer_fixture(
         Surface {
             id: source.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -445,7 +451,7 @@ fn cylinder_plane_transfer_fixture(
         Surface {
             id: target.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -476,7 +482,7 @@ fn cylinder_plane_transfer_fixture(
                         surface: Some(source),
                         pcurve: Some(
                             PcurveGeometry::Line(
-                                cadmpeg_ir::geometry::LinePcurve::try_new(
+                                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                     Point2::new(0.0, 0.0),
                                     Point2::new(source_pcurve_angle, 0.0),
                                 )
@@ -537,7 +543,7 @@ fn blend_contact_transfer_fixture(
         Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -549,7 +555,7 @@ fn blend_contact_transfer_fixture(
         Surface {
             id: other_support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -561,7 +567,7 @@ fn blend_contact_transfer_fixture(
         Surface {
             id: offset.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 2.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -588,7 +594,7 @@ fn blend_contact_transfer_fixture(
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 2.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
@@ -670,7 +676,7 @@ fn blend_contact_transfer_fixture(
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                 )
@@ -741,7 +747,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         Surface {
             id: other_support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
@@ -764,7 +770,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     ir.model.curves.push(Curve {
         id: spine.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -803,7 +809,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::LineCurve::try_new(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(2.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
             )
@@ -822,7 +828,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                             surface: Some(source),
                             pcurve: Some(
                                 PcurveGeometry::Line(
-                                    cadmpeg_ir::geometry::LinePcurve::try_new(
+                                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                                         Point2::new(0.0, 0.0),
                                         Point2::new(1.0, 0.0),
                                     )
@@ -874,7 +880,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
 
 #[test]
 fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
-    use cadmpeg_ir::geometry::{Curve, NurbsSurface, ProceduralCurve, Surface};
+    use cadmpeg_ir::geometry::{nurbs::NurbsSurface, Curve, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -889,9 +895,17 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             id: nurbs.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    cadmpeg_ir::geometry::NurbsSurfaceLanes::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
                         vec![
                             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 5.0, 0.0)],
                             vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 5.0, 0.0)],
@@ -907,7 +921,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         Surface {
             id: plane.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -924,7 +938,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
@@ -1068,7 +1082,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         Surface {
             id: first_support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1080,7 +1094,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         Surface {
             id: second_support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -1094,7 +1108,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],

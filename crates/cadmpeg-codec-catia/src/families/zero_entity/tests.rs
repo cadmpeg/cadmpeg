@@ -292,7 +292,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
     assert!(matches!(
         support.pcurve,
-        Some(cadmpeg_ir::geometry::PcurveGeometry::Nurbs { ref nurbs })
+        Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { ref nurbs })
             if nurbs.degree() == 1
                 && nurbs.control_points().len() == 2
                 && nurbs.weights().is_none()
@@ -896,7 +896,7 @@ fn decode_reports_zero_entity_surface_support_runs() {
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss
                 .message
                 .contains("1 zero-entity surface-support run(s)")
@@ -984,7 +984,7 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.message.contains("1 edge-stride allocation tuple(s)")
             && loss.message.contains("1 oriented-use pair(s)")
             && loss.message.contains("1 vertex-incidence record(s)")

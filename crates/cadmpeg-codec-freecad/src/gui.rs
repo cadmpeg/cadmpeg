@@ -14,7 +14,7 @@ use cadmpeg_ir::presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
     ViewPresentation,
 };
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
@@ -643,7 +643,7 @@ fn transfer_neutral_presentation(
     plan: &mut AppearancePlan,
     graph: &Graph,
     neutral_schema_version: Option<u32>,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
     for document in &graph.documents {
@@ -777,7 +777,7 @@ fn gui_property_value(property: &GuiPropertyRecord) -> Option<&str> {
 /// One loss per property key the reader could not key, naming the key's own
 /// record and, for a restated key, the key.
 fn charge_refused_gui_keys(
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     refused: &[cadmpeg_core::text::NamedEntryError],
 ) {
     for key in refused {
@@ -790,7 +790,7 @@ fn charge_refused_gui_keys(
 
 fn camera_state_value(
     state: &GuiStateRecord,
-    losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<CameraState, CodecError> {
     let settings = state
         .attributes

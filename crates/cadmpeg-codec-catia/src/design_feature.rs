@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, PatternKind,
+    patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     PrincipalPlane, UnresolvedFamily,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};

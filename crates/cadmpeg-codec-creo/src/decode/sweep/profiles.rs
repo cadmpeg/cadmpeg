@@ -6,7 +6,9 @@ use super::super::uniqueness::exactly_one;
 use super::nurbs::{oriented_sketch_nurbs_curve, sketch_nurbs_curve, sketch_nurbs_pcurve};
 use crate::decode::analytic::edges::nurbs_intrinsic_parameter_range;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
@@ -149,7 +151,7 @@ pub(in super::super) fn forward_arc_sweep(start: f64, end: f64) -> f64 {
 
 pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> Option<PcurveGeometry> {
     Some(PcurveGeometry::Line(
-        cadmpeg_ir::geometry::LinePcurve::try_new(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(start[0], start[1]),
             Point2::new(end[0] - start[0], end[1] - start[1]),
         )
@@ -199,7 +201,7 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    match cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         2,
         knots,
         control_points,
@@ -375,7 +377,7 @@ pub(in super::super) enum ProfileGeometry {
         radius: cadmpeg_ir::scalar::Length,
     },
     Nurbs {
-        curve: cadmpeg_ir::geometry::PcurveNurbs,
+        curve: cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     },
 }
 

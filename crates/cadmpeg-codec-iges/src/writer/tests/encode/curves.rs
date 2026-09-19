@@ -4,12 +4,12 @@
 use crate::test_support::test_curves_and_surfaces::conic_arc_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::Codec;
@@ -31,10 +31,9 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         .expect("V5.0 admits a typed ellipse");
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).expect("V5.0 ellipse writes");
-    assert!(!report
-        .losses
-        .iter()
-        .any(|loss| { loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::GeometryNotTransferred }));
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::GeometryNotTransferred
+    }));
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())

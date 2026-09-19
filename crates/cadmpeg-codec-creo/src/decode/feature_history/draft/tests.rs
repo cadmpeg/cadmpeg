@@ -36,7 +36,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -58,8 +58,9 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             let u_axis = plane_surface.u_axis();
             let mut origin = *origin;
             origin.y = 2.0;
-            *plane_surface = cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis)
-                .expect("valid PlaneSurface fixture");
+            *plane_surface =
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .expect("valid PlaneSurface fixture");
         }
         _ => panic!("transferred datum plane"),
     }
@@ -90,7 +91,7 @@ fn plane_surface(origin_y: f64) -> Surface {
     Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::PlaneSurface::try_new(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 Point3::new(0.0, origin_y, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),

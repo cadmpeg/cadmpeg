@@ -13,7 +13,7 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Option<Point3> {
+fn nurbs_point(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve, parameter: f64) -> Option<Point3> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let last_control = curve.control_points().len().checked_sub(1)?;
     let domain_start = *curve.knots().get(degree)?;
@@ -178,7 +178,7 @@ pub(super) fn scan(bytes: &[u8], carriers: &CarrierIndex) -> Vec<CurveCarrier> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::geometry::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::Vector3;
 
     use super::super::index::CarrierIndex;
@@ -213,7 +213,7 @@ mod tests {
             offset: 100,
             end: 120,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )

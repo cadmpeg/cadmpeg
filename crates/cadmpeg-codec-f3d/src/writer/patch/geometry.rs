@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{knots_nondecreasing, NurbsCurve};
+use cadmpeg_ir::geometry::nurbs::{knots_nondecreasing, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;

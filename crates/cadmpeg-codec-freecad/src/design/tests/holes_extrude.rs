@@ -97,7 +97,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         panic!("typed hole");
     };
     let construction = shape.construction();
-    let cadmpeg_ir::features::HoleConstruction::Form {
+    let cadmpeg_ir::features::holes::HoleConstruction::Form {
         kind,
         specification: Some(specification),
     } = construction
@@ -110,10 +110,10 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert_eq!(
         *profile_filter,
-        Some(cadmpeg_ir::features::HoleProfileFilter::All)
+        Some(cadmpeg_ir::features::holes::HoleProfileFilter::All)
     );
     assert!(matches!(
-        kind, cadmpeg_ir::features::HoleKind::Counterdrill {
+        kind, cadmpeg_ir::features::holes::HoleKind::Counterdrill {
             diameters,
 
             depth: actual_depth,
@@ -125,14 +125,14 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert!(matches!(
         bottom,
-        Some(cadmpeg_ir::features::HoleBottom::Angled {
+        Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
             depth_to_tip: true,
             ..
         })
     ));
     assert!(taper_angle.is_some());
     assert_eq!(*allow_multi_profile_faces, Some(true));
-    let cadmpeg_ir::features::HoleSpecification::Threaded {
+    let cadmpeg_ir::features::holes::HoleSpecification::Threaded {
         standard,
         designation,
         class,
@@ -149,10 +149,10 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     assert_eq!(designation.as_deref(), Some("M8"));
     assert_eq!(class.as_deref(), Some("6H"));
     assert!(*modeled && !cosmetic);
-    assert_eq!(*hand, cadmpeg_ir::features::ThreadHand::Left);
+    assert_eq!(*hand, cadmpeg_ir::features::holes::ThreadHand::Left);
     assert!(matches!(
         depth,
-        cadmpeg_ir::features::HoleThreadDepth::Blind {
+        cadmpeg_ir::features::holes::HoleThreadDepth::Blind {
             depth: actual_depth
         } if actual_depth.get() == 12.0
     ));
@@ -162,7 +162,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     assert!(
         findings
             .iter()
-            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+            .all(|finding| finding.check != cadmpeg_ir::report::check::Check::GeometricConsistency),
         "{findings:#?}"
     );
 }
@@ -201,15 +201,15 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
     let absent = decode(&hole_document("", "", ""));
     assert!(matches!(
         definition(&absent, "Hole"), FeatureDefinition::Operation(FeatureOperation::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs),
+            profile_filter: Some(cadmpeg_ir::features::holes::HoleProfileFilter::CirclesAndArcs),
             shape,
             extent: Some(LinearTermination::Blind {
                 length: actual_length,
             }),
-            bottom: Some(cadmpeg_ir::features::HoleBottom::Angled { .. }),
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Angled { .. }),
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Simple,
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 specification: None,
             },) if actual_length.get() == 25.0)));
     assert!(absent.report().losses.is_empty());
@@ -247,7 +247,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
             assert!(result.report().losses.iter().all(|loss| {
                 loss.code.namespace() == "fcstd"
                     && loss.code.local_code() == "feature.native-kind-retained"
-                    && loss.severity == cadmpeg_ir::Severity::Blocking
+                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
             }));
         }
     }
@@ -360,7 +360,7 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
         else {
             panic!("{case}: expected typed hole");
         };
-        let cadmpeg_ir::features::HoleConstruction::Form {
+        let cadmpeg_ir::features::holes::HoleConstruction::Form {
             specification: Some(specification),
             ..
         } = shape.construction()
@@ -368,8 +368,10 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             panic!("{case}: expected typed hole");
         };
         let designation = match specification.as_ref() {
-            cadmpeg_ir::features::HoleSpecification::Clearance { designation, .. }
-            | cadmpeg_ir::features::HoleSpecification::Threaded { designation, .. } => designation,
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance { designation, .. }
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded { designation, .. } => {
+                designation
+            }
         };
         assert_eq!(designation.as_deref(), expected, "{case}: label selection");
         assert!(result.report().losses.is_empty(), "{case}");
@@ -462,7 +464,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         assert!(result.report().losses.iter().all(|loss| {
             loss.code.namespace() == "fcstd"
                 && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::Severity::Blocking
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
         }));
     };
 
@@ -492,8 +494,10 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         };
         let construction = shape.construction();
         let specification = match construction {
-            cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
-            cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+            cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+                specification
+            }
+            cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
                 panic!("{target} native thread")
             }
         };
@@ -501,13 +505,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             panic!("{target} thread specification");
         };
         let (modeled, cosmetic, clearance) = match specification {
-            cadmpeg_ir::features::HoleSpecification::Clearance {
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance {
                 modeled,
                 cosmetic,
                 clearance,
                 ..
             }
-            | cadmpeg_ir::features::HoleSpecification::Threaded {
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded {
                 modeled,
                 cosmetic,
                 clearance,
@@ -517,13 +521,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         match target {
             "Threaded" => assert!(matches!(
                 specification,
-                cadmpeg_ir::features::HoleSpecification::Clearance { .. }
+                cadmpeg_ir::features::holes::HoleSpecification::Clearance { .. }
             )),
             "ModelThread" => assert!(!modeled),
             "CosmeticThread" => assert!(!cosmetic),
             "DrillForDepth" => assert!(matches!(
                 bottom,
-                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
                     depth_to_tip: false,
                     ..
                 })
@@ -533,7 +537,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter::CirclesAndArcs)
+                Some(cadmpeg_ir::features::holes::HoleProfileFilter::CirclesAndArcs)
             ),
             _ => unreachable!(),
         }
@@ -589,8 +593,10 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         };
         let construction = shape.construction();
         let specification = match construction {
-            cadmpeg_ir::features::HoleConstruction::Form { specification, .. } => specification,
-            cadmpeg_ir::features::HoleConstruction::NativeThread { .. } => {
+            cadmpeg_ir::features::holes::HoleConstruction::Form { specification, .. } => {
+                specification
+            }
+            cadmpeg_ir::features::holes::HoleConstruction::NativeThread { .. } => {
                 panic!("{target} native thread")
             }
         };
@@ -598,13 +604,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             panic!("{target} thread specification");
         };
         let (modeled, cosmetic, clearance) = match specification {
-            cadmpeg_ir::features::HoleSpecification::Clearance {
+            cadmpeg_ir::features::holes::HoleSpecification::Clearance {
                 modeled,
                 cosmetic,
                 clearance,
                 ..
             }
-            | cadmpeg_ir::features::HoleSpecification::Threaded {
+            | cadmpeg_ir::features::holes::HoleSpecification::Threaded {
                 modeled,
                 cosmetic,
                 clearance,
@@ -614,13 +620,13 @@ fn distinguishes_absent_and_malformed_hole_flags() {
         match target {
             "Threaded" => assert!(matches!(
                 specification,
-                cadmpeg_ir::features::HoleSpecification::Threaded { .. }
+                cadmpeg_ir::features::holes::HoleSpecification::Threaded { .. }
             )),
             "ModelThread" => assert!(modeled),
             "CosmeticThread" => assert!(cosmetic),
             "DrillForDepth" => assert!(matches!(
                 bottom,
-                Some(cadmpeg_ir::features::HoleBottom::Angled {
+                Some(cadmpeg_ir::features::holes::HoleBottom::Angled {
                     depth_to_tip: true,
                     ..
                 })
@@ -630,7 +636,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
-                Some(cadmpeg_ir::features::HoleProfileFilter::Points)
+                Some(cadmpeg_ir::features::holes::HoleProfileFilter::Points)
             ),
             _ => unreachable!(),
         }
@@ -708,7 +714,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
     assert!(matches!(
         hole_definition(&high_bits),
         FeatureDefinition::Operation(FeatureOperation::Hole {
-            profile_filter: Some(cadmpeg_ir::features::HoleProfileFilter::PointsAndCircles),
+            profile_filter: Some(cadmpeg_ir::features::holes::HoleProfileFilter::PointsAndCircles),
             ..
         })
     ));
@@ -748,8 +754,8 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
         hole.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
             ..
-        }) if matches!((shape.construction(),), (cadmpeg_ir::features::HoleConstruction::Form {
-                kind: cadmpeg_ir::features::HoleKind::Counterbore {
+        }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Counterbore {
                     diameter: actual_diameter,
                     depth: actual_depth,
                 },

@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SupportPcurve,
-    SurfaceCurveFamily,
+    pcurve::PcurveGeometry, Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext,
+    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    SupportPcurve, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, IdentityNamespace, ProceduralCurveId, SurfaceId, VertexId};
 use cadmpeg_ir::topology::Edge;

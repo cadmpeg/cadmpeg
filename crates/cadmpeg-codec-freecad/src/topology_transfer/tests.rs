@@ -13,7 +13,7 @@ use crate::brep::{
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Coedge, Sense};
@@ -65,8 +65,8 @@ fn indexed_polygon_admits_only_aligned_parameters() {
     let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), 0.0).unwrap();
     assert_eq!(
         polygon.samples,
-        cadmpeg_ir::geometry::PolylineSamples::Parameterized {
-            vertices: vec![cadmpeg_ir::geometry::PolylineVertex {
+        cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized {
+            vertices: vec![cadmpeg_ir::geometry::sampled::PolylineVertex {
                 parameter: 2.0,
                 point: node
             }]
@@ -672,7 +672,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 #[test]
 fn occt_parabola_ranges_convert_to_step_parameters() {
     let geometry = SolvedCurveGeometry::Parabola(
-        cadmpeg_ir::geometry::ParabolaCurve::try_new(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -690,7 +690,7 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
 #[test]
 fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
     let geometry = SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -718,7 +718,7 @@ fn collapsed_pcurve_ranges_are_unbounded() {
 #[test]
 fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     let geometry = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
             vec![2.0, 2.0, 4.0, 4.0],
             vec![
@@ -1000,7 +1000,7 @@ Co 1001000 +2 0 *
         report
             .findings
             .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error),
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
         "{:#?}",
         report.findings
     );
@@ -1059,8 +1059,8 @@ So 1001000 +2 0 *
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(
         validation.findings.iter().all(|finding| {
-            finding.severity < cadmpeg_ir::Severity::Error
-                || finding.check == cadmpeg_ir::Check::Identity
+            finding.severity < cadmpeg_ir::report::Severity::Error
+                || finding.check == cadmpeg_ir::report::check::Check::Identity
         }),
         "{:#?}",
         validation.findings
@@ -1110,8 +1110,8 @@ Co 1001000 +2 0 *
     let errors = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .findings
         .into_iter()
-        .filter(|finding| finding.severity == cadmpeg_ir::Severity::Error)
-        .filter(|finding| finding.check != cadmpeg_ir::Check::Identity)
+        .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
+        .filter(|finding| finding.check != cadmpeg_ir::report::check::Check::Identity)
         .collect::<Vec<_>>();
     assert!(errors.is_empty(), "{errors:#?}");
 }
@@ -1385,11 +1385,9 @@ Co 1001000 +2 1 +2 3 *
     }
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(
-        report
-            .findings
-            .iter()
-            .all(|finding| finding.severity < cadmpeg_ir::Severity::Error
-                || finding.check == cadmpeg_ir::Check::Identity),
+        report.findings.iter().all(|finding| finding.severity
+            < cadmpeg_ir::report::Severity::Error
+            || finding.check == cadmpeg_ir::report::check::Check::Identity),
         "{:#?}",
         report.findings
     );

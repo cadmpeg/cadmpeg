@@ -859,8 +859,8 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius,
             }, ..
         }] if (radius.get() - 0.249_999_999_951_747_04).abs() < 1.0e-12)
@@ -896,8 +896,8 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
         }])
     ));
 
@@ -927,8 +927,8 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
         }])
     ));
     assert_eq!(
@@ -996,8 +996,8 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                 radius,
             }, ..
         }] if radius.get().to_bits() == 0.199_999_999_999_999_98_f64.to_bits())

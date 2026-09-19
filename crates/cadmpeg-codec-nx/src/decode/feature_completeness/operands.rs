@@ -4,10 +4,12 @@
 use super::{positive_feature_length, unit_feature_direction};
 use cadmpeg_ir::{
     features::{
+        holes::HoleKind,
+        patterns::{PatternKind, PatternTransform},
         AngularTermination, BodySelection, BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart,
-        FaceSelection, FeatureId, HoleKind, LinearTermination, LoftPointSection, LoftSection,
-        PathRef, PatternKind, PatternTransform, PlanarProfileRef, ProfileRef, RevolveConstruction,
-        RevolveExtent, RibConstruction, RibDraft, SweepMode, SweepOrientation, VertexSelection,
+        FaceSelection, FeatureId, LinearTermination, LoftPointSection, LoftSection, PathRef,
+        PlanarProfileRef, ProfileRef, RevolveConstruction, RevolveExtent, RibConstruction,
+        RibDraft, SweepMode, SweepOrientation, VertexSelection,
     },
     scalar::Length,
 };
@@ -19,7 +21,7 @@ const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
 pub(crate) fn hole_feature_is_incomplete(
     profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
-    placements: Option<&[cadmpeg_ir::features::HolePlacement]>,
+    placements: Option<&[cadmpeg_ir::features::holes::HolePlacement]>,
     treatments: (&HoleKind, Option<&HoleKind>),
     diameter: Option<Length>,
     extent: Option<&LinearTermination>,
@@ -39,10 +41,10 @@ pub(crate) fn hole_feature_is_incomplete(
                 .enumerate()
                 .any(|(index, placement)| placements[index + 1..].contains(placement))
             && placements.iter().all(|placement| match placement {
-                cadmpeg_ir::features::HolePlacement::Directed { direction, .. } => {
+                cadmpeg_ir::features::holes::HolePlacement::Directed { direction, .. } => {
                     finite_direction(*direction)
                 }
-                cadmpeg_ir::features::HolePlacement::Axis { axis, .. } => {
+                cadmpeg_ir::features::holes::HolePlacement::Axis { axis, .. } => {
                     axis_is_direction_invariant && finite_direction(*axis)
                 }
             })
@@ -270,7 +272,7 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
     }
 }
 
-pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::CompositeStages>(
+pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::CompositeStages>(
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
@@ -289,7 +291,10 @@ pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::CompositeStages>(
             path.as_ref().is_none_or(path_ref_is_incomplete) || *count < 2
         }
         PatternTransform::Scale { center, .. } => {
-            matches!(center, cadmpeg_ir::features::PatternScaleCenter::Native(_))
+            matches!(
+                center,
+                cadmpeg_ir::features::patterns::PatternScaleCenter::Native(_)
+            )
         }
         PatternTransform::Composite { stages } => stages
             .stages()
@@ -299,18 +304,24 @@ pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::CompositeStages>(
 }
 
 pub(crate) fn pattern_feature_is_incomplete(
-    seeds: &[cadmpeg_ir::features::PatternSeed],
+    seeds: &[cadmpeg_ir::features::patterns::PatternSeed],
     pattern: &PatternKind,
     dependencies: &[cadmpeg_ir::features::FeatureId],
 ) -> bool {
     seeds.is_empty()
         || seeds.iter().any(|seed| match seed {
-            cadmpeg_ir::features::PatternSeed::Feature(feature) => !dependencies.contains(feature),
-            cadmpeg_ir::features::PatternSeed::Faces(faces) => face_selection_is_incomplete(faces),
-            cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+            cadmpeg_ir::features::patterns::PatternSeed::Feature(feature) => {
+                !dependencies.contains(feature)
+            }
+            cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) => {
+                face_selection_is_incomplete(faces)
+            }
+            cadmpeg_ir::features::patterns::PatternSeed::Bodies(bodies) => {
                 body_selection_is_incomplete(bodies)
             }
-            cadmpeg_ir::features::PatternSeed::Occurrences(occurrences) => occurrences.is_empty(),
+            cadmpeg_ir::features::patterns::PatternSeed::Occurrences(occurrences) => {
+                occurrences.is_empty()
+            }
         })
         || seeds
             .iter()
@@ -319,7 +330,7 @@ pub(crate) fn pattern_feature_is_incomplete(
         || pattern_is_incomplete(pattern)
 }
 
-pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::CompositeStages>(
+pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::patterns::CompositeStages>(
     pattern: &PatternKind<C>,
 ) -> Option<usize> {
     match pattern.definition() {
@@ -338,24 +349,24 @@ pub(crate) fn pattern_occurrence_count<C: cadmpeg_ir::features::CompositeStages>
                 (
                     stage,
                     if index == 0 {
-                        cadmpeg_ir::features::PatternStageCombination::Initialize
+                        cadmpeg_ir::features::patterns::PatternStageCombination::Initialize
                     } else if matches!(stage.pattern.definition(), PatternTransform::Scale { .. }) {
-                        cadmpeg_ir::features::PatternStageCombination::AlignedSlices
+                        cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices
                     } else {
-                        cadmpeg_ir::features::PatternStageCombination::CartesianProduct
+                        cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct
                     },
                 )
             })
             .try_fold(None::<usize>, |occurrences, (stage, combination)| {
                 let stage_count = pattern_occurrence_count(&stage.pattern)?;
                 match combination {
-                    cadmpeg_ir::features::PatternStageCombination::Initialize => {
+                    cadmpeg_ir::features::patterns::PatternStageCombination::Initialize => {
                         occurrences.is_none().then_some(Some(stage_count))
                     }
-                    cadmpeg_ir::features::PatternStageCombination::CartesianProduct => {
+                    cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct => {
                         Some(Some(occurrences?.checked_mul(stage_count)?))
                     }
-                    cadmpeg_ir::features::PatternStageCombination::AlignedSlices => {
+                    cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices => {
                         let occurrences = occurrences?;
                         (occurrences % stage_count == 0).then_some(Some(occurrences))
                     }

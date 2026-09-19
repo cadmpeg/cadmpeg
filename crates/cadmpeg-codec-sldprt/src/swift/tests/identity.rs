@@ -20,7 +20,8 @@ use std::collections::BTreeMap;
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
     use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureId, FeatureOperation, PatternKind, PatternSeed,
+        patterns::{PatternKind, PatternSeed},
+        FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");

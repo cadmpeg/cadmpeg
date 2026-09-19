@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{PcurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
@@ -618,7 +618,8 @@ mod tests {
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
-        Pcurve, PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        pcurve::{Pcurve, PcurveGeometry},
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{LoopId, PcurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -669,7 +670,7 @@ mod tests {
                     id: PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
                         .expect("identity grammar"),
                     geometry: PcurveGeometry::Line(
-                        cadmpeg_ir::geometry::LinePcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                             Point2::new(start_point[0], start_point[1]),
                             Point2::new(
                                 end_point[0] - start_point[0],
@@ -678,7 +679,7 @@ mod tests {
                         )
                         .expect("valid LinePcurve fixture"),
                     ),
-                    metadata: cadmpeg_ir::geometry::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                         None,
                         Some([0.0, 1.0]),
                         None,
@@ -767,7 +768,7 @@ mod tests {
             id: SurfaceId::mint("catia:test:surface#surface%2310".to_string())
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),

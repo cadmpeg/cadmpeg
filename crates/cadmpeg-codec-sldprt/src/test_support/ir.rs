@@ -2,7 +2,7 @@
 //! Source-less IR builders and encode/decode helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::TargetRequest;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::Encoder;
@@ -23,7 +23,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let direction = line_curve.direction();
                 let mut origin = *origin;
                 origin.x += dx;
-                *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
+                *line_curve =
+                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
@@ -32,7 +33,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let radius = circle_curve.radius();
                 let mut center = *center;
                 center.x += dx;
-                *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,
                     *axis,
                     *ref_direction,
@@ -48,7 +49,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let minor_radius = ellipse_curve.minor_radius();
                 let mut center = *center;
                 center.x += dx;
-                *ellipse_curve = cadmpeg_ir::geometry::EllipseCurve::try_new(
+                *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     center,
                     *axis,
                     *major_direction,
@@ -65,7 +66,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let minor_radius = hyperbola_curve.minor_radius();
                 let mut center = *center;
                 center.x += dx;
-                *hyperbola_curve = cadmpeg_ir::geometry::HyperbolaCurve::try_new(
+                *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                     center,
                     *axis,
                     *major_direction,
@@ -81,7 +82,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let focal_distance = parabola_curve.focal_distance();
                 let mut vertex = *vertex;
                 vertex.x += dx;
-                *parabola_curve = cadmpeg_ir::geometry::ParabolaCurve::try_new(
+                *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     vertex,
                     *axis,
                     *major_direction,
@@ -93,7 +94,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let point = degenerate_curve.point();
                 let mut point = *point;
                 point.x += dx;
-                *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(point).unwrap();
+                *degenerate_curve =
+                    cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point).unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 nurbs
@@ -146,7 +148,8 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let mut origin = *origin;
                 origin.x += dx;
                 *plane_surface =
-                    cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                        .unwrap();
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();
@@ -155,7 +158,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let radius = cylinder_surface.radius();
                 let mut origin = *origin;
                 origin.x += dx;
-                *cylinder_surface = cadmpeg_ir::geometry::CylinderSurface::try_new(
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     origin,
                     *axis,
                     *ref_direction,
@@ -172,7 +175,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let half_angle = cone_surface.half_angle();
                 let mut origin = *origin;
                 origin.x += dx;
-                *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+                *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     origin,
                     *axis,
                     *ref_direction,
@@ -189,7 +192,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let radius = sphere_surface.radius();
                 let mut center = *center;
                 center.x += dx;
-                *sphere_surface = cadmpeg_ir::geometry::SphereSurface::try_new(
+                *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     center,
                     *axis,
                     *ref_direction,
@@ -205,7 +208,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let minor_radius = torus_surface.minor_radius();
                 let mut center = *center;
                 center.x += dx;
-                *torus_surface = cadmpeg_ir::geometry::TorusSurface::try_new(
+                *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     center,
                     *axis,
                     *ref_direction,
@@ -275,7 +278,8 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
             let direction = line_curve.direction();
             let mut origin = *origin;
             origin = shift(&origin);
-            *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(origin, *direction).unwrap();
+            *line_curve =
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -288,7 +292,8 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
             let mut origin = *origin;
             origin = shift(&origin);
             *plane_surface =
-                cadmpeg_ir::geometry::PlaneSurface::try_new(origin, *normal, *u_axis).unwrap();
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
+                    .unwrap();
         }
     }
 }

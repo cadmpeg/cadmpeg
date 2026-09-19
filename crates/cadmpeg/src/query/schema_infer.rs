@@ -23,7 +23,7 @@ use super::{cell, print_json};
 const EXAMPLE_MAX: usize = 80;
 
 /// Infers a field table from a decoded CADIR document.
-pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
+pub(super) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let path = Path::new(file);
     let bytes = super::read_input(path)?;
     reject_non_cadir(&bytes, path, "schema")?;

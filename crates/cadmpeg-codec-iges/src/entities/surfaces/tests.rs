@@ -8,7 +8,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{NurbsCurve, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 

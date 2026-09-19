@@ -1,13 +1,13 @@
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
+use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::TargetRequest;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Point3;

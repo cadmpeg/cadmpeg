@@ -322,7 +322,7 @@ pub(crate) fn project_sketch_design(
                 && poles.point_count() > index_from_u32(*degree)
                 && poles.points().all(planar_point) =>
             {
-                SketchGeometry::nurbs(cadmpeg_ir::geometry::PcurveNurbs::from_lanes(
+                SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     *degree,
                     knots.clone(),
                     poles
@@ -627,7 +627,7 @@ pub(crate) fn project_spatial_sketch_design(
                         poles,
                         ..
                     } => {
-                        let curve3d = cadmpeg_ir::geometry::NurbsCurve::from_lanes(
+                        let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             *degree,
                             knots.clone(),
                             poles
@@ -712,7 +712,7 @@ pub(crate) fn project_spatial_sketch_design(
                 entity_id,
                 sketch,
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
-                    surface: cadmpeg_ir::geometry::BsplineSurface::new(
+                    surface: cadmpeg_ir::geometry::nurbs::BsplineSurface::new(
                         surface.u_degree,
                         surface.v_degree,
                         surface.u_knots.clone(),

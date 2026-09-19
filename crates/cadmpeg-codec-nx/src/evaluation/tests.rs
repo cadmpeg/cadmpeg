@@ -6,9 +6,10 @@ use cadmpeg_ir::features::FeatureOperation;
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{
+    holes::{HoleKind, HolePlacement},
     ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, HoleKind, HolePlacement, LinearTermination,
-    PlanarProfileRef, ProfileRef,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, Feature, LinearTermination, PlanarProfileRef,
+    ProfileRef,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -130,8 +131,8 @@ fn complete_hole(body: BodyId) -> Feature {
                     ))
                     .unwrap(),
                 }]),
-                shape: cadmpeg_ir::features::HoleShape::new(
-                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
                     Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
                 )

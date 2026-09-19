@@ -6,7 +6,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
@@ -620,7 +620,7 @@ fn scale_decoded_curve(
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
                 let radius = circle_curve.radius();
-                *circle_curve = cadmpeg_ir::geometry::CircleCurve::try_new(
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     scale_ir_point(*center, scale).ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -636,7 +636,7 @@ fn scale_decoded_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
-                *line_curve = cadmpeg_ir::geometry::LineCurve::try_new(
+                *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     scale_ir_point(*origin, scale).ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -649,7 +649,7 @@ fn scale_decoded_curve(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = degenerate_curve.point();
-                *degenerate_curve = cadmpeg_ir::geometry::DegenerateCurve::try_new(
+                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
                     scale_ir_point(*point, scale).ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
@@ -1439,7 +1439,7 @@ fn read_arc(
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
         return Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     circle.center,
                     circle.axis,
                     circle.xaxis,
@@ -1787,7 +1787,7 @@ mod tests {
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
     use crate::settings::MillimeterScale;
-    use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
@@ -2064,7 +2064,7 @@ mod tests {
         let circle = unit_circle();
         let decoded = DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     circle.center,
                     circle.axis,
                     circle.xaxis,

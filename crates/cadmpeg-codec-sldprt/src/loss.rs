@@ -12,7 +12,10 @@
 //! severity from the code so the two cannot drift apart across sites, and it
 //! leaves only the per-instance message to the caller.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one `.sldprt` transfer loss.
 ///
@@ -353,7 +356,7 @@ impl SldprtLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("sldprt") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("sldprt") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }
@@ -389,7 +392,7 @@ pub(crate) fn spline_lane_refusal(record: &str) -> LossNote {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
 
     use super::SldprtLossCode;
     use std::collections::BTreeSet;

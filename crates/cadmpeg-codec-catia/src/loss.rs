@@ -18,7 +18,10 @@
 //! and the categories this codec spans (geometry, topology, history, attribute,
 //! container) have no honest common default.
 //!
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
 ///
@@ -244,7 +247,7 @@ impl CatiaLossCode {
     pub(crate) fn kind(self) -> LossKind {
         LossKind::namespaced(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("catia") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("catia") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

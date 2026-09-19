@@ -37,7 +37,7 @@ use cadmpeg_ir::features::{
     BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, FeatureOperation,
     UnresolvedFamily,
 };
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -283,11 +283,11 @@ pub(crate) fn build_geometry_report(
 
     losses.extend_from_slice(dialect_losses);
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(true),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: notes.to_vec(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

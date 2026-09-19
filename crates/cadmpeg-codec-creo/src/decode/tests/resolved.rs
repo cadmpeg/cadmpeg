@@ -165,8 +165,8 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionSegmentGeometryUnresolved.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::Geometry
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "4 decoded section segment(s) retain source-native geometry because their exact \
                  neutral construction remains unresolved",
@@ -211,8 +211,8 @@ fn decode_reports_missing_declared_section_segment_rows() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionSegmentMissing.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 declared section segment row(s) did not decode and remain unavailable to the \
                  defining sketch",
@@ -304,8 +304,8 @@ fn decode_reports_missing_declared_solver_variable_rows() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionSolverVariableMissing.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 declared section solver variable row(s) did not decode; stored and \
                  equation-derived coordinates are withheld",

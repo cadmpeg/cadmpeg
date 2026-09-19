@@ -746,7 +746,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         ]);
     }
 
-    let invalid_frame = |finding: &cadmpeg_ir::Finding| {
+    let invalid_frame = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.message == "Fusion Design construction operand group has an invalid frame"
     };
     assert!(!crate::validate::validate_native(&ir)
@@ -920,7 +920,7 @@ fn validation_checks_pipe_path_group_roles() {
             .filter(|finding| {
                 finding.entity.as_deref()
                     == Some("f3d:Design/BulkStream.dat:design-construction-operand-group#20")
-                    && finding.check == cadmpeg_ir::Check::NativeLinks
+                    && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             })
             .count()
     };
@@ -995,12 +995,12 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
 
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(point_id.as_str())
             && finding.message.contains("persistent identity")
     }));
     assert!(findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding.message.contains("persistent identity")
     }));
@@ -1044,7 +1044,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
 
     assert!(
         !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::Check::NativeLinks
+            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
                 && (finding.entity.as_deref() == Some(point_id.as_str())
                     || finding.entity.as_deref() == Some(curve_id.as_str()))
                 && finding.message.contains("persistent identity")
@@ -1086,7 +1086,7 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
 
     assert!(
         !crate::validate::validate_native(&ir).iter().any(|finding| {
-            finding.check == cadmpeg_ir::Check::NativeLinks
+            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
                 && finding.message.contains("persistent identity")
         })
     );
@@ -1107,7 +1107,7 @@ fn validation_rejects_aliased_sketch_geometry_records() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
             && finding
                 .message
@@ -1140,7 +1140,7 @@ fn validation_rejects_duplicate_design_entity_suffixes() {
     };
 
     assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::NativeLinks
+        finding.check == cadmpeg_ir::report::check::Check::NativeLinks
             && finding.entity.as_deref() == Some(duplicate_id.as_str())
             && finding.message.contains("entity suffix is duplicated")
     }));
@@ -1476,7 +1476,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             .design_construction_operand_groups
             .push(group.clone());
     }
-    let profile_message = |finding: &cadmpeg_ir::Finding| {
+    let profile_message = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
     };
     let findings = crate::validate::validate_native(&ir);
@@ -1641,7 +1641,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_record_headers.extend([wrapper, following]);
     native.store(ir.native.namespace_mut("f3d")).unwrap();
 
-    let invalid_identity = |finding: &cadmpeg_ir::Finding| {
+    let invalid_identity = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.entity.as_deref() == Some(identity_id.as_str())
             && finding.message.contains("invalid nested frame")
     };
@@ -1770,7 +1770,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         native.design_entity_selection_operands.push(operand);
     }
 
-    let invalid_entity_selection = |finding: &cadmpeg_ir::Finding| {
+    let invalid_entity_selection = |finding: &cadmpeg_ir::report::check::Finding| {
         finding.entity.as_deref() == Some(operand_id.as_str())
             && finding.message
                 == "Fusion Design entity-selection operand has an invalid nested frame"

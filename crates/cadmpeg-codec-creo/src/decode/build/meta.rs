@@ -17,9 +17,9 @@ use cadmpeg_ir::document::SourceMeta;
 pub(in super::super) fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
-) -> Result<(SourceMeta, cadmpeg_ir::Coverage), cadmpeg_core::CodecError> {
+) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    let mut coverage = cadmpeg_ir::Coverage::default();
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     attributes.insert(
         "version_line".to_string(),
         scan.framing.version_line.clone(),
@@ -958,10 +958,10 @@ pub(in super::super) fn source_meta(
 }
 
 fn record_scalar_string_coverage<K>(
-    coverage: &mut cadmpeg_ir::Coverage,
-    scalar_key: cadmpeg_ir::CoverageKey,
-    unresolved_key: cadmpeg_ir::CoverageKey,
-    undecoded_key: cadmpeg_ir::CoverageKey,
+    coverage: &mut cadmpeg_ir::report::decode::Coverage,
+    scalar_key: cadmpeg_ir::report::decode::CoverageKey,
+    unresolved_key: cadmpeg_ir::report::decode::CoverageKey,
+    undecoded_key: cadmpeg_ir::report::decode::CoverageKey,
     values: &crate::legacy::TypedValues<crate::legacy::ValueRecord<K>>,
 ) where
     K: crate::legacy::LegacyCode<Payload = crate::legacy::StringValue>,

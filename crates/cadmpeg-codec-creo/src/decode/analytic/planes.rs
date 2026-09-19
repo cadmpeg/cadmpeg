@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 

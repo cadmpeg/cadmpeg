@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, HoleKind};
+use cadmpeg_ir::features::{holes::HoleKind, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -68,8 +68,8 @@ fn model_hole() -> cadmpeg_ir::features::Feature {
                 face: None,
                 direction: None,
                 placements: None,
-                shape: cadmpeg_ir::features::HoleShape::new(
-                    cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
                     Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()),
                 )
@@ -164,7 +164,7 @@ fn cylinder(id: usize, x: f64) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::CylinderSurface::try_new(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(x, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),

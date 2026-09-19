@@ -18,7 +18,10 @@
 //! and the categories this codec spans (geometry, annotation, attribute,
 //! diagnostic) have no honest common default.
 
-use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
+use cadmpeg_ir::report::{
+    loss::{LossKind, LossNote, LossTaxonomy},
+    Severity,
+};
 
 /// One decode diagnostic: its message and, when the producer knows it, its code.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -429,9 +432,9 @@ impl RhinoLossCode {
     /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        cadmpeg_ir::report::NamespacedLossKind::new(
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
             const {
-                match cadmpeg_ir::report::LossNamespace::new("rhino") {
+                match cadmpeg_ir::report::loss::LossNamespace::new("rhino") {
                     Ok(namespace) => namespace,
                     Err(_) => panic!("reserved codec namespace"),
                 }

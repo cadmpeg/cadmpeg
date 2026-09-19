@@ -16,7 +16,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -324,11 +324,11 @@ fn build_container_body(
 
     losses.extend(dialect_losses);
     DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes,
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

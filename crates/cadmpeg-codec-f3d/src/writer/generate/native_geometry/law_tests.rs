@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
 use cadmpeg_ir::geometry::{

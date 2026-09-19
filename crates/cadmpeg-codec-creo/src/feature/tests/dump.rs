@@ -62,8 +62,8 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::RadiusForm::Variable) }, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) }, ..
         }])
     ));
 
@@ -82,8 +82,8 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
         mixed.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
-            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None }, ..
+        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved { form: None }, ..
         }])
     ));
 }
@@ -674,8 +674,8 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
                  coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
@@ -683,8 +683,8 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
             )
     }));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
             )
@@ -761,8 +761,8 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionDimensionValueUnresolved.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss.message.contains(
                 "2 section dimension(s) retain source-native value tokens because their exact \
                  scalar encodings remain unresolved",
@@ -904,8 +904,8 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     ] {
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == code.kind()
-                && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-                && loss.severity == cadmpeg_ir::Severity::Warning
+                && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+                && loss.severity == cadmpeg_ir::report::Severity::Warning
                 && loss.message.contains(message)
         }));
     }
@@ -929,8 +929,8 @@ fn decode_reports_malformed_relation_table_allocation_count() {
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CreoLossCode::SectionRelationTableMalformed.kind()
-            && loss.code.category() == cadmpeg_ir::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
             && loss
                 .message
                 .contains("use the invalid zero allocation count")

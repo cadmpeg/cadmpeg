@@ -830,13 +830,13 @@ mod tests {
                 builder.exactness(id, Exactness::Inferred);
             }
             builder.derived(id, "position").expect("nonempty field");
-            let report = crate::DecodeReport::unclassified(
+            let report = crate::report::decode::DecodeReport::unclassified(
                 "test",
-                crate::report::DecodeTransfer::full(true),
+                crate::report::decode::DecodeTransfer::full(true),
                 BTreeMap::new(),
                 Vec::new(),
                 Vec::new(),
-                crate::report::TransferLedger::default(),
+                crate::report::decode::TransferLedger::default(),
             );
             let sidecar = crate::source_fidelity::DecodeSidecar::bind(
                 ir_json.as_bytes(),

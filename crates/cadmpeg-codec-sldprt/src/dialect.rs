@@ -70,7 +70,7 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetDescriptor;
-use cadmpeg_ir::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");

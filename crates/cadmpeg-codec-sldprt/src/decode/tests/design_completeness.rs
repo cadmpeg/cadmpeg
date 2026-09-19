@@ -8,10 +8,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
+        edge_treatments::RadiusSpec,
+        patterns::{PatternKind, PatternTransform},
         BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection, FaceSelection,
         Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-        FeatureTreeNodeRole, ParameterId, PathRef, PatternKind, PatternTransform, RadiusSpec,
-        RuledSurfaceMode, SurfaceContinuity, UnresolvedFamily,
+        FeatureTreeNodeRole, ParameterId, PathRef, RuledSurfaceMode, SurfaceContinuity,
+        UnresolvedFamily,
     },
     scalar::{Angle, Length},
 };
@@ -289,7 +291,7 @@ fn design_completeness_audits_typed_construction_families() {
             .unwrap(),
 
             radius: RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
             },
         }),
         FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
@@ -474,7 +476,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
     let mut ir = CadIr::empty();
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(
+    let seed = cadmpeg_ir::features::patterns::PatternSeed::Feature(
         FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"),
     );
     for (ordinal, pattern) in [
@@ -498,7 +500,7 @@ fn design_completeness_recurses_through_pattern_operands() {
         (
             2,
             PatternKind::new(PatternTransform::Scale {
-                center: cadmpeg_ir::features::PatternScaleCenter::Native("center".into()),
+                center: cadmpeg_ir::features::patterns::PatternScaleCenter::Native("center".into()),
                 final_factor: 2.0,
                 count: 2,
             })
@@ -507,8 +509,8 @@ fn design_completeness_recurses_through_pattern_operands() {
         (
             3,
             PatternKind::new(PatternTransform::Composite {
-                stages: cadmpeg_ir::features::CompositePattern::new(vec![
-                    cadmpeg_ir::features::PatternStage {
+                stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![
+                    cadmpeg_ir::features::patterns::PatternStage {
                         pattern: Box::new(
                             PatternKind::new(PatternTransform::CurveDriven {
                                 path: None,
@@ -800,7 +802,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             0,
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::FilletGroup {
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: EdgeSelection::Edges(Vec::new()),
                         radius: RadiusSpec::Constant {
                             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
@@ -880,12 +882,12 @@ fn empty_required_operands_are_incomplete_design_semantics() {
             7,
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                    cadmpeg_ir::features::FilletGroup {
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: EdgeSelection::Edges(vec![
                             EdgeId::mint("test:model:entity#edge").expect("identity grammar")
                         ]),
                         radius: RadiusSpec::Unresolved {
-                            form: Some(cadmpeg_ir::features::RadiusForm::Variable),
+                            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
                         },
                         tangency_weight: None,
                     },
@@ -912,7 +914,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
             profile_filter: None,
             face: None,
             direction: None,
-            placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
+            placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
@@ -920,9 +922,9 @@ fn hole_completeness_checks_optional_operands_when_present() {
                 ))
                 .unwrap(),
             }]),
-            shape: cadmpeg_ir::features::HoleShape::new(
-                cadmpeg_ir::features::HoleConstruction::form(
-                    cadmpeg_ir::features::HoleKind::Simple,
+            shape: cadmpeg_ir::features::holes::HoleShape::new(
+                cadmpeg_ir::features::holes::HoleConstruction::form(
+                    cadmpeg_ir::features::holes::HoleKind::Simple,
                 ),
                 exit_kind,
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
@@ -942,7 +944,10 @@ fn hole_completeness_checks_optional_operands_when_present() {
             )),
             None,
         ),
-        hole(None, Some(cadmpeg_ir::features::HoleKind::Unresolved(None))),
+        hole(
+            None,
+            Some(cadmpeg_ir::features::holes::HoleKind::Unresolved(None)),
+        ),
         hole(None, None),
     ]
     .into_iter()

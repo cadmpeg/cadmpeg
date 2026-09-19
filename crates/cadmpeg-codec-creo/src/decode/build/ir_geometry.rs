@@ -60,9 +60,9 @@ pub(super) fn transfer_and_record_scanned_geometry(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    coverage: &mut cadmpeg_ir::Coverage,
+    coverage: &mut cadmpeg_ir::report::decode::Coverage,
     brep_diagnostics: &mut BrepTransferDiagnostics,
-    transfer_losses: &mut Vec<cadmpeg_ir::report::LossNote>,
+    transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let cross_section_plane_count = transfer_cross_section_planes(scan, ir, annotations)?;
     let first_instance_prototype_surface_count =
@@ -758,7 +758,7 @@ mod tests {
         ir.model.curves.push(Curve {
             id: CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::CircleCurve::try_new(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::new(0.0, 0.0, 4.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -771,7 +771,7 @@ mod tests {
         ir.model.surfaces.push(Surface {
             id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::CylinderSurface::try_new(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -787,7 +787,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("test decode context");
         let mut annotations = AnnotationBuilder::new();
-        let mut coverage = cadmpeg_ir::Coverage::default();
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         let mut brep_diagnostics = BrepTransferDiagnostics::default();
         transfer_and_record_scanned_geometry(
             &ctx,

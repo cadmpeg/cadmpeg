@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 
 use crate::cage::Cage;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};

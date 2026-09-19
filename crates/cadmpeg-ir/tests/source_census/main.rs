@@ -171,32 +171,32 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/features.rs", "TreeChildren", "wire"),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "BsplineSurface",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "NurbsCurve",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "NurbsSurface",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/pcurve.rs",
         "PcurveNurbs",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/pcurve.rs",
         "PolarPcurveNurbs",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry/carriers.rs",
+        "crates/cadmpeg-ir/src/geometry/sampled.rs",
         "PolygonalSurface",
         "wire",
     ),

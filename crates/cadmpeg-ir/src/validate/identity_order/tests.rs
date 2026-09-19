@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
-use crate::report::Check;
+use crate::report::check::Check;
 use crate::validate::validate_neutral;
 
 #[test]

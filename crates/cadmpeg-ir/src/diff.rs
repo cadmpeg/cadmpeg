@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural comparison of IR documents.
 //!
-//! Numbers compare through [`cadmpeg_ir::compare`], so a coordinate that
+//! Numbers compare through [`crate::compare`], so a coordinate that
 //! differs only in the last place — what the same file decoded under two
 //! platforms' libm produces — is not reported as a change, while an integer
 //! count, index, or degree that moved by one always is. That module states the
@@ -14,7 +14,7 @@
 //! count, and the rest of what it read out of the container.
 //!
 //! One class of attribute is carved out. A machine-local digest, named by the
-//! [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
+//! [`crate::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
 //! fingerprint of the very values this module compares tolerantly: two decodes
 //! that agree to fourteen significant digits hash differently, and no tolerance
 //! can reconcile them. Reporting such a difference as a difference would make
@@ -570,7 +570,7 @@ fn attribute_changes(
 /// entity ID.
 ///
 /// Fractional numbers compare within the tolerance stated by
-/// [`cadmpeg_ir::compare`]; integers, strings, enums, and structure
+/// [`crate::compare`]; integers, strings, enums, and structure
 /// compare exactly. Source attributes are strings and compare exactly; a
 /// machine-local digest among them is reported without counting as a difference.
 pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
@@ -734,7 +734,7 @@ mod tests {
     /// however small the change relative to it.
     #[test]
     fn an_integer_field_differing_by_one_is_always_reported() {
-        use crate::geometry::{Curve, CurveGeometry, NurbsCurve, SolvedCurveGeometry};
+        use crate::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
         use crate::ids::CurveId;
         use crate::math::Point3;
 

@@ -39,7 +39,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     .decoded;
     assert!(result.body.losses.iter().any(|loss| {
         loss.code == StepLossCode::ByteAccountingUnclassified.kind()
-            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("1 byte(s) unclassified")
     }));
 }
@@ -362,7 +362,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::CarrierReachability
+        finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#1")
     }));
 }
@@ -662,7 +662,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
         .filter(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind())
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
     assert_eq!(
         losses[0].message,
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
@@ -752,7 +752,7 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
         .collect::<Vec<_>>();
 
     assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
     assert_eq!(provenance.format(), "step");
     assert_eq!(provenance.stream(), None);

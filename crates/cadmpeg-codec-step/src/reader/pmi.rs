@@ -15,7 +15,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
 use crate::ids;

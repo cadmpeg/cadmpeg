@@ -18,15 +18,15 @@ use crate::loss::F3dLossCode;
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::DecodeTransfer::full(false),
-        coverage: cadmpeg_ir::Coverage::default(),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
             F3dLossCode::TopologyNotTransferred.note("stated before classification"),
             F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

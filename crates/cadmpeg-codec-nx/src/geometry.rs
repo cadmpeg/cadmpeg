@@ -254,8 +254,12 @@ fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::PlaneSurface::try_new(mm_point(origin), vec3(normal), vec3(x_axis))
-            .ok()?,
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            mm_point(origin),
+            vec3(normal),
+            vec3(x_axis),
+        )
+        .ok()?,
     )))
 }
 
@@ -268,7 +272,7 @@ fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::CylinderSurface::try_new(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             mm_point(origin),
             vec3(axis),
             vec3(x_axis),
@@ -300,7 +304,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             mm_point(origin),
             vec3(axis),
             vec3(x_axis),
@@ -321,7 +325,7 @@ fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             mm_point(center),
             vec3(axis),
             vec3(x_axis),
@@ -347,7 +351,7 @@ fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::TorusSurface::try_new(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             mm_point(center),
             vec3(axis),
             vec3(x_axis),
@@ -367,7 +371,8 @@ fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
         return None;
     }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::LineCurve::try_new(mm_point(origin), vec3(direction)).ok()?,
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(mm_point(origin), vec3(direction))
+            .ok()?,
     )))
 }
 
@@ -380,7 +385,7 @@ fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
         return None;
     }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::CircleCurve::try_new(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             mm_point(center),
             vec3(normal),
             vec3(x_axis),
@@ -403,7 +408,7 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
         return None;
     }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             mm_point(center),
             vec3(normal),
             vec3(x_axis),

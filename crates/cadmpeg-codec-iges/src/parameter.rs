@@ -7,7 +7,7 @@ use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};

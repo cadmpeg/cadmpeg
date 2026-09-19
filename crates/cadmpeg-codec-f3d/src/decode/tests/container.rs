@@ -15,7 +15,7 @@ use cadmpeg_core::container::ContainerRole;
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::LossKind;
+use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
@@ -293,7 +293,7 @@ fn corrupt_kernel_carrier_is_reported_beside_valid_kernel_layer() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::KernelCarrierUnparseable.kind())
         .expect("the corrupt carrier is visible as a loss");
-    assert_eq!(loss.severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     assert!(loss.message.contains(corrupt_path), "{}", loss.message);
 }
 

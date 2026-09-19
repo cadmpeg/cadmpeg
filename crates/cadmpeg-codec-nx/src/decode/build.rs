@@ -41,17 +41,17 @@ use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
-    NurbsCurve, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    nurbs::NurbsCurve, pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve,
+    CurveGeometry, IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
@@ -643,7 +643,7 @@ pub(super) fn try_decode_geometry(
             ir.model.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry: pcurve.geometry,
-                metadata: cadmpeg_ir::geometry::PcurveMetadata::default(),
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
                 pcurves_by_xmt.insert(node.xmt, id);
@@ -957,12 +957,16 @@ pub(super) fn try_decode_geometry(
                         let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
                             .map(cadmpeg_ir::scalar::PositiveReal::get);
                         match &mut carrier.metadata {
-                            cadmpeg_ir::geometry::PcurveMetadata::General { form: metadata } => {
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
+                                form: metadata,
+                            } => {
                                 metadata
                                     .set_fit_tolerance(fit_tolerance)
                                     .map_err(CodecError::malformed)?;
                             }
-                            cadmpeg_ir::geometry::PcurveMetadata::AsmInline { form: inline } => {
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
+                                form: inline,
+                            } => {
                                 if let Some(fit_tolerance) = fit_tolerance {
                                     inline
                                         .set_fit_tolerance(fit_tolerance)

@@ -2,7 +2,10 @@
 //! Focused validation checks for geometry payloads.
 
 use crate::document::CadIr;
-use crate::report::{Check, Finding, Severity};
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {

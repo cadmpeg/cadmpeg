@@ -31,10 +31,11 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
+use cadmpeg_ir::report::loss::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
 use crate::loss::NxLossCode;
@@ -99,7 +100,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
 
     let angle = std::f64::consts::FRAC_PI_6;
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -112,7 +113,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let expected = 2.0;
     let axial_shift = -expected * angle.sin();
     let offset = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::ConeSurface::try_new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, axial_shift),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -140,7 +141,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let half_angle = cone_surface.half_angle();
     let mut origin = *origin;
     origin.x = 0.1;
-    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         origin,
         *axis,
         *ref_direction,
@@ -165,7 +166,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let half_angle = cone_surface.half_angle();
     let mut origin = *origin;
     origin.z += 0.1;
-    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         origin,
         *axis,
         *ref_direction,
@@ -187,7 +188,7 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     let half_angle = cone_surface.half_angle();
 
     let ratio = 0.5;
-    *cone_surface = cadmpeg_ir::geometry::ConeSurface::try_new(
+    *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
         *origin,
         *axis,
         *ref_direction,
@@ -206,7 +207,7 @@ fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
 
     let sphere = |radius| {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::SphereSurface::try_new(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -237,7 +238,7 @@ fn nx_torus_offset_lineage_requires_one_ring_orientation() {
 
     let torus = |minor_radius| {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::TorusSurface::try_new(
+            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -819,7 +820,7 @@ fn decode_transfers_point_plane_cylinder_line() {
 
     assert!(result.ir().model.faces.is_empty() && result.ir().model.edges.is_empty());
     assert!(result.report().losses.iter().any(|l| l.code.category()
-        == cadmpeg_ir::report::LossCategory::Topology
+        == cadmpeg_ir::report::loss::LossCategory::Topology
         && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
     // The Parasolid stream is preserved verbatim.
@@ -908,7 +909,7 @@ fn decode_emits_connected_primitive_brep() {
         .report()
         .losses
         .iter()
-        .all(|loss| loss.code.category() != cadmpeg_ir::report::LossCategory::Topology));
+        .all(|loss| loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology));
     assert!(result
         .report()
         .losses
