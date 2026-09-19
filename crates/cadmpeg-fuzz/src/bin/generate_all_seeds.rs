@@ -64,7 +64,7 @@ mod f3d {
         t_subident, t_vec,
     };
 
-    pub fn synthetic_geometry_smbh() -> Vec<u8> {
+    pub(super) fn synthetic_geometry_smbh() -> Vec<u8> {
         let mut r = Vec::new();
         t_ident(&mut r, "asmheader");
         push_u8_string(&mut r, "231.6.3.65535");
