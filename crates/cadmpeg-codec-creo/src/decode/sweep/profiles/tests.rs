@@ -103,3 +103,24 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
         records[1]
     );
 }
+
+#[test]
+fn large_profile_circle_intersections_stay_finite() {
+    let r = 1e200;
+    let arc = ([0., 0.], r, 0., std::f64::consts::TAU);
+    assert!(super::line_arc_intersect(
+        [[-2. * r, 0.], [2. * r, 0.]],
+        arc,
+        1e-9
+    ));
+    assert!(super::arcs_intersect(
+        arc,
+        ([r, 0.], r, 0., std::f64::consts::TAU),
+        1e-9
+    ));
+    assert!(!super::arcs_intersect(
+        arc,
+        ([3. * r, 0.], r, 0., std::f64::consts::TAU),
+        1e-9
+    ));
+}

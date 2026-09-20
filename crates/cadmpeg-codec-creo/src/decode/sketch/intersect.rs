@@ -25,7 +25,6 @@ const EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const EPS_LINE_INTERSECTION: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
 const EPS_RADIUS_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
-const EPS_RADIAL_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_DEGENERATE;
 const EPS_PARAMETER_BOUND: f64 = EPS_SKETCH_INTERSECTION_DEGENERATE;
 const EPS_CENTER_DISTANCE: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
 const EPS_HEIGHT_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
@@ -51,45 +50,18 @@ pub(in crate::decode) fn intersect_section_lines(
     first: &SketchGeometry,
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
-    let (first_origin, first_direction) = section_line_origin_direction(first)?;
-    let (second_origin, second_direction) = section_line_origin_direction(second)?;
-    let first_end = Point2::new(
-        first_origin.u + first_direction.u,
-        first_origin.v + first_direction.v,
-    );
-    let second_end = Point2::new(
-        second_origin.u + second_direction.u,
-        second_origin.v + second_direction.v,
-    );
-    let denominator = (first_origin.u - first_end.u).mul_add(
-        second_origin.v - second_end.v,
-        -(first_origin.v - first_end.v) * (second_origin.u - second_end.u),
-    );
-    let scale = (first_origin.u - first_end.u)
-        .abs()
-        .max((first_origin.v - first_end.v).abs())
-        .max((second_origin.u - second_end.u).abs())
-        .max((second_origin.v - second_end.v).abs())
-        .max(1.0);
-    if denominator.abs() <= EPS_LINE_INTERSECTION * scale * scale {
+    let (a, u) = section_line_origin_direction(first)?;
+    let (b, v) = section_line_origin_direction(second)?;
+    let u = cadmpeg_ir::math::Vector3::new(u.u, u.v, 0.0).unit_nonzero()?;
+    let v = cadmpeg_ir::math::Vector3::new(v.u, v.v, 0.0).unit_nonzero()?;
+    let determinant = u.x.mul_add(v.y, -u.y * v.x);
+    if determinant.abs() <= EPS_LINE_INTERSECTION {
         return None;
     }
-    let first_cross = first_origin
-        .u
-        .mul_add(first_end.v, -(first_origin.v * first_end.u));
-    let second_cross = second_origin
-        .u
-        .mul_add(second_end.v, -(second_origin.v * second_end.u));
-    Some([
-        first_cross.mul_add(
-            second_origin.u - second_end.u,
-            -(first_origin.u - first_end.u) * second_cross,
-        ) / denominator,
-        first_cross.mul_add(
-            second_origin.v - second_end.v,
-            -(first_origin.v - first_end.v) * second_cross,
-        ) / denominator,
-    ])
+    let delta = Point2::new(b.u - a.u, b.v - a.v);
+    let t = delta.u.mul_add(v.y, -delta.v * v.x) / determinant;
+    let point = [a.u + t * u.x, a.v + t * u.y];
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 pub(in crate::decode) fn intersect_section_line_arc(
@@ -109,60 +81,25 @@ pub(in crate::decode) fn intersect_section_line_arc(
     let SketchGeometryDefinition::Arc { center, radius, .. } = arc else {
         return None;
     };
-    let direction = [end.u - start.u, end.v - start.v];
-    let length = direction[0].hypot(direction[1]);
-    if length <= EPS_RADIUS_NONZERO || radius.get() <= EPS_RADIUS_NONZERO {
+    if (end.u - start.u).hypot(end.v - start.v) <= EPS_RADIUS_NONZERO
+        || radius.get() <= EPS_RADIUS_NONZERO
+    {
         return None;
     }
-    let direction = direction.map(|value| value / length);
-    let relative = [start.u - center.u, start.v - center.v];
-    let projection = -(relative[0] * direction[0] + relative[1] * direction[1]);
-    let closest = [
-        start.u + projection * direction[0],
-        start.v + projection * direction[1],
-    ];
-    let distance_squared = (closest[0] - center.u).mul_add(
-        closest[0] - center.u,
-        (closest[1] - center.v) * (closest[1] - center.v),
-    );
-    let radial_squared = radius.get() * radius.get();
-    let scale = radial_squared.max(1.0);
-    if distance_squared > radial_squared + EPS_RADIAL_RESIDUAL * scale {
-        return None;
-    }
-    let travel = (radial_squared - distance_squared).max(0.0).sqrt();
-    let candidates = [
-        [
-            closest[0] + travel * direction[0],
-            closest[1] + travel * direction[1],
-        ],
-        [
-            closest[0] - travel * direction[0],
-            closest[1] - travel * direction[1],
-        ],
-    ];
-    if travel <= EPS_RADIAL_RESIDUAL * radius.get().max(1.0) {
-        let parameter = projection / length;
-        return (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND)
-            .contains(&parameter)
-            .then_some(candidates[0]);
-    }
-    let parameters = [
-        (projection + travel) / length,
-        (projection - travel) / length,
-    ];
-    let inside = parameters
+    let parameters =
+        cadmpeg_ir::math::planar::line_circle_parameters(*start, *end, *center, radius.get())?;
+    let mut inside = parameters
         .into_iter()
-        .enumerate()
-        .filter(|(_, parameter)| {
-            (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND).contains(parameter)
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let [index] = inside.as_slice() else {
+        .filter(|parameter| (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND).contains(parameter));
+    let parameter = inside.next()?;
+    if inside.next().is_some_and(|other| other != parameter) {
         return None;
-    };
-    Some(candidates[*index])
+    }
+    let point = [
+        start.u + parameter * (end.u - start.u),
+        start.v + parameter * (end.v - start.v),
+    ];
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 pub(in crate::decode) fn intersect_tangent_section_arcs(
@@ -192,28 +129,23 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
         second_center.v - first_center.v,
     ];
     let distance = delta[0].hypot(delta[1]);
-    let scale = distance
-        .max(first_radius.get())
-        .max(second_radius.get())
-        .max(1.0);
-    if distance <= EPS_CENTER_DISTANCE * scale {
+    let scale = distance.max(first_radius.get()).max(second_radius.get());
+    if !scale.is_finite() || distance <= EPS_CENTER_DISTANCE * scale {
         return None;
     }
-    let offset = (first_radius.get().mul_add(
-        first_radius.get(),
-        -(second_radius.get() * second_radius.get()),
-    ) + distance * distance)
-        / (2.0 * distance);
-    let height_squared = first_radius
-        .get()
-        .mul_add(first_radius.get(), -(offset * offset));
-    if height_squared.abs() > EPS_HEIGHT_RESIDUAL * scale * scale {
+    let d = distance / scale;
+    let r = first_radius.get() / scale;
+    let s = second_radius.get() / scale;
+    let offset = 0.5 * (d + (r - s) * (r + s) / d);
+    let height_squared = (r - offset) * (r + offset);
+    if !height_squared.is_finite() || height_squared.abs() > EPS_HEIGHT_RESIDUAL {
         return None;
     }
-    Some([
-        first_center.u + offset * delta[0] / distance,
-        first_center.v + offset * delta[1] / distance,
-    ])
+    let point = [
+        first_center.u + (offset * (delta[0] / distance)) * scale,
+        first_center.v + (offset * (delta[1] / distance)) * scale,
+    ];
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 fn intersect_section_carriers(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
@@ -888,6 +820,50 @@ mod tests {
                 None,
             ),
             None
+        );
+    }
+    #[test]
+    fn small_section_carriers_do_not_acquire_false_tangencies() {
+        use cadmpeg_ir::{
+            math::Point2,
+            scalar::{Angle, Length},
+            sketches::{SketchGeometry, SketchGeometryDefinition},
+        };
+        let line = |a: [f64; 2], b: [f64; 2]| -> SketchGeometry {
+            SketchGeometryDefinition::Line {
+                start: Point2::new(a[0], a[1]),
+                end: Point2::new(b[0], b[1]),
+            }
+            .try_into()
+            .unwrap()
+        };
+        let arc = |x, r| -> SketchGeometry {
+            SketchGeometryDefinition::Arc {
+                center: Point2::new(x, 0.),
+                radius: Length::new(r).unwrap(),
+                start_angle: Angle::new(0.).unwrap(),
+                end_angle: Angle::new(std::f64::consts::TAU).unwrap(),
+            }
+            .try_into()
+            .unwrap()
+        };
+        let r = 1e-6;
+        assert_eq!(
+            super::intersect_section_line_arc(&line([-r, 2. * r], [r, 2. * r]), &arc(0., r)),
+            None
+        );
+        assert_eq!(
+            super::intersect_tangent_section_arcs(&arc(0., r), &arc(r, r)),
+            None
+        );
+        assert_eq!(
+            super::intersect_tangent_section_arcs(&arc(0., r), &arc(2. * r, r)),
+            Some([r, 0.])
+        );
+        let r = 1e-7;
+        assert_eq!(
+            super::intersect_section_lines(&line([-r, 0.], [r, 0.]), &line([0., -r], [0., r])),
+            Some([0., 0.])
         );
     }
 }

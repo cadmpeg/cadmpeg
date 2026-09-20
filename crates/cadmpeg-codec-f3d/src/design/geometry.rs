@@ -684,21 +684,7 @@ fn line_arc_intersection_points(
     };
     let direction = Point2::new(end.u - start.u, end.v - start.v);
     let offset = Point2::new(start.u - center.u, start.v - center.v);
-    let scale = direction
-        .u
-        .abs()
-        .max(direction.v.abs())
-        .max(offset.u.abs())
-        .max(offset.v.abs())
-        .max(radius.abs());
-    if !scale.is_finite() || scale == 0.0 {
-        return None;
-    }
-    let d = Point2::new(direction.u / scale, direction.v / scale);
-    let o = Point2::new(offset.u / scale, offset.v / scale);
-    let scaled_radius = radius / scale;
-    let quadratic = d.u * d.u + d.v * d.v;
-    if quadratic == 0.0 {
+    if start == end {
         return Some(
             (offset.u.hypot(offset.v) == *radius
                 && directed_angle_parameter(offset.v.atan2(offset.u), *start_angle, *end_angle)
@@ -708,20 +694,11 @@ fn line_arc_intersection_points(
             .collect(),
         );
     }
-    let linear = 2.0 * (o.u * d.u + o.v * d.v);
-    let constant = o.u * o.u + o.v * o.v - scaled_radius * scaled_radius;
-    let discriminant = linear * linear - 4.0 * quadratic * constant;
-    let error = 64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs());
-    if discriminant < -error {
-        return Some(Vec::new());
-    }
-    let root = discriminant.max(0.0).sqrt();
     let mut points = Vec::new();
-    let q = -0.5 * (linear + root.copysign(linear));
-    let parameters = if root == 0.0 {
-        [-linear / (2.0 * quadratic); 2]
-    } else {
-        [q / quadratic, constant / q]
+    let Some(parameters) =
+        cadmpeg_ir::math::planar::line_circle_parameters(start, end, *center, *radius)
+    else {
+        return Some(points);
     };
     for parameter in parameters {
         if (0.0..=1.0).contains(&parameter) {
@@ -766,38 +743,16 @@ fn arc_intersection_points(
     else {
         return None;
     };
-    let du = rc.u - lc.u;
-    let dv = rc.v - lc.v;
-    let distance_squared = du * du + dv * dv;
-    if distance_squared == 0.0 {
-        return (*lr != *rr).then(Vec::new);
-    }
-    let distance = distance_squared.sqrt();
-    if distance > lr + rr || distance < (lr - rr).abs() {
-        return Some(Vec::new());
-    }
-    let along = (lr * lr - rr * rr + distance_squared) / (2.0 * distance);
-    let height_squared = lr * lr - along * along;
-    let error = 64.0 * f64::EPSILON * (lr * lr + along * along).max(1.0);
-    if height_squared < -error {
-        return Some(Vec::new());
-    }
-    let base = Point2::new(lc.u + along * du / distance, lc.v + along * dv / distance);
-    let height = height_squared.max(0.0).sqrt();
-    let mut points = Vec::new();
-    for signed_height in [height, -height] {
-        let point = Point2::new(
-            base.u - signed_height * dv / distance,
-            base.v + signed_height * du / distance,
-        );
-        if directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
-            && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re).is_some()
-            && !points.contains(&point)
-        {
-            points.push(point);
-        }
-    }
-    Some(points)
+    Some(
+        cadmpeg_ir::math::planar::circle_intersections(*lc, *lr, *rc, *rr)?
+            .into_iter()
+            .filter(|point| {
+                directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
+                    && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re)
+                        .is_some()
+            })
+            .collect(),
+    )
 }
 
 fn arrangement_split_parameters(
@@ -2171,15 +2126,21 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
 pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
     let du = end.u - start.u;
     let dv = end.v - start.v;
-    let length_squared = du * du + dv * dv;
-    if length_squared == 0.0 {
+    let scale = du.abs().max(dv.abs());
+    if scale == 0.0 {
         return point_distance(point, start);
     }
-    let parameter =
-        (((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared).clamp(0.0, 1.0);
+    let u = du / scale;
+    let v = dv / scale;
+    let parameter = (((point.u - start.u) / scale * u + (point.v - start.v) / scale * v)
+        / (u * u + v * v))
+        .clamp(0.0, 1.0);
     point_distance(
         point,
-        Point2::new(start.u + parameter * du, start.v + parameter * dv),
+        Point2::new(
+            (1.0 - parameter) * start.u + parameter * end.u,
+            (1.0 - parameter) * start.v + parameter * end.v,
+        ),
     )
 }
 
@@ -2199,22 +2160,23 @@ fn segment_distance(left: (Point2, Point2), right: (Point2, Point2)) -> f64 {
 }
 
 fn segments_intersect(left: (Point2, Point2), right: (Point2, Point2)) -> bool {
-    fn side(line: (Point2, Point2), point: Point2) -> f64 {
-        (line.1.u - line.0.u) * (point.v - line.0.v) - (line.1.v - line.0.v) * (point.u - line.0.u)
+    use cadmpeg_ir::math::planar::orientation;
+    use std::cmp::Ordering::Equal;
+    let overlaps = |a: f64, b: f64, c: f64, d: f64| a.min(b) <= c.max(d) && c.min(d) <= a.max(b);
+    if !overlaps(left.0.u, left.1.u, right.0.u, right.1.u)
+        || !overlaps(left.0.v, left.1.v, right.0.v, right.1.v)
+    {
+        return false;
     }
-
-    let left_start = side(left, right.0);
-    let left_end = side(left, right.1);
-    let right_start = side(right, left.0);
-    let right_end = side(right, left.1);
-    if left_start == 0.0 && left_end == 0.0 && right_start == 0.0 && right_end == 0.0 {
-        let overlaps = |a0: f64, a1: f64, b0: f64, b1: f64| {
-            a0.min(a1) <= b0.max(b1) && b0.min(b1) <= a0.max(a1)
-        };
-        return overlaps(left.0.u, left.1.u, right.0.u, right.1.u)
-            && overlaps(left.0.v, left.1.v, right.0.v, right.1.v);
-    }
-    left_start * left_end <= 0.0 && right_start * right_end <= 0.0
+    let [Some(a), Some(b), Some(c), Some(d)] = [
+        orientation(left.0, left.1, right.0),
+        orientation(left.0, left.1, right.1),
+        orientation(right.0, right.1, left.0),
+        orientation(right.0, right.1, left.1),
+    ] else {
+        return false;
+    };
+    (a == Equal || b == Equal || a != b) && (c == Equal || d == Equal || c != d)
 }
 
 fn polygon_arc_loop_intersects(polygon: &[Point2], arc_loop: &[ProfileBoundarySegment]) -> bool {
@@ -2277,10 +2239,7 @@ fn boundary_segments_intersect(
 fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64)) -> bool {
     let (left_center, left_radius, left_start, left_end) = left;
     let (right_center, right_radius, right_start, right_end) = right;
-    let du = right_center.u - left_center.u;
-    let dv = right_center.v - left_center.v;
-    let distance_squared = du * du + dv * dv;
-    if distance_squared == 0.0 && left_radius == right_radius {
+    if left_center == right_center && left_radius == right_radius {
         return [left_start, left_end]
             .into_iter()
             .any(|angle| directed_angle_parameter(angle, right_start, right_end).is_some())
@@ -2288,43 +2247,19 @@ fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64))
                 .into_iter()
                 .any(|angle| directed_angle_parameter(angle, left_start, left_end).is_some());
     }
-    if distance_squared == 0.0 {
-        return false;
-    }
-    let distance = distance_squared.sqrt();
-    if distance > left_radius + right_radius || distance < (left_radius - right_radius).abs() {
-        return false;
-    }
-    let along = (left_radius * left_radius - right_radius * right_radius + distance_squared)
-        / (2.0 * distance);
-    let height_squared = left_radius * left_radius - along * along;
-    let error = 64.0 * f64::EPSILON * (left_radius * left_radius + along * along).max(1.0);
-    if height_squared < -error {
-        return false;
-    }
-    let base = Point2::new(
-        left_center.u + along * du / distance,
-        left_center.v + along * dv / distance,
-    );
-    let height = height_squared.max(0.0).sqrt();
-    [height, -height].into_iter().any(|signed_height| {
-        let point = Point2::new(
-            base.u - signed_height * dv / distance,
-            base.v + signed_height * du / distance,
-        );
-        directed_angle_parameter(
-            (point.v - left_center.v).atan2(point.u - left_center.u),
-            left_start,
-            left_end,
-        )
-        .is_some()
-            && directed_angle_parameter(
-                (point.v - right_center.v).atan2(point.u - right_center.u),
-                right_start,
-                right_end,
-            )
-            .is_some()
-    })
+    let left = ProfileBoundarySegment::Arc {
+        center: left_center,
+        radius: left_radius,
+        start_angle: left_start,
+        end_angle: left_end,
+    };
+    let right = ProfileBoundarySegment::Arc {
+        center: right_center,
+        radius: right_radius,
+        start_angle: right_start,
+        end_angle: right_end,
+    };
+    arc_intersection_points(&left, &right).is_some_and(|points| !points.is_empty())
 }
 
 pub(super) fn historical_member_points_in_state(
@@ -2619,7 +2554,7 @@ pub(super) fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -
 }
 
 fn point_distance(a: Point2, b: Point2) -> f64 {
-    ((a.u - b.u).powi(2) + (a.v - b.v).powi(2)).sqrt()
+    (a.u - b.u).hypot(a.v - b.v)
 }
 
 pub(super) fn closed_sketch_profiles(
