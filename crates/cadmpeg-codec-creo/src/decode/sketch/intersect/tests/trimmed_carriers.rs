@@ -313,20 +313,15 @@ fn arc_carriers_use_trim_vertices() {
         for factor in [1.0, 5.0, f64::INFINITY, f64::NAN] {
             let endpoints = [[-radius * factor, 0.0], [0.0, -radius * factor]];
             let saved = scaled.saved_section.as_mut().expect("saved arc fixture");
-            let crate::feature::definitions::FeatureSavedEntity::Arc(arc) =
-                &mut saved.entities[0]
+            let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut saved.entities[0]
             else {
                 panic!("saved arc fixture");
             };
             arc.radius = Some(radius);
             arc.endpoints = endpoints.map(|[u, v]| [Some(u), Some(v), Some(0.0)]);
             let vertices = BTreeMap::from([(1, endpoints[0]), (2, endpoints[1])]);
-            let geometry = trimmed_section_segment_geometry(
-                &scaled,
-                &BTreeMap::new(),
-                &vertices,
-                &segment,
-            );
+            let geometry =
+                trimmed_section_segment_geometry(&scaled, &BTreeMap::new(), &vertices, &segment);
             let resolved = resolved_trim_vertex_coordinates(&scaled, &BTreeMap::new());
             if factor == 1.0 {
                 assert!(geometry.is_some(), "radius {radius}");

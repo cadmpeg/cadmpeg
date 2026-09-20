@@ -1599,8 +1599,7 @@ fn line_carrier_matches(
     let Some(unit) = Vector3::new(direction[0], direction[1], 0.0).unit_nonzero() else {
         return false;
     };
-    let Some(span) = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0).unit_nonzero()
-    else {
+    let Some(span) = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0).unit_nonzero() else {
         return false;
     };
     let parallel_error = (unit.x * span.y - unit.y * span.x).abs();
