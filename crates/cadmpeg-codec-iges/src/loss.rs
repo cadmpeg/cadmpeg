@@ -33,7 +33,7 @@ macro_rules! loss_codes {
         impl IgesLossCode {
             /// Every code in declaration order.
             #[cfg(test)]
-            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),+];
+            const ALL: &'static [Self] = &[$(Self::$variant),+];
 
             /// The stable string identifier.
             #[must_use]
