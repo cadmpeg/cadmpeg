@@ -531,8 +531,10 @@ impl WireMembers {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct WireMembersWire {
+    /// Ordered edges reached from the first coedge; empty when none resolve.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edges: Vec<EdgeId>,
+    /// Isolated vertex of a wire with no first coedge.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
