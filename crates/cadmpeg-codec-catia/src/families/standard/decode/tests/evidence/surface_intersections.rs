@@ -640,7 +640,7 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
             Vector3::new(1., 0., 0.),
             0.1,
         )
-        .unwrap(),
+        .expect("an axis-aligned cylinder of radius 0.1 is representable"),
     ));
     let support = StandardCurveSupport {
         pos: 12,
