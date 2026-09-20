@@ -3074,17 +3074,18 @@ pub(super) fn validate_curve_edits(
             ));
         }
         let valid = match (before, after) {
-            (_, Some(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Degenerate(_))) => true,
-            (_, Some(SolvedCurveGeometry::Circle(circle_curve))) => {
-                let axis = circle_curve.axis();
-                let ref_direction = circle_curve.ref_direction();
-                orthonormal_pair(*axis, *ref_direction)
-            }
-            (_, Some(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-                let axis = ellipse_curve.axis();
-                let major_direction = ellipse_curve.major_direction();
-                orthonormal_pair(*axis, *major_direction)
-            }
+            // A circle and an ellipse hold their two directions in one
+            // `OrthonormalFrame3`, which admits them, so a same-kind edit to
+            // either carries no condition this writer can still refuse.
+            (
+                _,
+                Some(
+                    SolvedCurveGeometry::Line(_)
+                    | SolvedCurveGeometry::Degenerate(_)
+                    | SolvedCurveGeometry::Circle(_)
+                    | SolvedCurveGeometry::Ellipse(_),
+                ),
+            ) => true,
             (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
                 (id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
@@ -3265,34 +3266,22 @@ pub(super) fn validate_surface_edits(
             ));
         }
         let valid = match (before, after) {
-            (_, Some(SolvedSurfaceGeometry::Plane(plane_surface))) => {
-                let normal = plane_surface.normal();
-                let u_axis = plane_surface.u_axis();
-                orthonormal_pair(*normal, *u_axis)
-            }
-            (_, Some(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
-                let axis = sphere_surface.axis();
-                let ref_direction = sphere_surface.ref_direction();
-                orthonormal_pair(*axis, *ref_direction)
-            }
-            (_, Some(SolvedSurfaceGeometry::Torus(torus_surface))) => {
-                let axis = torus_surface.axis();
-                let ref_direction = torus_surface.ref_direction();
-                orthonormal_pair(*axis, *ref_direction)
-            }
-            (_, Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
-                let axis = cylinder_surface.axis();
-                let ref_direction = cylinder_surface.ref_direction();
-                orthonormal_pair(*axis, *ref_direction)
-            }
+            // A plane, sphere, torus and cylinder hold their two directions in
+            // one `OrthonormalFrame3`, which admits them, so a same-kind edit
+            // to any of them carries no condition this writer can still refuse.
+            (
+                _,
+                Some(
+                    SolvedSurfaceGeometry::Plane(_)
+                    | SolvedSurfaceGeometry::Sphere(_)
+                    | SolvedSurfaceGeometry::Torus(_)
+                    | SolvedSurfaceGeometry::Cylinder(_),
+                ),
+            ) => true,
             (_, Some(SolvedSurfaceGeometry::Cone(cone_surface))) => {
-                let axis = cone_surface.axis();
-                let ref_direction = cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();
                 let half_angle = cone_surface.half_angle().get();
-                orthonormal_pair(*axis, *ref_direction)
-                    && radius != 0.0
-                    && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+                radius != 0.0 && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
             (
                 Some(SolvedSurfaceGeometry::Nurbs(before)),
@@ -3882,6 +3871,33 @@ mod tests {
             error
                 .to_string()
                 .contains("cannot change curve f3d:brep:entity#7 into a NURBS carrier"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_knot_multiplicity_is_malformed() {
+        let nurbs = |knots: Vec<f64>| {
+            curve(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    knots,
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("degree, knots and control points agree"),
+            ))
+        };
+        let error = validate_curve_edits(
+            &nurbs(vec![0.0, 0.0, 1.0, 1.0]),
+            &nurbs(vec![0.0, 0.5, 1.0, 1.0]),
+        )
+        .expect_err("a NURBS carrier keeps its knot multiplicities");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 has an invalid frame or radius"),
             "{error}"
         );
     }
