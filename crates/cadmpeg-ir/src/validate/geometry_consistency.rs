@@ -6,9 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::eval::{
-    nurbs_pcurve_parameter_domain,
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
-    model_surface_point_by_id, pcurve_tangent, pcurve_uv,
+    model_surface_point_by_id, nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
 };
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -923,9 +922,11 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs { nurbs } => {
-            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.control_points().len())
-        }
+        PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points().len(),
+        ),
         PcurveGeometry::PolarNurbs { nurbs } => {
             nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }

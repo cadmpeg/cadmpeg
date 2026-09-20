@@ -304,9 +304,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         angular_scale: scale,
         chart_origin: 0.0,
     };
-    let geometry =
-        lifted_curve_geometry(&pcurve, &cylinder)
-            .expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -605,9 +603,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let geometry =
-        lifted_curve_geometry(&pcurve, &cylinder)
-            .expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -640,8 +636,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
         ..pcurve.clone()
     };
-    let tiny_geometry = lifted_curve_geometry(&tiny_pcurve, &cylinder)
-    .expect("tiny cylinder latitude");
+    let tiny_geometry =
+        lifted_curve_geometry(&tiny_pcurve, &cylinder).expect("tiny cylinder latitude");
     let tiny_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -691,8 +687,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ..pcurve
     };
     let turnback_geometry =
-        lifted_curve_geometry(&turnback, &cylinder)
-            .expect("turnback latitude locus");
+        lifted_curve_geometry(&turnback, &cylinder).expect("turnback latitude locus");
     let turnback_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -728,9 +723,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[0.0, -4.0], [2.0, -4.0]],
         ..reversed_pcurve
     };
-    let cone_geometry =
-        lifted_curve_geometry(&cone_pcurve, &cone)
-            .expect("signed cone latitude");
+    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone).expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
             -4.0 * half_angle.sin() * angle.cos(),
@@ -1350,7 +1343,11 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         false,
     )
     .expect("valid tensor surface");
-    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(&surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, 0.25)
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+        &surface,
+        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+        0.25,
+    )
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());

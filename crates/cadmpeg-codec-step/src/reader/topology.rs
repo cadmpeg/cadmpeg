@@ -12,10 +12,9 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
-    nurbs_pcurve_parameter_domain,
     model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
-    pcurve_tangent, pcurve_uv,
+    nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,

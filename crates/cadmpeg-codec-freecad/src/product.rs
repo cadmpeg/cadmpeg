@@ -2,8 +2,8 @@
 //! Product containers and link occurrences recovered from the application graph.
 
 use crate::native::frame::FiniteFrame;
-use crate::placement::{placement_matrix, placement_components};
 use crate::native::joint::JointRecord;
+use crate::placement::{placement_components, placement_matrix};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 

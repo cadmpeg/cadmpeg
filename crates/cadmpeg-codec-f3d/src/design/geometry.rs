@@ -684,9 +684,16 @@ fn line_arc_intersection_points(
     };
     let direction = Point2::new(end.u - start.u, end.v - start.v);
     let offset = Point2::new(start.u - center.u, start.v - center.v);
-    let scale = direction.u.abs().max(direction.v.abs())
-        .max(offset.u.abs()).max(offset.v.abs()).max(radius.abs());
-    if !scale.is_finite() || scale == 0.0 { return None; }
+    let scale = direction
+        .u
+        .abs()
+        .max(direction.v.abs())
+        .max(offset.u.abs())
+        .max(offset.v.abs())
+        .max(radius.abs());
+    if !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
     let d = Point2::new(direction.u / scale, direction.v / scale);
     let o = Point2::new(offset.u / scale, offset.v / scale);
     let radius = radius / scale;
@@ -697,15 +704,18 @@ fn line_arc_intersection_points(
     let linear = 2.0 * (o.u * d.u + o.v * d.v);
     let constant = o.u * o.u + o.v * o.v - radius * radius;
     let discriminant = linear * linear - 4.0 * quadratic * constant;
-    let error =
-        64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs());
+    let error = 64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs());
     if discriminant < -error {
         return Some(Vec::new());
     }
     let root = discriminant.max(0.0).sqrt();
     let mut points = Vec::new();
     let q = -0.5 * (linear + root.copysign(linear));
-    let parameters = if root == 0.0 { [-linear / (2.0 * quadratic); 2] } else { [q / quadratic, constant / q] };
+    let parameters = if root == 0.0 {
+        [-linear / (2.0 * quadratic); 2]
+    } else {
+        [q / quadratic, constant / q]
+    };
     for parameter in parameters {
         if (0.0..=1.0).contains(&parameter) {
             let point = Point2::new(

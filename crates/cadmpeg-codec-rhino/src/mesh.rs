@@ -696,10 +696,8 @@ pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<
             }
             triangles.push([unique[0], unique[1], unique[2]]);
         } else if unique_face_vertices(face) == 4 {
-            let diagonal_02 =
-                vertices[face[0] as usize].distance(vertices[face[2] as usize]);
-            let diagonal_13 =
-                vertices[face[1] as usize].distance(vertices[face[3] as usize]);
+            let diagonal_02 = vertices[face[0] as usize].distance(vertices[face[2] as usize]);
+            let diagonal_13 = vertices[face[1] as usize].distance(vertices[face[3] as usize]);
             if diagonal_02 <= diagonal_13 {
                 triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
             } else {
@@ -1551,10 +1549,15 @@ mod tests {
     #[test]
     fn numerical_audit_quad_uses_shorter_large_diagonal() {
         let vertices = [
-            Point3::new(0.0, 0.0, 0.0), Point3::new(1.0e200, 0.0, 0.0),
-            Point3::new(2.0e200, 2.0e200, 0.0), Point3::new(0.0, 1.0e200, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0e200, 0.0, 0.0),
+            Point3::new(2.0e200, 2.0e200, 0.0),
+            Point3::new(0.0, 1.0e200, 0.0),
         ];
-        assert_eq!(super::triangulate_faces(&[[0, 1, 2, 3]], &vertices), vec![[0, 1, 3], [1, 2, 3]]);
+        assert_eq!(
+            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices),
+            vec![[0, 1, 3], [1, 2, 3]]
+        );
     }
 
     use std::io::Write;

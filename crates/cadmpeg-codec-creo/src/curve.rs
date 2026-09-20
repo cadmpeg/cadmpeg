@@ -1872,7 +1872,13 @@ fn evaluate_expression_program_details(
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
             let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| parse_relation_expression::<CurveExpressionValue>(condition_source, &values, context))
+                .then(|| {
+                    parse_relation_expression::<CurveExpressionValue>(
+                        condition_source,
+                        &values,
+                        context,
+                    )
+                })
                 .flatten()
                 .and_then(|value| value.truth());
             let parent = activity;
@@ -1905,7 +1911,13 @@ fn evaluate_expression_program_details(
         match activity {
             CurveExpressionActivation::Active => {
                 assignment.value = declaration_is_valid
-                    .then(|| parse_relation_expression::<CurveExpressionValue>(&assignment.expression, &values, context))
+                    .then(|| {
+                        parse_relation_expression::<CurveExpressionValue>(
+                            &assignment.expression,
+                            &values,
+                            context,
+                        )
+                    })
                     .flatten()
                     .and_then(|value| {
                         apply_declared_relation_unit(value, declared_unit.as_deref())
@@ -4874,8 +4886,16 @@ fn infer_solve_variable_dimensions(
 
     let mut constraints = Vec::new();
     for equation in &block.equations {
-        let left = parse_relation_expression::<DimensionProbeValue>(&equation.left, &probe_values, context)?;
-        let right = parse_relation_expression::<DimensionProbeValue>(&equation.right, &probe_values, context)?;
+        let left = parse_relation_expression::<DimensionProbeValue>(
+            &equation.left,
+            &probe_values,
+            context,
+        )?;
+        let right = parse_relation_expression::<DimensionProbeValue>(
+            &equation.right,
+            &probe_values,
+            context,
+        )?;
         constraints.extend(left.constraints.iter().cloned());
         constraints.extend(right.constraints.iter().cloned());
         constraints.push(DimensionEquality {
@@ -5068,10 +5088,16 @@ fn solve_affine_expression_block(
         .equations
         .iter()
         .map(|equation| {
-            let left =
-                parse_relation_expression::<SimultaneousAffineValue>(&equation.left, &affine_values, context)?;
-            let right =
-                parse_relation_expression::<SimultaneousAffineValue>(&equation.right, &affine_values, context)?;
+            let left = parse_relation_expression::<SimultaneousAffineValue>(
+                &equation.left,
+                &affine_values,
+                context,
+            )?;
+            let right = parse_relation_expression::<SimultaneousAffineValue>(
+                &equation.right,
+                &affine_values,
+                context,
+            )?;
             let difference = left.combine(right, true)?;
             let coefficients = variable_keys
                 .iter()
@@ -5409,8 +5435,16 @@ fn evaluate_nonlinear_residuals(
         .equations
         .iter()
         .map(|equation| {
-            let left = parse_relation_expression::<CurveExpressionValue>(&equation.left, &evaluation_values, context)?;
-            let right = parse_relation_expression::<CurveExpressionValue>(&equation.right, &evaluation_values, context)?;
+            let left = parse_relation_expression::<CurveExpressionValue>(
+                &equation.left,
+                &evaluation_values,
+                context,
+            )?;
+            let right = parse_relation_expression::<CurveExpressionValue>(
+                &equation.right,
+                &evaluation_values,
+                context,
+            )?;
             let (left, left_dimension) = quantity_parts_ref(&left)?;
             let (right, right_dimension) = quantity_parts_ref(&right)?;
             (left_dimension == right_dimension).then_some(())?;
@@ -5545,7 +5579,13 @@ fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, A
         match assignment.activation {
             CurveExpressionActivation::Active => {
                 let value = declaration_is_valid
-                    .then(|| parse_relation_expression::<crate::curve::AffineValue>(&assignment.expression, &values, RelationEvaluationContext::default()))
+                    .then(|| {
+                        parse_relation_expression::<crate::curve::AffineValue>(
+                            &assignment.expression,
+                            &values,
+                            RelationEvaluationContext::default(),
+                        )
+                    })
                     .flatten()
                     .and_then(|value| {
                         declared_unit

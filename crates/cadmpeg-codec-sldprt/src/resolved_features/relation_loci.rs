@@ -2632,7 +2632,10 @@ pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Op
     };
     super::relation_records::line_line_angle(
         [[first_start.u, first_start.v], [first_end.u, first_end.v]],
-        [[second_start.u, second_start.v], [second_end.u, second_end.v]],
+        [
+            [second_start.u, second_start.v],
+            [second_end.u, second_end.v],
+        ],
     )
 }
 

@@ -4089,11 +4089,13 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
             let pivot = (0..3).max_by(|&a, &b| transform[a][a].total_cmp(&transform[b][b]))?;
             let mut axis = [0.0; 3];
             axis[pivot] = ((transform[pivot][pivot] + 1.0) * 0.5).max(0.0).sqrt();
-            if axis[pivot] == 0.0 { return None; }
+            if axis[pivot] == 0.0 {
+                return None;
+            }
             for other in 0..3 {
                 if other != pivot {
-                    axis[other] = (transform[pivot][other] + transform[other][pivot])
-                        / (4.0 * axis[pivot]);
+                    axis[other] =
+                        (transform[pivot][other] + transform[other][pivot]) / (4.0 * axis[pivot]);
                 }
             }
             (axis[0], axis[1], axis[2])

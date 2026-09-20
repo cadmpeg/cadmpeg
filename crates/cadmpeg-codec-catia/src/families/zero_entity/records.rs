@@ -1662,7 +1662,11 @@ fn zero_entity_model_curve(
         {
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, constant_coordinate(0)?)?,
+                    cadmpeg_ir::eval::nurbs_surface_isocurve(
+                        surface,
+                        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+                        constant_coordinate(0)?,
+                    )?,
                 )),
                 uv_endpoints.map(|uv| uv[1]),
             ))
@@ -1672,7 +1676,11 @@ fn zero_entity_model_curve(
         {
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V, constant_coordinate(1)?)?,
+                    cadmpeg_ir::eval::nurbs_surface_isocurve(
+                        surface,
+                        cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+                        constant_coordinate(1)?,
+                    )?,
                 )),
                 uv_endpoints.map(|uv| uv[0]),
             ))
