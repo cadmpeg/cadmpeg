@@ -980,12 +980,15 @@ mod tests {
             active.push(0x09);
             active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width.bytes()]);
             active.extend_from_slice(&payload);
-            let definition = active.len();
             active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
             active.push(0x11);
 
-            let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
-            assert_eq!(tables.for_width(ref_width), [definition]);
+            let records = crate::sab::frame(&active, 0, active.len(), ref_width)
+                .expect("wide-string record frames at its declared width");
+            let table = super::SubtypeTable::from_records(&records);
+            assert_eq!(table.defs.len(), 1);
+            assert!(matches!(table.span(0).expect("real definition").tokens(),
+            [Token::SubtypeOpen, Token::Ident(name), Token::SubtypeClose] if name == "real_def"));
         }
     }
 }

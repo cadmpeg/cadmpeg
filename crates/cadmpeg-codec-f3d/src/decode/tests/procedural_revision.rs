@@ -1722,9 +1722,8 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // The support is the unit bilinear patch scaled to millimetres, so the
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve =
-        decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight, None)
-            .expect("form-2 isoline");
+    let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+        .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
@@ -1735,21 +1734,16 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // A pcurve that crosses the support holds neither parameter fixed, so no
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
-    assert!(decode_par_int_cur_isoline(
-        &diagonal,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&diagonal, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .is_none()
+    );
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
-    assert!(decode_par_int_cur_isoline(
-        &partial,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&partial, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
+    );
 }
 
 #[test]
