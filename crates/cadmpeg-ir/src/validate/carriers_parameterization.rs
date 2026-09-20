@@ -617,22 +617,6 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 additional,
                 ..
             } => {
-                fn collect<'a>(
-                    expression: &'a crate::geometry::LawExpression,
-                    curves: &mut HashSet<&'a str>,
-                ) {
-                    match expression {
-                        crate::geometry::LawExpression::Edge { curve, .. } => {
-                            curves.insert(curve.id.as_str());
-                        }
-                        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-                            for operand in operands {
-                                collect(operand, curves);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
                 for side in context.sides() {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.as_str());
@@ -640,7 +624,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 for formula in std::iter::once(primary).chain(additional) {
                     for variable in formula.formula().variables() {
-                        collect(variable, &mut curves);
+                        collect_law_curves(variable, &mut curves);
                     }
                 }
             }

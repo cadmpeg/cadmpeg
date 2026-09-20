@@ -21,10 +21,6 @@ use crate::topology::Sense;
 
 use crate::units::COINCIDENCE_TOLERANCE;
 
-fn distance(a: Point3, b: Point3) -> f64 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
-}
-
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
 fn allowance(document_tolerance: crate::scalar::PositiveReal, tolerances: &[Option<f64>]) -> f64 {
@@ -80,7 +76,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 });
                 continue;
             };
-            let mismatch = distance(start, endpoints[0]).max(distance(end, endpoints[1]));
+            let mismatch =
+                Point3::distance(start, endpoints[0]).max(Point3::distance(end, endpoints[1]));
             if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -134,9 +131,9 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 );
                 continue;
             };
-            let offset_mismatch = (distance(solved_start, base_start) - offset.abs())
+            let offset_mismatch = (Point3::distance(solved_start, base_start) - offset.abs())
                 .abs()
-                .max((distance(solved_end, base_end) - offset.abs()).abs());
+                .max((Point3::distance(solved_end, base_end) - offset.abs()).abs());
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -264,7 +261,7 @@ fn check_support_sides(
             continue;
         };
         let endpoint_mismatch = |constrained, support| {
-            let distance = distance(constrained, support);
+            let distance = Point3::distance(constrained, support);
             expected_distance.map_or(distance, |expected| (distance - expected).abs())
         };
         let mismatch = endpoint_mismatch(constrained[0], support_start)
@@ -364,7 +361,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .flatten(),
             ],
         );
-        let mismatch = distance(at_start, *start).max(distance(at_end, *end));
+        let mismatch = Point3::distance(at_start, *start).max(Point3::distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -421,7 +418,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .flatten(),
             ],
         );
-        let mismatch = distance(at_start, *start).max(distance(at_end, *end));
+        let mismatch = Point3::distance(at_start, *start).max(Point3::distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -625,8 +622,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     model_surface_point_by_id(&index, &face.surface, uv0.u, uv0.v)?,
                     model_surface_point_by_id(&index, &face.surface, uv1.u, uv1.v)?,
                 );
-                let forward = distance(p0, *start).max(distance(p1, *end));
-                let reversed = distance(p0, *end).max(distance(p1, *start));
+                let forward = Point3::distance(p0, *start).max(Point3::distance(p1, *end));
+                let reversed = Point3::distance(p0, *end).max(Point3::distance(p1, *start));
                 Some(forward.min(reversed))
             })
             .reduce(f64::min)
@@ -782,7 +779,7 @@ fn mapped_pcurve_parameter_near_point(
         );
         Some((point, tangent))
     };
-    let mismatch = |point: Point3| distance(point, target);
+    let mismatch = |point: Point3| Point3::distance(point, target);
     let mut parameter = clamp_to_domain(seed);
     for _ in 0..32 {
         let (point, tangent) = evaluate(parameter)?;

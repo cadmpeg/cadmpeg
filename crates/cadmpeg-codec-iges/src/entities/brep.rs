@@ -149,10 +149,11 @@ fn source_edge_for_vertices<'a>(
         .filter_map(|position| ir.model.edges.get(*position))
     {
         let endpoints_agree = edge.param_range().is_some_and(|range| {
-            evaluation::curve(curve_geometry, range[0])
-                .is_some_and(|point| evaluation::distance(point, natural_start) <= tolerance)
-                && evaluation::curve(curve_geometry, range[1])
-                    .is_some_and(|point| evaluation::distance(point, natural_end) <= tolerance)
+            evaluation::curve(curve_geometry, range[0]).is_some_and(|point| {
+                cadmpeg_ir::math::Point3::distance(point, natural_start) <= tolerance
+            }) && evaluation::curve(curve_geometry, range[1]).is_some_and(|point| {
+                cadmpeg_ir::math::Point3::distance(point, natural_end) <= tolerance
+            })
         });
         if endpoints_agree {
             if matching.is_some() {
@@ -251,11 +252,12 @@ fn resolve_pcurve_uses<'a>(
         mapped.push((start, end));
     }
     Ok(
-        (evaluation::distance(mapped[0].0, expected_start) <= tolerance
-            && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
+        (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance
+            && cadmpeg_ir::math::Point3::distance(mapped[mapped.len() - 1].1, expected_end)
+                <= tolerance
             && mapped
                 .windows(2)
-                .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance))
+                .all(|pair| cadmpeg_ir::math::Point3::distance(pair[0].1, pair[1].0) <= tolerance))
         .then_some(resolved),
     )
 }

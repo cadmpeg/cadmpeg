@@ -262,7 +262,3 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
         | CurveGeometry::Procedural { .. } => None,
     }
 }
-
-pub(super) fn distance(left: Point3, right: Point3) -> f64 {
-    ((left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)).sqrt()
-}
