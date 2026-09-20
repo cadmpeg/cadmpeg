@@ -1657,12 +1657,27 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         rows[0].swap(0, 1);
         rows[1].swap(0, 1);
     }
-    reversed
-        .set_poles(
-            NurbsPoleGrid::from_lanes(reversed_grid, reversed_weights)
-                .expect("finite fixture geometry preserves NURBS invariants"),
-        )
-        .expect("finite fixture geometry preserves NURBS invariants");
+    {
+        let replacement = NurbsPoleGrid::from_lanes(reversed_grid, reversed_weights)
+            .expect("finite fixture geometry preserves NURBS invariants");
+        cadmpeg_test_support::edit::replace(&mut reversed, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
         7,
@@ -1677,12 +1692,27 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     same_side_grid[1][0] = Point3::new(-2.0, 0.0, 0.0);
     same_side_grid[1][1] = Point3::new(-2.0, 0.0, 1.0);
     let same_side_weights = same_side.weights();
-    same_side
-        .set_poles(
-            NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
-                .expect("finite fixture geometry preserves NURBS invariants"),
-        )
-        .expect("finite fixture geometry preserves NURBS invariants");
+    {
+        let replacement = NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
+            .expect("finite fixture geometry preserves NURBS invariants");
+        cadmpeg_test_support::edit::replace(&mut same_side, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
         7,
@@ -1693,7 +1723,26 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .is_none());
 
     let mut periodic_transverse = second.clone();
-    periodic_transverse.set_u_periodic(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(&mut periodic_transverse, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
     assert!(shared_extrusion_generator_curve(
         &first,
         7,
@@ -1707,12 +1756,27 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     let mut different_grid = different_boundary.control_grid();
     different_grid[0][1].x = 0.1;
     let different_weights = different_boundary.weights();
-    different_boundary
-        .set_poles(
-            NurbsPoleGrid::from_lanes(different_grid, different_weights)
-                .expect("finite fixture geometry preserves NURBS invariants"),
-        )
-        .expect("finite fixture geometry preserves NURBS invariants");
+    {
+        let replacement = NurbsPoleGrid::from_lanes(different_grid, different_weights)
+            .expect("finite fixture geometry preserves NURBS invariants");
+        cadmpeg_test_support::edit::replace(&mut different_boundary, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .expect("finite fixture geometry preserves NURBS invariants");
     assert!(shared_extrusion_generator_curve(
         &first,
         7,

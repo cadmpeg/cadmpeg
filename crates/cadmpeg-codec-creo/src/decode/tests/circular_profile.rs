@@ -261,31 +261,35 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
-    ir.model.sketch_entities[1]
-        .geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Line { start, .. } = definition {
                 *start = Point2::new(0.0, 0.0);
             } else {
                 unreachable!();
             }
-        })
-        .expect("valid test fixture");
+        })(&mut definition);
+        definition.try_into()
+    })
+    .expect("valid test fixture");
     assert_eq!(
         connected_sketch_profile_vertices(&ir, &sketch_id),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
-    ir.model.sketch_entities[1]
-        .geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Line { end, .. } = definition {
                 *end = Point2::new(2.0, 0.0);
             } else {
                 unreachable!();
             }
-        })
-        .expect("valid test fixture");
+        })(&mut definition);
+        definition.try_into()
+    })
+    .expect("valid test fixture");
     assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
 }
 

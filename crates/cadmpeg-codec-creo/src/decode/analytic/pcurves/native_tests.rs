@@ -287,7 +287,18 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut periodic)) = geometry else {
         unreachable!("test geometry is NURBS");
     };
-    periodic.set_periodic(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(&mut periodic, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+        })
+        .unwrap()
+    };
     assert!(
         nonperiodic_nurbs_endpoint_points(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             periodic

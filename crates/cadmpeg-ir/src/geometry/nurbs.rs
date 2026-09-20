@@ -693,26 +693,6 @@ impl NurbsSurface {
         &self.v_knots
     }
 
-    /// Atomically edit the u knot vector and preserve its invariants.
-    pub fn edit_u_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.u_knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)
-            .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
-        self.u_knots = values;
-        Ok(())
-    }
-
-    /// Atomically edit the v knot vector and preserve its invariants.
-    pub fn edit_v_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.v_knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)
-            .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
-        self.v_knots = values;
-        Ok(())
-    }
-
     /// Number of control points along u, the number of grid rows.
     pub fn u_count(&self) -> usize {
         self.poles.u_count()
@@ -802,35 +782,14 @@ impl NurbsSurface {
         Some(self.poles.weights()?.into_iter().flatten().collect())
     }
 
-    /// Replace the control grid, keeping the knot cardinalities.
-    pub fn set_poles(&mut self, poles: NurbsPoleGrid) -> Result<(), NurbsError> {
-        *self = Self::new(
-            NurbsSurfaceAxis::new(self.u_degree, self.u_knots.clone(), self.u_periodic),
-            NurbsSurfaceAxis::new(self.v_degree, self.v_knots.clone(), self.v_periodic),
-            poles,
-            self.normal_reversed,
-        )?;
-        Ok(())
-    }
-
     /// Whether the carrier's oriented normal is reversed.
     pub const fn normal_reversed(&self) -> bool {
         self.normal_reversed
     }
 
-    /// Set whether the carrier's oriented normal is reversed.
-    pub fn set_normal_reversed(&mut self, value: bool) {
-        self.normal_reversed = value;
-    }
-
     /// Whether the surface is periodic in u.
     pub const fn u_periodic(&self) -> bool {
         self.u_periodic
-    }
-
-    /// Set whether the surface is periodic in u.
-    pub fn set_u_periodic(&mut self, value: bool) {
-        self.u_periodic = value;
     }
 
     /// Whether the surface is periodic in v.
@@ -1009,20 +968,9 @@ impl NurbsCurve {
         self.poles.weights()
     }
 
-    /// Replace the poles, keeping the knot cardinality.
-    pub fn set_poles(&mut self, poles: NurbsPoles3) -> Result<(), NurbsError> {
-        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
-        Ok(())
-    }
-
     /// Whether the curve is periodic.
     pub const fn periodic(&self) -> bool {
         self.periodic
-    }
-
-    /// Set whether the curve is periodic.
-    pub fn set_periodic(&mut self, value: bool) {
-        self.periodic = value;
     }
 
     /// Reverse poles, weights, and the signed knot parameterization together.

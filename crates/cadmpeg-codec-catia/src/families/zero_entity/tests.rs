@@ -463,7 +463,18 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     else {
         panic!("NURBS support model curve")
     };
-    model_curve.set_periodic(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(model_curve, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+        })
+        .unwrap()
+    };
     let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve
         .store(&mut invalid_model_curve_namespace)

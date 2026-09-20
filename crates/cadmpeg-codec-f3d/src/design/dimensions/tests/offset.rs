@@ -203,9 +203,9 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     ));
 
     let mut skewed = result;
-    skewed
-        .geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut skewed.geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             let SketchGeometryDefinition::Nurbs { curve } = definition else {
                 unreachable!("test result is a NURBS")
             };
@@ -220,8 +220,10 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                     Ok(())
                 })
                 .unwrap();
-        })
-        .unwrap();
+        })(&mut definition);
+        definition.try_into()
+    })
+    .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
@@ -767,14 +769,16 @@ fn counted_roles_require_matching_solved_geometry() {
         Some(SketchConstraintDefinitionInput::Equal { first, second })
             if &first == arc.id() && &second == equal_arc.id()
     ));
-    equal_arc
-        .geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut equal_arc.geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Arc { radius, .. } = definition {
                 *radius = Length::new(2.0).unwrap();
             }
-        })
-        .unwrap();
+        })(&mut definition);
+        definition.try_into()
+    })
+    .unwrap();
     assert!(counted_role_relation(&[&arc, &equal_arc], 0x800).is_none());
 }
 

@@ -51,8 +51,44 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         Ok(())
     })
     .unwrap();
-    new.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
-    new.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
+    cadmpeg_test_support::edit::replace(&mut new, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    cadmpeg_test_support::edit::replace(&mut new, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
     let dirty_slots = [
         f64::from_bits(0x7ff8_0000_0000_0001).to_be_bytes(),
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
@@ -157,8 +193,44 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 Ok(())
             })
             .unwrap();
-        surface.edit_u_knots(|knots| knots[2..].fill(2.0)).unwrap();
-        surface.edit_v_knots(|knots| knots[2..].fill(3.0)).unwrap();
+        cadmpeg_test_support::edit::replace(surface, |previous| {
+            let mut knots = previous.u_knots().to_vec();
+            (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    knots,
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap();
+        cadmpeg_test_support::edit::replace(surface, |previous| {
+            let mut knots = previous.v_knots().to_vec();
+            (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    knots,
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)
     };

@@ -376,9 +376,19 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
 
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
-        procedural
-            .set_record_bounds(None)
-            .expect("clearing record bounds");
+        {
+            let replacement = None;
+            cadmpeg_test_support::edit::replace(procedural, |previous| {
+                cadmpeg_ir::geometry::RecordBounds::try_option(replacement).map(|bounds| {
+                    cadmpeg_ir::geometry::ProceduralSurface::new(
+                        previous.id.clone(),
+                        previous.definition().clone(),
+                        bounds,
+                    )
+                })
+            })
+        }
+        .expect("clearing record bounds");
     }
     let pcurve = source_without_record_bounds
         .model

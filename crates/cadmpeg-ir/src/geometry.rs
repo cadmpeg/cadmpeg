@@ -1532,25 +1532,6 @@ impl ProceduralCurveDefinition {
         }
     }
 
-    /// Raise the fit tolerance of an existing solved cache.
-    ///
-    /// A read-modify route, never a write route: a form with no solved cache
-    /// stays without one. Parameterized forms have no solved cache and remain
-    /// unchanged, and so do a form whose layout states no legacy slot and a
-    /// form whose legacy slot is empty.
-    pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        match self.write_revision_fit_tolerance(value, ToleranceWrite::Raise) {
-            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => {}
-            RevisionCacheWrite::NoForm => {
-                if let Some(Some(cache)) = self.legacy_cache_slot_mut() {
-                    if value.get() > cache.fit_tolerance.get() {
-                        cache.fit_tolerance = value;
-                    }
-                }
-            }
-        }
-    }
-
     /// State that a solved carrier of this construction was fitted to `value`,
     /// raising an existing contract rather than lowering it.
     ///
@@ -1630,25 +1611,10 @@ impl ProceduralSurface {
         self.record_bounds.map(RecordBounds::get)
     }
 
-    /// Replace the retained native record bounds after finite-value admission.
-    pub fn set_record_bounds(
-        &mut self,
-        record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Result<(), RecordBoundsError> {
-        self.record_bounds = RecordBounds::try_option(record_bounds)?;
-        Ok(())
-    }
-
     /// Borrow the neutral construction definition.
     #[must_use]
     pub fn definition(&self) -> &ProceduralSurfaceDefinition {
         &self.definition
-    }
-
-    /// Replace the construction definition. The cache contract travels with
-    /// the definition, so nothing outside it changes.
-    pub fn replace_definition(&mut self, definition: ProceduralSurfaceDefinition) {
-        self.definition = definition;
     }
 
     /// Edit the definition in place.
@@ -3012,15 +2978,6 @@ impl<P> RevisionCacheForm<P> {
         }
     }
 
-    /// Native selector emitted for this cache form.
-    #[must_use]
-    pub const fn selector(&self) -> i64 {
-        match self {
-            Self::SolvedCache { .. } => 0,
-            Self::Parameterization(_) => 2,
-        }
-    }
-
     /// Parameterization carried in place of a solved cache.
     #[must_use]
     pub const fn parameterization(&self) -> Option<&P> {
@@ -3081,15 +3038,6 @@ impl VariableBlendCache {
             Self::Current { shape_prefix, .. } => shape_prefix.get(),
             Self::Stale {} => 0,
             Self::Parameterization { shape_prefix, .. } => *shape_prefix,
-        }
-    }
-
-    /// Native tail selector.
-    #[must_use]
-    pub const fn selector(&self) -> i64 {
-        match self {
-            Self::Current { .. } | Self::Stale {} => 0,
-            Self::Parameterization { .. } => 2,
         }
     }
 
@@ -6418,25 +6366,6 @@ impl IntcurveSupportContext {
         })
     }
 
-    /// Edit the context transactionally and retain its previous value on rejection.
-    pub fn edit<R>(
-        &mut self,
-        edit: impl FnOnce(&mut [IntcurveSupportSide; 2], &mut [f64; 2], &mut [Vec<f64>; 3]) -> R,
-    ) -> Result<R, &'static str> {
-        let mut candidate = self.clone();
-        let result = edit(
-            &mut candidate.sides,
-            &mut candidate.parameter_range,
-            &mut candidate.discontinuities,
-        );
-        *self = Self::try_new(
-            candidate.sides,
-            candidate.parameter_range,
-            candidate.discontinuities,
-        )?;
-        Ok(result)
-    }
-
     /// Set a support surface without changing its pcurve mapping.
     pub fn set_surface(&mut self, side: usize, surface: Option<SurfaceId>) {
         self.sides[side].surface = surface;
@@ -7127,17 +7056,6 @@ impl SurfaceCurveFamily {
         }
     }
 
-    /// Mutably borrow the shared support context.
-    #[must_use]
-    pub fn context_mut(&mut self) -> &mut IntcurveSupportContext {
-        match self {
-            Self::Blend { context, .. }
-            | Self::SurfaceConstrained { context, .. }
-            | Self::Parametric { context, .. }
-            | Self::Skin { context, .. } => context,
-        }
-    }
-
     fn revision_cache(&self) -> Option<&RevisionCacheForm<CacheFirstCurveParameterization>> {
         match self {
             Self::Blend { tail, .. }
@@ -7638,11 +7556,6 @@ impl ProceduralCurve {
     ) -> Result<(), CacheContractError> {
         let value = value.map(FitTolerance::try_new).transpose()?;
         self.definition.set_cache_fit_tolerance(value)
-    }
-
-    /// Raise the fit tolerance of an existing solved cache.
-    pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        self.definition.raise_cache_fit_tolerance(value);
     }
 
     /// State that a solved carrier of this construction was fitted to `value`,

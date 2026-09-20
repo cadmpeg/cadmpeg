@@ -164,15 +164,22 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let scaled_weights = scaled
         .weights()
         .map(|weights| weights.into_iter().map(|weight| weight * 7.0).collect());
-    scaled
-        .set_poles(
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
-                scaled.pole_rows().points(),
-                scaled_weights,
-            )
-            .expect("scaled weights are finite and non-zero"),
+    {
+        let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+            scaled.pole_rows().points(),
+            scaled_weights,
         )
-        .unwrap();
+        .expect("scaled weights are finite and non-zero");
+        cadmpeg_test_support::edit::replace(&mut scaled, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                replacement,
+                previous.periodic(),
+            )
+        })
+    }
+    .unwrap();
     assert!(rational_four_arc_circle(&scaled).is_some());
 
     let mut elevated = degree_elevated_circle();

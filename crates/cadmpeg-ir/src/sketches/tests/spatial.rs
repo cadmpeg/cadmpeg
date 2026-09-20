@@ -814,28 +814,36 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         assert!(serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err());
     }
     let before = geometry.clone();
-    assert!(geometry
-        .edit(|definition| {
-            let SpatialSketchGeometryDefinition::Arc {
-                start_angle,
-                end_angle,
-                ..
-            } = definition
-            else {
-                panic!("arc")
-            };
-            *end_angle = *start_angle;
+    assert!(
+        cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
+                let SpatialSketchGeometryDefinition::Arc {
+                    start_angle,
+                    end_angle,
+                    ..
+                } = definition
+                else {
+                    panic!("arc")
+                };
+                *end_angle = *start_angle;
+            })(&mut definition);
+            definition.try_into()
         })
-        .is_err());
+        .is_err()
+    );
     assert_eq!(geometry, before);
-    geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
             let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {
                 panic!("arc")
             };
             *end_angle = Angle::new(-3.0).unwrap();
-        })
-        .unwrap();
+        })(&mut definition);
+        definition.try_into()
+    })
+    .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
 }
 

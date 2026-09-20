@@ -1009,7 +1009,20 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
                 unreachable!()
             };
-            definition_payload.try_set_distance(7.0).unwrap();
+            {
+                let replacement = 7.0;
+                cadmpeg_test_support::edit::replace(definition_payload, |previous| {
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        previous.support().clone(),
+                        replacement,
+                        *previous.u_sense(),
+                        *previous.v_sense(),
+                        previous.linear_support_extension(),
+                        previous.extension().clone(),
+                    )
+                })
+            }
+            .unwrap();
         });
     assert!(thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none());
 }

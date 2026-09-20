@@ -985,7 +985,7 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision form")
     };
-    assert_eq!(form.cache.selector(), 2);
+    assert!(form.cache.parameterization().is_some());
     let parameterization = form
         .cache
         .parameterization()

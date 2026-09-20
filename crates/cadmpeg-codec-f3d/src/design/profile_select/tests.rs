@@ -547,15 +547,17 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     );
 
     let mut noncoincident_entities = spatial_entities.to_vec();
-    noncoincident_entities[2]
-        .geometry
-        .edit(|definition| {
+    cadmpeg_test_support::edit::replace(&mut noncoincident_entities[2].geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut cadmpeg_ir::sketches::SpatialSketchGeometryDefinition| {
             let SpatialSketchGeometryDefinition::Circle { center, .. } = definition else {
                 unreachable!()
             };
             center.x = 0.1;
-        })
-        .unwrap();
+        })(&mut definition);
+        definition.try_into()
+    })
+    .unwrap();
     let noncoincident_resolution = SketchProfileResolution {
         spatial_sketch_entities: &noncoincident_entities,
         ..resolution

@@ -1415,7 +1415,18 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             reversed_points.reverse();
             let reversed_poles =
                 PcurveNurbsPoles::from_lanes(reversed_points, nurbs.weights()).unwrap();
-            nurbs.set_poles(reversed_poles).unwrap();
+            {
+                let replacement = reversed_poles;
+                cadmpeg_test_support::edit::replace(nurbs, |previous| {
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                        previous.degree(),
+                        previous.knots().to_vec(),
+                        replacement,
+                        previous.periodic(),
+                    )
+                })
+            }
+            .unwrap();
         }
     }
 

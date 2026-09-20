@@ -672,16 +672,18 @@ fn encoder_writes_source_less_line_sketches() {
                 )
             })
             .unwrap();
-        point
-            .geometry
-            .edit(|definition| {
+        cadmpeg_test_support::edit::replace(&mut point.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Point { position } = definition else {
                     panic!("point geometry")
                 };
                 position.u = 7.0;
                 position.v = 8.0;
-            })
-            .unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
+        .unwrap();
     }
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(

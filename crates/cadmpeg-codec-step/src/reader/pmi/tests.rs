@@ -1271,8 +1271,8 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         unreachable!()
     };
     let modifiers = references.as_slice()[0].modifiers.clone();
-    references
-        .replace(vec![
+    {
+        let replacement = vec![
             DatumReference {
                 datum: datum_a.id,
                 precedence: std::num::NonZeroU32::MIN,
@@ -1285,8 +1285,12 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
                 common_group: Some(7),
                 modifiers: vec!["least_material_requirement".into()],
             },
-        ])
-        .expect("valid common datum compartment");
+        ];
+        cadmpeg_test_support::edit::replace(references, |_| {
+            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+        })
+    }
+    .expect("valid common datum compartment");
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 

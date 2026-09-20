@@ -1190,9 +1190,13 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     };
     let mut edited = references.as_slice().to_vec();
     edited[0].modifiers.push("unknown_modifier".into());
-    references
-        .replace(edited)
-        .expect("unchanged datum compartments");
+    {
+        let replacement = edited;
+        cadmpeg_test_support::edit::replace(references, |_| {
+            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+        })
+    }
+    .expect("unchanged datum compartments");
 
     let mut output = Vec::new();
     let report = write_step(

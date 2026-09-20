@@ -1578,7 +1578,18 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
         Some(vec![2.0; scaled.pole_count()]),
     )
     .unwrap();
-    scaled.set_poles(scaled_poles).unwrap();
+    {
+        let replacement = scaled_poles;
+        cadmpeg_test_support::edit::replace(&mut scaled, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                replacement,
+                previous.periodic(),
+            )
+        })
+    }
+    .unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),
         Some(true)
