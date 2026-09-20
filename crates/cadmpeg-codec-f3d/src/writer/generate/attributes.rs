@@ -433,18 +433,7 @@ fn body_persistent_attribute_ref(
         return Ok(None);
     }
     let ordinal = index.body_group_ordinals[body.id.as_str()];
-    let color_count = target
-        .model
-        .bodies
-        .iter()
-        .filter(|body| body.color.is_some())
-        .count()
-        + target
-            .model
-            .faces
-            .iter()
-            .filter(|face| face.color.is_some())
-            .count();
+    let color_count = source_less_color_count(target);
     native_record_index(
         attribute_start,
         color_count + source_less_name_count(target) + ordinal,

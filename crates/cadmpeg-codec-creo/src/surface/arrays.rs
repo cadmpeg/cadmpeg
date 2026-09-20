@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-/// A dimensioned scalar array with one value per declared slot.
+/// Scalar slots and their source tokens, with a checked count or shape.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DimensionedScalars {
-    dimensions: u32,
-    count: u32,
+pub(crate) struct Scalars<Shape> {
+    shape: Shape,
     values: Vec<Option<f64>>,
     tokens: Option<Vec<Vec<u8>>>,
 }
+
+/// An outer dimension and a scalar count per dimension.
+pub(crate) type DimensionedScalars = Scalars<[u32; 2]>;
+/// A scalar count without an outer dimension.
+pub(crate) type CountedScalars = Scalars<u32>;
 
 impl DimensionedScalars {
     /// Allocates the declared shape with undecoded slots.
@@ -16,13 +20,44 @@ impl DimensionedScalars {
             .ok()?
             .checked_mul(usize::try_from(count).ok()?)?;
         Some(Self {
-            dimensions,
-            count,
-            values: std::iter::repeat_n(None, len).collect(),
+            shape: [dimensions, count],
+            values: cadmpeg_core::decode::alloc_filled(len, None, "creo scalar slots").ok()?,
             tokens: None,
         })
     }
 
+    /// Stored outer dimension.
+    pub(crate) fn dimensions(&self) -> u32 {
+        self.shape[0]
+    }
+    /// Stored scalar count per dimension.
+    pub(crate) fn count(&self) -> u32 {
+        self.shape[1]
+    }
+}
+
+impl CountedScalars {
+    /// Allocates the declared count with undecoded slots.
+    pub(super) fn empty(count: u32) -> Option<Self> {
+        Some(Self {
+            shape: count,
+            values: cadmpeg_core::decode::alloc_filled(
+                usize::try_from(count).ok()?,
+                None,
+                "creo scalar slots",
+            )
+            .ok()?,
+            tokens: None,
+        })
+    }
+
+    /// Stored scalar count.
+    pub(crate) fn count(&self) -> u32 {
+        self.shape
+    }
+}
+
+impl<Shape> Scalars<Shape> {
     /// Replaces values only when the input matches the declared extent.
     pub(crate) fn fill_values(&mut self, values: Vec<Option<f64>>) -> Option<()> {
         if values.len() != self.values.len() {
@@ -43,58 +78,6 @@ impl DimensionedScalars {
         Some(())
     }
 
-    /// Stored outer dimension.
-    pub(crate) fn dimensions(&self) -> u32 {
-        self.dimensions
-    }
-    /// Stored scalar count per dimension.
-    pub(crate) fn count(&self) -> u32 {
-        self.count
-    }
-    /// Decoded values in slot order.
-    pub(crate) fn values(&self) -> &[Option<f64>] {
-        &self.values
-    }
-    /// Source token bytes in slot order.
-    pub(crate) fn tokens(&self) -> Option<&[Vec<u8>]> {
-        self.tokens.as_deref()
-    }
-}
-
-/// A counted scalar array with undecoded values and optional source tokens.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct CountedScalars {
-    count: u32,
-    values: Vec<Option<f64>>,
-    tokens: Option<Vec<Vec<u8>>>,
-}
-
-impl CountedScalars {
-    /// Allocates the declared shape with undecoded slots.
-    pub(super) fn empty(count: u32) -> Option<Self> {
-        let len = usize::try_from(count).ok()?;
-        Some(Self {
-            count,
-            values: std::iter::repeat_n(None, len).collect(),
-            tokens: None,
-        })
-    }
-
-    /// Replaces values and tokens only when the input matches the declared extent.
-    pub(super) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
-        if slots.len() != self.values.len() {
-            return None;
-        }
-        let (values, tokens) = slots.into_iter().unzip();
-        self.values = values;
-        self.tokens = Some(tokens);
-        Some(())
-    }
-
-    /// Stored scalar count per dimension.
-    pub(crate) fn count(&self) -> u32 {
-        self.count
-    }
     /// Decoded values in slot order.
     pub(crate) fn values(&self) -> &[Option<f64>] {
         &self.values

@@ -2218,26 +2218,7 @@ pub(crate) fn normalize_occt_curve_range(
     range: Option<[f64; 2]>,
 ) -> Option<[f64; 2]> {
     match geometry {
-        SolvedCurveGeometry::Circle(_) => {
-            let [start, end] = range?;
-            let sweep = end - start;
-            let tau = std::f64::consts::TAU;
-            if !start.is_finite()
-                || !end.is_finite()
-                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY
-            {
-                return Some([start, end]);
-            }
-            let canonical_start = start.rem_euclid(tau);
-            let canonical_start =
-                if (tau - canonical_start).abs() <= EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY {
-                    0.0
-                } else {
-                    canonical_start
-                };
-            Some([canonical_start, canonical_start + sweep])
-        }
-        SolvedCurveGeometry::Ellipse(_) => {
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
