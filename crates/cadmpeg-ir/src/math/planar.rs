@@ -37,6 +37,8 @@ pub fn orientation(a: Point2, b: Point2, p: Point2) -> Option<Ordering> {
 
 /// Parameters on the infinite line `start + t * (end - start)` at a circle.
 /// A tangent returns the same parameter twice. Invalid, degenerate and disjoint inputs return `None`.
+// Scaled coordinates and quadratic coefficients use standard mathematical names.
+#[allow(clippy::many_single_char_names)]
 pub fn line_circle_parameters(
     start: Point2,
     end: Point2,

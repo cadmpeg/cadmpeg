@@ -82,6 +82,8 @@ impl PcurveNurbsPoles {
 
     /// Number of poles.
     #[must_use]
+    // Curve admission consumes pole counts; no caller needs an emptiness accessor.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
             Self::Polynomial { points } => points.len(),
@@ -1185,6 +1187,8 @@ impl PolarNurbsPoles {
 
     /// Number of poles.
     #[must_use]
+    // Curve admission consumes pole counts; no caller needs an emptiness accessor.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         match self {
             Self::Polynomial { poles } => poles.len(),
