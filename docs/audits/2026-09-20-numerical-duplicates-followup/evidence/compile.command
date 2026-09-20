@@ -1,1 +1,0 @@
-rustc --edition=2021 --test /tmp/cadmpeg-numeric-followup-ncu4fm0w/final-probes.rs -L dependency=target/debug/deps -o /tmp/cadmpeg-numeric-followup-ncu4fm0w/final-probes --extern cadmpeg_ir=target/debug/deps/libcadmpeg_ir-1d96036679349f3a.rlib --extern cadmpeg_core=target/debug/deps/libcadmpeg_core-94e08f8101f72968.rlib

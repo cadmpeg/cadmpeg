@@ -1,1 +1,0 @@
-cargo test -q --lib -p cadmpeg-asm -p cadmpeg-codec-step -- numerical_audit sat::tests

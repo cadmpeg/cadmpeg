@@ -1,9 +1,0 @@
-{
-  "base_head": "afe422e6f475514da5f588f282b1a7e42ba8aa9b",
-  "closing_head": "c737eeb728943b5dc244121506901126f1e0822a",
-  "branch": "feat/finish-illegal-states",
-  "workspace_crates": 20,
-  "excluded_fuzz_crates": 1,
-  "parsed_bodies": 22036,
-  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)"
-}

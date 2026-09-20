@@ -1,1 +1,0 @@
-rustc --edition=2021 --test /tmp/cadmpeg-audit-fixes/rational-scaling-probe.rs -L dependency=target/debug/deps --extern cadmpeg_ir=target/debug/deps/libcadmpeg_ir-1d96036679349f3a.rlib -o /tmp/cadmpeg-audit-fixes/rational-scaling-probe

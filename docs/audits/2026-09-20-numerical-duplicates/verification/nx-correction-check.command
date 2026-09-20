@@ -1,1 +1,0 @@
-cargo check -q --tests -p cadmpeg-ir -p cadmpeg-codec-nx

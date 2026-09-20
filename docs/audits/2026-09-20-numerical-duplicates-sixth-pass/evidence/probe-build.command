@@ -1,1 +1,0 @@
-rustc --edition=2021 --test /tmp/cadmpeg-numeric-audit-6/probes.rs --extern cadmpeg_ir=target/debug/deps/libcadmpeg_ir-1ac11851fee9bc28.rlib -L dependency=target/debug/deps -o /tmp/cadmpeg-numeric-audit-6/probes
