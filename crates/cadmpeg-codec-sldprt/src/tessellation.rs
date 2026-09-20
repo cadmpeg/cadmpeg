@@ -1661,8 +1661,17 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
         .then_some(span)
 }
 
+/// Answer the segment count and the sagitta the chords leave.
+///
+/// A chord whose sagitta is `tolerance` subtends `2 * asin(half_chord)` with
+/// `half_chord = sqrt(tolerance / (2 * radius))`, the sine of the quarter
+/// span. `radius` is a positive IR radius and `tolerance` is a positive
+/// sampling tolerance, so the ratio is positive. It reaches one at a tolerance
+/// of twice the radius, which is not an error: the sagitta of the complete
+/// circle is the diameter, so a tolerance at or beyond it admits the whole
+/// circle in one segment, and the sine of the quarter span stays at one.
 fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
-    let half_chord = (0.5 * (tolerance / radius)).clamp(0.0, 1.0).sqrt();
+    let half_chord = (0.5 * (tolerance / radius)).min(1.0).sqrt();
     let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
         (span.abs() / maximum_span).ceil() as usize
