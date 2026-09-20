@@ -236,6 +236,17 @@ pub fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
     result.is_finite().then_some(result)
 }
 
+/// The exponent of the least power of two above a finite nonzero magnitude.
+///
+/// `value` has magnitude in `[2^(exponent - 1), 2^exponent)`, so
+/// `scale_power_of_two(value, -exponent)` lands in `[0.5, 1)` and states the
+/// same significand: a normalisation by this exponent moves no bit of the data
+/// it normalises. `None` states a zero or non-finite value, which bounds no
+/// binade.
+pub fn power_of_two_bound(value: f64) -> Option<i32> {
+    sum::scaled_finite(value).map(sum::ScaledValue::exponent)
+}
+
 /// Compute `left * right / denominator` without intermediate range loss.
 /// Inputs must be finite and the denominator nonzero; the result must be finite.
 pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {

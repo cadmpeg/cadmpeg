@@ -2135,8 +2135,8 @@ fn solve_4x4(mut matrix: [[f64; 4]; 4], mut rhs: [f64; 4]) -> Option<[f64; 4]> {
 /// remain inside the source chart tolerance, so this fallback cannot qualify a
 /// nearby branch.
 pub(super) fn solve_damped_least_squares_4x4(
-    matrix: [[f64; 4]; 4],
-    rhs: [f64; 4],
+    mut matrix: [[f64; 4]; 4],
+    mut rhs: [f64; 4],
 ) -> Option<[f64; 4]> {
     if !matrix.iter().flatten().all(|value| value.is_finite())
         || !rhs.iter().all(|value| value.is_finite())
@@ -2148,15 +2148,21 @@ pub(super) fn solve_damped_least_squares_4x4(
         .flatten()
         .map(|v| v.abs())
         .fold(0.0_f64, f64::max);
-    if matrix_scale == 0.0 {
-        return None;
-    }
+    // A zero matrix bounds no binade and states no direction to correct along.
+    let matrix_exponent = cadmpeg_ir::math::power_of_two_bound(matrix_scale)?;
     let rhs_scale = rhs.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
-    if rhs_scale == 0.0 {
+    // A zero right-hand side is already solved.
+    let Some(rhs_exponent) = cadmpeg_ir::math::power_of_two_bound(rhs_scale) else {
         return Some([0.0; 4]);
+    };
+    for row in &mut matrix {
+        for value in row.iter_mut() {
+            *value = cadmpeg_ir::math::scale_power_of_two(*value, -matrix_exponent)?;
+        }
     }
-    let matrix = matrix.map(|row| row.map(|v| v / matrix_scale));
-    let rhs = rhs.map(|v| v / rhs_scale);
+    for value in &mut rhs {
+        *value = cadmpeg_ir::math::scale_power_of_two(*value, -rhs_exponent)?;
+    }
     let lengths: [f64; 4] =
         std::array::from_fn(|column| (0..4).fold(0.0_f64, |n, row| n.hypot(matrix[row][column])));
     let maximum = lengths.into_iter().fold(0.0_f64, f64::max);
@@ -2193,11 +2199,10 @@ pub(super) fn solve_damped_least_squares_4x4(
             .fold(0.0_f64, f64::hypot);
         if linear_error.is_finite() && linear_error < initial_error {
             let mut step = [0.0; 4];
-            for index in 0..4 {
-                step[index] = cadmpeg_ir::math::multiply_divide(
+            for (index, value) in step.iter_mut().enumerate() {
+                *value = cadmpeg_ir::math::scale_power_of_two(
                     scaled_step[index] / column_scales[index],
-                    rhs_scale,
-                    matrix_scale,
+                    rhs_exponent - matrix_exponent,
                 )?;
             }
             return Some(step);

@@ -167,3 +167,27 @@ fn numerical_ranges_interpolation_and_wrapping_avoid_endpoint_subtraction_overfl
     assert_eq!(wrap_parameter(0.5, -1.0, 1.0), Some(0.5));
     assert_eq!(wrap_parameter(1.0, 0.0, 0.0), None);
 }
+
+#[test]
+fn a_power_of_two_bound_normalises_without_moving_a_significand() {
+    use super::{power_of_two_bound, scale_power_of_two};
+    for value in [
+        f64::from_bits(1),
+        -1.0e-200,
+        0.5,
+        1.0,
+        -6.0,
+        1.0e200,
+        f64::MAX,
+    ] {
+        let exponent = power_of_two_bound(value).unwrap();
+        let normalised = scale_power_of_two(value, -exponent).unwrap();
+        assert!((0.5..1.0).contains(&normalised.abs()));
+        assert_eq!(scale_power_of_two(normalised, exponent), Some(value));
+    }
+    assert_eq!(power_of_two_bound(1.0), Some(1));
+    assert_eq!(power_of_two_bound(-6.0), Some(3));
+    for value in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(power_of_two_bound(value), None);
+    }
+}
