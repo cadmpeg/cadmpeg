@@ -1212,7 +1212,8 @@ pub(crate) fn parse_definitions(
 }
 
 /// Parses a packed major-1 instance-reference payload.
-// ON_InstanceRef::SingularTransformationTolerance applies to inverse * source.
+// ON_InstanceRef::SingularTransformationTolerance applies to inverse * source,
+// relative to the magnitude of the column it compares.
 const EPS_INVERSE_IDENTITY: f64 = 1.0e-6;
 
 pub(crate) fn parse_reference(
@@ -1263,12 +1264,27 @@ pub(crate) fn parse_reference(
             format!("instance transform inverse product: {error}"),
         )
     })?;
+    let source_rows = transform.affine_rows();
+    // The composition is exact, so a column states its inverse only to the
+    // relative precision of its own coefficients: a translation near the
+    // finite limit cancels to the units it cannot represent, not to zero.
+    let tolerance: [f64; 4] = std::array::from_fn(|column| {
+        EPS_INVERSE_IDENTITY
+            * source_rows
+                .iter()
+                .fold(1.0_f64, |scale, row| scale.max(row[column].abs()))
+    });
     if residual
         .affine_rows()
         .iter()
-        .flatten()
-        .zip(Transform::identity().affine_rows().iter().flatten())
-        .any(|(actual, expected)| (actual - expected).abs() > EPS_INVERSE_IDENTITY)
+        .zip(Transform::identity().affine_rows())
+        .any(|(actual, expected)| {
+            actual
+                .iter()
+                .zip(expected)
+                .enumerate()
+                .any(|(column, (actual, expected))| (actual - expected).abs() > tolerance[column])
+        })
     {
         return Err(FramingError::structural(
             reader.position(),
