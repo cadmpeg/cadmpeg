@@ -331,9 +331,7 @@ pub(crate) fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn synthetic_geometry_with_body_attribute_chain_smbh(
-    attribute_chain: Vec<u8>,
-) -> Vec<u8> {
+fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");

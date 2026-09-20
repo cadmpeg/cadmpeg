@@ -57,7 +57,7 @@ pub(crate) fn generated_prism_instance_properties(schema: &str, guid: &str) -> V
     paged_instance_properties(&logical)
 }
 
-pub(crate) fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
+fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
     bytes.extend_from_slice(&[0xff; 8]);
@@ -86,12 +86,12 @@ pub(crate) fn paged_instance_properties(logical: &[u8]) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn generated_schema_from_paged(properties: &[u8]) -> &str {
+pub(super) fn generated_schema_from_paged(properties: &[u8]) -> &str {
     let length = u32::from_le_bytes(properties[24..28].try_into().unwrap()) as usize;
     std::str::from_utf8(&properties[28..28 + length]).unwrap()
 }
 
-pub(crate) fn generated_definition_catalog_for(schema: &str) -> Vec<u8> {
+pub(super) fn generated_definition_catalog_for(schema: &str) -> Vec<u8> {
     let mut out = RECORD_MARKER.to_vec();
     lp_ascii(&mut out, schema);
     out.push(0);

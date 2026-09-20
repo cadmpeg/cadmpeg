@@ -17,7 +17,7 @@ pub(crate) fn write_synthetic_manifests<W: Write + Seek>(
 
 /// The synthetic manifest pair, with the top-level manifest declaring
 /// `version`. Every field after the version field is unchanged.
-pub(crate) fn write_synthetic_manifests_with_version<W: Write + Seek>(
+pub(super) fn write_synthetic_manifests_with_version<W: Write + Seek>(
     zip: &mut zip::ZipWriter<W>,
     options: zip::write::SimpleFileOptions,
     version: &str,

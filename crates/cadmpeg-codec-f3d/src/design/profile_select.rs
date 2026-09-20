@@ -41,18 +41,18 @@ use std::collections::{HashMap, HashSet};
 /// native selection together with the known sketch.
 #[derive(Clone, Copy)]
 pub(crate) struct ExtrudeProfileResolution<'a> {
-    pub entities: &'a [cadmpeg_ir::sketches::SketchEntity],
-    pub spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
-    pub spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
-    pub histories: &'a [crate::history_records::AsmHistory],
-    pub scope_histories: &'a HashMap<String, String>,
-    pub linear_tolerance: f64,
-    pub angular_tolerance: f64,
-    pub arrangement_budget: &'a WorkBudget<'a>,
+    pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
+    pub(crate) spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+    pub(crate) histories: &'a [crate::history_records::AsmHistory],
+    pub(crate) scope_histories: &'a HashMap<String, String>,
+    pub(crate) linear_tolerance: f64,
+    pub(crate) angular_tolerance: f64,
+    pub(crate) arrangement_budget: &'a WorkBudget<'a>,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ScopedExtrudeProfileResolution<'a> {
+pub(in crate::design) struct ScopedExtrudeProfileResolution<'a> {
     entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
     histories: &'a [crate::history_records::AsmHistory],
@@ -62,7 +62,7 @@ pub(crate) struct ScopedExtrudeProfileResolution<'a> {
 }
 
 impl<'a> ExtrudeProfileResolution<'a> {
-    pub(crate) fn scoped(
+    pub(super) fn scoped(
         self,
         histories: &'a [crate::history_records::AsmHistory],
     ) -> ScopedExtrudeProfileResolution<'a> {
@@ -93,23 +93,23 @@ fn histories_for_scope<'a>(
 /// Native and neutral arenas required to resolve curve selections in sketches.
 pub(crate) struct SketchCurveSelectionResolution<'a> {
     /// Decoded Design feature scopes.
-    pub scopes: &'a [DesignParameterScope],
+    pub(crate) scopes: &'a [DesignParameterScope],
     /// Counted construction-operand groups.
-    pub groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
     /// Nested entity-selection operands.
-    pub operands: &'a [DesignEntitySelectionOperand],
+    pub(crate) operands: &'a [DesignEntitySelectionOperand],
     /// Projected Sketch placement carriers.
-    pub placements: &'a [DesignSketchPlacement],
+    pub(crate) placements: &'a [DesignSketchPlacement],
     /// Persistent Sketch curve identities.
-    pub curve_identities: &'a [SketchCurveIdentity],
+    pub(crate) curve_identities: &'a [SketchCurveIdentity],
     /// Neutral planar Sketches.
-    pub sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    pub(crate) sketches: &'a [cadmpeg_ir::sketches::Sketch],
     /// Neutral planar Sketch entities.
-    pub sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    pub(crate) sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// Neutral model-space Sketches for non-planar sketch carriers.
-    pub spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
+    pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
     /// Neutral model-space entities for non-planar sketch carriers.
-    pub spatial_sketch_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+    pub(crate) spatial_sketch_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
 }
 
 #[derive(Clone, Copy)]
@@ -756,7 +756,7 @@ fn historical_face_profile_selection(
     .ok()
 }
 
-pub(crate) fn historical_profile_face_candidates(
+fn historical_profile_face_candidates(
     kind: Option<crate::records::topology::body_recipe::AsmHistoricalEntityKind>,
     entity_ref: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
@@ -867,12 +867,12 @@ pub(crate) fn historical_profile_face_candidates(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum ResolvedProfileSelection {
+enum ResolvedProfileSelection {
     Loops(Vec<u32>),
     Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
 }
 
-pub(crate) fn merge_resolved_profile_selections(
+fn merge_resolved_profile_selections(
     sketch: &cadmpeg_ir::sketches::SketchId,
     selections: &[cadmpeg_ir::features::ProfileRef],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
@@ -902,7 +902,7 @@ pub(crate) fn merge_resolved_profile_selections(
     }
 }
 
-pub(crate) fn resolved_extrude_profile_selection(
+pub(super) fn resolved_extrude_profile_selection(
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
@@ -1065,7 +1065,7 @@ fn transition_profile_selection(
     }))
 }
 
-pub(crate) fn inserted_cylindrical_profile_selection(
+fn inserted_cylindrical_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     topology: &crate::history_records::AsmHistoricalTopology,
@@ -1348,7 +1348,7 @@ fn spatial_polyline_profile_containing_points(
     Some(*selected)
 }
 
-pub(crate) fn unique_multi_face_deleted_carrier_family(
+fn unique_multi_face_deleted_carrier_family(
     deleted_faces: &[i64],
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<i64>> {
@@ -1377,7 +1377,7 @@ pub(crate) fn unique_multi_face_deleted_carrier_family(
     Some(faces)
 }
 
-pub(crate) fn unique_resolved_selection<T: PartialEq>(
+fn unique_resolved_selection<T: PartialEq>(
     selections: impl IntoIterator<Item = Option<T>>,
 ) -> Option<T> {
     let mut selections = selections.into_iter().flatten();
@@ -1387,7 +1387,7 @@ pub(crate) fn unique_resolved_selection<T: PartialEq>(
         .then_some(first)
 }
 
-pub(crate) fn transition_inserted_profile_selection(
+fn transition_inserted_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
@@ -1465,7 +1465,7 @@ pub(crate) fn transition_inserted_profile_selection(
     ]))
 }
 
-pub(crate) fn historical_face_points(
+pub(super) fn historical_face_points(
     face: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
@@ -1753,7 +1753,7 @@ fn resolved_selection_member_points(
         .translated(v_axis, position.v)])
 }
 
-pub(crate) fn ordered_unique_profile_selections(
+fn ordered_unique_profile_selections(
     matches: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
 ) -> Option<ResolvedProfileSelection> {
     let mut loops = Vec::new();
@@ -1786,7 +1786,7 @@ pub(crate) fn ordered_unique_profile_selections(
     }
 }
 
-pub(crate) fn selection_containing_points(
+fn selection_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],

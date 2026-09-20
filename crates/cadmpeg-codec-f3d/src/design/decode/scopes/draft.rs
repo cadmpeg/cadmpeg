@@ -12,7 +12,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::sheet_metal;
 use crate::records::parameters::DesignParameterOwner;
 
-pub(crate) fn exact_draft_operation_with_owners(
+pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

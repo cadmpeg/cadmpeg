@@ -680,7 +680,7 @@ use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::records::feature::scope;
 
-pub(crate) fn exact_base_feature_construction(
+pub(super) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {

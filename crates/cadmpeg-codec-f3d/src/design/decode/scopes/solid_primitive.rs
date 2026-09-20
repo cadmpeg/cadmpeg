@@ -22,7 +22,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_solid_primitive(
+pub(super) fn exact_solid_primitive(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

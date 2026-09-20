@@ -144,7 +144,7 @@ pub(crate) fn f3d_with_redirections_json(doc_type: &str, redirections: &[u8]) ->
 /// A minimal ASM text stream: the three header lines, an `asmheader`, one `body`
 /// record, and the terminator. Written from the encoding's own structure so the
 /// fixture exercises classification without carrying a decodable payload.
-pub(crate) fn synthetic_asm_text_stream() -> Vec<u8> {
+fn synthetic_asm_text_stream() -> Vec<u8> {
     let mut text = String::new();
     text.push_str("21800 0 1 12           \n");
     text.push_str("16 Autodesk Neutron 23 ASM 218.0.1.400 Unknown 9 Synthetic \n");

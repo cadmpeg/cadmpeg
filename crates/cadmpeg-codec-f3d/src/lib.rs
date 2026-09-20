@@ -85,33 +85,33 @@
 //! [`cadmpeg_ir::unknown::UnknownRecord`] values.
 
 mod act;
-pub(crate) mod brep;
+mod brep;
 mod bytes;
-pub(crate) mod container;
-pub(crate) mod decode;
-pub(crate) mod design;
-pub(crate) mod dialect;
+mod container;
+mod decode;
+mod design;
+mod dialect;
 mod error;
-pub(crate) mod f3z;
-pub(crate) mod history;
+mod f3z;
+mod history;
 mod history_records;
 mod ids;
 /// Byte-offset constants generated from `docs/layouts/f3d.toml`.
-pub(crate) mod layout;
+mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
+mod loss;
 mod manifest;
-pub(crate) mod materials;
+mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-pub(crate) mod records;
+mod records;
 mod report;
 mod tsm;
-pub(crate) mod validate;
+mod validate;
 mod value_tree;
 mod writer;
-pub(crate) mod xref;
+mod xref;
 mod zip_write;
 
 use cadmpeg_core::bytes::contains;
@@ -138,7 +138,7 @@ const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 pub struct F3dCodec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PreservedWritePath {
+enum PreservedWritePath {
     Patched,
     VerbatimReplay,
 }
@@ -229,4 +229,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

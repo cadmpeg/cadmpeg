@@ -63,7 +63,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// recorded value is whatever the document declared. It is the discriminant
 /// between the identity row and the recovery row, and it is what names the
 /// generation the bytes came from.
-pub(crate) const DECLARED_TOP_LEVEL_MANIFEST_VERSION: &str = "top_level_manifest_version";
+const DECLARED_TOP_LEVEL_MANIFEST_VERSION: &str = "top_level_manifest_version";
 
 /// Key of the root-level `*.f3d` member names in [`DialectMatch::declared`],
 /// comma-separated and sorted by archive path.
@@ -74,7 +74,7 @@ pub(crate) const DECLARED_TOP_LEVEL_MANIFEST_VERSION: &str = "top_level_manifest
 /// three are constants and carry no information about the document. The
 /// root-level member names are the one part of that discriminant the source
 /// authored, and each is recorded verbatim as the archive spells it.
-pub(crate) const DECLARED_ROOT_DOCUMENT_MEMBERS: &str = "root_document_members";
+const DECLARED_ROOT_DOCUMENT_MEMBERS: &str = "root_document_members";
 
 /// Key of the containing F3Z member path in an attached member layer.
 ///
@@ -112,10 +112,10 @@ pub(crate) enum F3dDialect {
 impl F3dDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 3] = [Self::Manifest3200, Self::F3zMultiDocument, Self::Unknown];
+    const ALL: [Self; 3] = [Self::Manifest3200, Self::F3zMultiDocument, Self::Unknown];
 
     /// The registry-generated id for this variant.
-    pub(crate) const fn id(self) -> DialectId {
+    const fn id(self) -> DialectId {
         match self {
             Self::Manifest3200 => F3D_MANIFEST_3_2_0_0,
             Self::F3zMultiDocument => F3D_F3Z_MULTI_DOCUMENT,
@@ -216,7 +216,7 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
 /// Returns a loss exactly for an unverified or residual admission. This reads
 /// the admission rather than reclassifying, so the note and reported state
 /// come from one value.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     let strategy = match matched.admission() {
         Admission::Admitted | Admission::Refused => return None,
         Admission::Unverified { using } => {
@@ -239,7 +239,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 }
 
 /// Kernel dialect layers from the binary and text B-rep streams.
-pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
+fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
     let text_names = crate::container::text_brep_names(scan);
     let instance = if scan.breps.len() + text_names.len() > 1 {
         LayerInstance::Tagged
@@ -286,7 +286,7 @@ pub(crate) fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<D
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
-pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Refused => {
             let carrier = matched

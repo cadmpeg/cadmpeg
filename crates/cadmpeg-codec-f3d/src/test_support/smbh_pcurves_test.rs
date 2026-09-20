@@ -93,7 +93,7 @@ pub(crate) fn synthetic_inline_pcurve_with_referenced_support_smbh() -> Vec<u8> 
     bytes
 }
 
-pub(crate) fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
+fn replace_generated_face_with_nurbs_surface(mut bytes: Vec<u8>) -> Vec<u8> {
     let planar_pcurve = generated_planar_pcurve_block();
     if let Some(offset) = bytes
         .windows(planar_pcurve.len())
@@ -175,7 +175,7 @@ pub(crate) fn synthetic_geometry_with_rational_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_planar_rational_pcurve_block())
 }
 
-pub(crate) fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
+fn synthetic_geometry_with_pcurve_block_smbh(block: Vec<u8>) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();

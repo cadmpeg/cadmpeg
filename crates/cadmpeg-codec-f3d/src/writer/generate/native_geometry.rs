@@ -23,7 +23,7 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
-pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
+pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     let mut bytes = b"ASM BinaryFile8".to_vec();
     // Release word matching the product string, the zero region, then the
     // entity-count and flags words (bit 0: history partition present).
@@ -40,7 +40,7 @@ pub(crate) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     Ok(bytes)
 }
 
-pub(crate) fn native_nurbs_surface(
+pub(super) fn native_nurbs_surface(
     bytes: &mut Vec<u8>,
     surface: &NurbsSurface,
 ) -> Result<(), CodecError> {
@@ -1883,7 +1883,7 @@ fn encode_native_scaled_compound_loft(
     Ok(())
 }
 
-pub(crate) fn native_cacheless_procedural_surface(
+pub(super) fn native_cacheless_procedural_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     surface: &Surface,
@@ -4359,7 +4359,7 @@ fn encode_native_rolling_ball(
     Ok(())
 }
 
-pub(crate) fn native_nurbs_curve(
+pub(super) fn native_nurbs_curve(
     bytes: &mut Vec<u8>,
     curve: &NurbsCurve,
 ) -> Result<(), CodecError> {
@@ -5653,7 +5653,7 @@ pub(crate) fn native_procedural_curve(
     Ok(true)
 }
 
-pub(crate) fn native_cacheless_procedural_curve(
+pub(super) fn native_cacheless_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
@@ -5838,7 +5838,7 @@ fn native_embedded_surface(
     Ok(())
 }
 
-pub(crate) fn native_support_pcurve(
+pub(in crate::writer) fn native_support_pcurve(
     geometry: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
 ) -> Result<PcurveNurbs, CodecError> {
@@ -6002,7 +6002,7 @@ mod pcurve_chart_tests {
     }
 }
 
-pub(crate) fn pcurve_support_geometry<'a>(
+pub(in crate::writer) fn pcurve_support_geometry<'a>(
     model: &'a Model,
     pcurve_id: &PcurveId,
 ) -> Result<&'a SurfaceGeometry, CodecError> {
@@ -6673,12 +6673,12 @@ fn native_embedded_cone(
 }
 
 #[derive(Debug)]
-pub(crate) enum NativePcurveForm<'a> {
+pub(super) enum NativePcurveForm<'a> {
     Inline(&'a PcurveInlineForm),
     Reference { range: [f64; 2], companion_ref: i64 },
 }
 
-pub(crate) fn native_pcurve(
+pub(super) fn native_pcurve(
     bytes: &mut Vec<u8>,
     geometry: &PcurveGeometry,
     form: &NativePcurveForm<'_>,
@@ -6722,7 +6722,7 @@ pub(crate) fn native_pcurve(
     Ok(())
 }
 
-pub(crate) fn native_ref_pcurve_companion(
+pub(super) fn native_ref_pcurve_companion(
     bytes: &mut Vec<u8>,
     geometry: &PcurveGeometry,
     range: [f64; 2],

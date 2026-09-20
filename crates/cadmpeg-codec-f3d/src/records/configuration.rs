@@ -182,13 +182,13 @@ impl ConfigurationVariant {
 
 /// Serialized configuration identity and payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignConfigurationWire {
-    pub id: String,
-    pub entry_name: String,
-    pub kind: DesignConfigurationKind,
+struct DesignConfigurationWire {
+    id: String,
+    entry_name: String,
+    kind: DesignConfigurationKind,
     #[serde(default)]
-    pub variant_order: Vec<String>,
-    pub payload: Value,
+    variant_order: Vec<String>,
+    payload: Value,
 }
 
 /// Native Fusion design-configuration entry family.

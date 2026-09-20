@@ -49,7 +49,7 @@ const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
-pub(crate) struct IndexedRecordOffsets {
+pub(in crate::design) struct IndexedRecordOffsets {
     by_record_index: HashMap<u32, Vec<usize>>,
 }
 

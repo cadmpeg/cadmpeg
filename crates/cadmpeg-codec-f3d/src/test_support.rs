@@ -97,7 +97,7 @@ pub(crate) fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_ind
 }
 
 /// Write an indexed record header over the first eleven bytes of `bytes`.
-pub(crate) fn write_indexed_header(bytes: &mut [u8], class_tag: [u8; 3], record_index: u32) {
+fn write_indexed_header(bytes: &mut [u8], class_tag: [u8; 3], record_index: u32) {
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
     bytes[4..7].copy_from_slice(&class_tag);
     bytes[7..11].copy_from_slice(&record_index.to_le_bytes());

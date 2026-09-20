@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 /// and has one 19-byte entry for each marked cell reference. The entries are
 /// cells selected for removal, and the trailing value is the total cell count
 /// of the operation's partition.
-pub(crate) fn exact_surface_trim_operation(
+fn exact_surface_trim_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

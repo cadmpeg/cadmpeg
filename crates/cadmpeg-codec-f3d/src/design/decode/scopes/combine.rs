@@ -22,7 +22,7 @@ use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_combine_operation(
+pub(super) fn exact_combine_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

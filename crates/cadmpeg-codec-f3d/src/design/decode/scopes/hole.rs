@@ -33,7 +33,7 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// before that run; version one omits it and retains additional class members
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
-pub(crate) fn exact_hole_construction(
+pub(in crate::design::decode) fn exact_hole_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

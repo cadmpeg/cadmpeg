@@ -4895,7 +4895,7 @@ fn two_locus_distance_dimension(
 }
 
 #[cfg(test)]
-pub(crate) fn counted_role_relation(
+fn counted_role_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     owner_role: u64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {

@@ -416,7 +416,7 @@ pub(super) fn extend_native(
 }
 
 /// Rescopes one native record's identity and every identity it references.
-pub(super) fn rescope_record(
+fn rescope_record(
     record: &NativeRecord,
     arena: &str,
     occurrence: &str,

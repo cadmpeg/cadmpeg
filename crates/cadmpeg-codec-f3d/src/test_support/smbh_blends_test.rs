@@ -16,7 +16,7 @@ use crate::test_support::tokens_test::{
     push_tagged_i64, push_u8_string, t_dbl, t_end, t_ident, t_long, t_pos, t_ref, t_subident, t_vec,
 };
 
-pub(crate) fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
+fn append_generated_g2_side(bytes: &mut Vec<u8>, label: &str) {
     push_u8_string(bytes, label);
     t_ident(bytes, "plane");
     t_pos(bytes, [1.0, -2.0, 3.0]);
@@ -202,7 +202,7 @@ pub(crate) fn synthetic_rb_blend_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
+fn append_generated_rolling_ball_side(bytes: &mut Vec<u8>, label: &str, x: f64) {
     push_u8_string(
         bytes,
         if label == "left" {
@@ -321,7 +321,7 @@ pub(crate) fn append_generated_variable_blend_side(bytes: &mut Vec<u8>, label: &
     t_ident(bytes, "nullbs");
 }
 
-pub(crate) fn append_generated_variable_blend_value(
+fn append_generated_variable_blend_value(
     bytes: &mut Vec<u8>,
     parameters: [f64; 2],
     radii: [f64; 2],
@@ -338,7 +338,7 @@ pub(crate) fn append_generated_variable_blend_value(
 
 /// An `edge_offset` radius law with no leading sub-discriminator: the
 /// law-domain parameter range and one offset length.
-pub(crate) fn append_generated_variable_blend_edge_offset_value(
+fn append_generated_variable_blend_edge_offset_value(
     bytes: &mut Vec<u8>,
     parameters: [f64; 2],
     offset: f64,
@@ -354,7 +354,7 @@ pub(crate) fn append_generated_variable_blend_edge_offset_value(
 /// An `interp` radius law: the law-domain parameter range, a `(u,radius)` BS2
 /// function, the extension enum, the point count, and one radius point. The
 /// payload ends at that point — nothing gates a trailing scalar pair.
-pub(crate) fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
+fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) {
     push_u8_string(bytes, "interp");
     push_tagged_i64(bytes, 0x15, 0);
     bytes.push(0x0a);
@@ -378,7 +378,7 @@ pub(crate) fn append_generated_variable_blend_interp_value(bytes: &mut Vec<u8>) 
 
 /// Which radius law the synthetic stream stores as its first blend value.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FirstRadiusLaw {
+enum FirstRadiusLaw {
     TwoEnds,
     Interp,
     /// `edge_offset` with no leading sub-discriminator: two law-domain
@@ -480,7 +480,7 @@ pub(crate) fn synthetic_variable_blend_smbh_with_cache_state(
     )
 }
 
-pub(crate) fn synthetic_variable_blend_smbh_inner(
+fn synthetic_variable_blend_smbh_inner(
     name: &str,
     two_radii: bool,
     cross_section_selector: Option<i64>,
@@ -600,7 +600,7 @@ pub(crate) fn synthetic_variable_blend_smbh_inner(
     bytes
 }
 
-pub(crate) fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
+fn append_vertex_boundary_common(bytes: &mut Vec<u8>, kind: &str, x: f64) {
     push_u8_string(bytes, kind);
     bytes.push(0x0a);
     t_pos(bytes, [x, 0.0, 0.0]);

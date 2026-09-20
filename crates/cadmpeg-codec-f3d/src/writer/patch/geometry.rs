@@ -143,7 +143,7 @@ pub(super) fn patch_geometry(bytes: &mut [u8], edits: &GeometryEdits) -> Result<
 }
 
 #[cfg(test)]
-pub(crate) fn patch_framed_geometry(
+pub(in crate::writer) fn patch_framed_geometry(
     bytes: &mut [u8],
     records: &[sab::Record],
     edits: &GeometryEdits,

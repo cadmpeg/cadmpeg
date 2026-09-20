@@ -23,12 +23,12 @@ use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
-pub(crate) struct EncodedDesignBulkStream {
-    pub(crate) bytes: Vec<u8>,
-    pub(crate) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+pub(in crate::writer::generate) struct EncodedDesignBulkStream {
+    pub(super) bytes: Vec<u8>,
+    pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
 }
 
-pub(crate) fn tolerant_coedge_range(
+pub(super) fn tolerant_coedge_range(
     index: &NativeGenerationIndex<'_>,
     coedge: &CoedgeId,
 ) -> Option<[f64; 2]> {
@@ -38,7 +38,7 @@ pub(crate) fn tolerant_coedge_range(
         .map(|parameters| parameters.parameter_range)
 }
 
-pub(crate) fn native_tolerant_coedge_extension(
+pub(super) fn native_tolerant_coedge_extension(
     records: &mut Vec<u8>,
     target: &CadIr,
     index: &NativeGenerationIndex<'_>,
@@ -114,7 +114,7 @@ pub(crate) fn native_tolerant_coedge_extension(
     }
 }
 
-pub(crate) fn encode_design_bulkstream(
+pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
@@ -909,7 +909,7 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
     }
 }
 
-pub(crate) fn encode_design_metastream(
+pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
     primary_records: &[crate::metastream::RecordIndexEntry],
 ) -> Result<Option<Vec<u8>>, CodecError> {

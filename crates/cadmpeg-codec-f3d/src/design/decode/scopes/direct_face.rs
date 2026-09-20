@@ -20,7 +20,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
-pub(crate) fn exact_direct_face_operation(
+pub(super) fn exact_direct_face_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -195,7 +195,7 @@ pub(crate) fn exact_direct_face_operation(
     }
 }
 
-pub(crate) fn exact_move_operation(
+pub(super) fn exact_move_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -281,7 +281,7 @@ fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize,
     admitted.then_some((43, 48))
 }
 
-pub(crate) fn exact_scale_operation(
+pub(super) fn exact_scale_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

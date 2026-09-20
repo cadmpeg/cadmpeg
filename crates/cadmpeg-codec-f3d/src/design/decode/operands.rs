@@ -2011,7 +2011,7 @@ pub(super) enum ConstructionOperandGroupParse {
 impl ConstructionOperandGroupParse {
     /// The group, where the record carried a complete one.
     #[cfg(test)]
-    pub(crate) fn complete(self) -> Option<DesignConstructionOperandGroup> {
+    fn complete(self) -> Option<DesignConstructionOperandGroup> {
         match self {
             Self::Complete(group) => Some(*group),
             Self::NotAGroup | Self::Unclosed => None,
@@ -3803,7 +3803,7 @@ fn body_recipe_operand_end_with_index(
 }
 
 #[cfg(test)]
-pub(crate) fn parse_body_recipe_operand(
+fn parse_body_recipe_operand(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,

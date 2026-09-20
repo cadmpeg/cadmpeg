@@ -29,7 +29,7 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_derived_instance_construction(
+pub(super) fn exact_derived_instance_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -132,7 +132,7 @@ pub(crate) fn exact_derived_instance_construction(
     })
 }
 
-pub(crate) fn exact_component_insert_construction(
+pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

@@ -137,7 +137,7 @@ impl AssemblyScopeGeneration {
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
-pub(crate) fn legacy_class_383_258_scope(
+pub(super) fn legacy_class_383_258_scope(
     frame_length: u64,
     class_tag: &str,
     paired_class_tag: &str,
@@ -149,7 +149,7 @@ pub(crate) fn legacy_class_383_258_scope(
 
 impl LegacyAsBuilt421Generation {
     /// Owner-frame primary class for the six scalar lanes.
-    pub(crate) const fn owner_class_tag(self) -> &'static str {
+    pub(super) const fn owner_class_tag(self) -> &'static str {
         match self {
             Self::Class364 => "293",
             Self::Class420 => "378",
@@ -159,7 +159,7 @@ impl LegacyAsBuilt421Generation {
     }
 
     /// Owner-frame paired class.
-    pub(crate) const fn owner_paired_class_tag(self) -> &'static str {
+    const fn owner_paired_class_tag(self) -> &'static str {
         match self {
             Self::Class364 => "272",
             Self::Class420 => "262",
@@ -179,12 +179,12 @@ impl LegacyAsBuilt421Generation {
     }
 
     /// Solved connector-frame paired class.
-    pub(crate) const fn frame_paired_class_tag(self) -> &'static str {
+    pub(super) const fn frame_paired_class_tag(self) -> &'static str {
         self.owner_paired_class_tag()
     }
 
     /// Byte length from the solved frame primary header to its paired header.
-    pub(crate) const fn frame_length(self) -> usize {
+    pub(super) const fn frame_length(self) -> usize {
         match self {
             Self::Class364 => 389,
             Self::Class420 | Self::Class417 => 390,
@@ -193,7 +193,7 @@ impl LegacyAsBuilt421Generation {
     }
 
     /// Offset of the four-byte marker immediately before the solved matrix.
-    pub(crate) const fn matrix_prefix(self) -> usize {
+    pub(super) const fn matrix_prefix(self) -> usize {
         match self {
             Self::Class420 | Self::Class417 => 46,
             Self::Class364 | Self::Class457 => 45,

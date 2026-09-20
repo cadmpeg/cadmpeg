@@ -74,7 +74,7 @@ pub(crate) fn t_end(b: &mut Vec<u8>) {
     b.push(0x11);
 }
 
-pub(crate) fn t_attribute_base(b: &mut Vec<u8>, next: i64, previous: i64, owner: i64) {
+pub(super) fn t_attribute_base(b: &mut Vec<u8>, next: i64, previous: i64, owner: i64) {
     t_ref(b, -1);
     t_long(b, -1);
     t_ref(b, next);
@@ -83,7 +83,7 @@ pub(crate) fn t_attribute_base(b: &mut Vec<u8>, next: i64, previous: i64, owner:
 }
 
 /// Push a `0x15` enum token carrying the signed `int_width`-8 value.
-pub(crate) fn push_native_enum(bytes: &mut Vec<u8>, value: i64) {
+pub(super) fn push_native_enum(bytes: &mut Vec<u8>, value: i64) {
     bytes.push(0x15);
     bytes.extend_from_slice(&value.to_le_bytes());
 }

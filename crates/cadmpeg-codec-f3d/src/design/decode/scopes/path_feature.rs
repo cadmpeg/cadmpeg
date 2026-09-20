@@ -70,7 +70,7 @@ fn exact_pipe_owner_lanes(
         .ok()
 }
 
-pub(crate) fn exact_path_feature_construction(
+pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

@@ -30,7 +30,7 @@ pub(crate) fn design_metastream_with_records(
     )
 }
 
-pub(crate) fn segment_metastream(
+fn segment_metastream(
     short_name: &str,
     full_name: &str,
     add_in: &str,
@@ -75,60 +75,60 @@ pub(crate) fn segment_metastream(
     out
 }
 
-pub(crate) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Base)
 }
 
-pub(crate) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_sketch_dimension_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::SketchDimension,
     )
 }
 
-pub(crate) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_base_feature_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::BaseFeature,
     )
 }
 
-pub(crate) fn generated_design_base_flange_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_base_flange_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::BaseFlange,
     )
 }
 
-pub(crate) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_remove_body_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::RemoveBody,
     )
 }
 
-pub(crate) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_surface_stitch_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::SurfaceStitch,
     )
 }
 
-pub(crate) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_copy_paste_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::CopyPaste,
     )
 }
 
-pub(crate) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_copy_paste_bodies_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(
         records,
         GeneratedDesignMetastreamVariant::CopyPasteBodies,
     )
 }
 
-pub(crate) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     generated_design_metastream_with_sketch_types(records, GeneratedDesignMetastreamVariant::Form)
 }
 
@@ -430,7 +430,7 @@ fn generated_design_metastream_with_sketch_types(
     design_metastream_with_records(&types, records)
 }
 
-pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let entity_1 = [1];
     let entity_2 = [2];
     let entity_7 = [7];
@@ -537,7 +537,7 @@ pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     )
 }
 
-pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let mut out = Vec::new();
     let mut records = vec![(2, out.len() as u64)];
     lp_ascii(&mut out, "256");
@@ -602,7 +602,7 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     (out, records)
 }
 
-pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn reference(relation: &mut [u8], at: usize, target: u32) {
         relation[at] = 1;
         relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
@@ -935,7 +935,7 @@ pub(crate) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 /// entity header, points, curves, and relations; this variant closes the
 /// scope-to-placement join so the normal projection pipeline can materialize
 /// that graph as a neutral Sketch.
-pub(crate) fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+fn generated_design_sketch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
 
     let scope_record = 1_100_u32;
@@ -1114,7 +1114,7 @@ pub(crate) fn generated_design_base_flange_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
 /// Add the self-contained 267-byte result-body form of a `Base Feature`
 /// parameter scope to the generated Design stream.
-pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let scope_class_tag = 268_u32;
@@ -1146,7 +1146,7 @@ pub(crate) fn generated_design_base_feature_bulkstream() -> (Vec<u8>, Vec<(u64, 
 
 /// Add a `RemoveBody` scope and its single whole-body construction group to
 /// the generated Design stream.
-pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1255,7 +1255,7 @@ pub(crate) fn generated_design_remove_body_bulkstream() -> (Vec<u8>, Vec<(u64, u
 
 /// Add a `SurfaceStitch` scope, one face-selection group, and its tolerance
 /// and settings records to the generated Design stream.
-pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let group_record = 1_500_u32;
@@ -1394,7 +1394,7 @@ pub(crate) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
 
 /// Add two local component occurrences, their copy relation, and a `CopyPaste`
 /// scope with the long transform-bearing frame.
-pub(crate) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_copy_paste_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     const COMPONENT_GUID: &str = "11111111-2222-3333-4444-555555555555";
     const SOURCE_OCCURRENCE_GUID: &str = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
     const COPIED_OCCURRENCE_GUID: &str = "cccccccc-1111-2222-3333-dddddddddddd";
@@ -1591,7 +1591,7 @@ pub(crate) fn generated_design_copy_paste_bodies_bulkstream() -> (Vec<u8>, Vec<(
 }
 
 /// Add a compact one-cage `Form` scope and its cage-list carrier.
-pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut out, mut records) = generated_design_bulkstream();
     let scope_record = 1_400_u32;
     let cage_record = 1_500_u32;
@@ -1634,7 +1634,7 @@ pub(crate) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
 /// Add paired dimensional parameters and their companion payloads to the
 /// generated Sketch stream. The payload contains a paired two-locus frame over
 /// two additional point records and one construction recipe record.
-pub(crate) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn append_point(
         out: &mut Vec<u8>,
         records: &mut Vec<(u64, u64)>,

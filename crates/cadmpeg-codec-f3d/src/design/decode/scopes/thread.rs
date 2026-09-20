@@ -16,7 +16,7 @@ use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_thread_construction(
+pub(super) fn exact_thread_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
@@ -60,7 +60,7 @@ pub(crate) fn exact_thread_construction(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ThreadPrefix {
+pub(super) enum ThreadPrefix {
     Standard,
     Compact,
 }
@@ -106,7 +106,7 @@ fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<Thread
     }
 }
 
-pub(crate) fn parse_thread_payload(
+pub(super) fn parse_thread_payload(
     bytes: &[u8],
     designation_at: usize,
     expected_form: ThreadPrefix,

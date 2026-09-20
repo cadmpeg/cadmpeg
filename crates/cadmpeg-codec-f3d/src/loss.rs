@@ -179,7 +179,7 @@ pub(crate) enum F3dLossCode {
 impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
-    pub(crate) const ALL: &'static [F3dLossCode] = &[
+    const ALL: &'static [F3dLossCode] = &[
         Self::DimensionCompanionUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -259,7 +259,7 @@ impl F3dLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub(crate) const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
@@ -347,7 +347,7 @@ impl F3dLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal

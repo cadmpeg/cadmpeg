@@ -28,12 +28,12 @@ struct SketchArrangementEdge {
     polyline: Vec<Point2>,
 }
 
-pub(crate) struct SketchArrangementFace {
+struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
     polyline: Vec<Point2>,
 }
 
-pub(crate) fn arrangement_region_containing_points(
+pub(super) fn arrangement_region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point2],
@@ -70,7 +70,7 @@ pub(crate) fn arrangement_region_containing_points(
     SketchProfileRegion::trimmed(interior.boundary.clone(), Vec::new()).ok()
 }
 
-pub(crate) fn sketch_arrangement_faces(
+fn sketch_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
@@ -634,7 +634,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
         })
 }
 
-pub(crate) fn analytic_segment_intersections(
+fn analytic_segment_intersections(
     left: &ProfileBoundarySegment,
     right: &ProfileBoundarySegment,
 ) -> Option<Vec<Point2>> {
@@ -1301,7 +1301,7 @@ fn signed_polygon_area(vertices: &[Point2]) -> f64 {
         * 0.5
 }
 
-pub(crate) fn region_containing_points(
+pub(super) fn region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
@@ -1421,7 +1421,7 @@ pub(crate) fn region_containing_points(
 
 /// Return true when every selected closed profile bounds a disjoint region.
 /// Nested or intersecting loops require explicit region semantics.
-pub(crate) fn profile_loops_are_independent(
+pub(super) fn profile_loops_are_independent(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     profiles: &[u32],
@@ -1460,7 +1460,7 @@ fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Ve
         .collect()
 }
 
-pub(crate) enum ProfileBoundary {
+enum ProfileBoundary {
     Polygon(Vec<Point2>),
     CircularArcLoop(Vec<ProfileBoundarySegment>),
     Circle { center: Point2, radius: f64 },
@@ -1468,7 +1468,7 @@ pub(crate) enum ProfileBoundary {
 }
 
 #[derive(Clone)]
-pub(crate) struct CertifiedProfileLoop {
+struct CertifiedProfileLoop {
     tubes: Vec<CertifiedCurveTube>,
 }
 
@@ -1479,7 +1479,7 @@ struct CertifiedCurveTube {
     error: f64,
 }
 
-pub(crate) enum ProfileBoundarySegment {
+enum ProfileBoundarySegment {
     Line {
         start: Point2,
         end: Point2,
@@ -1493,7 +1493,7 @@ pub(crate) enum ProfileBoundarySegment {
 }
 
 impl ProfileBoundary {
-    pub(crate) fn contains_point(&self, point: Point2) -> bool {
+    fn contains_point(&self, point: Point2) -> bool {
         match self {
             Self::Polygon(vertices) => point_in_polygon(point, vertices),
             Self::CircularArcLoop(segments) => point_in_circular_arc_loop(point, segments),
@@ -1502,7 +1502,7 @@ impl ProfileBoundary {
         }
     }
 
-    pub(crate) fn strictly_contains(&self, inner: &Self) -> bool {
+    fn strictly_contains(&self, inner: &Self) -> bool {
         match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
@@ -2163,7 +2163,7 @@ fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment
     }
 }
 
-pub(crate) fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
+pub(super) fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
     vertices
         .iter()
         .copied()
@@ -2193,7 +2193,7 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
         .take(vertices.len())
 }
 
-pub(crate) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
+pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
     let du = end.u - start.u;
     let dv = end.v - start.v;
     let length_squared = du * du + dv * dv;
@@ -2411,7 +2411,7 @@ fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64))
     })
 }
 
-pub(crate) fn historical_member_points_in_state(
+pub(super) fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
@@ -2433,7 +2433,7 @@ pub(crate) fn historical_member_points_in_state(
     historical_entity_positions(kind, entity_ref, topology)
 }
 
-pub(crate) fn historical_entity_positions(
+fn historical_entity_positions(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
@@ -2532,7 +2532,7 @@ pub(crate) fn historical_entity_positions(
     (!positions.is_empty()).then_some(positions)
 }
 
-pub(crate) fn historical_owned_faces(
+fn historical_owned_faces(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
@@ -2587,7 +2587,7 @@ fn historical_vertex_positions(
         })
 }
 
-pub(crate) fn project_to_sketch(
+pub(super) fn project_to_sketch(
     sketch: &cadmpeg_ir::sketches::Sketch,
     point: Point3,
 ) -> Option<Point2> {
@@ -2597,7 +2597,7 @@ pub(crate) fn project_to_sketch(
     Some(Point2::new(offset.dot(u_axis), offset.dot(v_axis)))
 }
 
-pub(crate) fn point_on_sketch_entity(
+pub(super) fn point_on_sketch_entity(
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
@@ -2690,7 +2690,7 @@ pub(crate) fn point_on_sketch_entity(
     }
 }
 
-pub(crate) fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -> bool {
+pub(super) fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -> bool {
     let sweep = end - start;
     if sweep.abs() >= std::f64::consts::TAU - tolerance {
         return true;
@@ -2706,7 +2706,7 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
     ((a.u - b.u).powi(2) + (a.v - b.v).powi(2)).sqrt()
 }
 
-pub(crate) fn closed_sketch_profiles(
+pub(super) fn closed_sketch_profiles(
     sketch: &cadmpeg_ir::sketches::SketchId,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
@@ -3187,7 +3187,7 @@ fn tangent_nested_line_profile(
         .then_some(profile)
 }
 
-pub(crate) fn sketch_entity_endpoints(
+pub(super) fn sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SketchEntity,
 ) -> Option<[Point2; 2]> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;

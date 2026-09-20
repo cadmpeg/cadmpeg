@@ -42,7 +42,7 @@ impl TryFrom<AsBuiltAlignmentDraft> for assembly::DesignAssemblyAlignmentForm {
     }
 }
 
-pub(crate) fn exact_assembly_alignment(
+pub(super) fn exact_assembly_alignment(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
