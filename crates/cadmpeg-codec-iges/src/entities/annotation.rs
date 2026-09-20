@@ -41,11 +41,6 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
-fn normalized(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (vector.is_finite() && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}
-
 fn sectioned_area_pattern_plane(
     record: &ParameterRecord,
     transform: Transform,
@@ -58,7 +53,7 @@ fn sectioned_area_pattern_plane(
     let point = transform.apply_point(Point3::new(0.0, 0.0, z))?;
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
-        .and_then(normalized)?;
+        .and_then(Vector3::unit_nonzero)?;
     Some((point, normal))
 }
 

@@ -10,8 +10,3 @@ pub(crate) fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
 pub(crate) fn dot_vector(first: Vector3, second: Vector3) -> f64 {
     first.dot(second)
 }
-
-pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}

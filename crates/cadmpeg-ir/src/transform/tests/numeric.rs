@@ -249,3 +249,41 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
         assert!(scaled.is_finite(), "scaled value {scaled} is not finite");
     }
 }
+
+#[test]
+fn numerical_audit_affine_cancellation_keeps_representable_results() {
+    use crate::math::Point3;
+    let matrix = Transform::affine([
+        [1.0, 1.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let point = Point3::new(f64::MAX, f64::MAX, f64::MAX);
+    assert_eq!(matrix.apply_point(point), Some(point));
+    assert_eq!(
+        matrix.apply_vector(Vector3::from(<[f64; 3]>::from(point))),
+        Some(Vector3::new(f64::MAX, f64::MAX, f64::MAX))
+    );
+    let translation = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, f64::MAX],
+        [0.0, 0.0, 1.0, f64::MAX],
+    ])
+    .unwrap();
+    assert_eq!(
+        matrix
+            .compose(translation)
+            .unwrap()
+            .apply_point(Point3::new(0.0, 0.0, 0.0)),
+        Some(point)
+    );
+    let source = Transform::affine([
+        [1.0, -1.0, 1.0, f64::MAX],
+        [0.0, 1.0, 0.0, f64::MAX],
+        [0.0, 0.0, 1.0, f64::MAX],
+    ])
+    .unwrap();
+    let inverse = source.try_inverse_affine().unwrap();
+    assert_eq!(inverse.affine_rows().map(|row| row[3]), [-f64::MAX; 3]);
+}

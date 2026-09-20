@@ -1964,3 +1964,5 @@ fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
 }
 
 mod periodic_and_analytic;
+
+mod numerical_audit;

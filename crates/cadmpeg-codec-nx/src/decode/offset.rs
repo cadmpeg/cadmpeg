@@ -10,7 +10,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
-use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use crate::native::vector::{cross_vector, dot_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
@@ -821,7 +821,7 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
 }
 
 fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vector3> {
-    let normal = unit_vector(normal)?;
+    let normal = Vector3::unit_nonzero(normal)?;
     Some(if surface.normal_reversed() {
         Vector3::new(-normal.x, -normal.y, -normal.z)
     } else {
@@ -1916,7 +1916,7 @@ fn intersection_parameter_tangent(
     if let Some(tangent) = null_vector_3x4(jacobian) {
         return Some(tangent);
     }
-    let chord = unit_vector(chord)?;
+    let chord = Vector3::unit_nonzero(chord)?;
     let derivatives = [
         [
             Vector3::new(jacobian[0][0], jacobian[1][0], jacobian[2][0]),
@@ -1930,7 +1930,7 @@ fn intersection_parameter_tangent(
     let mut tangent = [0.0; 4];
     for side in 0..2 {
         let (u, v) = least_squares_step(derivatives[side][0], derivatives[side][1], chord)?;
-        let mapped = unit_vector(Vector3::new(
+        let mapped = Vector3::unit_nonzero(Vector3::new(
             derivatives[side][0].x * u + derivatives[side][1].x * v,
             derivatives[side][0].y * u + derivatives[side][1].y * v,
             derivatives[side][0].z * u + derivatives[side][1].z * v,

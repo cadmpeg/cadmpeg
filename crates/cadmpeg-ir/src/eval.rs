@@ -4277,64 +4277,12 @@ fn direct_curve_parameter_near_point(
 }
 
 fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, f64)> {
-    let [first, second, third, bottom] = transform.rows();
-    let [matrix_00, matrix_01, matrix_02, translate_x] = first;
-    let [matrix_10, matrix_11, matrix_12, translate_y] = second;
-    let [matrix_20, matrix_21, matrix_22, translate_z] = third;
-    if bottom != [0.0, 0.0, 0.0, 1.0] {
-        return None;
-    }
-    let cofactors = [
-        [
-            matrix_11 * matrix_22 - matrix_12 * matrix_21,
-            matrix_02 * matrix_21 - matrix_01 * matrix_22,
-            matrix_01 * matrix_12 - matrix_02 * matrix_11,
-        ],
-        [
-            matrix_12 * matrix_20 - matrix_10 * matrix_22,
-            matrix_00 * matrix_22 - matrix_02 * matrix_20,
-            matrix_02 * matrix_10 - matrix_00 * matrix_12,
-        ],
-        [
-            matrix_10 * matrix_21 - matrix_11 * matrix_20,
-            matrix_01 * matrix_20 - matrix_00 * matrix_21,
-            matrix_00 * matrix_11 - matrix_01 * matrix_10,
-        ],
-    ];
-    let determinant =
-        matrix_00 * cofactors[0][0] + matrix_01 * cofactors[1][0] + matrix_02 * cofactors[2][0];
-    if !determinant.is_finite() || determinant == 0.0 {
-        return None;
-    }
-    let inverse = cofactors.map(|row| row.map(|value| value / determinant));
-    if inverse.iter().flatten().any(|value| !value.is_finite()) {
-        return None;
-    }
-    let relative = [
-        point.x - translate_x,
-        point.y - translate_y,
-        point.z - translate_z,
-    ];
-    let coordinates = inverse.map(|row| {
-        row.into_iter()
-            .zip(relative)
-            .map(|(coefficient, coordinate)| coefficient * coordinate)
-            .sum::<f64>()
-    });
-    let tolerance_scale = inverse
-        .iter()
-        .flatten()
-        .map(|value| value * value)
-        .sum::<f64>()
-        .sqrt();
-    (coordinates
-        .into_iter()
-        .chain([tolerance_scale])
-        .all(f64::is_finite))
-    .then_some((
-        Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-        tolerance_scale,
-    ))
+    let inverse = transform.try_inverse_affine().ok()?;
+    let coordinates = inverse.apply_point(point)?;
+    let tolerance_scale = inverse.affine_rows().iter()
+        .flat_map(|row| &row[..3])
+        .fold(0.0_f64, |length, &value| length.hypot(value));
+    tolerance_scale.is_finite().then_some((coordinates, tolerance_scale))
 }
 
 fn polyline_parameter_near_point(

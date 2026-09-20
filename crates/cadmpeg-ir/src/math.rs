@@ -47,7 +47,9 @@ impl Point3 {
 
     /// Euclidean distance to another point.
     pub fn distance(self, other: Point3) -> f64 {
-        self.distance_squared(other).sqrt()
+        (self.x - other.x)
+            .hypot(self.y - other.y)
+            .hypot(self.z - other.z)
     }
 
     /// Squared Euclidean distance to another point (no square root).
@@ -110,7 +112,7 @@ impl Vector3 {
 
     /// Euclidean length.
     pub fn norm(&self) -> f64 {
-        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+        self.x.hypot(self.y).hypot(self.z)
     }
 
     /// Dot product with another vector.
@@ -138,6 +140,16 @@ impl Vector3 {
     /// non-finite or the length is within [`f64::EPSILON`] of zero.
     #[must_use]
     pub fn unit(self) -> Option<Vector3> {
+        if self.norm() <= f64::EPSILON {
+            return None;
+        }
+        self.unit_nonzero()
+    }
+
+    /// Unit direction for every finite nonzero vector, including subnormals.
+    /// Callers that impose a geometric length threshold must check it separately.
+    #[must_use]
+    pub fn unit_nonzero(self) -> Option<Vector3> {
         if !self.is_finite() {
             return None;
         }
@@ -147,9 +159,6 @@ impl Vector3 {
         }
         let scaled = Vector3::new(self.x / scale, self.y / scale, self.z / scale);
         let length = scaled.norm();
-        if scale <= f64::EPSILON && scale * length <= f64::EPSILON {
-            return None;
-        }
         Some(Vector3::new(
             scaled.x / length,
             scaled.y / length,
