@@ -1,5 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked finite scalar domains.
+//!
+//! Subset conversions preserve values. Restricting a domain requires `TryFrom`:
+//!
+//! ```
+//! use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
+//! let positive = PositiveLength::new(2.0).unwrap();
+//! let nonzero = NonZeroLength::from(positive);
+//! let length = Length::from(nonzero);
+//! assert_eq!(PositiveLength::try_from(length).unwrap(), positive);
+//! assert_eq!(Length::from(length), length);
+//! let identity: Result<Length, std::convert::Infallible> = Length::try_from(length);
+//! let widening: Result<Length, std::convert::Infallible> = Length::try_from(positive);
+//! assert_eq!(identity.unwrap(), widening.unwrap());
+//! assert_eq!(NonNegativeLength::from(positive).get(), 2.0);
+//! ```
+//!
+//! A signed nonzero length cannot become positive without a check:
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
+//! let _: PositiveLength = NonZeroLength::new(-2.0).unwrap().into();
+//! ```
+//!
+//! A finite angle or real cannot become positive without a check either:
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{Angle, PositiveAngle};
+//! let _: PositiveAngle = Angle::ZERO.into();
+//! ```
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+//! let _: PositiveReal = FiniteReal::new(-1.0).unwrap().into();
+//! ```
+//!
+//! Overlapping domains have no infallible conversion in either direction:
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength};
+//! let _: NonNegativeLength = NonZeroLength::new(-2.0).unwrap().into();
+//! ```
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength};
+//! let _: NonZeroLength = NonNegativeLength::new(0.0).unwrap().into();
+//! ```
+//!
+//! Equal numerical restrictions do not permit conversions between quantity families:
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{PositiveAngle, PositiveLength};
+//! let _: PositiveAngle = PositiveLength::new(2.0).unwrap().into();
+//! ```
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+//! let _: PositiveReal = PositiveLength::new(2.0).unwrap().into();
+//! ```
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -108,27 +166,6 @@ checked_scalar!(
     /// A finite fraction in the closed interval from zero to one.
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
-
-/// The millimetre distance the document tolerance owner states as its linear
-/// default.
-const EPS_DOCUMENT_LINEAR_DEFAULT: f64 = 1.0e-6;
-/// The radian angle the document tolerance owner states as its angular
-/// default.
-const EPS_DOCUMENT_ANGULAR_DEFAULT: f64 = 1.0e-10;
-
-impl PositiveLength {
-    /// The document tolerance owner's linear default. The private field is
-    /// reachable only here, so the constant is admitted by construction
-    /// rather than by a fallible call a constant cannot make.
-    pub(crate) const UNIT_LINEAR_DEFAULT: Self = Self(EPS_DOCUMENT_LINEAR_DEFAULT);
-}
-
-impl PositiveAngle {
-    /// The document tolerance owner's angular default. The private field is
-    /// reachable only here, so the constant is admitted by construction
-    /// rather than by a fallible call a constant cannot make.
-    pub(crate) const UNIT_ANGULAR_DEFAULT: Self = Self(EPS_DOCUMENT_ANGULAR_DEFAULT);
-}
 
 impl Length {
     /// Zero in canonical units.
