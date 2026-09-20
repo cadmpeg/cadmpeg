@@ -782,211 +782,6 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     Some((full_knots, controls))
 }
 
-/// Contract one parameter of a tensor-product NURBS surface into its exact
-/// rational isocurve.
-///
-/// The surface is a refined IR carrier and the parameter is the caller's, so
-/// every `return None` states that the isocurve is not computable for this
-/// input, not that a record is refused; nothing reaches the sink but the lane
-/// refusal from the carrier constructor.
-pub(crate) fn nurbs_surface_isocurve(
-    surface: &NurbsSurface,
-    parameter: f64,
-    fix_u: bool,
-    refusal: &mut LaneRefusals,
-    record: &str,
-) -> Option<NurbsCurve> {
-    if !parameter.is_finite()
-        || !surface.u_knots().iter().copied().all(f64::is_finite)
-        || !surface.v_knots().iter().copied().all(f64::is_finite)
-        || !surface.poles().into_iter().all(|point| point.is_finite())
-        || surface.pole_weights().is_some_and(|weights| {
-            weights
-                .into_iter()
-                .any(|weight| !weight.is_finite() || weight == 0.0)
-        })
-    {
-        return None;
-    }
-    let u_count = surface.u_count();
-    let v_count = surface.v_count();
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    if !knots_nondecreasing(surface.u_knots()) || !knots_nondecreasing(surface.v_knots()) {
-        return None;
-    }
-    let (fixed_basis, varying_count, degree, knots) = if fix_u {
-        (
-            nurbs_basis_values(surface.u_knots(), u_degree, parameter, u_count)?,
-            v_count,
-            surface.v_degree(),
-            surface.v_knots().to_vec(),
-        )
-    } else {
-        (
-            nurbs_basis_values(surface.v_knots(), v_degree, parameter, v_count)?,
-            u_count,
-            surface.u_degree(),
-            surface.u_knots().to_vec(),
-        )
-    };
-    let indices = |fixed, varying| {
-        if fix_u {
-            (fixed, varying)
-        } else {
-            (varying, fixed)
-        }
-    };
-    // A common weight factor does not change a rational surface. Use one
-    // scale across all output poles to preserve their relative weights.
-    let mut weight_scale = 0.0_f64;
-    for varying in 0..varying_count {
-        for (fixed, &basis) in fixed_basis.iter().enumerate() {
-            if basis != 0.0 {
-                let (u, v) = indices(fixed, varying);
-                weight_scale = weight_scale.max(surface.weight(u, v).unwrap_or(1.0).abs());
-            }
-        }
-    }
-    if weight_scale == 0.0 {
-        return None;
-    }
-    let mut control_points = Vec::with_capacity(varying_count);
-    let mut weights = Vec::with_capacity(varying_count);
-    for varying in 0..varying_count {
-        let mut coordinate_scale = [0.0_f64; 3];
-        for (fixed, &basis) in fixed_basis.iter().enumerate() {
-            if basis == 0.0 {
-                continue;
-            }
-            let (u, v) = indices(fixed, varying);
-            let point: [f64; 3] = surface.pole(u, v)?.into();
-            for axis in 0..3 {
-                coordinate_scale[axis] = coordinate_scale[axis].max(point[axis].abs());
-            }
-        }
-        let mut numerator = [0.0; 3];
-        let mut denominator = 0.0;
-        for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
-            if basis == 0.0 {
-                continue;
-            }
-            let (u, v) = indices(fixed, varying);
-            let point: [f64; 3] = surface.pole(u, v)?.into();
-            let factor = basis * (surface.weight(u, v).unwrap_or(1.0) / weight_scale);
-            for axis in 0..3 {
-                if coordinate_scale[axis] != 0.0 {
-                    numerator[axis] += factor * (point[axis] / coordinate_scale[axis]);
-                }
-            }
-            denominator += factor;
-        }
-        if !denominator.is_finite() || denominator == 0.0 {
-            return None;
-        }
-        let point: [f64; 3] = std::array::from_fn(|axis| {
-            let quotient = numerator[axis] / denominator;
-            if quotient.is_finite() {
-                quotient * coordinate_scale[axis]
-            } else {
-                (numerator[axis] * coordinate_scale[axis]) / denominator
-            }
-        });
-        let point = Point3::from(point);
-        if !point.is_finite() {
-            return None;
-        }
-        control_points.push(point);
-        weights.push(denominator);
-    }
-    // Retain the source weight scale when it does not overflow or lose
-    // relative precision in the subnormal range. Otherwise keep the common
-    // normalization for the entire curve.
-    if weights.iter().all(|weight| {
-        let restored = weight * weight_scale;
-        restored.is_finite() && restored.abs() >= f64::MIN_POSITIVE
-    }) {
-        for weight in &mut weights {
-            *weight *= weight_scale;
-        }
-    }
-    match NurbsCurve::from_lanes(
-        degree,
-        knots,
-        control_points,
-        surface.weights().is_some().then_some(weights),
-        if fix_u {
-            surface.v_periodic()
-        } else {
-            surface.u_periodic()
-        },
-    ) {
-        Ok(curve) => Some(curve),
-        Err(error) => note_refusal(Err(error), refusal, record),
-    }
-}
-
-fn nurbs_basis_values(
-    knots: &[f64],
-    degree: usize,
-    parameter: f64,
-    count: usize,
-) -> Option<Vec<f64>> {
-    if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
-        return None;
-    }
-    if !parameter.is_finite()
-        || !knots.iter().copied().all(f64::is_finite)
-        || !knots_nondecreasing(knots)
-    {
-        return None;
-    }
-    let mut basis = alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
-    for (index, value) in basis.iter_mut().enumerate() {
-        if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
-            || (parameter == *knots.last()? && index + 1 == count)
-        {
-            *value = 1.0;
-        }
-    }
-    for level in 1..=degree {
-        for index in 0..count + degree - level {
-            let left_denominator = knots[index + level] - knots[index];
-            let right_denominator = knots[index + level + 1] - knots[index + 1];
-            let left = if left_denominator == 0.0 {
-                0.0
-            } else {
-                (parameter - knots[index]) / left_denominator * basis[index]
-            };
-            let right = if right_denominator == 0.0 {
-                0.0
-            } else {
-                (knots[index + level + 1] - parameter) / right_denominator * basis[index + 1]
-            };
-            basis[index] = left + right;
-        }
-    }
-    basis.truncate(count);
-    basis.iter().all(|value| value.is_finite()).then_some(basis)
-}
-
-pub(crate) fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
-    let capacity = multiplicities
-        .iter()
-        .try_fold(0usize, |sum, value| sum.checked_add(*value as usize))?;
-    let mut knots = Vec::with_capacity(capacity);
-    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
-        knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
-    }
-    Some(knots)
-}
-
-pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
-    multiplicities
-        .iter()
-        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)
-}
 
 #[cfg(test)]
 mod tests {
@@ -1000,7 +795,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::{
-        canonical_model_curve_range, circular_helix_cache, nurbs_surface_isocurve,
+        canonical_model_curve_range, circular_helix_cache,
         quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
         reverse_pcurve_geometry, LaneRefusals,
     };
@@ -1244,13 +1039,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let curve = nurbs_surface_isocurve(
-            &surface,
-            tiny * 0.5,
-            true,
-            &mut crate::nurbs::LaneRefusals::new(),
-            "test record",
-        )
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(&surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, tiny * 0.5)
         .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1283,8 +1072,7 @@ mod tests {
             )
             .unwrap()
         };
-        assert!(nurbs_surface_isocurve(
-            &surface(
+        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(&surface(
                 vec![
                     Point3::new(f64::MAX, 0.0, 0.0),
                     Point3::new(f64::MAX, 0.0, 0.0),
@@ -1292,12 +1080,7 @@ mod tests {
                     Point3::new(-f64::MAX, 0.0, 0.0),
                 ],
                 Some(vec![1.0, 1.0, -0.5, -0.5]),
-            ),
-            0.5,
-            true,
-            &mut crate::nurbs::LaneRefusals::new(),
-            "test record",
-        )
+            ), cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, 0.5)
         .is_none());
     }
 

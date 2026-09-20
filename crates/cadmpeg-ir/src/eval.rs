@@ -29,6 +29,9 @@ use crate::transform::Transform;
 use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
+mod rational;
+use rational::Homogeneous;
+
 const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
 
 const EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E12: f64 = 1.0e-12;
@@ -1458,13 +1461,13 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
         let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
-            let factor = if denominator == 0.0 {
-                0.0
+            let (right_ratio, left_ratio) = if denominator == 0.0 {
+                (0.0, 0.0)
             } else {
-                value / denominator
+                (right[r + 1] / denominator, left[j - r] / denominator)
             };
-            next[r] = saved + right[r + 1] * factor;
-            saved = left[j - r] * factor;
+            next[r] = saved + right_ratio * value;
+            saved = left_ratio * value;
         }
         next[j] = saved;
         values = next;
@@ -1561,22 +1564,12 @@ pub fn nurbs_curve_point(
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut z = 0.0;
-    let mut weight_sum = 0.0;
-    for (i, value) in basis.iter().enumerate() {
-        let index = span - degree + i;
-        let weight = weights
-            .and_then(|weights| weights.get(index).copied())
-            .unwrap_or(1.0);
-        let pole = control_points.get(index)?;
-        x += value * weight * pole.x;
-        y += value * weight * pole.y;
-        z += value * weight * pole.z;
-        weight_sum += value * weight;
-    }
-    (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+        let index = span - degree + local;
+        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
+    }));
+    let base = sum(&basis)?;
+    Some(Point3::from(base.project(base, &[])?))
 }
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
@@ -2325,23 +2318,15 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
     let v_basis = bspline_basis(surface.v_knots(), v_degree, v_span, v_at)?;
-    let mut x = 0.0;
-    let mut y = 0.0;
-    let mut z = 0.0;
-    let mut weight_sum = 0.0;
-    for (i, u_value) in u_basis.iter().enumerate() {
-        for (j, v_value) in v_basis.iter().enumerate() {
-            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
-            let factor = u_value * v_value * weight;
-            let pole = surface.pole(pole_u, pole_v)?;
-            x += factor * pole.x;
-            y += factor * pole.y;
-            z += factor * pole.z;
-            weight_sum += factor;
-        }
-    }
-    (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+    let sum = |u_values: &[f64], v_values: &[f64]| Homogeneous::sum(
+        u_values.iter().copied().enumerate().flat_map(|(i, u_value)| {
+            v_values.iter().copied().enumerate().map(move |(j, v_value)| {
+                let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+                Some(([u_value, v_value], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
+            })
+        }));
+    let base = sum(&u_basis, &v_basis)?;
+    Some(Point3::from(base.project(base, &[])?))
 }
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)` within a caller-owned
@@ -2416,43 +2401,19 @@ pub fn nurbs_surface_isocurve(
     };
     let rational = surface.weights().is_some();
     let mut control_points = Vec::with_capacity(varying_count);
-    let mut weighted_poles = Vec::with_capacity(varying_count);
+    let mut sums = Vec::with_capacity(varying_count);
     for varying in 0..varying_count {
-        let mut weighted = [0.0; 3];
-        let mut weight_sum = 0.0;
-        for (local, basis) in fixed_basis.iter().copied().enumerate() {
+        let sum = Homogeneous::sum(fixed_basis.iter().copied().enumerate().map(|(local, basis)| {
             let fixed = fixed_span - fixed_degree + local;
             let (pole_u, pole_v) = match fixed_axis {
                 SurfaceParameterAxis::U => (fixed, varying),
                 SurfaceParameterAxis::V => (varying, fixed),
             };
-            let weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
-            let factor = basis * weight;
-            let point = surface.pole(pole_u, pole_v)?;
-            weighted[0] += factor * point.x;
-            weighted[1] += factor * point.y;
-            weighted[2] += factor * point.z;
-            weight_sum += factor;
-        }
-        if !weight_sum.is_finite() || weight_sum <= 0.0 {
-            return None;
-        }
-        let point = Point3::new(
-            weighted[0] / weight_sum,
-            weighted[1] / weight_sum,
-            weighted[2] / weight_sum,
-        );
+            Some(([basis, 1.0], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
+        }))?;
+        let point = Point3::from(sum.project(sum, &[])?);
         control_points.push(point);
-        if rational {
-            // The pole and its weight are one row, so the isocurve states no
-            // pole lane and no weight lane for a reader to pair. `weight_sum`
-            // is finite and positive above, which is what the row's weight
-            // holds.
-            weighted_poles.push(crate::geometry::nurbs::WeightedPole3 {
-                point,
-                weight: crate::scalar::NonZeroReal::new(weight_sum)?,
-            });
-        }
+        sums.push(sum);
     }
     let (degree, knots, periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
@@ -2466,16 +2427,8 @@ pub fn nurbs_surface_isocurve(
             surface.u_periodic(),
         ),
     };
-    let poles = if rational {
-        NurbsPoles3::Rational {
-            points: weighted_poles,
-        }
-    } else {
-        NurbsPoles3::Polynomial {
-            points: control_points,
-        }
-    };
-    NurbsCurve::new(degree, knots, poles, periodic).ok()
+    let weights = if rational { Some(Homogeneous::weights(&sums)?) } else { None };
+    NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic).ok()
 }
 
 /// Point and first partial derivatives of a NURBS surface in its stored
@@ -2569,87 +2522,27 @@ pub fn nurbs_surface_second_partials(
     let v_derivative = bspline_basis_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
     let u_second = bspline_basis_second_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
     let v_second = bspline_basis_second_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
-    let mut weighted = [0.0; 3];
-    let mut weighted_u = [0.0; 3];
-    let mut weighted_v = [0.0; 3];
-    let mut weighted_uu = [0.0; 3];
-    let mut weighted_uv = [0.0; 3];
-    let mut weighted_vv = [0.0; 3];
-    let mut weight = 0.0;
-    let mut weight_u = 0.0;
-    let mut weight_v = 0.0;
-    let mut weight_uu = 0.0;
-    let mut weight_uv = 0.0;
-    let mut weight_vv = 0.0;
-    for i in 0..=u_degree {
-        for j in 0..=v_degree {
-            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-            let pole = surface.pole(pole_u, pole_v)?;
-            let pole_weight = surface.weight(pole_u, pole_v).unwrap_or(1.0);
-            let basis = u_basis[i] * v_basis[j] * pole_weight;
-            let basis_u = u_derivative[i] * v_basis[j] * pole_weight;
-            let basis_v = u_basis[i] * v_derivative[j] * pole_weight;
-            let basis_uu = u_second[i] * v_basis[j] * pole_weight;
-            let basis_uv = u_derivative[i] * v_derivative[j] * pole_weight;
-            let basis_vv = u_basis[i] * v_second[j] * pole_weight;
-            for (axis, coordinate) in [pole.x, pole.y, pole.z].into_iter().enumerate() {
-                weighted[axis] += basis * coordinate;
-                weighted_u[axis] += basis_u * coordinate;
-                weighted_v[axis] += basis_v * coordinate;
-                weighted_uu[axis] += basis_uu * coordinate;
-                weighted_uv[axis] += basis_uv * coordinate;
-                weighted_vv[axis] += basis_vv * coordinate;
-            }
-            weight += basis;
-            weight_u += basis_u;
-            weight_v += basis_v;
-            weight_uu += basis_uu;
-            weight_uv += basis_uv;
-            weight_vv += basis_vv;
-        }
-    }
-    if weight == 0.0 {
-        return None;
-    }
-    let point = Point3::new(
-        weighted[0] / weight,
-        weighted[1] / weight,
-        weighted[2] / weight,
-    );
-    let derivative = |weighted_derivative: [f64; 3], weight_derivative: f64| {
-        Vector3::new(
-            (weighted_derivative[0] - point.x * weight_derivative) / weight,
-            (weighted_derivative[1] - point.y * weight_derivative) / weight,
-            (weighted_derivative[2] - point.z * weight_derivative) / weight,
-        )
-    };
-    let du = derivative(weighted_u, weight_u);
-    let dv = derivative(weighted_v, weight_v);
-    let second_derivative = |weighted_derivative: [f64; 3],
-                             weight_derivative: f64,
-                             first_weight: f64,
-                             first: Vector3| {
-        Vector3::new(
-            (weighted_derivative[0] - point.x * weight_derivative - 2.0 * first_weight * first.x)
-                / weight,
-            (weighted_derivative[1] - point.y * weight_derivative - 2.0 * first_weight * first.y)
-                / weight,
-            (weighted_derivative[2] - point.z * weight_derivative - 2.0 * first_weight * first.z)
-                / weight,
-        )
-    };
-    let mixed_derivative = Vector3::new(
-        (weighted_uv[0] - point.x * weight_uv - weight_u * dv.x - weight_v * du.x) / weight,
-        (weighted_uv[1] - point.y * weight_uv - weight_u * dv.y - weight_v * du.y) / weight,
-        (weighted_uv[2] - point.z * weight_uv - weight_u * dv.z - weight_v * du.z) / weight,
-    );
+    let sum = |u_values: &[f64], v_values: &[f64]| Homogeneous::sum(
+        u_values.iter().copied().enumerate().flat_map(|(i, u_value)| {
+            v_values.iter().copied().enumerate().map(move |(j, v_value)| {
+                let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+                Some(([u_value, v_value], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
+            })
+        }));
+    let base = sum(&u_basis, &v_basis)?;
+    let u = sum(&u_derivative, &v_basis)?;
+    let v = sum(&u_basis, &v_derivative)?;
+    let uu = sum(&u_second, &v_basis)?;
+    let uv = sum(&u_derivative, &v_derivative)?;
+    let vv = sum(&u_basis, &v_second)?;
+    let point = base.project(base, &[])?;
+    let du = u.project(base, &[(u, point)])?;
+    let dv = v.project(base, &[(v, point)])?;
     Some(SurfaceSecondPartials {
-        point,
-        du,
-        dv,
-        duu: second_derivative(weighted_uu, weight_uu, weight_u, du),
-        duv: mixed_derivative,
-        dvv: second_derivative(weighted_vv, weight_vv, weight_v, dv),
+        point: Point3::from(point), du: Vector3::from(du), dv: Vector3::from(dv),
+        duu: Vector3::from(uu.project(base, &[(uu, point), (u, du), (u, du)])?),
+        duv: Vector3::from(uv.project(base, &[(uv, point), (u, dv), (v, du)])?),
+        dvv: Vector3::from(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?),
     })
 }
 
@@ -2698,7 +2591,15 @@ fn periodic_parameter(
         return Some(parameter);
     }
     let period = end - start;
-    (period.is_finite() && period > 0.0).then(|| start + (parameter - start).rem_euclid(period))
+    if !period.is_finite() || period <= 0.0 { return None; }
+    let relative = parameter - start;
+    let offset = if relative.is_finite() {
+        relative.rem_euclid(period)
+    } else {
+        (parameter.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
+    };
+    let wrapped = start + offset;
+    wrapped.is_finite().then_some(wrapped)
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
@@ -3008,34 +2909,14 @@ fn nurbs_curve_tangent(
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
     let derivatives = bspline_basis_derivative(knots, degree, span, t)?;
-    let mut weighted = Vector3::new(0.0, 0.0, 0.0);
-    let mut weighted_derivative = Vector3::new(0.0, 0.0, 0.0);
-    let mut weight = 0.0;
-    let mut weight_derivative = 0.0;
-    for (local, (basis, derivative)) in basis.iter().zip(&derivatives).enumerate() {
+    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
         let index = span - degree + local;
-        let control = control_points.get(index)?;
-        let control_weight = weights
-            .and_then(|weights| weights.get(index).copied())
-            .unwrap_or(1.0);
-        weighted.x += basis * control_weight * control.x;
-        weighted.y += basis * control_weight * control.y;
-        weighted.z += basis * control_weight * control.z;
-        weighted_derivative.x += derivative * control_weight * control.x;
-        weighted_derivative.y += derivative * control_weight * control.y;
-        weighted_derivative.z += derivative * control_weight * control.z;
-        weight += basis * control_weight;
-        weight_derivative += derivative * control_weight;
-    }
-    if weight == 0.0 {
-        return None;
-    }
-    let tangent = Vector3::new(
-        (weighted_derivative.x * weight - weighted.x * weight_derivative) / (weight * weight),
-        (weighted_derivative.y * weight - weighted.y * weight_derivative) / (weight * weight),
-        (weighted_derivative.z * weight - weighted.z * weight_derivative) / (weight * weight),
-    );
-    (tangent.is_finite()).then_some(tangent)
+        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
+    }));
+    let base = sum(&basis)?;
+    let derivative = sum(&derivatives)?;
+    let point = base.project(base, &[])?;
+    Some(Vector3::from(derivative.project(base, &[(derivative, point)])?))
 }
 
 fn nurbs_curve_second_derivative(
@@ -3050,51 +2931,16 @@ fn nurbs_curve_second_derivative(
     let basis = bspline_basis(knots, degree, span, t)?;
     let first_basis = bspline_basis_derivative(knots, degree, span, t)?;
     let second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
-    let mut weighted = Vector3::new(0.0, 0.0, 0.0);
-    let mut weighted_first = Vector3::new(0.0, 0.0, 0.0);
-    let mut weighted_second = Vector3::new(0.0, 0.0, 0.0);
-    let mut weight = 0.0;
-    let mut weight_first = 0.0;
-    let mut weight_second = 0.0;
-    for local in 0..=degree {
+    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
         let index = span - degree + local;
-        let control = control_points.get(index)?;
-        let control_weight = weights
-            .and_then(|weights| weights.get(index).copied())
-            .unwrap_or(1.0);
-        let accumulate = |target: &mut Vector3, factor: f64| {
-            target.x += factor * control.x;
-            target.y += factor * control.y;
-            target.z += factor * control.z;
-        };
-        let basis = basis[local] * control_weight;
-        let first = first_basis[local] * control_weight;
-        let second = second_basis[local] * control_weight;
-        accumulate(&mut weighted, basis);
-        accumulate(&mut weighted_first, first);
-        accumulate(&mut weighted_second, second);
-        weight += basis;
-        weight_first += first;
-        weight_second += second;
-    }
-    if weight == 0.0 {
-        return None;
-    }
-    let point = Vector3::new(
-        weighted.x / weight,
-        weighted.y / weight,
-        weighted.z / weight,
-    );
-    let first = Vector3::new(
-        (weighted_first.x - point.x * weight_first) / weight,
-        (weighted_first.y - point.y * weight_first) / weight,
-        (weighted_first.z - point.z * weight_first) / weight,
-    );
-    Some(Vector3::new(
-        (weighted_second.x - point.x * weight_second - 2.0 * weight_first * first.x) / weight,
-        (weighted_second.y - point.y * weight_second - 2.0 * weight_first * first.y) / weight,
-        (weighted_second.z - point.z * weight_second - 2.0 * weight_first * first.z) / weight,
-    ))
+        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
+    }));
+    let base = sum(&basis)?;
+    let first_sum = sum(&first_basis)?;
+    let second_sum = sum(&second_basis)?;
+    let point = base.project(base, &[])?;
+    let first = first_sum.project(base, &[(first_sum, point)])?;
+    Some(Vector3::from(second_sum.project(base, &[(second_sum, point), (first_sum, first), (first_sum, first)])?))
 }
 
 /// Evaluate a curve carrier selected by arena id, including supported

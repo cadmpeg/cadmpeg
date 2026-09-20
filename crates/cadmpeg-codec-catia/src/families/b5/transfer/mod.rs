@@ -473,7 +473,7 @@ fn build_plan(
                 else {
                     return None;
                 };
-                nurbs_isocurve(pcurve, cache, refusal)
+                nurbs_isocurve(pcurve, cache)
                     .map(SolvedCurveGeometry::Nurbs)
                     .map(CurveGeometry::Solved)
             });
