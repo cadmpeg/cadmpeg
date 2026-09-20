@@ -264,8 +264,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             };
             let candidate = [u, v];
             let candidate_radius = (u - center_u).hypot(v - center_v);
-            let radial_scale = radius.max(candidate_radius).max(1.0);
-            if (candidate_radius - radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale {
+            let radial_scale = radius.max(candidate_radius);
+            if !radius.is_finite()
+                || radius <= 0.0
+                || !candidate_radius.is_finite()
+                || (candidate_radius - radius).abs() / radial_scale > EPS_RADIUS_AGREEMENT
+            {
                 continue;
             }
             coordinate_candidates.push((vertex, candidate));
@@ -555,9 +559,13 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
         let second = [end[0] - center_u, end[1] - center_v];
         let first_radius = first[0].hypot(first[1]);
         let second_radius = second[0].hypot(second[1]);
-        let scale = radius.max(first_radius).max(second_radius).max(1.0);
-        if (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
-            || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+        let scale = radius.max(first_radius).max(second_radius);
+        if !radius.is_finite()
+            || radius <= 0.0
+            || !first_radius.is_finite()
+            || !second_radius.is_finite()
+            || (first_radius - radius).abs() / scale > EPS_RADIUS_AGREEMENT
+            || (second_radius - radius).abs() / scale > EPS_RADIUS_AGREEMENT
         {
             return None;
         }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::trimmed_section_segment_geometry_with_missing_line;
+use super::super::{
+    resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
+};
 use crate::decode::sketch::coordinates::resolved_section_points;
 use crate::decode::sketch::geometry::saved_section_missing_line_geometry;
 use crate::decode::tests::declared_solver_rows;
@@ -293,6 +295,48 @@ fn arc_carriers_use_trim_vertices() {
             .expect("valid test fixture")
         )
     );
+
+    const SMALL_RADIUS: f64 = 1.0e-10;
+    for radius in [SMALL_RADIUS, 1.0, 1e100] {
+        let mut scaled = definition.clone();
+        scaled.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::segment_rows::SegmentRow::Ordinary(
+                segment.clone(),
+            )]
+            .into_iter()
+            .collect(),
+            offset: 0,
+        });
+        for factor in [1.0, 5.0, f64::INFINITY, f64::NAN] {
+            let endpoints = [[-radius * factor, 0.0], [0.0, -radius * factor]];
+            let saved = scaled.saved_section.as_mut().expect("saved arc fixture");
+            let crate::feature::definitions::FeatureSavedEntity::Arc(arc) =
+                &mut saved.entities[0]
+            else {
+                panic!("saved arc fixture");
+            };
+            arc.radius = Some(radius);
+            arc.endpoints = endpoints.map(|[u, v]| [Some(u), Some(v), Some(0.0)]);
+            let vertices = BTreeMap::from([(1, endpoints[0]), (2, endpoints[1])]);
+            let geometry = trimmed_section_segment_geometry(
+                &scaled,
+                &BTreeMap::new(),
+                &vertices,
+                &segment,
+            );
+            let resolved = resolved_trim_vertex_coordinates(&scaled, &BTreeMap::new());
+            if factor == 1.0 {
+                assert!(geometry.is_some(), "radius {radius}");
+                assert_eq!(resolved, vertices);
+            } else {
+                assert!(geometry.is_none(), "radius {radius}, factor {factor}");
+                assert!(resolved.is_empty(), "radius {radius}, factor {factor}");
+            }
+        }
+    }
 
     let mut var_segment = segment.clone();
     var_segment.radius_ref = Some(10);

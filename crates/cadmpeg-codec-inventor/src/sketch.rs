@@ -1596,19 +1596,24 @@ fn line_carrier_matches(
     start: [f64; 2],
     end: [f64; 2],
 ) -> bool {
-    let norm = direction[0].hypot(direction[1]);
-    let span = [end[0] - start[0], end[1] - start[1]];
-    let span_norm = span[0].hypot(span[1]);
-    if norm <= f64::EPSILON || span_norm <= f64::EPSILON {
+    let Some(unit) = Vector3::new(direction[0], direction[1], 0.0).unit_nonzero() else {
         return false;
-    }
-    let unit = [direction[0] / norm, direction[1] / norm];
-    let parallel_error = (unit[0] * (span[1] / span_norm) - unit[1] * (span[0] / span_norm)).abs();
-    let from_origin = [start[0] - origin[0], start[1] - origin[1]];
-    let origin_scale = from_origin[0].hypot(from_origin[1]).max(1.0);
-    let carrier_error = (unit[0] * (from_origin[1] / origin_scale)
-        - unit[1] * (from_origin[0] / origin_scale))
-        .abs();
+    };
+    let Some(span) = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0).unit_nonzero()
+    else {
+        return false;
+    };
+    let parallel_error = (unit.x * span.y - unit.y * span.x).abs();
+    let from_origin = Vector3::new(start[0] - origin[0], start[1] - origin[1], 0.0);
+    // Coincidence has zero residual; every nonzero offset uses its own scale.
+    let carrier_error = if from_origin.x == 0.0 && from_origin.y == 0.0 {
+        0.0
+    } else {
+        let Some(offset) = from_origin.unit_nonzero() else {
+            return false;
+        };
+        (unit.x * offset.y - unit.y * offset.x).abs()
+    };
     parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
         && carrier_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
 }
@@ -2362,5 +2367,37 @@ mod tests {
             [0., 0.],
             [0., 1e200]
         ));
+    }
+
+    #[test]
+    fn sketch_carrier_agreement_is_independent_of_scale() {
+        for scale in [f64::from_bits(1), 5e-11, 1.0, 1e200] {
+            assert!(super::line_carrier_matches(
+                [0.0, 0.0],
+                [scale, 0.0],
+                [scale, 0.0],
+                [2.0 * scale, 0.0],
+            ));
+            assert!(super::line_carrier_matches(
+                [0.0, 0.0],
+                [scale, 0.0],
+                [0.0, 0.0],
+                [scale, 0.0],
+            ));
+            assert!(!super::line_carrier_matches(
+                [0.0, 0.0],
+                [scale, 0.0],
+                [0.0, scale],
+                [scale, scale],
+            ));
+        }
+        for invalid in [0.0, f64::NAN, f64::INFINITY] {
+            assert!(!super::line_carrier_matches(
+                [0.0, 0.0],
+                [invalid, 0.0],
+                [0.0, 0.0],
+                [1.0, 0.0],
+            ));
+        }
     }
 }

@@ -728,6 +728,54 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
 }
 
 #[test]
+fn sketch_frame_translation_requires_representable_grid_cells() {
+    const QUANTUM: f64 = 1.0e-8;
+    let sketch = |origin_x, u_axis| Sketch {
+        id: SketchId::mint("synthetic:test:id#sketch").expect("valid sketch identity"),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(origin_x, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            u_axis,
+        )
+        .expect("finite orthonormal frame"),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    let aligned = Vector3::new(1.0, 0.0, 0.0);
+    let diagonal = std::f64::consts::FRAC_1_SQRT_2;
+    let rotated = Vector3::new(diagonal, diagonal, 0.0);
+    for u_axis in [aligned, rotated] {
+        for origin in [-2e12, -1e12, 1e12, 2e12, f64::MAX] {
+            assert!(sketch_frame_marker_transform(&sketch(origin, u_axis), QUANTUM).is_none());
+        }
+        assert!(sketch_frame_marker_transform(&sketch(1.0, u_axis), QUANTUM).is_some());
+        for quantum in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(sketch_frame_marker_transform(&sketch(1.0, u_axis), quantum).is_none());
+        }
+    }
+
+    // The negative endpoint is representable; positive 2^63 is outside i64.
+    let boundary = 2.0_f64.powi(63);
+    assert_eq!(
+        sketch_frame_marker_transform(&sketch(boundary, aligned), 1.0)
+            .expect("negative i64 endpoint")
+            .apply((0, 0)),
+        Some((i64::MIN, 0))
+    );
+    assert!(sketch_frame_marker_transform(&sketch(-boundary, aligned), 1.0).is_none());
+    let inside = f64::from_bits(boundary.to_bits() - 1);
+    assert_eq!(
+        sketch_frame_marker_transform(&sketch(-inside, aligned), 1.0)
+            .expect("largest f64 below positive 2^63")
+            .apply((0, 0)),
+        Some((9_223_372_036_854_774_784, 0))
+    );
+}
+
+#[test]
 fn marker_transform_reports_the_profile_axis_for_each_native_axis() {
     const SCALE: i64 = 1_000_000_000_000;
 
