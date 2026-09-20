@@ -700,3 +700,6 @@ fn has_no_body_result_or_reference(feature: &cadmpeg_ir::features::Feature) -> b
                 || key.as_str().starts_with("body_reference_occurrence.")
         })
 }
+
+#[cfg(test)]
+mod tests;

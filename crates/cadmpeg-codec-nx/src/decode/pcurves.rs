@@ -722,7 +722,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
 
 /// Reverse a pcurve over `[start, end]`. `Ok(None)` states a pcurve family the
 /// reversal cannot carry; `Err` states reversed lanes the carrier refuses.
-pub(super) fn reverse_pcurve_over_range(
+fn reverse_pcurve_over_range(
     pcurve: &PcurveGeometry,
     [start, end]: [f64; 2],
 ) -> Result<Option<PcurveGeometry>, NurbsError> {
@@ -3940,3 +3940,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod reversal_tests;

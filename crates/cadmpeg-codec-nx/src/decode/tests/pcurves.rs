@@ -1962,5 +1962,3 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         }
     }
 }
-
-mod reversal;

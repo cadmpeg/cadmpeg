@@ -432,6 +432,4 @@ pub(crate) fn summarize(scan: &Scan) -> (crate::dialect::LayerClassification, Ve
 }
 
 #[cfg(test)]
-mod feature_completeness_tests;
-#[cfg(test)]
 mod tests;
