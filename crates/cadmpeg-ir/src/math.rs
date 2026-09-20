@@ -159,7 +159,16 @@ impl Vector3 {
         if scale == 0.0 {
             return None;
         }
-        let scaled = Vector3::new(self.x / scale, self.y / scale, self.z / scale);
+        // Divide by the power of two the largest component states, not by the
+        // component. The division is then exact, so a direction whose
+        // components state an exact ratio keeps it, and the largest scaled
+        // component stays in `[0.5, 1)`, which is what the norm needs.
+        let exponent = sum::scaled_finite(scale)?.exponent();
+        let scaled = Vector3::new(
+            sum::scale_power_of_two(self.x, -exponent)?,
+            sum::scale_power_of_two(self.y, -exponent)?,
+            sum::scale_power_of_two(self.z, -exponent)?,
+        );
         let length = scaled.norm();
         Some(Vector3::new(
             scaled.x / length,
