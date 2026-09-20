@@ -400,8 +400,8 @@ fn decode_places_complete_positional_torus() {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
                     (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
                         && (center.y - 16.74).abs() < EPS_ANALYTIC_FRAME
                         && center.z.abs() < EPS_ANALYTIC_FRAME

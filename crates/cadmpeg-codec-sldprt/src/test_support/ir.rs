@@ -188,21 +188,17 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = torus_surface.center();
-                let axis = torus_surface.axis();
-                let ref_direction = torus_surface.ref_direction();
+                let frame = torus_surface.frame();
                 let major_radius = torus_surface.major_radius();
                 let minor_radius = torus_surface.minor_radius();
-                let mut center = *center;
+                let mut center = torus_surface.center().get();
                 center.x += dx;
-                *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    center,
-                    *axis,
-                    *ref_direction,
+                *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
+                    frame,
                     major_radius,
                     minor_radius,
-                )
-                .unwrap();
+                );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 nurbs

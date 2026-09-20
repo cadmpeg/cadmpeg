@@ -2855,8 +2855,8 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             Some((
                 (*center).translated(*axis, minor_radius * v.sin()),
                 (major_radius + minor_radius * v.cos()).abs(),
@@ -2882,8 +2882,8 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((

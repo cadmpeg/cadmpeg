@@ -2724,7 +2724,7 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
+            let major_radius = torus_surface.major_radius().get();
             let axis = axis.unit()?;
             let delta = subtract(point, *center);
             let axial = delta.dot(axis);
@@ -2807,8 +2807,8 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let delta = subtract(point, *center);
             let axis_length = axis.norm();
             let axial = delta.dot(*axis) / axis_length;

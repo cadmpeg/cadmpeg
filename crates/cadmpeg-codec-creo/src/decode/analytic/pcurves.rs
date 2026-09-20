@@ -1236,20 +1236,13 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if {
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
-                start[1] == end[1]
-                    && major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && minor_radius > 0.0
-            } =>
+            if start[1] == end[1] && torus_surface.minor_radius().get() > 0.0 =>
         {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1262,20 +1255,13 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if {
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
-                start[0] == end[0]
-                    && major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && minor_radius > 0.0
-            } =>
+            if start[0] == end[0] && torus_surface.minor_radius().get() > 0.0 =>
         {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],

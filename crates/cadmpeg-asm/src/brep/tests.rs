@@ -338,8 +338,8 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
                     *center == Point3::new(0.0, 0.0, 1.0)
                         && *axis == Vector3::new(0.0, 0.0, 1.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)

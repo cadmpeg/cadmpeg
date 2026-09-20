@@ -8795,7 +8795,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     sphere_surface.radius().get()
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                    torus_surface.minor_radius()
+                    torus_surface.minor_radius().get()
                 }
                 _ => return None,
             };

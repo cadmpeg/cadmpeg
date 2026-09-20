@@ -177,8 +177,8 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
     let center = *torus_surface.center();
     let axis = *torus_surface.axis();
     let ref_direction = *torus_surface.ref_direction();
-    let major_radius = torus_surface.major_radius();
-    let minor_radius = torus_surface.minor_radius();
+    let major_radius = torus_surface.major_radius().get();
+    let minor_radius = torus_surface.minor_radius().get();
     assert_eq!(center, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
     assert_eq!(ref_direction, [0.0, 1.0, 0.0].into());

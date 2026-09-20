@@ -83,8 +83,8 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                         torus_surface,
                     )),
                 ) if {
-                    let major_radius = torus_surface.major_radius();
-                    let minor_radius = torus_surface.minor_radius();
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
                     major_radius == 4.0 && minor_radius == 1.0
                 } => {}
                 _ => panic!(

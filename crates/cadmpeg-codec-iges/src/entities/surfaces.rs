@@ -959,8 +959,8 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                     *center,
@@ -2543,9 +2543,7 @@ pub(super) fn project(
                 radius > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
-                major_radius > 0.0 && minor_radius > 0.0
+                torus_surface.minor_radius().get() > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let radius = cone_surface.radius().get();

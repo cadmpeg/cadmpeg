@@ -5799,8 +5799,8 @@ fn native_embedded_surface(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,
@@ -6276,8 +6276,8 @@ fn native_embedded_surface_with_bounds(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             native_ident(bytes, "torus")?;
             native_point(
                 bytes,

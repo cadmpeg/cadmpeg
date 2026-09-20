@@ -2532,12 +2532,12 @@ fn fold_surface_frame(
                 return Ok(());
             }
             SolvedSurfaceGeometry::Torus(payload) => {
-                let center = payload.center();
+                let center = payload.center().get();
                 let axis = payload.axis();
-                let major_radius = payload.major_radius();
-                let minor_radius = payload.minor_radius();
+                let major_radius = payload.major_radius().get();
+                let minor_radius = payload.minor_radius().get();
                 *payload = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    *center,
+                    center,
                     *axis,
                     u_reference,
                     major_radius,
@@ -3503,8 +3503,8 @@ fn derive_revolved_circle_pcurves(
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
                 let d = [
                     circle_center.x - center.x,
                     circle_center.y - center.y,
@@ -3978,8 +3978,8 @@ fn analytic_pcurve_chord_bound(
             radius.abs() * (du + dv).powi(2)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             (major_radius.abs() + minor_radius.abs()) * du * du
                 + 2.0 * minor_radius.abs() * du * dv
                 + minor_radius.abs() * dv * dv

@@ -145,15 +145,12 @@ pub fn analytic_surface_parameters_solved(
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
-            if minor_radius == 0.0 {
-                return None;
-            }
-            let (x, y, z) = components(*center, *axis, *ref_direction);
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            let (x, y, z) = components(center, *axis, *ref_direction);
             Point2::new(
                 y.atan2(x),
                 (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
@@ -4262,11 +4259,11 @@ fn surface_point_with_budget_inner(
             ))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4274,7 +4271,7 @@ fn surface_point_with_budget_inner(
             let v_sine = v.sin();
             let ring = major_radius + minor_radius * v_cosine;
             Some(offset(
-                *center,
+                center,
                 &[
                     (ring * u_cosine, *ref_direction),
                     (ring * u_sine, transverse),
@@ -4636,11 +4633,11 @@ fn surface_second_partials_inner(
             })
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4649,7 +4646,7 @@ fn surface_second_partials_inner(
             let ring = major_radius + minor_radius * v_cosine;
             Some(SurfaceSecondPartials {
                 point: offset(
-                    *center,
+                    center,
                     &[
                         (ring * u_cosine, *ref_direction),
                         (ring * u_sine, transverse),

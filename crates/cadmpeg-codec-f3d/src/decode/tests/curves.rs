@@ -1548,7 +1548,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
             })
     );
     assert!(
-        matches!(supports[1], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) if { torus_surface.minor_radius() == -7.5 })
+        matches!(supports[1], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) if { torus_surface.minor_radius().get() == -7.5 })
     );
 
     let (mut source_less, _, _) = result.into_parts();

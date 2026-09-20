@@ -5012,13 +5012,9 @@ fn surface_entities(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
-            if !major_radius.is_finite()
-                || !minor_radius.is_finite()
-                || minor_radius <= 0.0
-                || minor_radius >= major_radius
-            {
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
+            if minor_radius <= 0.0 || minor_radius >= major_radius {
                 return Err(CodecError::Malformed(
                     "IGES torus radii must satisfy 0 < minor < major".into(),
                 ));

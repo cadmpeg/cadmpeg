@@ -1382,8 +1382,8 @@ pub(super) fn zero_entity_neutral_pcurve(
             (1.0, half_angle.cos())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             (major_radius.recip(), minor_radius.recip())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => (1.0, 1.0),
@@ -1595,8 +1595,8 @@ fn zero_entity_model_curve(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let angle = constant_coordinate(0)? / major_radius;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1627,8 +1627,8 @@ fn zero_entity_model_curve(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let angle = constant_coordinate(1)? / minor_radius;
             let circle_radius = major_radius + minor_radius * angle.cos();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1826,8 +1826,8 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let major_angle = u / major_radius;
             let minor_angle = v / minor_radius;
             let transverse = axis.cross(*ref_direction);
@@ -2846,8 +2846,8 @@ mod tests {
         assert!(
             matches!(zero_entity_torus(&torus), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
             if {
-                (torus_surface.major_radius() == 2_000_000.0)
-                    && (torus_surface.minor_radius() == 1_500_000.0)
+                (torus_surface.major_radius().get() == 2_000_000.0)
+                    && (torus_surface.minor_radius().get() == 1_500_000.0)
             })
         );
     }

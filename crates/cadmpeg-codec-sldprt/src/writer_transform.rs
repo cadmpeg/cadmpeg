@@ -297,8 +297,8 @@ fn transform_surface(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,

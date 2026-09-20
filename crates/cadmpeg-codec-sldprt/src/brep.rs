@@ -637,8 +637,8 @@ mod tests {
         let center = *torus_surface.center();
         let axis = *torus_surface.axis();
         let ref_direction = *torus_surface.ref_direction();
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -690,8 +690,8 @@ mod tests {
         let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
     }
@@ -712,8 +712,8 @@ mod tests {
         let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
