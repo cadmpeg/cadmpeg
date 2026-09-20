@@ -734,3 +734,76 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         .iter()
         .any(|finding| finding.message.contains("has multiple owning features")));
 }
+
+#[test]
+fn spatial_distance_validation_rejects_overflowed_squared_norms() {
+    use crate::features::{DesignParameter, ParameterId, ParameterValue};
+    use crate::sketches::{
+        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
+    };
+    let mut ir = CadIr::empty();
+    let sketch = SpatialSketchId::mint("test:model:sketch#distance").unwrap();
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        profiles: vec![],
+        native_ref: None,
+    });
+    let first = SpatialSketchEntityId::mint("test:model:entity#first").unwrap();
+    let second = SpatialSketchEntityId::mint("test:model:entity#second").unwrap();
+    for (id, x) in [(first.clone(), 0.0), (second.clone(), 1e200)] {
+        ir.model
+            .spatial_sketch_entities
+            .push(SpatialSketchEntity::new(
+                id,
+                sketch.clone(),
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                    position: Point3::new(x, 0.0, 0.0),
+                })
+                .unwrap(),
+            ));
+    }
+    let parameter = ParameterId::mint("test:model:parameter#distance").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        id: parameter.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "distance".into(),
+        expression: "1 mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(1.0).unwrap())),
+        dependencies: Default::default(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId::mint("test:model:constraint#distance").unwrap(),
+            sketch,
+            definition: SpatialSketchConstraintDefinition::try_from(
+                SpatialSketchConstraintDefinitionInput::PointDistance {
+                    first,
+                    second,
+                    parameter,
+                },
+            )
+            .unwrap(),
+            native_ref: None,
+        });
+    let report = validate_neutral(&ir, vec![]);
+    assert!(report.findings.iter().any(|finding| finding
+        .message
+        .contains("spatial point distance requires two points")));
+    ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(1e200).unwrap()));
+    let report = validate_neutral(&ir, vec![]);
+    assert!(!report.findings.iter().any(|finding| finding
+        .message
+        .contains("spatial point distance requires two points")));
+}
