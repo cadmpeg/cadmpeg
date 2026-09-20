@@ -158,7 +158,7 @@ fn generated_edge_output_bodies(
     outputs
 }
 
-pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Vec<BodyId> {
+fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) -> Vec<BodyId> {
     let selected = edges.iter().collect::<BTreeSet<_>>();
     let mut shell_ids = ir
         .model
@@ -304,13 +304,11 @@ pub(in super::super) fn sweep_output_kind(
     })
 }
 
-pub(in super::super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
+pub(super) fn sweep_solid(output_kind: Option<BodyKind>) -> Option<bool> {
     output_kind.map(|kind| kind == BodyKind::Solid)
 }
 
-pub(in super::super) fn feature_field_text(
-    value: &crate::feature::rows::FeatureFieldValue,
-) -> Option<String> {
+fn feature_field_text(value: &crate::feature::rows::FeatureFieldValue) -> Option<String> {
     match value {
         crate::feature::rows::FeatureFieldValue::Empty => Some("empty".to_string()),
         crate::feature::rows::FeatureFieldValue::CompactInt(value) => Some(value.to_string()),
@@ -346,11 +344,7 @@ pub(in super::super) fn feature_field_text(
     }
 }
 
-pub(in super::super) fn insert_feature_parameter(
-    parameters: &mut BTreeMap<String, String>,
-    base: &str,
-    value: String,
-) {
+fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &str, value: String) {
     if let std::collections::btree_map::Entry::Vacant(entry) = parameters.entry(base.to_string()) {
         entry.insert(value);
         return;
@@ -663,7 +657,7 @@ pub(in super::super) fn owned_section_feature_id(
     Some(row.feature_id)
 }
 
-pub(in super::super) fn section_definition_for_history_feature<'a>(
+pub(super) fn section_definition_for_history_feature<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<&'a crate::feature::definitions::FeatureDefinition> {

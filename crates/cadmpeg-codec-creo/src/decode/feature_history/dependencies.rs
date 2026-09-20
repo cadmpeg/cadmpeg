@@ -156,7 +156,7 @@ fn feature_entity_producers(
         })
 }
 
-pub(in super::super) fn preceding_feature_entity_producers(
+pub(super) fn preceding_feature_entity_producers(
     tables: &[crate::feature::entity::FeatureEntityTable],
     entity_id: u32,
     consumer_offset: usize,
@@ -175,7 +175,7 @@ pub(in super::super) fn preceding_feature_entity_producers(
         .collect()
 }
 
-pub(in super::super) fn agreed_surface_merge_replay_quilt_ids(
+fn agreed_surface_merge_replay_quilt_ids(
     records: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
@@ -210,7 +210,7 @@ pub(in super::super) fn surface_merge_quilt_ids<'a>(
     agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
 }
 
-pub(in super::super) fn surface_merge_quilt_state_offset(
+pub(super) fn surface_merge_quilt_state_offset(
     affected_ids: &[crate::feature::rows::FeatureAffectedIds],
     replay: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
@@ -292,7 +292,7 @@ pub(in super::super) fn has_feature_affected_ids(
         .any(|record| record.feature_id == feature_id && record.kind == kind)
 }
 
-pub(in super::super) fn agreed_feature_parent_ids(
+fn agreed_feature_parent_ids(
     records: &[crate::feature::rows::FeatureAffectedIds],
     feature_id: u32,
 ) -> Vec<u32> {

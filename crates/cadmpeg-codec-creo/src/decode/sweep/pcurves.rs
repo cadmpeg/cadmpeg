@@ -26,7 +26,7 @@ const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RESIDUAL_AGREEMENT: f64 = 1.0e-9;
 const EPS_SURFACE_DIFFERENCE_STEP: f64 = 1.0e-6;
 
-pub(in super::super) fn add_extrusion_pcurve(
+pub(super) fn add_extrusion_pcurve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     id: PcurveId,
@@ -67,7 +67,7 @@ pub(in super::super) fn add_extrusion_pcurve(
     Ok(id)
 }
 
-pub(in super::super) fn revolution_boundary_pcurve(
+fn revolution_boundary_pcurve(
     surface: &SurfaceGeometry,
     point: [f64; 3],
     axis: &RevolutionAxis,

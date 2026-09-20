@@ -32,7 +32,7 @@ pub(in super::super) fn prototype_scalar(
     }
 }
 
-pub(in super::super) fn prototype_vector_array(
+fn prototype_vector_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<[f64; 3]>> {
@@ -47,7 +47,7 @@ pub(in super::super) fn prototype_vector_array(
         .collect()
 }
 
-pub(in super::super) fn prototype_parameter_array(
+fn prototype_parameter_array(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
 ) -> Option<Vec<f64>> {
@@ -58,7 +58,7 @@ pub(in super::super) fn prototype_parameter_array(
     array.values().iter().copied().collect()
 }
 
-pub(in super::super) fn prototype_spline_nurbs(
+fn prototype_spline_nurbs(
     record: &crate::surface::SurfacePrototypeRecord,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
@@ -152,7 +152,7 @@ pub(in super::super) fn first_instance_surface_row(
 /// A section whose declared extent runs past the scanned buffer is a refusal
 /// naming the section, its declared end, and the buffer length. `Ok(None)`
 /// states that no single complete surface array holds the prototype.
-pub(in super::super) fn surface_prototype_frame_bounds(
+pub(super) fn surface_prototype_frame_bounds(
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
     prototype_offset: usize,

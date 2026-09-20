@@ -44,20 +44,20 @@ const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = EPS_CYLINDER_POSITION;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in super::super) struct PositionalCylinderTransferSummary {
-    pub transferred: usize,
-    pub round_edge_complete_envelopes: usize,
-    pub round_edge_missing_support_planes: usize,
-    pub round_edge_unsolved_carriers: usize,
-    pub round_edge_solved_carriers: usize,
-    pub round_edge_transferred_carriers: usize,
-    pub round_edge_no_perpendicular_support_pair: usize,
-    pub round_edge_endpoint_incidence_mismatch: usize,
-    pub round_edge_radius_projection_mismatch: usize,
-    pub round_edge_nonunique_radius: usize,
-    pub round_edge_carrier_validation_failure: usize,
-    pub round_edge_replay_conflict: usize,
-    pub axial_interval_corner_envelopes: usize,
-    pub axial_interval_corner_solved_carriers: usize,
+    pub(in crate::decode) transferred: usize,
+    pub(in crate::decode) round_edge_complete_envelopes: usize,
+    pub(in crate::decode) round_edge_missing_support_planes: usize,
+    pub(in crate::decode) round_edge_unsolved_carriers: usize,
+    pub(in crate::decode) round_edge_solved_carriers: usize,
+    pub(in crate::decode) round_edge_transferred_carriers: usize,
+    pub(in crate::decode) round_edge_no_perpendicular_support_pair: usize,
+    pub(in crate::decode) round_edge_endpoint_incidence_mismatch: usize,
+    pub(in crate::decode) round_edge_radius_projection_mismatch: usize,
+    pub(in crate::decode) round_edge_nonunique_radius: usize,
+    pub(in crate::decode) round_edge_carrier_validation_failure: usize,
+    pub(in crate::decode) round_edge_replay_conflict: usize,
+    pub(in crate::decode) axial_interval_corner_envelopes: usize,
+    pub(in crate::decode) axial_interval_corner_solved_carriers: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

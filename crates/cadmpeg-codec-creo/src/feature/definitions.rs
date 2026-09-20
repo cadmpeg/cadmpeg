@@ -212,11 +212,11 @@ pub(crate) struct FeatureVariableRow {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureSectionPoint {
     /// Shared variable-row key.
-    pub point_id: u32,
+    pub(crate) point_id: u32,
     /// Section `u` coordinate.
-    pub u: Option<f64>,
+    pub(crate) u: Option<f64>,
     /// Section `v` coordinate.
-    pub v: Option<f64>,
+    pub(crate) v: Option<f64>,
 }
 
 /// Solved section-variable table from one feature definition.

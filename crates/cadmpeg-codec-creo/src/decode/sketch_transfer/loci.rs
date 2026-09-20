@@ -31,7 +31,7 @@ const EPS_LOCUS_COORDINATE: f64 = 1.0e-9;
 const EPS_LOCUS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
-pub(in super::super) fn section_point_locus(
+pub(super) fn section_point_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     point_id: u32,
@@ -335,7 +335,7 @@ pub(in super::super) fn section_skamp_locus(
     }
 }
 
-pub(in super::super) fn section_incidence_curve_locus(
+fn section_incidence_curve_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity: SketchEntityId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -347,7 +347,7 @@ pub(in super::super) fn section_incidence_curve_locus(
     )
 }
 
-pub(in super::super) fn section_entity_family_locus(
+fn section_entity_family_locus(
     family: SectionEntityIncidenceFamily,
     entity: SketchEntityId,
     sense: u32,
@@ -390,7 +390,7 @@ pub(in super::super) fn section_skamp_endpoint(
         .flatten()
 }
 
-pub(in super::super) fn section_skamp_shared_endpoint(
+fn section_skamp_shared_endpoint(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     entity: &crate::feature::definitions::FeatureSkampItem,
@@ -426,7 +426,7 @@ pub(in super::super) fn section_skamp_shared_endpoint(
     )
 }
 
-pub(in super::super) fn section_skamp_tangent_loci(
+pub(super) fn section_skamp_tangent_loci(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     first: &crate::feature::definitions::FeatureSkampItem,
@@ -501,7 +501,7 @@ pub(in super::super) fn section_skamp_incidence_locus(
     })
 }
 
-pub(in super::super) fn section_skamp_line_pair(
+pub(super) fn section_skamp_line_pair(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     first: &crate::feature::definitions::FeatureSkampItem,
@@ -520,7 +520,7 @@ pub(in super::super) fn section_skamp_line_pair(
     ])
 }
 
-pub(in super::super) fn section_skamp_oriented_line(
+pub(super) fn section_skamp_oriented_line(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -570,7 +570,7 @@ pub(in super::super) fn section_skamp_oriented_line(
     .then_some(entity)
 }
 
-pub(in super::super) fn section_skamp_same_coordinate(
+pub(super) fn section_skamp_same_coordinate(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     skamp: &crate::feature::definitions::FeatureSkamp,
@@ -644,7 +644,7 @@ pub(in super::super) fn section_skamp_same_coordinate_sources(
     ))
 }
 
-pub(in super::super) fn section_skamp_same_coordinate_axis(
+pub(super) fn section_skamp_same_coordinate_axis(
     skamp: &crate::feature::definitions::FeatureSkamp,
 ) -> Option<SectionAxis> {
     Some(match (skamp.kind, skamp.flags) {
@@ -740,7 +740,7 @@ pub(in super::super) fn section_skamp_is_point(
         })
 }
 
-pub(in super::super) fn section_skamp_is_arc(
+pub(super) fn section_skamp_is_arc(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> bool {
@@ -767,7 +767,7 @@ pub(in super::super) fn section_skamp_is_arc(
     })
 }
 
-pub(in super::super) fn section_skamp_curve_entity(
+pub(super) fn section_skamp_curve_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -878,7 +878,7 @@ pub(in super::super) fn section_saved_entity(
     matches.next().is_none().then_some(entity)
 }
 
-pub(in super::super) fn section_skamp_circular_entity(
+pub(super) fn section_skamp_circular_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -891,7 +891,7 @@ pub(in super::super) fn section_skamp_circular_entity(
         .flatten()
 }
 
-pub(in super::super) fn section_skamp_center_entity(
+pub(super) fn section_skamp_center_entity(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -1033,7 +1033,7 @@ pub(in super::super) fn section_skamp_arc_midpoint_source(
     Some(*candidate)
 }
 
-pub(in super::super) fn section_skamp_arc_midpoint(
+fn section_skamp_arc_midpoint(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
@@ -1062,7 +1062,7 @@ pub(in super::super) fn section_skamp_arc_midpoint(
     saved_arc_midpoint(arc)
 }
 
-pub(in super::super) fn complete_section_coordinate(
+fn complete_section_coordinate(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     point_id: u32,
 ) -> Option<[f64; 2]> {
@@ -1072,9 +1072,7 @@ pub(in super::super) fn complete_section_coordinate(
     Some([u, v])
 }
 
-pub(in super::super) fn saved_arc_midpoint(
-    arc: &crate::feature::definitions::FeatureSavedArc,
-) -> Option<[f64; 2]> {
+fn saved_arc_midpoint(arc: &crate::feature::definitions::FeatureSavedArc) -> Option<[f64; 2]> {
     let [Some(center_u), Some(center_v), _] = arc.center else {
         return None;
     };
@@ -1090,7 +1088,7 @@ pub(in super::super) fn saved_arc_midpoint(
     )
 }
 
-pub(in super::super) fn oriented_arc_midpoint(
+fn oriented_arc_midpoint(
     center: [f64; 2],
     first: [f64; 2],
     second: [f64; 2],
@@ -1130,7 +1128,7 @@ pub(in super::super) fn section_skamp_active(status: u32) -> bool {
     status & 1 != 0
 }
 
-pub(in super::super) fn complete_section_skamps(
+pub(super) fn complete_section_skamps(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> impl Iterator<Item = &crate::feature::definitions::FeatureSkamp> {
     definition

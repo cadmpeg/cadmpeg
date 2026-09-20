@@ -477,7 +477,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     Ok(transferred)
 }
 
-pub(in super::super) fn resolved_circular_extrusion_profile(
+fn resolved_circular_extrusion_profile(
     scan: &ContainerScan,
     ir: &CadIr,
     transform: &crate::placement::FeatureSectionTransform,

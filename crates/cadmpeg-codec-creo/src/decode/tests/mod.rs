@@ -39,7 +39,7 @@ mod sketch_curve;
 mod transfer_coverage;
 mod zero_orientation;
 
-pub(super) fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+fn with_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &DecodePolicy::default())
         .expect("test decode context");
@@ -69,15 +69,13 @@ pub(super) fn declared_solver_rows<T>(
     }
 }
 
-pub(super) fn synchronize_segment_count(
-    definition: &mut crate::feature::definitions::FeatureDefinition,
-) {
+fn synchronize_segment_count(definition: &mut crate::feature::definitions::FeatureDefinition) {
     let segments = definition.segments.as_mut().expect("segments");
     segments.declared_count =
         u32::try_from(segments.rows.ordinary().count()).expect("segment count");
 }
 
-pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
+fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
     crate::surface::SurfaceParameterScalar {
         value: Some(value),
         raw: vec![0],
@@ -101,9 +99,7 @@ pub(super) fn surface_row(
     }
 }
 
-pub(super) fn simple_drilled_recipe_table(
-    feature_id: u32,
-) -> crate::feature::entity::FeatureEntityTable {
+fn simple_drilled_recipe_table(feature_id: u32) -> crate::feature::entity::FeatureEntityTable {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
@@ -144,9 +140,7 @@ pub(super) fn simple_drilled_recipe_table(
     .with_surface_ids([11, 12, 13, 14])
 }
 
-pub(super) fn simple_drilled_recipe_surface_rows(
-    feature_id: u32,
-) -> Vec<crate::surface::SurfaceRow> {
+fn simple_drilled_recipe_surface_rows(feature_id: u32) -> Vec<crate::surface::SurfaceRow> {
     vec![
         surface_row(11, feature_id, crate::surface::SurfaceKind::Cone),
         surface_row(12, feature_id, crate::surface::SurfaceKind::Cone),
@@ -156,7 +150,7 @@ pub(super) fn simple_drilled_recipe_surface_rows(
 }
 
 #[cfg(test)]
-pub(super) fn section_axis_line_carrier(
+fn section_axis_line_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
@@ -165,7 +159,7 @@ pub(super) fn section_axis_line_carrier(
 }
 
 #[cfg(test)]
-pub(super) fn section_segment_intersection_carrier(
+fn section_segment_intersection_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -188,7 +182,7 @@ pub(super) fn section_segment_intersection_carrier(
 }
 
 #[cfg(test)]
-pub(super) fn extruded_segment_surface(
+fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
@@ -197,7 +191,7 @@ pub(super) fn extruded_segment_surface(
 }
 
 #[cfg(test)]
-pub(super) fn placed_section_curve_geometry(
+fn placed_section_curve_geometry(
     transform: &crate::placement::FeatureSectionTransform,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
@@ -206,7 +200,7 @@ pub(super) fn placed_section_curve_geometry(
 }
 
 #[cfg(test)]
-pub(super) fn section_skamp_constraints(
+fn section_skamp_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {

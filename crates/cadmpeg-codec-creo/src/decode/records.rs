@@ -53,67 +53,67 @@ use super::sketch_ids::{
 #[derive(Serialize)]
 pub(super) struct CreoSketchRecord {
     pub(super) id: String,
-    pub(super) definition_id: u32,
-    pub(super) owner_feature_id: Option<u32>,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
     pub(super) source_section: String,
     pub(super) offset: usize,
-    pub(super) section_3d: Option<CreoSketchSection3d>,
-    pub(super) table_headers: Vec<CreoSketchTableHeader>,
-    pub(super) section_points: Vec<CreoSketchSectionPoint>,
-    pub(super) solved_external_ids: Vec<u32>,
-    pub(super) variables: Vec<CreoSketchVariable>,
-    pub(super) equations: Vec<CreoSketchEquation>,
-    pub(super) segments: Vec<CreoSketchSegment>,
-    pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
-    pub(super) point_segments: Vec<CreoSketchPointSegment>,
-    pub(super) centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
-    pub(super) reference_line_segments: Vec<CreoSketchReferenceLineSegment>,
-    pub(super) bounded_curve_segments: Vec<CreoSketchBoundedCurveSegment>,
-    pub(super) conic_segments: Vec<CreoSketchConicSegment>,
-    pub(super) opaque_segments: Vec<CreoSketchOpaqueSegment>,
-    pub(super) trim_entities: Vec<CreoSketchTrimEntity>,
-    pub(super) trim_vertices: Vec<CreoSketchTrimVertex>,
-    pub(super) order_rows: Vec<CreoSketchOrderRow>,
-    pub(super) saved_entities: Vec<CreoSketchSavedEntity>,
-    pub(super) dimensions: Vec<CreoSketchDimension>,
-    pub(super) relations: Vec<CreoSketchRelation>,
-    pub(super) skamps: Vec<CreoSketchSkamp>,
-    pub(super) relation_triples: Vec<CreoSketchRelationTriple>,
+    section_3d: Option<CreoSketchSection3d>,
+    table_headers: Vec<CreoSketchTableHeader>,
+    section_points: Vec<CreoSketchSectionPoint>,
+    solved_external_ids: Vec<u32>,
+    variables: Vec<CreoSketchVariable>,
+    equations: Vec<CreoSketchEquation>,
+    segments: Vec<CreoSketchSegment>,
+    circle_segments: Vec<CreoSketchCircleSegment>,
+    point_segments: Vec<CreoSketchPointSegment>,
+    centered_line_segments: Vec<CreoSketchCenteredLineSegment>,
+    reference_line_segments: Vec<CreoSketchReferenceLineSegment>,
+    bounded_curve_segments: Vec<CreoSketchBoundedCurveSegment>,
+    conic_segments: Vec<CreoSketchConicSegment>,
+    opaque_segments: Vec<CreoSketchOpaqueSegment>,
+    trim_entities: Vec<CreoSketchTrimEntity>,
+    trim_vertices: Vec<CreoSketchTrimVertex>,
+    order_rows: Vec<CreoSketchOrderRow>,
+    saved_entities: Vec<CreoSketchSavedEntity>,
+    dimensions: Vec<CreoSketchDimension>,
+    relations: Vec<CreoSketchRelation>,
+    skamps: Vec<CreoSketchSkamp>,
+    relation_triples: Vec<CreoSketchRelationTriple>,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureDefinitionRecord {
     pub(super) id: String,
-    pub(super) definition_id: u32,
-    pub(super) owner_feature_id: Option<u32>,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
     pub(super) source_section: String,
-    pub(super) body: Vec<u8>,
-    pub(super) parameter_frames: Vec<CreoFeatureParameterFrame>,
-    pub(super) outlines: Vec<CreoFeatureOutline>,
+    body: Vec<u8>,
+    parameter_frames: Vec<CreoFeatureParameterFrame>,
+    outlines: Vec<CreoFeatureOutline>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoCurveExpressionRecord {
     pub(super) id: String,
-    pub(super) entity_id: u32,
-    pub(super) backup: bool,
-    pub(super) local_system: Option<CreoCurveExpressionLocalSystem>,
-    pub(super) lines: Vec<CreoCurveExpressionLine>,
-    pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
-    pub(super) solve_blocks: Vec<CreoCurveExpressionSolveBlock>,
-    pub(super) unresolved_solve_control: bool,
-    pub(super) prohibited_constructs: Vec<String>,
+    entity_id: u32,
+    backup: bool,
+    local_system: Option<CreoCurveExpressionLocalSystem>,
+    lines: Vec<CreoCurveExpressionLine>,
+    assignments: Vec<CreoCurveExpressionAssignment>,
+    solve_blocks: Vec<CreoCurveExpressionSolveBlock>,
+    unresolved_solve_control: bool,
+    prohibited_constructs: Vec<String>,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureReferenceNameRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) name: String,
-    pub(super) name_bytes: Vec<u8>,
-    pub(super) own_reference_id: u32,
-    pub(super) reference_type: u32,
+    owner_feature_id: u32,
+    name: String,
+    name_bytes: Vec<u8>,
+    own_reference_id: u32,
+    reference_type: u32,
     pub(super) offset: usize,
 }
 
@@ -146,53 +146,53 @@ impl Serialize for CreoFamilyTableRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureEntityRecord {
     pub(super) id: String,
-    pub(super) entity_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) name: String,
+    entity_id: u32,
+    type_byte: u8,
+    name: String,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureEntityReferenceRecord {
     pub(super) id: String,
-    pub(super) source_entity_id: Option<u32>,
-    pub(super) target_entity_id: u32,
-    pub(super) target_resolved: bool,
+    source_entity_id: Option<u32>,
+    target_entity_id: u32,
+    target_resolved: bool,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureEntityTableRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) table_class_id: u32,
-    pub(super) entry_ids: Vec<u32>,
-    pub(super) entries: Vec<CreoFeatureEntityTableEntryRecord>,
-    pub(super) surface_ids: Vec<u32>,
-    pub(super) non_surface_entity_ids: Vec<u32>,
+    owner_feature_id: u32,
+    table_class_id: u32,
+    entry_ids: Vec<u32>,
+    entries: Vec<CreoFeatureEntityTableEntryRecord>,
+    surface_ids: Vec<u32>,
+    non_surface_entity_ids: Vec<u32>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureEntityTableEntryRecord {
-    pub(super) entity_id: u32,
-    pub(super) class_id: u32,
-    pub(super) source_entity_id: Option<u32>,
-    pub(super) related_entity_id: Option<u32>,
-    pub(super) related_entity_state: Option<u8>,
-    pub(super) prefixed: bool,
-    pub(super) offset: usize,
-    pub(super) end_offset: usize,
+struct CreoFeatureEntityTableEntryRecord {
+    entity_id: u32,
+    class_id: u32,
+    source_entity_id: Option<u32>,
+    related_entity_id: Option<u32>,
+    related_entity_state: Option<u8>,
+    prefixed: bool,
+    offset: usize,
+    end_offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureGeometryTableRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
+    owner_feature_id: u32,
     #[serde(flatten, serialize_with = "serialize_geometry_table_kind")]
-    pub(super) kind: crate::feature::rows::FeatureGeometryTableKind,
-    pub(super) declared_count: u32,
-    pub(super) entity_class_id: u32,
+    kind: crate::feature::rows::FeatureGeometryTableKind,
+    declared_count: u32,
+    entity_class_id: u32,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -220,14 +220,14 @@ fn serialize_geometry_table_kind<S: serde::Serializer>(
 #[derive(Serialize)]
 pub(super) struct CreoFeatureLoopHistoryEntryRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) ordinal: u32,
-    pub(super) loop_id: u32,
-    pub(super) field_bytes: Vec<Vec<u8>>,
+    owner_feature_id: u32,
+    ordinal: u32,
+    loop_id: u32,
+    field_bytes: Vec<Vec<u8>>,
     #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
-    pub(super) boundary: crate::feature::rows::FeatureLoopHistoryBoundary,
+    boundary: crate::feature::rows::FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
-    pub(super) end_offset: usize,
+    end_offset: usize,
     pub(super) source_section: String,
 }
 
@@ -256,9 +256,9 @@ fn serialize_loop_history_boundary<S: serde::Serializer>(
 #[derive(Serialize)]
 pub(super) struct CreoFeatureAffectedIdsRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) kind: &'static str,
-    pub(super) ids: Vec<u32>,
+    owner_feature_id: u32,
+    kind: &'static str,
+    ids: Vec<u32>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -266,11 +266,11 @@ pub(super) struct CreoFeatureAffectedIdsRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureReplayAffectedIdsRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) geometry_ids: Vec<u32>,
-    pub(super) edge_ids: Vec<u32>,
-    pub(super) geometry_extent: &'static str,
-    pub(super) edge_extent: &'static str,
+    owner_feature_id: u32,
+    geometry_ids: Vec<u32>,
+    edge_ids: Vec<u32>,
+    geometry_extent: &'static str,
+    edge_extent: &'static str,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -278,13 +278,13 @@ pub(super) struct CreoFeatureReplayAffectedIdsRecord {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) geometry_ids: Vec<u32>,
-    pub(super) edge_ids: Vec<u32>,
-    pub(super) quilt_ids: Vec<u32>,
-    pub(super) geometry_extent: &'static str,
-    pub(super) edge_extent: &'static str,
-    pub(super) quilt_extent: &'static str,
+    owner_feature_id: u32,
+    geometry_ids: Vec<u32>,
+    edge_ids: Vec<u32>,
+    quilt_ids: Vec<u32>,
+    geometry_extent: &'static str,
+    edge_extent: &'static str,
+    quilt_extent: &'static str,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -292,9 +292,9 @@ pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureLoopRestoreDirectionRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) lane: &'static str,
-    pub(super) value: u32,
+    owner_feature_id: u32,
+    lane: &'static str,
+    value: u32,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -302,9 +302,9 @@ pub(super) struct CreoFeatureLoopRestoreDirectionRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureRevolutionExtentRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) kind: &'static str,
-    pub(super) angle_radians: f64,
+    owner_feature_id: u32,
+    kind: &'static str,
+    angle_radians: f64,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -312,11 +312,11 @@ pub(super) struct CreoFeatureRevolutionExtentRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureChoiceRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) label: String,
-    pub(super) type_byte: Option<u8>,
-    pub(super) payload: Vec<u8>,
-    pub(super) payload_offset: usize,
+    owner_feature_id: u32,
+    label: String,
+    type_byte: Option<u8>,
+    payload: Vec<u8>,
+    payload_offset: usize,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -324,12 +324,12 @@ pub(super) struct CreoFeatureChoiceRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureRowRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) header: [u8; 2],
-    pub(super) root_schema_class: Option<u32>,
-    pub(super) stream_offset: usize,
-    pub(super) body: Vec<u8>,
-    pub(super) body_offset: usize,
+    owner_feature_id: u32,
+    header: [u8; 2],
+    root_schema_class: Option<u32>,
+    stream_offset: usize,
+    body: Vec<u8>,
+    body_offset: usize,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -337,11 +337,11 @@ pub(super) struct CreoFeatureRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureChoiceFieldRecord {
     pub(super) id: String,
-    pub(super) owner_feature_id: u32,
-    pub(super) choice_label: String,
-    pub(super) name: String,
-    pub(super) type_byte: u8,
-    pub(super) value: CreoFeatureFieldValue,
+    owner_feature_id: u32,
+    choice_label: String,
+    name: String,
+    type_byte: u8,
+    value: CreoFeatureFieldValue,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -349,48 +349,48 @@ pub(super) struct CreoFeatureChoiceFieldRecord {
 #[derive(Serialize)]
 pub(super) struct CreoHalfEdgeRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) side: crate::topology::Side,
-    pub(super) face_id: u32,
-    pub(super) next: Option<CreoHalfEdgeRef>,
+    curve_id: u32,
+    side: crate::topology::Side,
+    face_id: u32,
+    next: Option<CreoHalfEdgeRef>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoLoopRecord {
-    pub(super) id: String,
-    pub(super) face_id: u32,
-    pub(super) half_edges: Vec<CreoHalfEdgeRef>,
+    id: String,
+    face_id: u32,
+    half_edges: Vec<CreoHalfEdgeRef>,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoLoopArrayFrameRecord {
-    pub(super) id: String,
-    pub(super) variant: Option<crate::loop_array::LayoutMarker>,
-    pub(super) declared_count: u32,
-    pub(super) class_id: u32,
-    pub(super) materialized_count: usize,
-    pub(super) overfull: bool,
-    pub(super) offset: usize,
-    pub(super) prototype_end: usize,
-    pub(super) end: usize,
-    pub(super) source_section: String,
+    id: String,
+    variant: Option<crate::loop_array::LayoutMarker>,
+    declared_count: u32,
+    class_id: u32,
+    materialized_count: usize,
+    overfull: bool,
+    offset: usize,
+    prototype_end: usize,
+    end: usize,
+    source_section: String,
 }
 
 pub(super) struct CreoLoopArrayRecord {
     pub(super) id: String,
-    pub(super) frame_offset: usize,
-    pub(super) lo_id: u32,
-    pub(super) lo_type: u32,
-    pub(super) lo_subtype: u32,
-    pub(super) feature_id: u32,
-    pub(super) attributes: u8,
-    pub(super) direction: u32,
-    pub(super) next_lo_ptr: u32,
-    pub(super) body: Vec<u8>,
+    frame_offset: usize,
+    lo_id: u32,
+    lo_type: u32,
+    lo_subtype: u32,
+    feature_id: u32,
+    attributes: u8,
+    direction: u32,
+    next_lo_ptr: u32,
+    body: Vec<u8>,
     pub(super) offset: usize,
-    pub(super) body_offset: usize,
+    body_offset: usize,
     pub(super) source_section: String,
 }
 
@@ -418,24 +418,24 @@ impl Serialize for CreoLoopArrayRecord {
 
 #[derive(Serialize)]
 pub(super) struct CreoTopologicalVertexRecord {
-    pub(super) id: String,
-    pub(super) vertex_id: u32,
-    pub(super) half_edges: Vec<CreoHalfEdgeRef>,
+    id: String,
+    vertex_id: u32,
+    half_edges: Vec<CreoHalfEdgeRef>,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoHalfEdgeVertexIncidenceRecord {
-    pub(super) id: String,
-    pub(super) half_edge: CreoHalfEdgeRef,
-    pub(super) start_vertex_id: u32,
-    pub(super) end_vertex_id: Option<u32>,
+    id: String,
+    half_edge: CreoHalfEdgeRef,
+    start_vertex_id: u32,
+    end_vertex_id: Option<u32>,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFaceComponentRecord {
-    pub(super) id: String,
-    pub(super) face_ids: Vec<u32>,
-    pub(super) curve_ids: Vec<u32>,
+    id: String,
+    face_ids: Vec<u32>,
+    curve_ids: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -452,9 +452,9 @@ pub(super) struct CreoExpandedSectionRecord {
     pub(super) id: String,
     pub(super) name: String,
     pub(super) source_offset: usize,
-    pub(super) compressed_length: usize,
-    pub(super) expanded_length: usize,
-    pub(super) sha256: String,
+    compressed_length: usize,
+    expanded_length: usize,
+    sha256: String,
 }
 
 #[derive(Serialize)]
@@ -470,9 +470,9 @@ pub(super) struct CreoPrimitiveScalarArrayRecord {
 pub(super) struct CreoReferenceLineRecord {
     pub(super) id: String,
     #[serde(flatten, serialize_with = "serialize_reference_line_kind")]
-    pub(super) kind: crate::reference::ReferenceLineKind,
-    pub(super) start: [f64; 3],
-    pub(super) end: [f64; 3],
+    kind: crate::reference::ReferenceLineKind,
+    start: [f64; 3],
+    end: [f64; 3],
     pub(super) offset: usize,
 }
 
@@ -499,39 +499,39 @@ fn serialize_reference_line_kind<S: serde::Serializer>(
 #[derive(Serialize)]
 pub(super) struct CreoReferenceCircleRecord {
     pub(super) id: String,
-    pub(super) entity_id: u32,
-    pub(super) center: [f64; 3],
-    pub(super) center_source: &'static str,
-    pub(super) radius: f64,
-    pub(super) axis: [f64; 3],
-    pub(super) endpoints: [[f64; 3]; 2],
+    entity_id: u32,
+    center: [f64; 3],
+    center_source: &'static str,
+    radius: f64,
+    axis: [f64; 3],
+    endpoints: [[f64; 3]; 2],
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoReferenceConicRecord {
     pub(super) id: String,
-    pub(super) entity_id: u32,
-    pub(super) type_id: crate::reference::ConicType,
-    pub(super) flip: u32,
-    pub(super) endpoints: [[f64; 3]; 2],
-    pub(super) parameter_interval: [Option<f64>; 2],
-    pub(super) coefficients: [f64; 2],
-    pub(super) local_system: Option<[f64; 12]>,
-    pub(super) body: Vec<u8>,
+    entity_id: u32,
+    type_id: crate::reference::ConicType,
+    flip: u32,
+    endpoints: [[f64; 3]; 2],
+    parameter_interval: [Option<f64>; 2],
+    coefficients: [f64; 2],
+    local_system: Option<[f64; 12]>,
+    body: Vec<u8>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoReferenceEllipseRecord {
     pub(super) id: String,
-    pub(super) source_conic_id: String,
-    pub(super) source_entity_id: u32,
-    pub(super) center: [f64; 3],
-    pub(super) axis: [f64; 3],
-    pub(super) major_direction: [f64; 3],
-    pub(super) major_radius: f64,
-    pub(super) minor_radius: f64,
+    source_conic_id: String,
+    source_entity_id: u32,
+    center: [f64; 3],
+    axis: [f64; 3],
+    major_direction: [f64; 3],
+    major_radius: f64,
+    minor_radius: f64,
     pub(super) offset: usize,
 }
 
@@ -636,140 +636,140 @@ pub(super) fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpanded
 #[derive(Serialize)]
 pub(super) struct CreoFcCurveCoordinateRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) subtype: u8,
-    pub(super) body: Vec<u8>,
-    pub(super) values_mm: Vec<f64>,
-    pub(super) tokens: Vec<FcCurveCoordinateToken>,
-    pub(super) opaque_spans: Vec<FcCurveOpaqueSpan>,
+    curve_id: u32,
+    subtype: u8,
+    body: Vec<u8>,
+    values_mm: Vec<f64>,
+    tokens: Vec<FcCurveCoordinateToken>,
+    opaque_spans: Vec<FcCurveOpaqueSpan>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoPrototypePcurveRecord {
-    pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) face_0_endpoints: [[f64; 2]; 2],
-    pub(super) face_1_endpoints: [[f64; 2]; 2],
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    curve_id: u32,
+    face_0_endpoints: [[f64; 2]; 2],
+    face_1_endpoints: [[f64; 2]; 2],
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoCurvePrototypeTopologyRecord {
-    pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) faces: [u32; 2],
-    pub(super) next_edges: [u32; 2],
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    curve_id: u32,
+    faces: [u32; 2],
+    next_edges: [u32; 2],
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoCurvePrototypeRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) generating_feature_id: Option<u32>,
+    curve_id: u32,
+    type_byte: u8,
+    generating_feature_id: Option<u32>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoPlaneLocalSystemRecord {
-    pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) body: Vec<u8>,
-    pub(super) slots: Vec<Option<f64>>,
-    pub(super) origin: Option<[f64; 3]>,
-    pub(super) u_axis: Option<[f64; 3]>,
-    pub(super) normal: Option<[f64; 3]>,
-    pub(super) classification: &'static str,
-    pub(super) row_offset: usize,
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    surface_id: u32,
+    body: Vec<u8>,
+    slots: Vec<Option<f64>>,
+    origin: Option<[f64; 3]>,
+    u_axis: Option<[f64; 3]>,
+    normal: Option<[f64; 3]>,
+    classification: &'static str,
+    row_offset: usize,
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoPlaneEnvelopeRecord {
-    pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) body: Vec<u8>,
-    pub(super) envelope: CreoPlaneEnvelope,
-    pub(super) corner_coordinate_equal: [Option<bool>; 3],
-    pub(super) scalar_tokens: Vec<Vec<u8>>,
-    pub(super) row_offset: usize,
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    surface_id: u32,
+    body: Vec<u8>,
+    envelope: CreoPlaneEnvelope,
+    corner_coordinate_equal: [Option<bool>; 3],
+    scalar_tokens: Vec<Vec<u8>>,
+    row_offset: usize,
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoOutlinePlaneRecord {
-    pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) origin: [f64; 3],
-    pub(super) normal: [f64; 3],
-    pub(super) u_axis: [f64; 3],
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    surface_id: u32,
+    origin: [f64; 3],
+    normal: [f64; 3],
+    u_axis: [f64; 3],
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoDatumPlaneRecord {
-    pub(super) id: String,
-    pub(super) datum_id: u32,
-    pub(super) owner_feature_id: u32,
-    pub(super) normal: [f64; 3],
-    pub(super) plane_offset: f64,
-    pub(super) corners: [[Option<f64>; 3]; 2],
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    datum_id: u32,
+    owner_feature_id: u32,
+    normal: [f64; 3],
+    plane_offset: f64,
+    corners: [[Option<f64>; 3]; 2],
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoDatumCylinderRecord {
-    pub(super) id: String,
-    pub(super) datum_id: u32,
-    pub(super) owner_feature_id: u32,
-    pub(super) reversed: bool,
-    pub(super) origin: [f64; 3],
-    pub(super) axis: [f64; 3],
-    pub(super) ref_direction: [f64; 3],
-    pub(super) radius: f64,
-    pub(super) length: Option<f64>,
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    datum_id: u32,
+    owner_feature_id: u32,
+    reversed: bool,
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    radius: f64,
+    length: Option<f64>,
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeatureSectionTransformRecord {
-    pub(super) id: String,
-    pub(super) definition_id: u32,
-    pub(super) owner_feature_id: Option<u32>,
-    pub(super) origin: [f64; 3],
-    pub(super) u_axis: [f64; 3],
-    pub(super) v_axis: [f64; 3],
-    pub(super) normal: [f64; 3],
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
+    origin: [f64; 3],
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+    normal: [f64; 3],
+    offset: usize,
+    source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoFeaturePlacementInstructionRecord {
-    pub(super) id: String,
-    pub(super) definition_id: u32,
-    pub(super) owner_feature_id: Option<u32>,
-    pub(super) instruction_type: u32,
-    pub(super) zero_offset: bool,
-    pub(super) dimension_id: Option<u32>,
-    pub(super) reference_id: Option<u32>,
-    pub(super) geometry1_id: Option<u32>,
-    pub(super) geometry2_id: Option<u32>,
-    pub(super) member1: u32,
-    pub(super) member2: u32,
-    pub(super) offset: usize,
-    pub(super) source_section: String,
+    id: String,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
+    instruction_type: u32,
+    zero_offset: bool,
+    dimension_id: Option<u32>,
+    reference_id: Option<u32>,
+    geometry1_id: Option<u32>,
+    geometry2_id: Option<u32>,
+    member1: u32,
+    member2: u32,
+    offset: usize,
+    source_section: String,
 }
 
 pub(super) fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
@@ -1469,28 +1469,28 @@ pub(super) fn feature_placement_instruction_records(
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceParameterRecord {
     pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) surface_type_byte: u8,
-    pub(super) surface_family: &'static str,
-    pub(super) boundary: &'static str,
-    pub(super) body: Vec<u8>,
-    pub(super) slots: Vec<SurfaceParameterScalar>,
-    pub(super) opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
-    pub(super) scalar_frames: Vec<SurfaceParameterScalarFrame>,
-    pub(super) terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
-    pub(super) tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
-    pub(super) positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
-    pub(super) split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
-    pub(super) positional_cone_frame: Option<CreoPositionalConeFrame>,
-    pub(super) positional_torus_frame: Option<CreoPositionalTorusFrame>,
-    pub(super) torus_outline_frame: Option<CreoTorusOutlineFrame>,
-    pub(super) type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
-    pub(super) type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
-    pub(super) torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
-    pub(super) replayed_torus_minor_radius: Option<f64>,
-    pub(super) cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
-    pub(super) extrusion_direction: Option<[f64; 3]>,
-    pub(super) row_offset: usize,
+    surface_id: u32,
+    surface_type_byte: u8,
+    surface_family: &'static str,
+    boundary: &'static str,
+    body: Vec<u8>,
+    slots: Vec<SurfaceParameterScalar>,
+    opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
+    scalar_frames: Vec<SurfaceParameterScalarFrame>,
+    terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
+    tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
+    positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
+    split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
+    positional_cone_frame: Option<CreoPositionalConeFrame>,
+    positional_torus_frame: Option<CreoPositionalTorusFrame>,
+    torus_outline_frame: Option<CreoTorusOutlineFrame>,
+    type26_five_coordinate_envelope: Option<CreoType26FiveCoordinateEnvelope>,
+    type26_split_coordinate_envelope: Option<CreoType26SplitCoordinateEnvelope>,
+    torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
+    replayed_torus_minor_radius: Option<f64>,
+    cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
+    extrusion_direction: Option<[f64; 3]>,
+    row_offset: usize,
     pub(super) body_offset: usize,
     pub(super) source_section: String,
 }
@@ -1498,14 +1498,14 @@ pub(super) struct CreoSurfaceParameterRecord {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceRowRecord {
     pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) surface_family: &'static str,
-    pub(super) surface_variant: Option<&'static str>,
-    pub(super) feature_id: u32,
-    pub(super) reversed: bool,
-    pub(super) boundary_type: u8,
-    pub(super) next_surface: u32,
+    surface_id: u32,
+    type_byte: u8,
+    surface_family: &'static str,
+    surface_variant: Option<&'static str>,
+    feature_id: u32,
+    reversed: bool,
+    boundary_type: u8,
+    next_surface: u32,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1513,25 +1513,25 @@ pub(super) struct CreoSurfaceRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceContourRecord {
     pub(super) id: String,
-    pub(super) surface_id: u32,
-    pub(super) chain_index: usize,
-    pub(super) curve_header_id: u32,
-    pub(super) trv: u8,
-    pub(super) parameter_envelope: [Option<f64>; 4],
-    pub(super) separator_reference: Option<u32>,
-    pub(super) body: Vec<u8>,
+    surface_id: u32,
+    chain_index: usize,
+    curve_header_id: u32,
+    trv: u8,
+    parameter_envelope: [Option<f64>; 4],
+    separator_reference: Option<u32>,
+    body: Vec<u8>,
     pub(super) offset: usize,
-    pub(super) envelope_offset: usize,
-    pub(super) surface_row_offset: usize,
+    envelope_offset: usize,
+    surface_row_offset: usize,
     pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoSurfacePrototypeRecord {
     pub(super) id: String,
-    pub(super) declared_family: String,
-    pub(super) family: String,
-    pub(super) parameters: Vec<CreoSurfaceNamedParameterRecord>,
+    declared_family: String,
+    family: String,
+    parameters: Vec<CreoSurfaceNamedParameterRecord>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1650,32 +1650,32 @@ fn serialize_surface_named_value<S: serde::Serializer>(
 #[derive(Serialize)]
 pub(super) struct CreoCurveParameterRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) body: Vec<u8>,
-    pub(super) scalar_values: Vec<f64>,
-    pub(super) scalar_tokens: Vec<CreoCurveParameterScalar>,
-    pub(super) skipped_references: Vec<u32>,
-    pub(super) references: Vec<CreoCurveParameterReference>,
-    pub(super) opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
-    pub(super) reference_geometry: [u32; 2],
-    pub(super) suffix: &'static str,
-    pub(super) suffix_candidate_count: Option<usize>,
+    curve_id: u32,
+    type_byte: u8,
+    body: Vec<u8>,
+    scalar_values: Vec<f64>,
+    scalar_tokens: Vec<CreoCurveParameterScalar>,
+    skipped_references: Vec<u32>,
+    references: Vec<CreoCurveParameterReference>,
+    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    reference_geometry: [u32; 2],
+    suffix: &'static str,
+    suffix_candidate_count: Option<usize>,
     pub(super) offset: usize,
-    pub(super) body_offset: usize,
-    pub(super) suffix_offset: usize,
+    body_offset: usize,
+    suffix_offset: usize,
     pub(super) source_section: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct CreoCurveTopologyRowRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) feature_id: u32,
-    pub(super) directions: [u8; 2],
-    pub(super) faces: [u32; 2],
-    pub(super) next_edges: [u32; 2],
+    curve_id: u32,
+    type_byte: u8,
+    feature_id: u32,
+    directions: [u8; 2],
+    faces: [u32; 2],
+    next_edges: [u32; 2],
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1683,16 +1683,16 @@ pub(super) struct CreoCurveTopologyRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoCrossSectionCurveRowRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) type_byte: u8,
-    pub(super) feature_id: u32,
-    pub(super) directions: [u8; 2],
-    pub(super) suffix: crate::curve::DepdbCurveSuffix,
-    pub(super) body: Vec<u8>,
-    pub(super) scalar_values: Vec<f64>,
-    pub(super) scalar_tokens: Vec<CreoCurveParameterScalar>,
-    pub(super) references: Vec<CreoCurveParameterReference>,
-    pub(super) opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    curve_id: u32,
+    type_byte: u8,
+    feature_id: u32,
+    directions: [u8; 2],
+    suffix: crate::curve::DepdbCurveSuffix,
+    body: Vec<u8>,
+    scalar_values: Vec<f64>,
+    scalar_tokens: Vec<CreoCurveParameterScalar>,
+    references: Vec<CreoCurveParameterReference>,
+    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1700,21 +1700,21 @@ pub(super) struct CreoCrossSectionCurveRowRecord {
 #[derive(Serialize)]
 pub(super) struct CreoTabulatedCylinderCurveReplayRecord {
     pub(super) id: String,
-    pub(super) body: Vec<u8>,
-    pub(super) surface_id: u32,
-    pub(super) curve_id: u32,
-    pub(super) curve_type: u8,
-    pub(super) flip: u8,
-    pub(super) tangent_condition: u8,
-    pub(super) degree: u8,
-    pub(super) parameter_body: Vec<u8>,
-    pub(super) control_point_ids: [u32; 4],
-    pub(super) successor_reference: u32,
-    pub(super) control_point_bodies: [Vec<u8>; 4],
-    pub(super) control_points: [Option<[f64; 2]>; 4],
-    pub(super) terminal_reference: u32,
+    body: Vec<u8>,
+    surface_id: u32,
+    curve_id: u32,
+    curve_type: u8,
+    flip: u8,
+    tangent_condition: u8,
+    degree: u8,
+    parameter_body: Vec<u8>,
+    control_point_ids: [u32; 4],
+    successor_reference: u32,
+    control_point_bodies: [Vec<u8>; 4],
+    control_points: [Option<[f64; 2]>; 4],
+    terminal_reference: u32,
     pub(super) offset: usize,
-    pub(super) surface_row_offset: usize,
+    surface_row_offset: usize,
     pub(super) source_section: String,
 }
 
@@ -2159,11 +2159,11 @@ pub(super) fn feature_reference_name_records(
 #[derive(Serialize)]
 pub(super) struct CreoPcurveEndpointRecord {
     pub(super) id: String,
-    pub(super) curve_id: u32,
-    pub(super) faces: [u32; 2],
-    pub(super) face_0_endpoints: [[f64; 2]; 2],
-    pub(super) face_1_endpoints: [[f64; 2]; 2],
-    pub(super) source_form: &'static str,
+    curve_id: u32,
+    faces: [u32; 2],
+    face_0_endpoints: [[f64; 2]; 2],
+    face_1_endpoints: [[f64; 2]; 2],
+    source_form: &'static str,
 }
 
 pub(super) fn pcurve_endpoint_records(

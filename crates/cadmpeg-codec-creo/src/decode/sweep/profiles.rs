@@ -18,9 +18,7 @@ const EPS_FULL_TURN: f64 = 1.0e-12;
 const EPS_AREA: f64 = 1.0e-12;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 
-pub(in super::super) fn sketch_geometry_endpoints(
-    geometry: &SketchGeometry,
-) -> Option<([f64; 2], [f64; 2])> {
+fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f64; 2])> {
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some(([start.u, start.v], [end.u, end.v])),
         SketchGeometryDefinition::Arc {
@@ -137,7 +135,7 @@ pub(in super::super) fn oriented_arc_parameterization(
     (axis_sign, [start, end])
 }
 
-pub(in super::super) fn forward_arc_sweep(start: f64, end: f64) -> f64 {
+fn forward_arc_sweep(start: f64, end: f64) -> f64 {
     let raw_span = end - start;
     if raw_span.is_finite()
         && (raw_span - std::f64::consts::TAU).abs()
@@ -402,7 +400,7 @@ impl ProfileGeometry {
         })
     }
 
-    pub(in super::super) fn to_sketch(&self) -> Option<SketchGeometry> {
+    pub(super) fn to_sketch(&self) -> Option<SketchGeometry> {
         SketchGeometry::try_from(match self.clone() {
             Self::Line { start, end } => SketchGeometryDefinition::Line { start, end },
             Self::Arc {
@@ -448,7 +446,7 @@ impl ProfileEntity {
     pub(in super::super) fn geometry(&self) -> &ProfileGeometry {
         &self.geometry
     }
-    pub(in super::super) fn reversed(&self) -> bool {
+    pub(super) fn reversed(&self) -> bool {
         self.reversed
     }
     pub(in super::super) fn start(&self) -> [f64; 2] {
@@ -564,11 +562,7 @@ pub(in super::super) fn oriented_full_turn_angles(reversed: bool) -> [f64; 2] {
     }
 }
 
-pub(in super::super) fn segments_intersect(
-    first: [[f64; 2]; 2],
-    second: [[f64; 2]; 2],
-    tolerance: f64,
-) -> bool {
+fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f64) -> bool {
     let orient = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
         (b[0] - a[0]).mul_add(point[1] - a[1], -((b[1] - a[1]) * (point[0] - a[0])))
     };
@@ -707,10 +701,7 @@ pub(in super::super) fn arcs_intersect(
     })
 }
 
-pub(in super::super) fn planar_point_segment_distance(
-    point: [f64; 2],
-    segment: [[f64; 2]; 2],
-) -> f64 {
+fn planar_point_segment_distance(point: [f64; 2], segment: [[f64; 2]; 2]) -> f64 {
     let direction = [segment[1][0] - segment[0][0], segment[1][1] - segment[0][1]];
     let relative = [point[0] - segment[0][0], point[1] - segment[0][1]];
     let length_squared = direction[0].mul_add(direction[0], direction[1] * direction[1]);
@@ -727,7 +718,7 @@ pub(in super::super) fn planar_point_segment_distance(
     (point[0] - nearest[0]).hypot(point[1] - nearest[1])
 }
 
-pub(in super::super) const NURBS_AREA_GAUSS_NODES: [f64; 8] = [
+const NURBS_AREA_GAUSS_NODES: [f64; 8] = [
     -0.960_289_856_497_536_3,
     -0.796_666_477_413_626_7,
     -0.525_532_409_916_329,
@@ -737,7 +728,7 @@ pub(in super::super) const NURBS_AREA_GAUSS_NODES: [f64; 8] = [
     0.796_666_477_413_626_7,
     0.960_289_856_497_536_3,
 ];
-pub(in super::super) const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
+const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
     0.101_228_536_290_376_3,
     0.222_381_034_453_374_5,
     0.313_706_645_877_887_3,
@@ -748,17 +739,17 @@ pub(in super::super) const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
     0.101_228_536_290_376_3,
 ];
 
-pub(in super::super) struct NurbsProfileSpan<'a> {
-    pub(in super::super) carrier: &'a CurveGeometry,
-    pub(in super::super) start: f64,
-    pub(in super::super) end: f64,
-    pub(in super::super) start_point: [f64; 2],
-    pub(in super::super) end_point: [f64; 2],
-    pub(in super::super) tolerance: f64,
-    pub(in super::super) depth: usize,
+struct NurbsProfileSpan<'a> {
+    carrier: &'a CurveGeometry,
+    start: f64,
+    end: f64,
+    start_point: [f64; 2],
+    end_point: [f64; 2],
+    tolerance: f64,
+    depth: usize,
 }
 
-pub(in super::super) fn append_nurbs_profile_span(
+fn append_nurbs_profile_span(
     span: &NurbsProfileSpan<'_>,
     points: &mut Vec<[f64; 2]>,
 ) -> Option<()> {
@@ -816,10 +807,7 @@ pub(in super::super) fn append_nurbs_profile_span(
     )
 }
 
-pub(in super::super) fn nurbs_profile_polyline(
-    nurbs: &NurbsCurve,
-    tolerance: f64,
-) -> Option<Vec<[f64; 2]>> {
+fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64; 2]>> {
     let [lower, upper] = nurbs_intrinsic_parameter_range(nurbs)?;
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
@@ -854,18 +842,12 @@ pub(in super::super) fn nurbs_profile_polyline(
     (points.len() >= 2 && points.iter().flatten().all(|value| value.is_finite())).then_some(points)
 }
 
-pub(in super::super) fn profile_nurbs_polyline(
-    segment: &ProfileEntity,
-    tolerance: f64,
-) -> Option<Vec<[f64; 2]>> {
+fn profile_nurbs_polyline(segment: &ProfileEntity, tolerance: f64) -> Option<Vec<[f64; 2]>> {
     let nurbs = oriented_sketch_nurbs_curve(&segment.geometry.to_sketch()?, segment.reversed)?;
     nurbs_profile_polyline(&nurbs, tolerance)
 }
 
-pub(in super::super) fn nurbs_profile_signed_area_twice(
-    geometry: &SketchGeometry,
-    reversed: bool,
-) -> Option<f64> {
+fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) -> Option<f64> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
@@ -891,11 +873,7 @@ pub(in super::super) fn nurbs_profile_signed_area_twice(
     area_twice.is_finite().then_some(area_twice)
 }
 
-pub(in super::super) fn polylines_intersect(
-    first: &[[f64; 2]],
-    second: &[[f64; 2]],
-    tolerance: f64,
-) -> bool {
+fn polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]], tolerance: f64) -> bool {
     first.windows(2).any(|first_segment| {
         second.windows(2).any(|second_segment| {
             segments_intersect(

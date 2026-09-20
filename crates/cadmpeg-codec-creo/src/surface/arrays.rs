@@ -33,7 +33,7 @@ impl DimensionedScalars {
     }
 
     /// Replaces values and tokens only when the input matches the declared extent.
-    pub(crate) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
+    pub(super) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
         if slots.len() != self.values.len() {
             return None;
         }
@@ -71,7 +71,7 @@ pub(crate) struct CountedScalars {
 
 impl CountedScalars {
     /// Allocates the declared shape with undecoded slots.
-    pub(crate) fn empty(count: u32) -> Option<Self> {
+    pub(super) fn empty(count: u32) -> Option<Self> {
         let len = usize::try_from(count).ok()?;
         Some(Self {
             count,
@@ -81,7 +81,7 @@ impl CountedScalars {
     }
 
     /// Replaces values and tokens only when the input matches the declared extent.
-    pub(crate) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
+    pub(super) fn fill_tokens(&mut self, slots: Vec<(Option<f64>, Vec<u8>)>) -> Option<()> {
         if slots.len() != self.values.len() {
             return None;
         }

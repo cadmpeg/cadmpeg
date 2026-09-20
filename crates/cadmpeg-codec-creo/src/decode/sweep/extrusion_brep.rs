@@ -46,7 +46,7 @@ const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
     crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
-pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
+fn sketch_profiles_cover_generated_extrusion_sides(
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
     feature_id: u32,

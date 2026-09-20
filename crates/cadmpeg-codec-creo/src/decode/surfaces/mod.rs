@@ -202,8 +202,8 @@ pub(super) struct Fc05CapPairFrame {
     /// Model-space origin of the native cylinder parameterization (`v = 0`).
     pub(super) origin: [f64; 3],
     pub(super) ref_direction: [f64; 3],
-    pub(super) axis_index: Axis,
-    pub(super) axis_sign: Sign,
+    axis_index: Axis,
+    axis_sign: Sign,
 }
 
 impl Fc05CapPairFrame {

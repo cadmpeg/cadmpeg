@@ -298,7 +298,7 @@ pub(in super::super) fn unique_surface_parameter_record<'a>(
     )
 }
 
-pub(in super::super) fn unique_section_torus_minor_radius(
+fn unique_section_torus_minor_radius(
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
@@ -325,7 +325,7 @@ pub(in super::super) fn replayed_torus_minor_radius(
     record.type26_replayed_minor_radius(prototype_minor_radius)
 }
 
-pub(in super::super) fn prototype_round_radius(
+fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
@@ -565,7 +565,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
     )
 }
 
-pub(in super::super) fn mixed_round_radius_samples(
+fn mixed_round_radius_samples(
     scan: &ContainerScan,
     ir: &CadIr,
     rows: &[&crate::surface::SurfaceRow],
@@ -599,7 +599,7 @@ pub(in super::super) fn mixed_round_radius_samples(
     ))
 }
 
-pub(in super::super) fn mixed_torus_radius_samples(
+fn mixed_torus_radius_samples(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
@@ -632,7 +632,7 @@ pub(in super::super) fn mixed_torus_radius_samples(
         .and_then(|radius| alloc_filled(rows.len(), radius, "creo_torus_radius_samples").ok()))
 }
 
-pub(in super::super) fn round_cylinder_radius(
+fn round_cylinder_radius(
     scan: &ContainerScan,
     ir: &CadIr,
     row: &crate::surface::SurfaceRow,
@@ -865,10 +865,7 @@ pub(in super::super) fn round_placed_cylinder_radii(
         .collect()
 }
 
-pub(in super::super) fn round_placed_cylinder_radius(
-    ir: &CadIr,
-    row: &crate::surface::SurfaceRow,
-) -> Option<f64> {
+fn round_placed_cylinder_radius(ir: &CadIr, row: &crate::surface::SurfaceRow) -> Option<f64> {
     let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
@@ -881,10 +878,7 @@ pub(in super::super) fn round_placed_cylinder_radius(
     })
 }
 
-pub(in super::super) fn round_direct_radii(
-    scan: &ContainerScan,
-    feature_id: u32,
-) -> Option<Vec<f64>> {
+fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
     let generated_rows = scan
         .surfaces
         .rows

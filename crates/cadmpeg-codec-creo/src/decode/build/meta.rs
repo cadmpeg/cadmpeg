@@ -14,7 +14,7 @@ use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyN
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::document::SourceMeta;
 
-pub(in super::super) fn source_meta(
+pub(super) fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<(SourceMeta, cadmpeg_ir::report::decode::Coverage), cadmpeg_core::CodecError> {

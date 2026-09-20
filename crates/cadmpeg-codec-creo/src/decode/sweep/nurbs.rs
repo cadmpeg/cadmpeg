@@ -150,7 +150,7 @@ pub(in super::super) fn bspline_basis_derivative(
     Some(left - right)
 }
 
-pub(in super::super) fn solve_vector_system(
+fn solve_vector_system(
     mut matrix: Vec<Vec<f64>>,
     mut values: Vec<[f64; 3]>,
 ) -> Option<Vec<[f64; 3]>> {
@@ -191,7 +191,7 @@ pub(in super::super) fn solve_vector_system(
     Some(values)
 }
 
-pub(in super::super) fn interpolation_curve_data(
+fn interpolation_curve_data(
     points: &[[f64; 3]],
     parameters: &[f64],
     endpoint_derivatives: [[f64; 3]; 2],
@@ -443,7 +443,7 @@ pub(in super::super) fn placed_section_nurbs(
     Some(placed)
 }
 
-pub(in super::super) fn translated_nurbs_curve(
+pub(super) fn translated_nurbs_curve(
     curve: &NurbsCurve,
     translation: [f64; 3],
 ) -> Option<NurbsCurve> {
@@ -506,7 +506,7 @@ pub(in super::super) fn extruded_nurbs_surface(
     }
 }
 
-pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
+pub(super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return None;
     };
@@ -516,7 +516,7 @@ pub(in super::super) fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<
     valid_positive_nurbs_curve(&nurbs).map(|()| nurbs)
 }
 
-pub(in super::super) fn oriented_sketch_nurbs_curve(
+pub(super) fn oriented_sketch_nurbs_curve(
     geometry: &SketchGeometry,
     reversed: bool,
 ) -> Option<NurbsCurve> {
@@ -539,7 +539,7 @@ pub(in super::super) fn oriented_sketch_nurbs_curve(
     Some(reversed)
 }
 
-pub(in super::super) fn sketch_nurbs_pcurve(
+pub(super) fn sketch_nurbs_pcurve(
     geometry: &SketchGeometry,
     reversed: bool,
     record: &dyn std::fmt::Display,

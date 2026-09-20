@@ -1028,91 +1028,91 @@ pub(crate) const UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT: CoverageKey =
 pub(crate) const UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT: CoverageKey =
     CoverageKey::new("unresolved_legacy_type_9_value_count");
 
-pub(crate) const DECODED_FEATURE_ARC_SEGMENT_COUNT: CoverageKey =
+const DECODED_FEATURE_ARC_SEGMENT_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_arc_segment_count");
-pub(crate) const RESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_arc_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_BOUNDED_CURVE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_BOUNDED_CURVE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_bounded_curve_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_CENTERED_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_CENTERED_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_centered_line_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_CIRCLE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_CIRCLE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_circle_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_CONIC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_CONIC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_conic_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_OPAQUE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_OPAQUE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_opaque_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_POINT_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_POINT_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_point_segment_geometry_count");
-pub(crate) const RESOLVED_FEATURE_REFERENCE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const RESOLVED_FEATURE_REFERENCE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("resolved_feature_reference_line_segment_geometry_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_cone_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_cylinder_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_extrusion_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_fillet_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_PLANE_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_PLANE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_plane_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_spline_surface_row_count");
-pub(crate) const RETAINED_UNKNOWN_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
+const RETAINED_UNKNOWN_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("retained_unknown_visible_torus_or_sphere_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_cone_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_cylinder_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_extrusion_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_fillet_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_spline_surface_row_count");
-pub(crate) const TRANSFERRED_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
+const TRANSFERRED_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("transferred_visible_torus_or_sphere_surface_row_count");
-pub(crate) const UNRESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_arc_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_BOUNDED_CURVE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_BOUNDED_CURVE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_bounded_curve_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_CENTERED_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_CENTERED_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_centered_line_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_CIRCLE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_CIRCLE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_circle_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_CONIC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_CONIC_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_conic_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_OPAQUE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_OPAQUE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_opaque_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_POINT_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_POINT_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_point_segment_geometry_count");
-pub(crate) const UNRESOLVED_FEATURE_REFERENCE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
+const UNRESOLVED_FEATURE_REFERENCE_LINE_SEGMENT_GEOMETRY_COUNT: CoverageKey =
     CoverageKey::new("unresolved_feature_reference_line_segment_geometry_count");
-pub(crate) const UNTRANSFERRED_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
+const UNTRANSFERRED_VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("untransferred_visible_cone_surface_row_count");
-pub(crate) const UNTRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
+const UNTRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("untransferred_visible_extrusion_surface_row_count");
-pub(crate) const UNTRANSFERRED_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
+const UNTRANSFERRED_VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("untransferred_visible_fillet_surface_row_count");
-pub(crate) const UNTRANSFERRED_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
+const UNTRANSFERRED_VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("untransferred_visible_spline_surface_row_count");
-pub(crate) const UNTRANSFERRED_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
+const UNTRANSFERRED_VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("untransferred_visible_torus_or_sphere_surface_row_count");
-pub(crate) const VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_CONE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_cone_surface_row_count");
-pub(crate) const VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_CYLINDER_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_cylinder_surface_row_count");
-pub(crate) const VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_EXTRUSION_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_extrusion_surface_row_count");
-pub(crate) const VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_FILLET_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_fillet_surface_row_count");
-pub(crate) const VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_SPLINE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_spline_surface_row_count");
-pub(crate) const VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
+const VISIBLE_TORUS_OR_SPHERE_SURFACE_ROW_COUNT: CoverageKey =
     CoverageKey::new("visible_torus_or_sphere_surface_row_count");
 
 #[cfg(test)]
-pub(crate) const ALL: &[CoverageKey] = &[
+const ALL: &[CoverageKey] = &[
     DECODED_FEATURE_ARC_SEGMENT_COUNT,
     RESOLVED_FEATURE_ARC_SEGMENT_GEOMETRY_COUNT,
     RESOLVED_FEATURE_BOUNDED_CURVE_SEGMENT_GEOMETRY_COUNT,

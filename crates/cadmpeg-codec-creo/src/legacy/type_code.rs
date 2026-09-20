@@ -36,7 +36,7 @@ pub(crate) struct UnknownTypeCode(u8);
 
 impl LegacyTypeCode {
     /// The identity token that names this grammar in a value record id.
-    pub(crate) const fn identity_token(self) -> &'static str {
+    pub(super) const fn identity_token(self) -> &'static str {
         match self {
             Self::Object => "object",
             Self::Integer => "integer",

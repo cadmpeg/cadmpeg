@@ -1412,10 +1412,7 @@ fn decode_plane_support_lane_variants(
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
-pub(crate) fn decode_plane_support_local_system_slots(
-    body: &[u8],
-    cache: &ScalarCache,
-) -> Option<[f64; 12]> {
+fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
     decode_plane_support_local_system(body, cache).map(|(values, _)| values)
 }
 

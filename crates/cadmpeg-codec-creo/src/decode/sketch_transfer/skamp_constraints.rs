@@ -548,7 +548,7 @@ pub(in super::super) fn sketch_constraint_loci_compatible(
     sketch_constraint_loci_compatible_with_policy(definition, geometry, false)
 }
 
-pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
+fn sketch_constraint_loci_compatible_with_policy(
     definition: &SketchConstraintDefinitionInput,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
     allow_unknown_native_endpoints: bool,

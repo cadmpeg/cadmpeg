@@ -836,7 +836,7 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
         .collect()
 }
 
-pub(in super::super) fn meridian_circle_intersections(
+fn meridian_circle_intersections(
     first_center: [f64; 2],
     first_radius: f64,
     second_center: [f64; 2],

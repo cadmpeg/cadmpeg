@@ -216,7 +216,7 @@ pub(in super::super) fn revolution_axis_for_transfer(
         .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
 }
 
-pub(in super::super) fn feature_revolution_axis_for_transfer(
+pub(super) fn feature_revolution_axis_for_transfer(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,

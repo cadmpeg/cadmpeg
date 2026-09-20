@@ -434,10 +434,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     Ok(transferred)
 }
 
-pub(in super::super) fn section_contains_offset(
-    section: &crate::container::Section,
-    offset: usize,
-) -> bool {
+fn section_contains_offset(section: &crate::container::Section, offset: usize) -> bool {
     section.contains(offset)
 }
 
@@ -459,7 +456,7 @@ fn note_tabulated_cylinder_refusals(
     }
 }
 
-pub(in super::super) fn unique_tabulated_cylinder_prototype<'a>(
+fn unique_tabulated_cylinder_prototype<'a>(
     scan: &'a ContainerScan<'_>,
     replay: &crate::surface::TabulatedCylinderCurveReplay,
 ) -> Option<&'a crate::surface::SurfacePrototypeRecord> {

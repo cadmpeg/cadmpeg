@@ -59,33 +59,33 @@
 //! these losses.
 
 mod compress;
-pub(crate) mod container;
-pub(crate) mod coverage;
-pub(crate) mod curve;
-pub(crate) mod datum;
-pub(crate) mod decode;
-pub(crate) mod dialect;
-pub(crate) mod feature;
-pub(crate) mod identity;
-pub(crate) mod interpolation_grid;
+mod container;
+mod coverage;
+mod curve;
+mod datum;
+mod decode;
+mod dialect;
+mod feature;
+mod identity;
+mod interpolation_grid;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
-pub(crate) mod lane_refusal;
-pub(crate) mod layout;
-pub(crate) mod legacy;
-pub(crate) mod legacy_family;
-pub(crate) mod legacy_feature;
-pub(crate) mod legacy_geometry;
-pub(crate) mod loop_array;
+mod lane_refusal;
+mod layout;
+mod legacy;
+mod legacy_family;
+mod legacy_feature;
+mod legacy_geometry;
+mod loop_array;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
-pub(crate) mod placement;
-pub(crate) mod primdata;
-pub(crate) mod psb;
-pub(crate) mod reference;
-pub(crate) mod scalar;
-pub(crate) mod surface;
-pub(crate) mod topology;
-pub(crate) mod vecmath;
+mod loss;
+mod placement;
+mod primdata;
+mod psb;
+mod reference;
+mod scalar;
+mod surface;
+mod topology;
+mod vecmath;
 
 #[doc(hidden)]
 pub mod fuzz;
@@ -132,4 +132,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;
