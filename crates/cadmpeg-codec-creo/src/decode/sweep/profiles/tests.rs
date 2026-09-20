@@ -124,3 +124,20 @@ fn large_profile_circle_intersections_stay_finite() {
         1e-9
     ));
 }
+
+#[test]
+fn small_segment_crossings_do_not_depend_on_cross_product_units() {
+    const DISTANCE_TOLERANCE: f64 = 1e-9;
+    for scale in [1e-5, 1.0, 1e200] {
+        assert!(super::segments_intersect(
+            [[-scale, 0.0], [scale, 0.0]],
+            [[0.0, -scale], [0.0, scale]],
+            DISTANCE_TOLERANCE
+        ));
+    }
+    assert!(!super::segments_intersect(
+        [[0.0, 0.0], [1e-5, 0.0]],
+        [[0.0, 1e-5], [1e-5, 1e-5]],
+        DISTANCE_TOLERANCE
+    ));
+}

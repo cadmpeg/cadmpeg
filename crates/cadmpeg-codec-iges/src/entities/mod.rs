@@ -123,7 +123,6 @@ pub(crate) mod copious;
 mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
-mod evaluation;
 pub(crate) mod geometry;
 mod offsets;
 mod presentation;

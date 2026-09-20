@@ -1,5 +1,7 @@
 //! Marker-to-sketch transform selection.
 
+use super::grid::GridCoordinate;
+
 use super::grid::{quantize, GridPoint};
 
 use crate::records::{SketchInputEntity, SketchInputKind};
@@ -283,7 +285,7 @@ pub(super) fn marker_transforms_with_frame_fallback(
 pub(super) fn dimensioned_circle_surface_transforms(
     sketch: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
-    circles: &[(impl Copy + Into<GridPoint>, i64)],
+    circles: &[(impl Copy + Into<GridPoint>, GridCoordinate)],
     quantum: f64,
 ) -> Vec<MarkerTransform> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -299,7 +301,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
         normal.z * u_axis.x - normal.x * u_axis.z,
         normal.x * u_axis.y - normal.y * u_axis.x,
     );
-    let mut targets_by_radius = HashMap::<i64, HashSet<GridPoint>>::new();
+    let mut targets_by_radius = HashMap::<GridCoordinate, HashSet<GridPoint>>::new();
     for surface in surfaces {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
@@ -315,7 +317,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
         {
             continue;
         }
-        let radius_key = (radius / quantum).round() as i64;
+        let radius_key = GridCoordinate::new(radius, quantum);
         if !circles
             .iter()
             .any(|(_, candidate)| *candidate == radius_key)
@@ -364,7 +366,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
 
 pub(super) fn dimensioned_circle_transform(
     candidates: &[MarkerTransform],
-    circles: &[(impl Copy + Into<GridPoint>, i64)],
+    circles: &[(impl Copy + Into<GridPoint>, GridCoordinate)],
 ) -> Option<MarkerTransform> {
     let signature = |transform: MarkerTransform| {
         let mut transformed = circles

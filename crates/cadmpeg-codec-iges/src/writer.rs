@@ -5738,6 +5738,59 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
     }
 }
 
+// A common power-of-two factor leaves the conic equation unchanged.
+fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
+    let ordinary = [1.0 / (major * major), 1.0 / (minor * minor), -1.0];
+    if ordinary
+        .iter()
+        .all(|value| value.is_finite() && *value != 0.0)
+    {
+        return Ok(ordinary);
+    }
+    let split = |radius: f64| {
+        let exponent = radius.log2().floor() as i32;
+        let half = exponent / 2;
+        let mantissa = (radius * 2.0_f64.powi(-half)) * 2.0_f64.powi(half - exponent);
+        (mantissa, exponent)
+    };
+    let (a, a_exponent) = split(major);
+    let (b, b_exponent) = split(minor);
+    let exponents = [-2 * a_exponent, -2 * b_exponent, 0];
+    let minimum = exponents.into_iter().min().unwrap_or(0);
+    let maximum = exponents.into_iter().max().unwrap_or(0);
+    let normal_bounds = (-1022 - minimum, 1023 - maximum);
+    let (lower, upper) = if normal_bounds.0 <= normal_bounds.1 {
+        normal_bounds
+    } else {
+        (-1074 - minimum, 1023 - maximum)
+    };
+    if lower > upper {
+        return Err(CodecError::malformed(
+            "IGES conic coefficient range is not representable",
+        ));
+    }
+    let shift = 0_i32.clamp(lower, upper);
+    let scale = |value: f64, exponent: i32| {
+        let first = exponent.clamp(-1022, 1023);
+        (value * 2.0_f64.powi(exponent - first)) * 2.0_f64.powi(first)
+    };
+    let coefficients = [
+        scale(1.0 / (a * a), shift + exponents[0]),
+        scale(1.0 / (b * b), shift + exponents[1]),
+        scale(-1.0, shift),
+    ];
+    if coefficients
+        .iter()
+        .all(|value| value.is_finite() && *value != 0.0)
+    {
+        Ok(coefficients)
+    } else {
+        Err(CodecError::malformed(
+            "IGES conic coefficient range is not representable",
+        ))
+    }
+}
+
 fn curve_entity(
     geometry: &SolvedCurveGeometry,
     span: Option<&CurveSpan>,
@@ -5837,15 +5890,17 @@ fn curve_entity(
             // Parameter Data is identical to the compatibility Form 0 used by
             // V4.0 and V5.1 through V5.3.
             let form = i64::from(version == crate::IgesVersion::V5_0);
+            let coefficients = conic_coefficients(major_radius, minor_radius)?;
             Ok(Entity {
                 type_code: 104,
                 form,
                 label: "CONIC",
                 status: EntityStatus::Independent,
                 parameter_body: format!(
-                    "{},0,{},0,0,-1,0,{},{},{},{};",
-                    number(1.0 / (major_radius * major_radius)),
-                    number(1.0 / (minor_radius * minor_radius)),
+                    "{},0,{},0,0,{},0,{},{},{},{};",
+                    number(coefficients[0]),
+                    number(coefficients[1]),
+                    number(coefficients[2]),
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),
@@ -5906,15 +5961,17 @@ fn curve_entity(
             let y_axis = axis.cross(major);
             let start_xy = hyperbola_point(major_radius, minor_radius, range[0])?;
             let end_xy = hyperbola_point(major_radius, minor_radius, range[1])?;
+            let coefficients = conic_coefficients(major_radius, minor_radius)?;
             Ok(Entity {
                 type_code: 104,
                 form: 2,
                 label: "CONIC",
                 status: EntityStatus::Independent,
                 parameter_body: format!(
-                    "{},0,{},0,0,-1,0,{},{},{},{};",
-                    number(1.0 / (major_radius * major_radius)),
-                    number(-1.0 / (minor_radius * minor_radius)),
+                    "{},0,{},0,0,{},0,{},{},{},{};",
+                    number(coefficients[0]),
+                    number(-coefficients[1]),
+                    number(coefficients[2]),
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),

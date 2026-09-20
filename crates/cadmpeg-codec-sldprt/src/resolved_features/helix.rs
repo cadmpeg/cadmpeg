@@ -109,6 +109,13 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     u = Vector3::new(u.x / u_length, u.y / u_length, u.z / u_length);
     let v = axis.cross(u);
     let reference = points[0];
+    let scale = points
+        .iter()
+        .map(|point| point.vector_from(reference).norm())
+        .fold(0.0_f64, f64::max);
+    if !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
     let mut normal = [[0.0; 3]; 3];
     let mut rhs = [0.0; 3];
     for point in points {
@@ -117,8 +124,8 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
             point.y - reference.y,
             point.z - reference.z,
         );
-        let x = delta.dot(u);
-        let y = delta.dot(v);
+        let x = delta.dot(u) / scale;
+        let y = delta.dot(v) / scale;
         let row = [x, y, 1.0];
         let target = -(x * x + y * y);
         for i in 0..3 {
@@ -135,14 +142,15 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     if !radius_squared.is_finite() || radius_squared <= 0.0 {
         return None;
     }
-    Some((
-        Point3::new(
-            reference.x + center_u * u.x + center_v * v.x,
-            reference.y + center_u * u.y + center_v * v.y,
-            reference.z + center_u * u.z + center_v * v.z,
-        ),
-        radius_squared.sqrt(),
-    ))
+    let center_u = center_u * scale;
+    let center_v = center_v * scale;
+    let radius = radius_squared.sqrt() * scale;
+    let origin = Point3::new(
+        reference.x + center_u * u.x + center_v * v.x,
+        reference.y + center_u * u.y + center_v * v.y,
+        reference.z + center_u * u.z + center_v * v.z,
+    );
+    (origin.is_finite() && radius.is_finite()).then_some((origin, radius))
 }
 
 fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]> {
@@ -225,6 +233,31 @@ fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn helix_fit_preserves_small_model_units() {
+        const RELATIVE_ERROR: f64 = 1e-10;
+        for scale in [1e-8, 1.0, 1e8] {
+            let points = (0..=16)
+                .map(|index| {
+                    let t = f64::from(index) / 16.0;
+                    let angle = std::f64::consts::TAU * t;
+                    cadmpeg_ir::math::Point3::new(
+                        scale * angle.cos(),
+                        scale * angle.sin(),
+                        scale * t,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let (origin, axis, radius, rise) =
+                super::fit_helix_polyline(&points, 1.0, false).unwrap();
+            assert!(origin.x.abs() / scale <= RELATIVE_ERROR);
+            assert!(origin.y.abs() / scale <= RELATIVE_ERROR);
+            assert!((axis.z - 1.0).abs() <= RELATIVE_ERROR);
+            assert!((radius / scale - 1.0).abs() <= RELATIVE_ERROR);
+            assert!((rise / scale - 1.0).abs() <= RELATIVE_ERROR);
+        }
+    }
+
     #[test]
     fn helix_polyline_fit_recovers_axis_radius_and_rise() {
         let points = (0..=64)

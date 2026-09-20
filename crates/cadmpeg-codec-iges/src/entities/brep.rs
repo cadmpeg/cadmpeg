@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
-use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
@@ -149,9 +148,9 @@ fn source_edge_for_vertices<'a>(
         .filter_map(|position| ir.model.edges.get(*position))
     {
         let endpoints_agree = edge.param_range().is_some_and(|range| {
-            evaluation::curve(curve_geometry, range[0]).is_some_and(|point| {
+            cadmpeg_ir::eval::curve_point(curve_geometry, range[0]).is_some_and(|point| {
                 cadmpeg_ir::math::Point3::distance(point, natural_start) <= tolerance
-            }) && evaluation::curve(curve_geometry, range[1]).is_some_and(|point| {
+            }) && cadmpeg_ir::eval::curve_point(curve_geometry, range[1]).is_some_and(|point| {
                 cadmpeg_ir::math::Point3::distance(point, natural_end) <= tolerance
             })
         });
@@ -239,10 +238,10 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
+            cadmpeg_ir::eval::pcurve_uv(&geometry, range[0]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             }),
-            evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
+            cadmpeg_ir::eval::pcurve_uv(&geometry, range[1]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
             }),
         ) else {

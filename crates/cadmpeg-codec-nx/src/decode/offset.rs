@@ -2143,39 +2143,37 @@ pub(super) fn solve_damped_least_squares_4x4(
     {
         return None;
     }
-    let normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
+    let matrix_scale = matrix
+        .iter()
+        .flatten()
+        .map(|v| v.abs())
+        .fold(0.0_f64, f64::max);
+    if matrix_scale == 0.0 {
+        return None;
+    }
+    let rhs_scale = rhs.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
+    if rhs_scale == 0.0 {
+        return Some([0.0; 4]);
+    }
+    let matrix = matrix.map(|row| row.map(|v| v / matrix_scale));
+    let rhs = rhs.map(|v| v / rhs_scale);
+    let lengths: [f64; 4] =
+        std::array::from_fn(|column| (0..4).fold(0.0_f64, |n, row| n.hypot(matrix[row][column])));
+    let maximum = lengths.into_iter().fold(0.0_f64, f64::max);
+    let column_scales =
+        lengths.map(|length| length.max(maximum * EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12));
+    let matrix = matrix
+        .map(|row| std::array::from_fn::<_, 4, _>(|column| row[column] / column_scales[column]));
+    let scaled_normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
         std::array::from_fn(|column| {
             (0..4)
                 .map(|index| matrix[index][row] * matrix[index][column])
-                .sum::<f64>()
-        })
-    });
-    let normal_rhs: [f64; 4] = std::array::from_fn(|column| {
-        (0..4)
-            .map(|index| matrix[index][column] * rhs[index])
-            .sum::<f64>()
-    });
-    let max_column_scale = (0..4)
-        .map(|index| normal[index][index].abs())
-        .fold(0.0_f64, f64::max)
-        .sqrt();
-    if !max_column_scale.is_finite() || max_column_scale == 0.0 {
-        return None;
-    }
-    let column_scales: [f64; 4] = std::array::from_fn(|index| {
-        normal[index][index]
-            .max(0.0)
-            .sqrt()
-            .max(max_column_scale * EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12)
-    });
-    let scaled_normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
-        std::array::from_fn(|column| {
-            normal[row][column] / (column_scales[row] * column_scales[column])
+                .sum()
         })
     });
     let scaled_rhs: [f64; 4] =
-        std::array::from_fn(|column| normal_rhs[column] / column_scales[column]);
-    let initial_error = rhs.iter().map(|value| value * value).sum::<f64>();
+        std::array::from_fn(|column| (0..4).map(|index| matrix[index][column] * rhs[index]).sum());
+    let initial_error = rhs.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
     for exponent in -12..=-3 {
         let damping = 10_f64.powi(exponent);
         let mut regularized = scaled_normal;
@@ -2185,17 +2183,24 @@ pub(super) fn solve_damped_least_squares_4x4(
         let Some(scaled_step) = solve_4x4(regularized, scaled_rhs) else {
             continue;
         };
-        let step: [f64; 4] = std::array::from_fn(|index| scaled_step[index] / column_scales[index]);
         let linear_error = (0..4)
             .map(|row| {
                 let residual = (0..4)
-                    .map(|column| matrix[row][column] * step[column])
+                    .map(|column| matrix[row][column] * scaled_step[column])
                     .sum::<f64>()
                     - rhs[row];
-                residual * residual
+                residual
             })
-            .sum::<f64>();
+            .fold(0.0_f64, f64::hypot);
         if linear_error.is_finite() && linear_error < initial_error {
+            let mut step = [0.0; 4];
+            for index in 0..4 {
+                step[index] = cadmpeg_ir::math::multiply_divide(
+                    scaled_step[index] / column_scales[index],
+                    rhs_scale,
+                    matrix_scale,
+                )?;
+            }
             return Some(step);
         }
     }
@@ -2341,6 +2346,27 @@ mod tests {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn damped_rank_deficient_solve_preserves_scale() {
+        const RELATIVE_ERROR: f64 = 2e-12;
+        for a in [1e-200, 1.0, 1e200] {
+            let step = super::solve_damped_least_squares_4x4(
+                [
+                    [a, 0.0, 0.0, 0.0],
+                    [0.0, a, 0.0, 0.0],
+                    [0.0, 0.0, a, 0.0],
+                    [0.0; 4],
+                ],
+                [a, a, a, 0.0],
+            )
+            .unwrap();
+            for value in &step[..3] {
+                assert!((value - 1.0).abs() <= RELATIVE_ERROR);
+            }
+            assert_eq!(step[3], 0.0);
+        }
+    }
 
     #[test]
     fn a_surface_the_index_does_not_hold_and_the_depth_limit_both_sample_at_the_ceiling() {
