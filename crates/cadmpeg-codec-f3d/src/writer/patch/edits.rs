@@ -3062,37 +3062,30 @@ pub(super) fn validate_curve_edits(
             continue;
         }
         edited.insert(id.to_owned());
-        let valid = match after {
-            Some(SolvedCurveGeometry::Line(_))
-                if { matches!(before, Some(SolvedCurveGeometry::Line(_))) } =>
-            {
-                true
-            }
-            Some(SolvedCurveGeometry::Circle(circle_curve))
-                if { matches!(before, Some(SolvedCurveGeometry::Circle(_))) } =>
-            {
+        // A curve-kind change is refused here, once, so the arms below decide
+        // the edit on their own bodies and carry no policy in their order.
+        if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
+            return Err(CodecError::NotImplemented(
+                if matches!(after, Some(SolvedCurveGeometry::Nurbs(_))) {
+                    format!("F3D regeneration cannot change curve {id} into a NURBS carrier")
+                } else {
+                    format!("F3D regeneration does not support edits to curve {id}")
+                },
+            ));
+        }
+        let valid = match (before, after) {
+            (_, Some(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Degenerate(_))) => true,
+            (_, Some(SolvedCurveGeometry::Circle(circle_curve))) => {
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
                 orthonormal_pair(*axis, *ref_direction)
             }
-            Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
-                if { matches!(before, Some(SolvedCurveGeometry::Ellipse(_))) } =>
-            {
+            (_, Some(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
                 let axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
                 orthonormal_pair(*axis, *major_direction)
             }
-            Some(SolvedCurveGeometry::Degenerate(_))
-                if { matches!(before, Some(SolvedCurveGeometry::Degenerate(_))) } =>
-            {
-                true
-            }
-            Some(SolvedCurveGeometry::Nurbs(after)) => {
-                let Some(SolvedCurveGeometry::Nurbs(before)) = before else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "F3D regeneration cannot change curve {id} into a NURBS carrier"
-                    )));
-                };
+            (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
                 (id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
@@ -3260,38 +3253,39 @@ pub(super) fn validate_surface_edits(
         if before == after {
             continue;
         }
-        let valid = match after {
-            Some(SolvedSurfaceGeometry::Plane(plane_surface))
-                if { matches!(before, Some(SolvedSurfaceGeometry::Plane(_))) } =>
-            {
+        // A surface-kind change is refused here, once, so the arms below decide
+        // the edit on their own bodies and carry no policy in their order.
+        if before.map(std::mem::discriminant) != after.map(std::mem::discriminant) {
+            return Err(CodecError::NotImplemented(
+                if matches!(after, Some(SolvedSurfaceGeometry::Nurbs(_))) {
+                    format!("F3D regeneration cannot change surface {id} into a NURBS carrier")
+                } else {
+                    format!("F3D regeneration does not support edits to surface {id}")
+                },
+            ));
+        }
+        let valid = match (before, after) {
+            (_, Some(SolvedSurfaceGeometry::Plane(plane_surface))) => {
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
                 orthonormal_pair(*normal, *u_axis)
             }
-            Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
-                if { matches!(before, Some(SolvedSurfaceGeometry::Sphere(_))) } =>
-            {
+            (_, Some(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
                 orthonormal_pair(*axis, *ref_direction)
             }
-            Some(SolvedSurfaceGeometry::Torus(torus_surface))
-                if { matches!(before, Some(SolvedSurfaceGeometry::Torus(_))) } =>
-            {
+            (_, Some(SolvedSurfaceGeometry::Torus(torus_surface))) => {
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
                 orthonormal_pair(*axis, *ref_direction)
             }
-            Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-                if { matches!(before, Some(SolvedSurfaceGeometry::Cylinder(_))) } =>
-            {
+            (_, Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
                 orthonormal_pair(*axis, *ref_direction)
             }
-            Some(SolvedSurfaceGeometry::Cone(cone_surface))
-                if { matches!(before, Some(SolvedSurfaceGeometry::Cone(_))) } =>
-            {
+            (_, Some(SolvedSurfaceGeometry::Cone(cone_surface))) => {
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();
@@ -3300,12 +3294,10 @@ pub(super) fn validate_surface_edits(
                     && radius != 0.0
                     && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
-            Some(SolvedSurfaceGeometry::Nurbs(after)) => {
-                let Some(SolvedSurfaceGeometry::Nurbs(before)) = before else {
-                    return Err(CodecError::NotImplemented(format!(
-                        "F3D regeneration cannot change surface {id} into a NURBS carrier"
-                    )));
-                };
+            (
+                Some(SolvedSurfaceGeometry::Nurbs(before)),
+                Some(SolvedSurfaceGeometry::Nurbs(after)),
+            ) => {
                 (id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
@@ -3810,9 +3802,101 @@ fn spring_patch_shape_agrees(
 mod tests {
     mod timestamps;
 
-    use super::{validate_material_assignment_edits, PatchNatives};
+    use super::{
+        validate_curve_edits, validate_material_assignment_edits, validate_surface_edits,
+        PatchNatives,
+    };
     use crate::native::F3dNative;
     use crate::records::references::DesignMaterialAssignment;
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, ConeSurface, LineCurve};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn curve(geometry: SolvedCurveGeometry) -> Vec<Curve> {
+        vec![Curve {
+            id: CurveId::mint("f3d:brep:entity#7").expect("identity grammar"),
+            geometry: CurveGeometry::Solved(geometry),
+            source_object: None,
+        }]
+    }
+
+    fn cone_surface(radius: f64) -> Vec<Surface> {
+        vec![Surface {
+            id: SurfaceId::mint("f3d:brep:entity#9").expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    radius,
+                    1.0,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .expect("orthonormal frame, nonnegative radius and finite half angle"),
+            )),
+            source_object: None,
+        }]
+    }
+
+    #[test]
+    fn a_curve_kind_change_is_refused_with_the_message_of_the_kind_it_becomes() {
+        let baseline = curve(SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("orthonormal frame and positive radius"),
+        ));
+        let line = curve(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite origin and nonzero direction"),
+        ));
+        let error = validate_curve_edits(&baseline, &line)
+            .expect_err("a circle carrier cannot become a line");
+        assert!(
+            error
+                .to_string()
+                .contains("does not support edits to curve f3d:brep:entity#7"),
+            "{error}"
+        );
+
+        let nurbs = curve(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("degree, knots and control points agree"),
+        ));
+        let error = validate_curve_edits(&baseline, &nurbs)
+            .expect_err("a circle carrier cannot become a NURBS carrier");
+        assert!(
+            error
+                .to_string()
+                .contains("cannot change curve f3d:brep:entity#7 into a NURBS carrier"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_cone_edit_that_removes_the_radius_is_malformed() {
+        let error = validate_surface_edits(&cone_surface(2.0), &cone_surface(0.0))
+            .expect_err("a cone carrier keeps a nonzero radius");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 requires a finite orthonormal frame and valid radius"),
+            "{error}"
+        );
+    }
 
     fn assignment(physical_token: bool) -> DesignMaterialAssignment {
         let mut document = serde_json::json!({
