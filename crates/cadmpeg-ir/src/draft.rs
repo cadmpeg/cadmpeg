@@ -294,17 +294,6 @@ impl<A> ModelDraft<A> {
         Ok(())
     }
 
-    /// Returns the staged arena for one entity type.
-    pub fn arena<T: ArenaEntity>(&self) -> &Vec<T> {
-        T::arena(&self.model)
-    }
-
-    /// Returns the mutable staged arena for one entity type.
-    pub fn arena_mut<T: ArenaEntity>(&mut self) -> &mut Vec<T> {
-        self.identity_index = None;
-        T::arena_mut(&mut self.model)
-    }
-
     /// Returns the staged model for coordinated multi-arena construction.
     pub fn model(&self) -> &Model {
         &self.model

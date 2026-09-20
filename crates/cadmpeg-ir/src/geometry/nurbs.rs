@@ -94,12 +94,6 @@ impl NurbsPoles3 {
         }
     }
 
-    /// True when the curve states no pole.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Pole positions in parameter order.
     #[must_use]
     pub fn points(&self) -> Vec<Point3> {
@@ -135,19 +129,6 @@ impl NurbsPoles3 {
             Self::Polynomial { points } => points.reverse(),
             Self::Rational { points } => points.reverse(),
         }
-    }
-
-    /// Edit every pole position, keeping the prior positions on a refusal.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_points(
-        &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut candidate = self.clone();
-        candidate.apply_points(edit)?;
-        *self = candidate;
-        Ok(())
     }
 
     /// Edit every pole position in place, keeping every accepted edit.
@@ -320,19 +301,6 @@ impl NurbsPoleGrid {
         }
     }
 
-    /// Edit every pole position, keeping the prior positions on a refusal.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_points(
-        &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut candidate = self.clone();
-        candidate.apply_points(edit)?;
-        *self = candidate;
-        Ok(())
-    }
-
     /// Edit every pole position in place, keeping every accepted edit.
     ///
     /// A refusal leaves the grid partly edited, so the caller owns the copy
@@ -443,28 +411,6 @@ impl BsplineSurface {
     /// Degree in the second parameter.
     pub const fn v_degree(&self) -> u32 {
         self.v_degree
-    }
-
-    /// Full knot vector in the first parameter.
-    pub fn u_knots(&self) -> &[f64] {
-        &self.u_knots
-    }
-
-    /// Full knot vector in the second parameter.
-    pub fn v_knots(&self) -> &[f64] {
-        &self.v_knots
-    }
-
-    /// Endpoints of the full U knot vector.
-    #[must_use]
-    pub fn full_u_knot_endpoints(&self) -> [f64; 2] {
-        [self.u_knots[0], self.u_knots[self.u_knots.len() - 1]]
-    }
-
-    /// Endpoints of the full V knot vector.
-    #[must_use]
-    pub fn full_v_knot_endpoints(&self) -> [f64; 2] {
-        [self.v_knots[0], self.v_knots[self.v_knots.len() - 1]]
     }
 
     /// Rectangular control grid in first-parameter-major order.
@@ -903,11 +849,6 @@ impl NurbsSurface {
     /// Whether the surface is periodic in v.
     pub const fn v_periodic(&self) -> bool {
         self.v_periodic
-    }
-
-    /// Set whether the surface is periodic in v.
-    pub fn set_v_periodic(&mut self, value: bool) {
-        self.v_periodic = value;
     }
 
     /// Exchange the u and v parameter axes and transpose pole storage.

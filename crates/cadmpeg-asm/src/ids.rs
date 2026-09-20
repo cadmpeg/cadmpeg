@@ -16,13 +16,6 @@ pub struct IdFormat {
 }
 
 impl IdFormat {
-    /// Construct a format from a component whose grammar was admitted during
-    /// const evaluation.
-    #[must_use]
-    pub const fn from_static(proof: StaticIdentityComponent) -> Self {
-        Self { proof }
-    }
-
     /// Admit a format literal, returning `None` when its grammar is invalid.
     #[must_use]
     pub const fn from_literal(value: &'static str) -> Option<Self> {

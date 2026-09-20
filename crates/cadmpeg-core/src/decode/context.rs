@@ -183,11 +183,6 @@ impl<'a> DecodeContext<'a> {
         id
     }
 
-    /// Returns the stable descriptors registered for this decode session.
-    pub fn space_descriptors(&self) -> Vec<SpaceDescriptor> {
-        self.spaces.borrow().clone()
-    }
-
     /// Resolves a session-local location into an owned root-to-leaf address.
     pub fn resolve_location(&self, location: SourceLocation) -> ResolvedAddress {
         resolve_address(&self.spaces.borrow(), location)

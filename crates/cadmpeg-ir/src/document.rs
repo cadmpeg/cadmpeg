@@ -1339,21 +1339,6 @@ impl CadIr {
             .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
     }
 
-    /// Deserialize every reserved native `unknowns` arena one record at a time.
-    ///
-    /// Each record is converted as it is read, so a caller that only scans the
-    /// population — collecting link targets or record ids — keeps just what it
-    /// retains resident rather than the whole typed population at once.
-    pub fn all_native_unknowns_iter(
-        &self,
-    ) -> impl Iterator<Item = Result<NativeUnknownRecord, crate::native::NativeConvertError>> + '_
-    {
-        self.native
-            .0
-            .values()
-            .flat_map(|namespace| namespace.arena_iter_as("unknowns"))
-    }
-
     /// Replace the reserved `unknowns` arena for `format`.
     pub fn set_native_unknowns(
         &mut self,

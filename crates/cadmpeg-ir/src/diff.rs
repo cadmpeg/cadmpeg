@@ -178,12 +178,6 @@ impl NonEmptyFields {
     pub fn new(fields: Vec<String>) -> Option<Self> {
         (!fields.is_empty()).then_some(Self(fields))
     }
-
-    /// Field names in discovery order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[String] {
-        &self.0
-    }
 }
 
 impl Deref for NonEmptyFields {

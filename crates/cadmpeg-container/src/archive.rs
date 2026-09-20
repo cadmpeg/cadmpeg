@@ -464,24 +464,6 @@ pub enum CfbSpanRole {
     UnallocatedSector,
 }
 
-impl SpanRole {
-    /// Returns the stable physical-ledger label.
-    pub const fn label(&self) -> &'static str {
-        match self {
-            Self::Zip(role) => role.label(),
-            Self::Cfb(role) => role.label(),
-        }
-    }
-
-    /// Returns the owning entry for an entry-owned range.
-    pub fn entry(&self) -> Option<&str> {
-        match self {
-            Self::Zip(role) => role.entry(),
-            Self::Cfb(role) => role.entry(),
-        }
-    }
-}
-
 impl ZipSpanRole {
     const fn label(&self) -> &'static str {
         match self {
@@ -500,57 +482,6 @@ impl ZipSpanRole {
             Self::Zip64EndRecord => "zip64-end-record",
             Self::Zip64EndLocator => "zip64-end-locator",
             Self::EndRecord => "end-record",
-        }
-    }
-
-    fn entry(&self) -> Option<&str> {
-        match self {
-            Self::LocalSignature(entry)
-            | Self::LocalFields(entry)
-            | Self::LocalName(entry)
-            | Self::LocalExtra(entry)
-            | Self::CompressedPayload(entry)
-            | Self::DataDescriptor(entry)
-            | Self::CentralSignature(entry)
-            | Self::CentralFields(entry)
-            | Self::CentralName(entry)
-            | Self::CentralExtra(entry)
-            | Self::CentralComment(entry) => Some(entry),
-            Self::Padding { entry } => entry.as_deref(),
-            Self::Zip64EndRecord | Self::Zip64EndLocator | Self::EndRecord => None,
-        }
-    }
-}
-
-impl CfbSpanRole {
-    const fn label(&self) -> &'static str {
-        match self {
-            Self::Header => "header",
-            Self::RangeLockSector => "range lock sector",
-            Self::Fat => "FAT",
-            Self::Difat => "DIFAT",
-            Self::Directory => "directory",
-            Self::MiniFat => "mini FAT",
-            Self::RegularStreamPayload(_) => "regular stream payload",
-            Self::Padding { .. } => "padding",
-            Self::MiniStreamPayload(_) => "mini stream payload",
-            Self::MiniStreamPadding => "mini-stream padding",
-            Self::UnallocatedSector => "unallocated sector",
-        }
-    }
-
-    fn entry(&self) -> Option<&str> {
-        match self {
-            Self::RegularStreamPayload(entry) | Self::MiniStreamPayload(entry) => Some(entry),
-            Self::Padding { entry } => entry.as_deref(),
-            Self::Header
-            | Self::RangeLockSector
-            | Self::Fat
-            | Self::Difat
-            | Self::Directory
-            | Self::MiniFat
-            | Self::MiniStreamPadding
-            | Self::UnallocatedSector => None,
         }
     }
 }

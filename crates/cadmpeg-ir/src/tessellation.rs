@@ -582,19 +582,6 @@ impl TessellationMesh {
         }
     }
 
-    /// Edit every vertex position, keeping the prior positions on a refusal.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_positions(
-        &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
-    ) -> Result<(), TessellationError> {
-        let mut candidate = self.clone();
-        candidate.apply_positions(edit)?;
-        *self = candidate;
-        Ok(())
-    }
-
     /// Edit every vertex position in place, keeping every accepted edit.
     ///
     /// A refusal leaves the mesh partly edited, so the caller owns the copy
@@ -626,20 +613,6 @@ impl TessellationMesh {
             }
         }
         Ok(())
-    }
-
-    /// Edit every shading normal, keeping the prior normals on a refusal.
-    ///
-    /// The mesh states `false` when it carries no shading normal, and the
-    /// closure states its own refusal, which discards the whole edit.
-    pub fn edit_normals(
-        &mut self,
-        edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
-    ) -> Result<bool, TessellationError> {
-        let mut candidate = self.clone();
-        let edited = candidate.apply_normals(edit)?;
-        *self = candidate;
-        Ok(edited)
     }
 
     /// Edit every shading normal in place, keeping every accepted edit.

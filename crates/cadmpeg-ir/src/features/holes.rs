@@ -283,22 +283,6 @@ pub enum PartialPair<A, B> {
 }
 
 impl<A, B> PartialPair<A, B> {
-    /// The first dimension, when present.
-    pub const fn first(&self) -> Option<&A> {
-        match self {
-            Self::First(first) => Some(first),
-            Self::Second(_) => None,
-        }
-    }
-
-    /// The second dimension, when present.
-    pub const fn second(&self) -> Option<&B> {
-        match self {
-            Self::Second(second) => Some(second),
-            Self::First(_) => None,
-        }
-    }
-
     /// Mutable access to the first dimension, when present.
     pub const fn first_mut(&mut self) -> Option<&mut A> {
         match self {
@@ -324,17 +308,6 @@ impl HoleKind {
             self,
             Self::Unresolved(_) | Self::PartialCounterbore(..) | Self::PartialCountersink(..)
         )
-    }
-
-    /// Identified entry-treatment family of an unresolved construction.
-    #[must_use]
-    pub const fn unresolved_form(&self) -> Option<HoleForm> {
-        match self {
-            Self::Unresolved(form) => *form,
-            Self::PartialCounterbore(..) => Some(HoleForm::Counterbore),
-            Self::PartialCountersink(..) => Some(HoleForm::Countersink),
-            _ => None,
-        }
     }
 }
 

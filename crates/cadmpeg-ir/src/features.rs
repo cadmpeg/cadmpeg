@@ -3723,14 +3723,6 @@ impl FeatureOperation {
             _ => None,
         }
     }
-
-    /// Operation family of an unresolved definition, and `None` when it is resolved.
-    pub fn unresolved_family(&self) -> Option<UnresolvedFamily> {
-        match self {
-            Self::Unresolved { family } => Some(*family),
-            _ => None,
-        }
-    }
 }
 
 impl FeatureDefinition {
@@ -3754,15 +3746,6 @@ impl FeatureDefinition {
         match self {
             Self::PostProcess { operation, .. } => operation.body_output_family(),
             Self::Operation(operation) => operation.body_output_family(),
-        }
-    }
-
-    /// Operation family of an unresolved definition, and `None` when it is resolved.
-    #[must_use]
-    pub fn unresolved_family(&self) -> Option<UnresolvedFamily> {
-        match self {
-            Self::PostProcess { operation, .. } => operation.unresolved_family(),
-            Self::Operation(operation) => operation.unresolved_family(),
         }
     }
 }
@@ -5441,11 +5424,6 @@ impl SheetMetalFlangeEdgeWidths {
         }
     }
 
-    /// Width pairs in selected source edge-group order.
-    pub fn as_slice(&self) -> &[SheetMetalFlangeTwoSidedWidth] {
-        &self.0
-    }
-
     /// Mutable width values. The number of selected groups cannot change.
     pub fn as_mut_slice(&mut self) -> &mut [SheetMetalFlangeTwoSidedWidth] {
         &mut self.0
@@ -6097,11 +6075,6 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
 }
 
 impl<T> SelectionMembers<T> {
-    /// Construct a selection containing one member.
-    pub fn one(member: T) -> Self {
-        Self(vec![member])
-    }
-
     /// The selected members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0
@@ -6226,14 +6199,6 @@ pub enum InsertedBodies {
 }
 
 impl InsertedBodies {
-    /// Borrow the native selection expression.
-    #[must_use]
-    pub fn native(&self) -> &str {
-        match self {
-            Self::Native(native) | Self::Resolved { native } => native,
-        }
-    }
-
     /// Whether the copied bodies are resolved to the neutral model.
     #[must_use]
     pub const fn is_resolved(&self) -> bool {
@@ -6331,17 +6296,6 @@ impl<B> BodyMembers<B> {
     #[must_use]
     pub const fn len(&self) -> usize {
         self.0.len()
-    }
-
-    /// Whether this selection has no rows.
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// Borrow the checked rows in source order.
-    pub fn iter(&self) -> std::slice::Iter<'_, BodyMember<B>> {
-        self.0.iter()
     }
 
     /// Borrow the body identities in source order.
@@ -7516,24 +7470,6 @@ impl SweepShape {
             } => std::iter::once(section)
                 .chain(sections)
                 .filter_map(SweepSection::referenced_profile)
-                .collect(),
-        }
-    }
-
-    /// Every referenced profile, mutable, the primary cross-section first.
-    pub fn referenced_profiles_mut(&mut self) -> Vec<&mut PlanarProfileRef> {
-        match self {
-            Self::Unresolved { section, sections } | Self::Surface { section, sections } => {
-                std::iter::once(section)
-                    .chain(sections)
-                    .filter_map(SweepSection::referenced_profile_mut)
-                    .collect()
-            }
-            Self::Solid {
-                section, sections, ..
-            } => std::iter::once(section)
-                .chain(sections)
-                .filter_map(SweepSection::referenced_profile_mut)
                 .collect(),
         }
     }

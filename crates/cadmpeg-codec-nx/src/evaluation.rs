@@ -158,13 +158,6 @@ impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
     }
 }
 
-impl BodyCensusEvaluation {
-    /// Whether neutral evaluation exactly reproduced the saved body census.
-    pub const fn is_verified(&self) -> bool {
-        matches!(self, Self::Verified { .. })
-    }
-}
-
 /// Evaluate admitted neutral feature effects and compare their body identities
 /// with the saved current model.
 ///

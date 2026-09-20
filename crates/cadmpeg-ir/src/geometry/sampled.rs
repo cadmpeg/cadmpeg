@@ -81,12 +81,6 @@ impl PolygonalSurface {
         })
     }
 
-    /// Ordered model-space vertices.
-    #[must_use]
-    pub fn vertices(&self) -> &[Point3] {
-        &self.vertices
-    }
-
     /// Edit finite vertices transactionally.
     ///
     /// The closure states its own refusal, which discards the whole edit.
@@ -98,12 +92,6 @@ impl PolygonalSurface {
         edit(&mut candidate)?;
         *self = Self::new(candidate, self.triangles.clone(), self.chordal_deflection)?;
         Ok(())
-    }
-
-    /// Zero-based triangle indices into [`Self::vertices`].
-    #[must_use]
-    pub fn triangles(&self) -> &[[u32; 3]] {
-        &self.triangles
     }
 
     /// Maximum chordal deviation recorded by the source.
@@ -311,12 +299,6 @@ impl PolylineCurve {
             samples,
             chordal_deflection,
         })
-    }
-
-    /// The polyline's sample rows.
-    #[must_use]
-    pub const fn samples(&self) -> &PolylineSamples {
-        &self.samples
     }
 
     /// Ordered model-space samples.

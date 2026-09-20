@@ -2630,13 +2630,6 @@ impl BlendSurfacePayload {
 }
 
 impl VariableBlendSurfacePayload {
-    /// A variable blend states its tolerance in its own cache form, never
-    /// outside it.
-    #[must_use]
-    pub const fn legacy_cache(&self) -> Option<LegacyCache> {
-        None
-    }
-
     /// Change the effective fit tolerance of the approximation cache.
     ///
     /// The narrow write route: the borrow of the cache stays inside this

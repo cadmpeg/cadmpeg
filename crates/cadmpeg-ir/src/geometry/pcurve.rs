@@ -89,12 +89,6 @@ impl PcurveNurbsPoles {
         }
     }
 
-    /// True when the pcurve states no pole.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Pole positions in parameter order.
     #[must_use]
     pub fn points(&self) -> Vec<Point2> {
@@ -1198,12 +1192,6 @@ impl PolarNurbsPoles {
         }
     }
 
-    /// True when the curve states no pole.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     /// Paired radial and axial poles in parameter order.
     #[must_use]
     pub fn poles(&self) -> Vec<PolarNurbsPole> {
@@ -1234,19 +1222,6 @@ impl PolarNurbsPoles {
             Self::Polynomial { poles } => poles.reverse(),
             Self::Rational { poles } => poles.reverse(),
         }
-    }
-
-    /// Edit every pole, keeping the prior poles on a refusal.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_poles(
-        &mut self,
-        edit: impl FnMut(&mut Point2, &mut f64) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut candidate = self.clone();
-        candidate.apply_poles(edit)?;
-        *self = candidate;
-        Ok(())
     }
 
     /// Edit every pole in place, keeping every accepted edit.
@@ -1342,11 +1317,6 @@ impl PolarPcurveNurbs {
     /// Paired radial and axial poles.
     pub fn poles(&self) -> Vec<PolarNurbsPole> {
         self.poles.poles()
-    }
-
-    /// Poles in parameter order, with the curve's rational form.
-    pub const fn pole_rows(&self) -> &PolarNurbsPoles {
-        &self.poles
     }
 
     /// Atomically edit paired poles and preserve finite coordinates.
@@ -1485,12 +1455,6 @@ impl PcurveNurbs {
     /// Full knot vector.
     pub fn knots(&self) -> &[f64] {
         &self.knots
-    }
-
-    /// Endpoints of the full knot vector.
-    #[must_use]
-    pub fn full_knot_endpoints(&self) -> [f64; 2] {
-        [self.knots[0], self.knots[self.knots.len() - 1]]
     }
 
     /// Atomically edit knot values and preserve their invariants.

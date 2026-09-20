@@ -43,17 +43,6 @@ pub enum PresentationStateKind {
     Native(String),
 }
 
-impl PresentationStateKind {
-    /// Wire spelling of this family.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Camera(_) => "Camera",
-            Self::Native(kind) => kind,
-        }
-    }
-}
-
 /// Ordered non-provider GUI state such as clipping or section state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

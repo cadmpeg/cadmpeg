@@ -476,12 +476,6 @@ impl RecordBounds {
         raw.map(Self::try_new).transpose()
     }
 
-    /// Construct a quartet from already checked values.
-    #[must_use]
-    pub const fn from_checked(values: [Option<FiniteReal>; 4]) -> Self {
-        Self(values)
-    }
-
     /// Return the native scalar representation.
     #[must_use]
     pub fn get(self) -> [Option<f64>; 4] {
@@ -1146,12 +1140,6 @@ impl<F> CacheContract<F> {
         }
     }
 
-    /// A legacy layout carrying `cache`.
-    #[must_use]
-    pub const fn legacy_cache(cache: Option<LegacyCache>) -> Self {
-        Self::Legacy { cache }
-    }
-
     /// The revision-gated form, absent in the legacy layout.
     #[must_use]
     pub const fn form(&self) -> Option<&F> {
@@ -1634,19 +1622,6 @@ impl ProceduralSurface {
             definition,
             record_bounds,
         }
-    }
-
-    /// Build a procedural surface after admitting native record bounds.
-    pub fn try_new_with_raw_bounds(
-        id: ProceduralSurfaceId,
-        definition: ProceduralSurfaceDefinition,
-        record_bounds: Option<[Option<f64>; 4]>,
-    ) -> Result<Self, RecordBoundsError> {
-        Ok(Self::new(
-            id,
-            definition,
-            RecordBounds::try_option(record_bounds)?,
-        ))
     }
 
     /// Return the retained native record bounds, when present.
@@ -2810,24 +2785,6 @@ pub enum TSplineHeaderKind {
 }
 
 impl TSplineHeaderKind {
-    /// Return the native leading token.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Degree => "degree",
-            Self::CapType => "cap_type",
-            Self::Units => "units",
-            Self::EndConditions => "end_conditions",
-            Self::StarKnotRule => "star_knot_rule",
-            Self::StarSmoothness => "star_smoothness",
-            Self::Tol => "tol",
-            Self::Ver => "ver",
-            Self::BehaviorVersion => "behavior_version",
-            Self::GeomTol => "geom_tol",
-            Self::CompatVersion => "compat_version",
-        }
-    }
-
     fn from_token(token: &str) -> Option<Self> {
         Some(match token {
             "degree" => Self::Degree,
@@ -2894,27 +2851,6 @@ pub enum TSplineRecordKind {
 }
 
 impl TSplineRecordKind {
-    /// Return the native leading token.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Face => "f",
-            Self::Edge => "e",
-            Self::Vertex => "v",
-            Self::Link => "l",
-            Self::EdgeCondition => "ec",
-            Self::Material0 => "0m",
-            Self::Geometry0 => "0g",
-            Self::Edges100 => "100edges",
-            Self::Verts100 => "100verts",
-            Self::Symmetry105 => "105sym",
-            Self::Plane105 => "105plane",
-            Self::A105 => "105a",
-            Self::EdgeKnots106 => "106ek",
-            Self::Grip50000 => "50000grip",
-        }
-    }
-
     fn from_token(token: &str) -> Option<Self> {
         Some(match token {
             "f" => Self::Face,
@@ -2976,12 +2912,6 @@ impl<K: Copy> TSplineProgramLine<K> {
     #[must_use]
     pub fn kind(&self) -> K {
         self.kind
-    }
-
-    /// Ordered remaining fields without interpretation loss.
-    #[must_use]
-    pub fn fields(&self) -> &[String] {
-        &self.fields
     }
 }
 
@@ -3795,14 +3725,6 @@ impl LoftMemberForm {
         match self {
             Self::Support { surface, .. } => surface.as_ref(),
             Self::PcurvePair { .. } => None,
-        }
-    }
-
-    /// Return the first pcurve slot.
-    #[must_use]
-    pub fn pcurve(&self) -> Option<&PcurveGeometry> {
-        match self {
-            Self::Support { pcurve, .. } | Self::PcurvePair { pcurve, .. } => pcurve.as_ref(),
         }
     }
 
@@ -5336,20 +5258,6 @@ impl<T> RevisionCompoundLoftTail<T> {
         match self {
             Self::Curve { curve, .. } => Some(curve),
             _ => None,
-        }
-    }
-
-    /// Transform the curve payload while retaining its parameter bounds.
-    #[must_use]
-    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> RevisionCompoundLoftTail<U> {
-        match self {
-            Self::Unbounded {} => RevisionCompoundLoftTail::Unbounded {},
-            Self::LowerBound { lower } => RevisionCompoundLoftTail::LowerBound { lower },
-            Self::UpperBound { upper } => RevisionCompoundLoftTail::UpperBound { upper },
-            Self::Curve { interval, curve } => RevisionCompoundLoftTail::Curve {
-                interval,
-                curve: map(curve),
-            },
         }
     }
 }

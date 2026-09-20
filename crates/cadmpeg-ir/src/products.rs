@@ -1484,18 +1484,6 @@ pub enum PairedJointKind {
     },
 }
 
-impl PairedJointKind {
-    fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
-        match self {
-            Self::Fixed { angular_limits, .. }
-            | Self::Revolute { angular_limits, .. }
-            | Self::Cylindrical { angular_limits, .. }
-            | Self::Native { angular_limits, .. } => *angular_limits = limits,
-            _ => {}
-        }
-    }
-}
-
 /// Neutral assembly constraint between connector frames.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1573,11 +1561,6 @@ impl AssemblyJoint {
         matches!(self.operands, JointOperands::Grounded { .. })
     }
 
-    /// Returns the structurally complete operand and frame state.
-    pub fn operands(&self) -> &JointOperands {
-        &self.operands
-    }
-
     /// Visits every connector in operand order.
     pub fn connectors(&self) -> impl Iterator<Item = &JointConnector> {
         let slice: &[JointConnector] = match &self.operands {
@@ -1614,13 +1597,6 @@ impl AssemblyJoint {
         }
     }
 
-    fn pair_kind_mut(&mut self) -> Option<&mut PairedJointKind> {
-        match &mut self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
     /// Angular offset in radians.
     #[must_use]
     pub fn angle(&self) -> Option<f64> {
@@ -1630,51 +1606,6 @@ impl AssemblyJoint {
             | PairedJointKind::Cylindrical { angle, .. }
             | PairedJointKind::Angle { angle }
             | PairedJointKind::Native { angle, .. } => angle.map(FiniteReal::get),
-            _ => None,
-        }
-    }
-
-    /// Connector-local translation offset in document length units.
-    #[must_use]
-    pub fn translation_offset(&self) -> Option<[f64; 3]> {
-        match self.paired_kind()? {
-            PairedJointKind::Fixed {
-                translation_offset, ..
-            }
-            | PairedJointKind::Slider {
-                translation_offset, ..
-            }
-            | PairedJointKind::Native {
-                translation_offset, ..
-            } => translation_offset.map(|values| values.map(FiniteReal::get)),
-            _ => None,
-        }
-    }
-
-    /// Primary linear offset in document length units.
-    #[must_use]
-    pub fn distance(&self) -> Option<f64> {
-        match self.paired_kind()? {
-            PairedJointKind::Slider { distance, .. }
-            | PairedJointKind::Cylindrical { distance, .. }
-            | PairedJointKind::Distance { distance }
-            | PairedJointKind::RackPinion { distance, .. }
-            | PairedJointKind::Screw { distance }
-            | PairedJointKind::Gears { distance, .. }
-            | PairedJointKind::Belt { distance, .. }
-            | PairedJointKind::Native { distance, .. } => distance.map(FiniteReal::get),
-            _ => None,
-        }
-    }
-
-    /// Secondary linear offset in document length units.
-    #[must_use]
-    pub fn distance2(&self) -> Option<f64> {
-        match self.paired_kind()? {
-            PairedJointKind::RackPinion { distance2, .. }
-            | PairedJointKind::Gears { distance2, .. }
-            | PairedJointKind::Belt { distance2, .. }
-            | PairedJointKind::Native { distance2, .. } => distance2.map(FiniteReal::get),
             _ => None,
         }
     }
@@ -1690,27 +1621,6 @@ impl AssemblyJoint {
                 | PairedJointKind::Native { angular_limits, .. },
             ) => angular_limits.as_ref(),
             _ => None,
-        }
-    }
-
-    /// Enabled linear interval in document length units.
-    #[must_use]
-    pub fn linear_limits(&self) -> Option<&JointLimits> {
-        match self.paired_kind() {
-            Some(
-                PairedJointKind::Fixed { linear_limits, .. }
-                | PairedJointKind::Slider { linear_limits, .. }
-                | PairedJointKind::Cylindrical { linear_limits, .. }
-                | PairedJointKind::Native { linear_limits, .. },
-            ) => linear_limits.as_ref(),
-            _ => None,
-        }
-    }
-
-    /// Replace the angular interval when the joint family admits one.
-    pub fn set_angular_limits(&mut self, limits: Option<JointLimits>) {
-        if let Some(kind) = self.pair_kind_mut() {
-            kind.set_angular_limits(limits);
         }
     }
 }
