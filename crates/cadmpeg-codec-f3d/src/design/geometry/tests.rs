@@ -1098,3 +1098,18 @@ fn an_arc_shorter_than_twice_the_tolerance_has_no_strict_interior() {
     assert!(angle_strictly_inside_arc(FRAC_PI_2, 0.0, PI, 1.0, 0.0));
     assert!(!angle_strictly_inside_arc(0.0, 0.0, PI, 1.0, 0.0));
 }
+
+#[test]
+fn numerical_audit_line_circle_intersections_are_scale_invariant() {
+    for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
+        let circle = ProfileBoundarySegment::Arc {
+            center: Point2::new(0.0, 0.0), radius,
+            start_angle: 0.0, end_angle: std::f64::consts::TAU,
+        };
+        assert!(super::line_arc_intersection_points((
+            Point2::new(-radius, 2.0 * radius), Point2::new(radius, 2.0 * radius)), &circle).unwrap().is_empty());
+        let tangent = super::line_arc_intersection_points((
+            Point2::new(-radius, radius), Point2::new(radius, radius)), &circle).unwrap();
+        assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
+    }
+}

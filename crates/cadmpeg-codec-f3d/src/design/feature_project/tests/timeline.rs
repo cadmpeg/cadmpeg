@@ -1047,3 +1047,22 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .expect("successor Depth parameter");
     assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
 }
+
+#[test]
+fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
+    let transform = [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let rotation = crate::design::feature_project::matrix_axis_angle(&transform).unwrap();
+    assert_eq!(rotation.angle.get(), std::f64::consts::PI);
+    let axis = [rotation.direction.x, rotation.direction.y, rotation.direction.z];
+    for row in 0..3 {
+        for column in 0..3 {
+            let reconstructed = 2.0 * axis[row] * axis[column] - (if row == column { 1.0 } else { 0.0 });
+            assert!((reconstructed - transform[row][column]).abs() <= 8.0 * f64::EPSILON);
+        }
+    }
+}

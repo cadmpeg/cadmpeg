@@ -4084,12 +4084,19 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
     }
     let (x, y, z) =
         if (std::f64::consts::PI - angle).abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8 {
-            let x = ((transform[0][0] + 1.0) * 0.5).max(0.0).sqrt();
-            let y = ((transform[1][1] + 1.0) * 0.5).max(0.0).sqrt()
-                * (transform[0][1] + transform[1][0]).signum();
-            let z = ((transform[2][2] + 1.0) * 0.5).max(0.0).sqrt()
-                * (transform[0][2] + transform[2][0]).signum();
-            (x, y, z)
+            // The largest diagonal supplies a nonzero axis component at a half-turn.
+            // Recover the other signs from its row; the X component may be zero.
+            let pivot = (0..3).max_by(|&a, &b| transform[a][a].total_cmp(&transform[b][b]))?;
+            let mut axis = [0.0; 3];
+            axis[pivot] = ((transform[pivot][pivot] + 1.0) * 0.5).max(0.0).sqrt();
+            if axis[pivot] == 0.0 { return None; }
+            for other in 0..3 {
+                if other != pivot {
+                    axis[other] = (transform[pivot][other] + transform[other][pivot])
+                        / (4.0 * axis[pivot]);
+                }
+            }
+            (axis[0], axis[1], axis[2])
         } else {
             let scale = 2.0 * angle.sin();
             (

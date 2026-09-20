@@ -220,10 +220,18 @@ impl<'a> BitReader<'a> {
         if biased_exponent == 0 {
             return Ok(0.0);
         }
-        let bias = 2_f64.powi(i32::from(exponent_bits) - 1);
-        let exponent = biased_exponent as f64 - bias;
+        let bias = 1_u64 << (exponent_bits - 1);
+        let exponent = i128::from(biased_exponent) - i128::from(bias);
+        if exponent > 1024 { return Err(malformed("a Binary real is not finite")); }
+        if exponent < -1074 { return Ok(if negative { -0.0 } else { 0.0 }); }
+        // The range checks prove this conversion and keep the power finite.
+        let exponent = exponent as i32;
         let fraction = 0.5 + (fraction as f64 / 2_f64.powi(i32::from(fraction_bits) + 1));
-        let value = fraction * 2_f64.powf(exponent);
+        let value = if exponent >= -1021 {
+            (fraction * 2.0) * 2_f64.powi(exponent - 1)
+        } else {
+            (fraction * 2_f64.powi(exponent + 1074)) * f64::from_bits(1)
+        };
         if !value.is_finite() {
             return Err(malformed("a Binary real is not finite"));
         }
@@ -1224,6 +1232,23 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_audit_binary_real_keeps_representable_exponent_boundary() {
+        for negative in [0, 1] {
+            let mut writer = BitWriter::default();
+            writer.push_bits(negative, 1);
+            writer.push_bits(3072, 12);
+            writer.push_bits(0, 51);
+            let value = super::BitReader::new(&writer.bytes).read_real(12, 51).unwrap();
+            assert_eq!(value, if negative == 0 { 2.0_f64.powi(1023) } else { -2.0_f64.powi(1023) });
+        }
+        // Integer exponent subtraction also preserves low bits with a wide field.
+        let mut writer = BitWriter::default();
+        writer.push_bits(0, 1);
+        writer.push_bits((1_u64 << 62) + 1, 63);
+        assert_eq!(super::BitReader::new(&writer.bytes).read_real(63, 0).unwrap(), 1.0);
+    }
+
     use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
