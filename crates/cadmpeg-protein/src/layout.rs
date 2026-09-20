@@ -7,13 +7,13 @@
 #![allow(dead_code)] // Not every generated constant is referenced yet.
 
 /// Tag constants from the table inventory.
-pub(crate) mod token {
+mod token {
     /// `record_start` (`80 00 01 00`). Spec §3.
-    pub(crate) const RECORD_START: [u8; 4] = [0x80, 0x00, 0x01, 0x00];
+    const RECORD_START: [u8; 4] = [0x80, 0x00, 0x01, 0x00];
     /// `continuation` (`80 00 00 00`). Spec §3.
-    pub(crate) const CONTINUATION: [u8; 4] = [0x80, 0x00, 0x00, 0x00];
+    const CONTINUATION: [u8; 4] = [0x80, 0x00, 0x00, 0x00];
     /// `terminal` (`ff ff ff ff`). Spec §3.
-    pub(crate) const TERMINAL: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+    const TERMINAL: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
 }
 
 /// Byte offsets for the `instance_stream_header` record.
@@ -45,7 +45,7 @@ pub(crate) mod record_start_page {
 /// Spec §3. Record length 136 B.
 pub(crate) mod continuation_page {
     /// Record length in bytes. Spec §3.
-    pub(crate) const LEN: usize = 136;
+    const LEN: usize = 136;
     /// Offset of `marker` (`bytes[4]`). Spec §3.
     pub(crate) const MARKER: usize = 4;
     /// Stated value of `marker` (`bytes[4]`). Spec §3.
@@ -59,7 +59,7 @@ pub(crate) mod continuation_page {
 /// Spec §3. Record length 136 B.
 pub(crate) mod terminal_page {
     /// Record length in bytes. Spec §3.
-    pub(crate) const LEN: usize = 136;
+    const LEN: usize = 136;
     /// Offset of `marker` (`bytes[4]`). Spec §3.
     pub(crate) const MARKER: usize = 0;
     /// Stated value of `marker` (`bytes[4]`). Spec §3.

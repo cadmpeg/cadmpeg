@@ -19,7 +19,7 @@ pub mod property;
 use property::{DecodedProperty, PropertyContent, PropertyValue};
 
 /// Byte-offset constants generated from `docs/layouts/protein.toml`.
-pub(crate) mod layout;
+mod layout;
 use layout::{continuation_page, record_start_page, terminal_page};
 
 /// Instance-stream header length in bytes.
