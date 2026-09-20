@@ -448,6 +448,13 @@ pub(crate) fn fast_dot<const N: usize>(
 }
 
 /// Scale only after splitting the exponent at the finite power-of-two limits.
+///
+/// `2.0_f64.powi(e)` is normal only for `e` in `[-1022, 1023]`. The split
+/// states `exponent` as one factor inside that band plus a remainder, so an
+/// exponent outside the band is the case this function exists for and not an
+/// error: the remainder scales `value` first, then the band factor completes
+/// the scale. Range loss in either factor leaves a non-finite product, which
+/// `is_finite` states.
 pub(super) fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
     let outer = exponent.clamp(-1022, 1023);
     let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);

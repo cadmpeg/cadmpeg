@@ -1010,7 +1010,8 @@ fn conic_coefficients_preserve_extreme_finite_radii() {
 fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
     let expected = (720.0 + 1e-10_f64.ln()).exp() * 0.5;
     for parameter in [-720.0_f64, 720.0] {
-        let point = hyperbola_point(1e-10, 1e-10, parameter).unwrap();
+        let point = hyperbola_point(1e-10, 1e-10, parameter)
+            .expect("a hyperbola endpoint at parameter magnitude 720 stays finite");
         assert!((point[0] / expected - 1.).abs() < 1024.0 * f64::EPSILON);
         assert_eq!(point[1], point[0] * parameter.signum());
     }
