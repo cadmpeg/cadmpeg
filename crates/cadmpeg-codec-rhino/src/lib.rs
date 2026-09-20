@@ -79,9 +79,9 @@ pub enum RhinoArchiveVersion {
 macro_rules! writer_vocabulary {
     ($(#[$all_meta:meta])* $count:literal; $($variant:ident),+ $(,)?) => {
         $(#[$all_meta])*
-        pub(crate) const ALL: [Self; $count] = [$(Self::$variant),+];
+        const ALL: [Self; $count] = [$(Self::$variant),+];
         /// The generic encoder view projected from [`Self::ALL`].
-        pub(crate) const TARGETS: &'static [TargetDescriptor] = &[
+        const TARGETS: &'static [TargetDescriptor] = &[
             $(Self::$variant.descriptor()),+
         ];
     };
