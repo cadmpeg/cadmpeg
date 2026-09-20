@@ -11,7 +11,7 @@ pub(crate) enum ImplementationLevel {
 }
 
 impl ImplementationLevel {
-    pub(crate) fn known(declaration: &str) -> Option<Self> {
+    fn known(declaration: &str) -> Option<Self> {
         match declaration {
             "1" | "2" | "2;1" | "2;2" => Some(Self::LegacyEdition1),
             "3;1" | "3;2" => Some(Self::LegacyEdition2),
@@ -29,7 +29,7 @@ impl ImplementationLevel {
         )
     }
 
-    pub(crate) fn edition3_sections_forbidden_by(self) -> Option<&'static str> {
+    pub(super) fn edition3_sections_forbidden_by(self) -> Option<&'static str> {
         match self {
             Self::LegacyEdition1 => Some("2;1"),
             Self::LegacyEdition2 => Some("3;1"),
@@ -38,7 +38,7 @@ impl ImplementationLevel {
         }
     }
 
-    pub(crate) fn class3_occurrence_restriction(self) -> Option<&'static str> {
+    pub(super) fn class3_occurrence_restriction(self) -> Option<&'static str> {
         match self {
             Self::LegacyEdition1 | Self::LegacyEdition2 => {
                 Some("historical implementation levels forbid edition-3 occurrence names")

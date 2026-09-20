@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ReferenceTarget {
+enum ReferenceTarget {
     Internal {
         member: String,
         query: Option<String>,
@@ -77,7 +77,7 @@ pub(crate) fn open_root<'a>(
 }
 
 /// Resolves one archive URI against the directory of its referencing member.
-pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecError> {
+fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecError> {
     if has_uri_scheme(uri) || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
