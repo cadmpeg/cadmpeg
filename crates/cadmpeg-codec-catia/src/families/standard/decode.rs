@@ -7398,9 +7398,9 @@ fn standard_pcurve_geometry(
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => match edge_curve {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) => {
-                let origin = line_curve.origin();
-                let direction = line_curve.direction();
-                let offset = midpoint.vector_from(*origin);
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
+                let offset = midpoint.vector_from(origin);
                 direction.unit_nonzero()?.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
             }
             _ => false,

@@ -6209,8 +6209,8 @@ fn apply_rigid_transform(
     };
     Ok(match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = *line_curve.origin();
-            let direction = *line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     point(origin)?,

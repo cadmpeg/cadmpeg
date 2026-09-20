@@ -56,7 +56,7 @@ fn edge_uses_decoded_line_curve() {
     assert_eq!(result.ir().model.curves.len(), 1);
     match &result.ir().model.curves[0].geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let direction = line_curve.direction();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!(direction.x, 1.0);
         }
         other => panic!("expected line, got {other:?}"),

@@ -1088,8 +1088,8 @@ fn curve_on_parameter_range(
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = *line_curve.origin();
-            let direction = *line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
                 return crate::nurbs::note_refusal(
                     NurbsCurve::from_lanes(

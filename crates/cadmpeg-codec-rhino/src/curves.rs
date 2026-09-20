@@ -634,18 +634,17 @@ fn scale_decoded_curve(
                 .map_err(|message| GeometryError::malformed(offset, message))?;
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = line_curve.origin();
+                let origin = line_curve.origin().get();
                 let direction = line_curve.direction();
-                *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    scale_ir_point(*origin, scale).ok_or_else(|| {
+                let origin = scale_ir_point(origin, scale)
+                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                    .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",
                         )
-                    })?,
-                    *direction,
-                )
-                .map_err(|message| GeometryError::malformed(offset, message))?;
+                    })?;
+                *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = degenerate_curve.point();

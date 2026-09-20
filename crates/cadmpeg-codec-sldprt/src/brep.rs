@@ -580,8 +580,8 @@ mod tests {
             let Some(SolvedCurveGeometry::Line(line_curve)) = carrier.geometry.solved() else {
                 panic!("expected line");
             };
-            let origin = *line_curve.origin();
-            let direction = *line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
             assert_eq!(direction, Vector3::new(1.0, 0.0, 0.0));
         }

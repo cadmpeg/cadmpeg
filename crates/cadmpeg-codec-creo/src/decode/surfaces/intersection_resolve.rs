@@ -75,8 +75,8 @@ pub(in super::super) fn curve_contains_points(
 ) -> bool {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let origin = [origin.x, origin.y, origin.z];
             let Some(direction) = normalize([direction.x, direction.y, direction.z]) else {
                 return false;

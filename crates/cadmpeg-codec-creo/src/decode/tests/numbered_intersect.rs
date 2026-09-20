@@ -1869,9 +1869,9 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(extruded_section_line(&transform, [2.0, 3.0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
                 if {
-                    let origin = line_curve.origin();
-        let direction = line_curve.direction();
-                    *origin == Point3::new(2.0, 3.0, 0.0) && *direction == Vector3::new(0.0, 0.0, 1.0)
+                    let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
+                    origin == Point3::new(2.0, 3.0, 0.0) && direction == Vector3::new(0.0, 0.0, 1.0)
                 })
     );
 

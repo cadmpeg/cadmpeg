@@ -300,8 +300,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().model.curves.len(), 8);
     match &result.ir().model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
             assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
         }

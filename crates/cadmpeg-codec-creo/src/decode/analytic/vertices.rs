@@ -80,10 +80,10 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
     else {
         return None;
     };
-    let first_origin = line_curve.origin();
-    let first_direction = line_curve.direction();
-    let second_origin = line_curve_2.origin();
-    let second_direction = line_curve_2.direction();
+    let first_origin = line_curve.origin().get();
+    let first_direction = *line_curve.direction().as_raw();
+    let second_origin = line_curve_2.origin().get();
+    let second_direction = *line_curve_2.direction().as_raw();
     let first_origin = [first_origin.x, first_origin.y, first_origin.z];
     let second_origin = [second_origin.x, second_origin.y, second_origin.z];
     let first_direction = [first_direction.x, first_direction.y, first_direction.z];
@@ -136,8 +136,8 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();
     };
-    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     let Some(PlanarConicEquation {
         origin: conic_origin,
         normal,

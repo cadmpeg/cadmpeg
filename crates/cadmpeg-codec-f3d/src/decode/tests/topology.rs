@@ -1132,8 +1132,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("straight", line)).unwrap() {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             assert_eq!(origin.x, 10.0);
             assert_eq!(direction.y, 1.0);
         }

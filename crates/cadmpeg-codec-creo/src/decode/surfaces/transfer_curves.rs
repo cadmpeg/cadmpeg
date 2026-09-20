@@ -542,22 +542,22 @@ mod tests {
             ])
         );
         assert!(matches!(ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id
-                    == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
-                .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
-                    if {
-                        let origin = line_curve.origin();
-        let direction = line_curve.direction();
-                        origin.x == 0.0
-                            && origin.y == 2.0
-                            && origin.z == 0.0
-                            && direction.x == 1.0
-                            && direction.y == 0.0
-                            && direction.z == 0.0
-                    }));
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id
+            == CurveId::mint("creo:visibgeom:curve#10".to_string()).expect("identity grammar"))
+        .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
+            if {
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
+                origin.x == 0.0
+                    && origin.y == 2.0
+                    && origin.z == 0.0
+                    && direction.x == 1.0
+                    && direction.y == 0.0
+                    && direction.z == 0.0
+            }));
     }
 
     #[test]

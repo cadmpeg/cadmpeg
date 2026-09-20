@@ -441,11 +441,11 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
 pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let d = line_curve.direction();
-            let p = point(e, *origin);
+            let origin = line_curve.origin().get();
+            let d = *line_curve.direction().as_raw();
+            let p = point(e, origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
-            let dir = direction(e, *d);
+            let dir = direction(e, d);
             let vec = e.emit("VECTOR", &format!("'',{dir},{}", real(1.0)));
             e.emit("LINE", &format!("'',{p},{vec}"))
         }

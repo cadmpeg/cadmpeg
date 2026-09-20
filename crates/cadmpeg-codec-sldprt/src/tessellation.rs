@@ -1918,7 +1918,7 @@ fn cylindrical_trim(
         let curve = curves.get(edge.curve()?)?;
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let direction = line_curve.direction();
+                let direction = *line_curve.direction().as_raw();
                 if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }
@@ -2027,7 +2027,7 @@ fn conical_trim(
         let curve = curves.get(edge.curve()?)?;
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let direction = line_curve.direction();
+                let direction = *line_curve.direction().as_raw();
                 if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }

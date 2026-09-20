@@ -1332,11 +1332,11 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         else {
             panic!("expected line carriers")
         };
-        let actual_origin = line_curve.origin();
-        let actual_direction = line_curve.direction();
-        let expected_origin = line_curve_2.origin();
-        let expected_direction = line_curve_2.direction();
-        assert_eq!(*actual_origin, *expected_origin);
+        let actual_origin = line_curve.origin().get();
+        let actual_direction = *line_curve.direction().as_raw();
+        let expected_origin = line_curve_2.origin().get();
+        let expected_direction = *line_curve_2.direction().as_raw();
+        assert_eq!(actual_origin, expected_origin);
         assert!((actual_direction.x - expected_direction.x).abs() < 1e-14);
         assert!((actual_direction.y - expected_direction.y).abs() < 1e-14);
         assert!((actual_direction.z - expected_direction.z).abs() < 1e-14);

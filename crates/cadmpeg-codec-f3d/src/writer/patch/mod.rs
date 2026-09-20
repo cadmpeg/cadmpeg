@@ -432,8 +432,8 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = *line_curve.origin();
-                let direction = *line_curve.direction();
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
                 edited_curves
                     .contains(curve.id.as_str())
                     .then(|| (curve.id.as_str().to_owned(), (origin, direction)))

@@ -537,8 +537,8 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
     for carrier in &model.curves {
         match carrier.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = *line_curve.origin();
-                let direction = *line_curve.direction();
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
                 native_curve_base(records, "straight")?;
                 native_point(
                     records,

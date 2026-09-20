@@ -177,8 +177,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
-                    let origin = line_curve.origin();
-        let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+                    let direction = *line_curve.direction().as_raw();
                     origin.x == 1.0
                         && origin.y == 2.0
                         && origin.z == 3.0

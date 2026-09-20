@@ -355,11 +355,11 @@ fn transform_surface(
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                placed_point(transform, *origin)?,
-                placed_vector(transform, *direction)?,
+                placed_point(transform, origin)?,
+                placed_vector(transform, direction)?,
             )
             .map_err(CodecError::malformed)?;
         }

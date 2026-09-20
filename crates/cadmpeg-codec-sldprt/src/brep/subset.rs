@@ -64,8 +64,8 @@ fn nurbs_point(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve, parameter: f64) 
 fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             Some(Point3::new(
                 origin.x + parameter * direction.x * LEN_TO_MM,
                 origin.y + parameter * direction.y * LEN_TO_MM,

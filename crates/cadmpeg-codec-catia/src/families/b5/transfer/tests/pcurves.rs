@@ -536,8 +536,8 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     assert!(
         matches!(forward.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
-            let direction = line_curve.direction();
-            *direction == Vector3::new(0.0, 0.0, 1.0)
+            let direction = *line_curve.direction().as_raw();
+            direction == Vector3::new(0.0, 0.0, 1.0)
         })
     );
 
@@ -547,8 +547,8 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     assert!(
         matches!(reversed.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
-            let direction = line_curve.direction();
-            *direction == Vector3::new(0.0, 0.0, -1.0)
+            let direction = *line_curve.direction().as_raw();
+            direction == Vector3::new(0.0, 0.0, -1.0)
         })
     );
     let tolerant = oriented_line_plan(&line, [1.001, 2.0, 5.0], [1.0, 2.0, 9.0])
@@ -572,8 +572,8 @@ fn analytic_line_range_uses_oriented_signed_distance() {
     assert!(
         matches!(tiny.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
-            let direction = line_curve.direction();
-            *direction == Vector3::new(1.0, 0.0, 0.0)
+            let direction = *line_curve.direction().as_raw();
+            direction == Vector3::new(1.0, 0.0, 0.0)
         })
     );
 }

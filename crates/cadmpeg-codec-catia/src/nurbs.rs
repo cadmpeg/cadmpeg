@@ -256,13 +256,10 @@ pub(crate) fn reverse_curve_geometry(
     }
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            if !origin.is_finite() || !direction.is_finite() {
-                return None;
-            }
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let length = range[1] - range[0];
-            let origin = (*origin).translated(*direction, range[1]);
+            let origin = origin.translated(direction, range[1]);
             let direction = direction.scale(-1.0);
             if !origin.is_finite() || !direction.is_finite() {
                 return None;

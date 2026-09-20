@@ -45,13 +45,10 @@ pub(in crate::decode) fn exact_line_edge_parameter_range(
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
-    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     let direction = [direction.x, direction.y, direction.z];
     let denominator = dot(direction, direction);
-    if !denominator.is_finite() || denominator <= 0.0 {
-        return None;
-    }
     let origin = [origin.x, origin.y, origin.z];
     let parameters = points.map(|point| {
         dot(

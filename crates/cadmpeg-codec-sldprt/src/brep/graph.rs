@@ -2681,21 +2681,21 @@ fn derive_planar_pcurves(
         };
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let curve_origin = line_curve.origin();
-                let direction = line_curve.direction();
-                if plane_distance(*curve_origin).abs() > EPS_PLANAR_DISTANCE
+                let curve_origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
+                if plane_distance(curve_origin).abs() > EPS_PLANAR_DISTANCE
                     || (direction.x * normal.x + direction.y * normal.y + direction.z * normal.z)
                         .abs()
                         > EPS_GEOMETRY_RESIDUAL
                 {
                     continue;
                 }
-                let Some(direction) = project_direction(*direction) else {
+                let Some(direction) = project_direction(direction) else {
                     continue;
                 };
                 PcurveGeometry::Line(
                     match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                        uv(*curve_origin),
+                        uv(curve_origin),
                         direction,
                     ) {
                         Ok(payload) => payload,
@@ -2913,12 +2913,12 @@ fn derive_cylindrical_pcurves(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
-                    let direction = line_curve.direction();
+                    let direction = *line_curve.direction().as_raw();
                     (direction.x * axis.x + direction.y * axis.y + direction.z * axis.z).abs()
                         > 1.0 - EPS_AXIS_ALIGNMENT
                 } =>
             {
-                let direction = line_curve.direction();
+                let direction = *line_curve.direction().as_raw();
                 let Some(start) = position(&edge.start) else {
                     continue;
                 };
@@ -3850,21 +3850,11 @@ fn derive_nurbs_isoparametric_pcurves(
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = line_curve.origin();
-                let direction = line_curve.direction();
+                let origin = line_curve.origin().get();
+                let direction = *line_curve.direction().as_raw();
                 let resolution = resolve_axis_candidates([
-                    ruled_surface_line_pcurve(
-                        surface,
-                        SurfaceParameterAxis::U,
-                        *origin,
-                        *direction,
-                    ),
-                    ruled_surface_line_pcurve(
-                        surface,
-                        SurfaceParameterAxis::V,
-                        *origin,
-                        *direction,
-                    ),
+                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::U, origin, direction),
+                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::V, origin, direction),
                 ]);
                 match resolution {
                     InverseResolution::Unique(geometry) => (geometry, None, None, false),

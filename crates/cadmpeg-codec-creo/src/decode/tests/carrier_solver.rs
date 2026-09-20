@@ -131,8 +131,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(tangent, cylinder), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cylinder_tangent_line"))
                 if {
-                    let origin = line_curve.origin();
-        let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
                     origin.x == 2.0 && direction.z == 1.0
                 })
     );
@@ -144,8 +144,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             [[0.0, 2.0, -1.0], [0.0, 2.0, 4.0]],
         ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cylinder_secant_generator"))
                 if {
-                    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
                     (origin.y - 2.0).abs() < EPS_CARRIER_INTERSECTION && direction.z == 1.0
                 }));
     assert!(select_unique_curve_candidate(
@@ -167,8 +167,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             parallel_cylinder([5.0, 0.0, 0.0], 3.0),
         ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
                 if {
-                    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
                     origin.x == 2.0 && direction.z == 1.0
                 }));
     assert_eq!(
@@ -184,7 +184,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         parallel_cylinder([3.0, 0.0, 0.0], 2.0),
     ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_tangent_line"))
             if {
-                let origin = line_curve.origin();
+                let origin = line_curve.origin().get();
                 origin.x == 5.0
             }));
     assert!(carrier_intersection_curve(
@@ -206,8 +206,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
             [[2.0, height, -2.0], [2.0, height, 4.0]],
         ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "parallel_cylinder_secant_generator"))
                 if {
-                    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
                     (origin.x - 2.0).abs() < EPS_CARRIER_INTERSECTION
                         && (origin.y - height).abs() < EPS_CARRIER_INTERSECTION
                         && direction.z == 1.0
@@ -433,8 +433,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_tangent_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cone_tangent_line"))
                 if {
-                    let origin = line_curve.origin();
-        let direction = line_curve.direction();
+                    let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
                     origin.x.abs() < EPS_CARRIER_INTERSECTION
                         && origin.y.abs() < EPS_CARRIER_INTERSECTION
                         && (origin.z + 2.0).abs() < EPS_CARRIER_INTERSECTION
@@ -519,7 +519,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         [[0.0, 1.0, -1.0], [0.0, 2.0, 0.0]],
     ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)), "plane_cone_secant_generator"))
             if {
-                let origin = line_curve.origin();
+                let origin = line_curve.origin().get();
                 (origin.z + 2.0).abs() < EPS_CARRIER_INTERSECTION
             }));
     let elliptical_generators =

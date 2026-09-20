@@ -452,8 +452,8 @@ impl<'a> WritableModel<'a> {
             }
             let (geometry, expected_start, expected_end) = match &curve.geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
-                    let origin = line.origin();
-                    let direction = line.direction();
+                    let origin = line.origin().get();
+                    let direction = *line.direction().as_raw();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
                         return Err(CodecError::malformed(format_args!(
                             "edge {} has an invalid line parameterization",

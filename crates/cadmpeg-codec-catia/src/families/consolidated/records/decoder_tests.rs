@@ -1067,10 +1067,10 @@ fn decode_transfers_exact_consolidated_line_profiles() {
     assert!(decoded.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
-                    let origin = line_curve.origin();
-        let direction = line_curve.direction();
-                    *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
-                        && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
+                    let origin = line_curve.origin().get();
+                    let direction = *line_curve.direction().as_raw();
+                    origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                        && direction == cadmpeg_ir::math::Vector3::new(0.0, 0.6, 0.8)
                 })
     ));
     assert!(!decoded

@@ -76,8 +76,6 @@ fn normalized_token<T: Clone>(
     }
 }
 
-const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
-
 #[derive(Clone, Copy)]
 pub(in crate::writer) struct PatchNatives<'a> {
     pub(in crate::writer) baseline: Option<&'a F3dNative>,
@@ -3065,14 +3063,10 @@ pub(super) fn validate_curve_edits(
         }
         edited.insert(id.to_owned());
         let valid = match after {
-            Some(SolvedCurveGeometry::Line(line_curve))
+            Some(SolvedCurveGeometry::Line(_))
                 if { matches!(before, Some(SolvedCurveGeometry::Line(_))) } =>
             {
-                let origin = line_curve.origin();
-                let direction = line_curve.direction();
-                origin.is_finite()
-                    && direction.is_finite()
-                    && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
+                true
             }
             Some(SolvedCurveGeometry::Circle(circle_curve))
                 if { matches!(before, Some(SolvedCurveGeometry::Circle(_))) } =>

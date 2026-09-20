@@ -761,24 +761,62 @@ impl LineCurve {
         self.direction = self.direction.reversed();
     }
 
+    /// Build a line from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// A frame hands back an admitted direction, which builds a line along the
+    /// axis without a second admission:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let plane = PlaneSurface::try_new(
+    ///     Point3::new(1.0, 2.0, 3.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    /// )
+    /// .expect("orthonormal frame and finite origin");
+    /// let axis_line = LineCurve::new(plane.origin(), plane.frame().unit_axis());
+    /// assert_eq!(axis_line.direction().as_raw(), plane.normal());
+    /// ```
+    ///
+    /// A raw direction has no way in:
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::geometry::analytic::LineCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let line = LineCurve::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    /// )
+    /// .expect("finite origin and unit direction");
+    /// let tilted = LineCurve::new(line.origin(), Vector3::new(1.0, 0.0, 0.0));
+    /// ```
+    #[must_use]
+    pub const fn new(origin: FinitePoint3, direction: UnitVector3) -> Self {
+        Self { origin, direction }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, direction: Vector3) -> Result<Self, &'static str> {
         let origin = FinitePoint3::new(origin).ok_or("LineCurve.origin must be finite")?;
         let direction =
             UnitVector3::new(direction).ok_or("LineCurve.direction must have unit length")?;
-        Ok(Self { origin, direction })
+        Ok(Self::new(origin, direction))
     }
 
     /// Return the origin.
     #[must_use]
-    pub const fn origin(&self) -> &Point3 {
-        self.origin.as_raw()
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
     }
 
     /// Return the direction.
     #[must_use]
-    pub const fn direction(&self) -> &Vector3 {
-        self.direction.as_raw()
+    pub const fn direction(&self) -> UnitVector3 {
+        self.direction
     }
 }
 

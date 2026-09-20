@@ -8919,8 +8919,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
                 let (origin, direction) = match curve.geometry {
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                        let origin = *line_curve.origin();
-                        let direction = *line_curve.direction();
+                        let origin = line_curve.origin().get();
+                        let direction = *line_curve.direction().as_raw();
                         (origin, direction)
                     }
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {

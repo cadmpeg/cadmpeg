@@ -1047,9 +1047,9 @@ pub(super) fn curve_geometry_coplanar(
     };
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            point_valid(*origin) && direction_valid(*direction)
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            point_valid(origin) && direction_valid(direction)
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();

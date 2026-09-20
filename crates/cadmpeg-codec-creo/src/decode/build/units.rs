@@ -11,7 +11,9 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, ParameterValue, WrapMode};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureOperation, FinitePoint3, ParameterValue, WrapMode,
+};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -1462,13 +1464,15 @@ fn scale_surface_geometry(
 fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Result<(), CodecError> {
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
+            let origin = line_curve.origin().get();
             let direction = line_curve.direction();
-            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
-                *direction,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = FinitePoint3::new(Point3::new(
+                origin.x * scale,
+                origin.y * scale,
+                origin.z * scale,
+            ))
+            .ok_or_else(|| CodecError::malformed("scaled LineCurve.origin must be finite"))?;
+            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
