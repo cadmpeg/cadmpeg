@@ -4211,8 +4211,8 @@ mod tests {
                     let center = torus_surface.center();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
-                    (torus_surface.major_radius() == 7.0)
-                        && (torus_surface.minor_radius() == 2.0)
+                    (torus_surface.major_radius().get() == 7.0)
+                        && (torus_surface.minor_radius().get() == 2.0)
                         && (*center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))

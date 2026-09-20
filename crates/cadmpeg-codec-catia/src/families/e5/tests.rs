@@ -297,8 +297,8 @@ fn e5_surface_parser_reads_framed_torus() {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(
@@ -316,8 +316,8 @@ fn e5_surface_parser_reads_framed_torus() {
     assert!(
         matches!(crate::families::e5::records::e5_surfaces(&large, &mut crate::nurbs::LaneRefusals::new())[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
         if {
-            (torus_surface.major_radius() == 2_000_000.0)
-                && (torus_surface.minor_radius() == 1_500_000.0)
+            (torus_surface.major_radius().get() == 2_000_000.0)
+                && (torus_surface.minor_radius().get() == 1_500_000.0)
         })
     );
 

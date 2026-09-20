@@ -3185,13 +3185,13 @@ pub(super) fn analytic_surface_offset(
             let support_center = torus_surface.center();
             let support_axis = torus_surface.axis();
             let support_ref = torus_surface.ref_direction();
-            let support_major = torus_surface.major_radius();
-            let support_minor = torus_surface.minor_radius();
+            let support_major = torus_surface.major_radius().get();
+            let support_minor = torus_surface.minor_radius().get();
             let offset_center = torus_surface_2.center();
             let offset_axis = torus_surface_2.axis();
             let offset_ref = torus_surface_2.ref_direction();
-            let offset_major = torus_surface_2.major_radius();
-            let offset_minor = torus_surface_2.minor_radius();
+            let offset_major = torus_surface_2.major_radius().get();
+            let offset_minor = torus_surface_2.minor_radius().get();
             support_center == offset_center
                 && support_axis == offset_axis
                 && support_ref == offset_ref
@@ -3201,8 +3201,8 @@ pub(super) fn analytic_surface_offset(
                 && offset_major > offset_minor.abs()
         } =>
         {
-            let support_minor = torus_surface.minor_radius();
-            let offset_minor = torus_surface_2.minor_radius();
+            let support_minor = torus_surface.minor_radius().get();
+            let offset_minor = torus_surface_2.minor_radius().get();
             Some((offset_minor - support_minor) * support_minor.signum())
         }
         _ => None,

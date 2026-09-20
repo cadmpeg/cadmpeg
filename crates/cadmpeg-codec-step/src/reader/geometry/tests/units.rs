@@ -322,8 +322,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
-                    let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
                     major_radius == 8.0 && minor_radius == 2.0
                 })
     ));

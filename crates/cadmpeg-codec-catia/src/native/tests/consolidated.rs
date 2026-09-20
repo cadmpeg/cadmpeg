@@ -695,8 +695,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                         let center = torus_surface.center();
                         let axis = torus_surface.axis();
                         let ref_direction = torus_surface.ref_direction();
-                        (torus_surface.major_radius() == 2.0)
-                            && (torus_surface.minor_radius() == 3.0)
+                        (torus_surface.major_radius().get() == 2.0)
+                            && (torus_surface.minor_radius().get() == 3.0)
                             && (*center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
                                 && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
                                 && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))

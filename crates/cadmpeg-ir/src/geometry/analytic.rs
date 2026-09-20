@@ -16,9 +16,7 @@
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
-use crate::scalar::{
-    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
-};
+use crate::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use crate::units::{OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -553,8 +551,8 @@ impl TryFrom<SphereSurfaceWire> for SphereSurface {
 #[serde(try_from = "TorusSurfaceWire", into = "TorusSurfaceWire")]
 pub struct TorusSurface {
     center: FinitePoint3,
-    major_radius: PositiveReal,
-    minor_radius: FiniteReal,
+    major_radius: PositiveLength,
+    minor_radius: NonZeroLength,
     frame: OrthonormalFrame3,
 }
 
@@ -575,6 +573,23 @@ struct TorusSurfaceWire {
 }
 
 impl TorusSurface {
+    /// Build a torus from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    #[must_use]
+    pub const fn new(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        major_radius: PositiveLength,
+        minor_radius: NonZeroLength,
+    ) -> Self {
+        Self {
+            center,
+            major_radius,
+            minor_radius,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,
@@ -585,26 +600,24 @@ impl TorusSurface {
     ) -> Result<Self, &'static str> {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
-        if minor_radius == 0.0 {
-            return Err("TorusSurface.minor_radius must be nonzero");
-        }
         let center = FinitePoint3::new(center).ok_or("TorusSurface.center must be finite")?;
-        let major_radius = PositiveReal::new(major_radius)
+        let major_radius = PositiveLength::new(major_radius)
             .ok_or("TorusSurface.major_radius must be positive and finite")?;
-        let minor_radius =
-            FiniteReal::new(minor_radius).ok_or("TorusSurface.minor_radius must be finite")?;
-        Ok(Self {
-            center,
-            major_radius,
-            minor_radius,
-            frame,
-        })
+        let minor_radius = NonZeroLength::new(minor_radius)
+            .ok_or("TorusSurface.minor_radius must be finite and nonzero")?;
+        Ok(Self::new(center, frame, major_radius, minor_radius))
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -621,25 +634,26 @@ impl TorusSurface {
 
     /// Return the major radius.
     #[must_use]
-    pub const fn major_radius(&self) -> f64 {
-        self.major_radius.get()
+    pub const fn major_radius(&self) -> PositiveLength {
+        self.major_radius
     }
 
-    /// Return the minor radius.
+    /// Return the minor radius. A torus tube radius is signed and nonzero, so
+    /// the type admits both signs.
     #[must_use]
-    pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius.get()
+    pub const fn minor_radius(&self) -> NonZeroLength {
+        self.minor_radius
     }
 }
 
 impl From<TorusSurface> for TorusSurfaceWire {
     fn from(value: TorusSurface) -> Self {
         Self {
-            center: *value.center(),
+            center: value.center().get(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
-            major_radius: value.major_radius(),
-            minor_radius: value.minor_radius(),
+            major_radius: value.major_radius().get(),
+            minor_radius: value.minor_radius().get(),
         }
     }
 }

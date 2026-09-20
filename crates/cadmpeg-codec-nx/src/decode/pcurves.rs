@@ -2412,8 +2412,8 @@ fn boundary_curve_speed_bound_with_index(
         Some(SolvedSurfaceGeometry::Torus(torus_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let ring_radius = major_radius + minor_radius * origin.v.cos();
             let speed = ring_radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
@@ -2421,7 +2421,7 @@ fn boundary_curve_speed_bound_with_index(
         Some(SolvedSurfaceGeometry::Torus(torus_surface))
             if { direction.u == 0.0 && direction.v != 0.0 } =>
         {
-            let minor_radius = torus_surface.minor_radius();
+            let minor_radius = torus_surface.minor_radius().get();
             let speed = minor_radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }

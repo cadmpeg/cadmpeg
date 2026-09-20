@@ -120,13 +120,13 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus))
-            if torus.major_radius() > 0.0 && torus.minor_radius() > 0.0 =>
+            if torus.major_radius().get() > 0.0 && torus.minor_radius().get() > 0.0 =>
         {
             let center = torus.center();
             let axis = torus.axis();
             let ref_direction = torus.ref_direction();
-            let major_radius = torus.major_radius();
-            let minor_radius = torus.minor_radius();
+            let major_radius = torus.major_radius().get();
+            let minor_radius = torus.minor_radius().get();
             (
                 *center,
                 *axis,
@@ -251,20 +251,13 @@ pub(in crate::decode) fn meridian_circle_pcurve(
             (*center, *axis, *ref_direction, None, radius)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if {
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
-                major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && major_radius > 0.0
-                    && minor_radius > 0.0
-            } =>
+            if torus_surface.minor_radius().get() > 0.0 =>
         {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             (
                 *center,
                 *axis,

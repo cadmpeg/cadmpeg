@@ -1078,8 +1078,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     match geo {
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(major_radius, 10.0);
             assert_eq!(minor_radius, -20.0);
             assert_eq!(

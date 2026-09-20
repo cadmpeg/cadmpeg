@@ -88,8 +88,8 @@ fn bind_consolidated_revolution_faces_and_seams(
         };
         let center = torus_surface.center();
         let axis = torus_surface.axis();
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         let offset = point.vector_from(*center);
         let axial = offset.dot(*axis);
         let radial = Vector3::new(
@@ -117,8 +117,8 @@ fn bind_consolidated_revolution_faces_and_seams(
         };
         let center = torus_surface.center();
         let axis = torus_surface.axis();
-        let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+        let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
         if !expected_sweep.is_finite()
             || expected_sweep <= 0.0
             || expected_sweep > std::f64::consts::PI
@@ -685,8 +685,8 @@ fn refine_consolidated_analytic_surfaces(
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
                 exactly_one(tori.iter().filter(|torus| {
                     same_point(*center, torus.center)
                         && same_axis(*axis, torus.axis.get())
@@ -7523,7 +7523,7 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
+            let major_radius = torus_surface.major_radius().get();
             let offset = point.vector_from(*center);
             let tangent = (*axis).cross(*ref_direction);
             let u = offset.dot(tangent).atan2(offset.dot(*ref_direction));
@@ -7597,8 +7597,8 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let axial = point.vector_from(*center).dot(*axis);
             let radial = (point.vector_from(*center) - axis.scale(axial)).norm();
             ((radial - major_radius).hypot(axial) - minor_radius.abs()).abs()
@@ -9519,8 +9519,8 @@ fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let torus_center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             let offset = center.vector_from(*torus_center);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);

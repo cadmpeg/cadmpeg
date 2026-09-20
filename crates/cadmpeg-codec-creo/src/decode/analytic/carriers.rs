@@ -508,8 +508,8 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             Some(CarrierEquation::Torus(TorusEquation {
                 center: [center.x, center.y, center.z],
                 axis: [axis.x, axis.y, axis.z],

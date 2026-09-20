@@ -3299,17 +3299,9 @@ pub(super) fn validate_surface_edits(
             Some(SolvedSurfaceGeometry::Torus(torus_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Torus(_))) } =>
             {
-                let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
-                center.is_finite()
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && major_radius != 0.0
-                    && minor_radius != 0.0
+                orthonormal_pair(*axis, *ref_direction)
             }
             Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Cylinder(_))) } =>

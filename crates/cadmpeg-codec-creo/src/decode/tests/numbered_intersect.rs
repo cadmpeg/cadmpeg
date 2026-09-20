@@ -1932,8 +1932,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &offset_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
-                    let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
                     major_radius == 5.0 && minor_radius == 2.0
                 })
     );
@@ -1945,8 +1945,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &offset_circle, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
-                    let major_radius = torus_surface.major_radius();
-        let minor_radius = torus_surface.minor_radius();
+                    let major_radius = torus_surface.major_radius().get();
+        let minor_radius = torus_surface.minor_radius().get();
                     major_radius == 5.0 && minor_radius == 2.0
                 })
     );

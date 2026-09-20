@@ -656,13 +656,13 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
-                    let major_radius = torus_surface.major_radius();
-                    let minor_radius = torus_surface.minor_radius();
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
                     !(major_radius > minor_radius && minor_radius > 0.0)
                 } =>
             {
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
                     surface.id.as_str(), major_radius, minor_radius
@@ -3208,8 +3208,8 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             if !(major_radius > minor_radius && minor_radius > 0.0) {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact torus carriers require major > minor > 0".into(),

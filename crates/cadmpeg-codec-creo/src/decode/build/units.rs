@@ -1410,8 +1410,8 @@ fn scale_surface_geometry(
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius();
-            let minor_radius = torus_surface.minor_radius();
+            let major_radius = torus_surface.major_radius().get();
+            let minor_radius = torus_surface.minor_radius().get();
             *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,

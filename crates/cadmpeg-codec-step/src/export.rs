@@ -2669,8 +2669,8 @@ impl<'a> Builder<'a> {
                 let center = torus_surface.center();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
-                let major_radius = torus_surface.major_radius();
-                let minor_radius = torus_surface.minor_radius();
+                let major_radius = torus_surface.major_radius().get();
+                let minor_radius = torus_surface.minor_radius().get();
                 let placement =
                     geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
                 Some(self.emitter.emit(
@@ -3741,10 +3741,9 @@ impl<'a> Builder<'a> {
                     radius < 0.0
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                    let major_radius = torus_surface.major_radius();
-                    let minor_radius = torus_surface.minor_radius();
-                    major_radius < 0.0
-                        || minor_radius < 0.0
+                    let major_radius = torus_surface.major_radius().get();
+                    let minor_radius = torus_surface.minor_radius().get();
+                    minor_radius < 0.0
                         || (minor_radius.abs() > major_radius.abs()
                             && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
                                 self.ir.model.procedural_surface_owner(&procedural.id)
