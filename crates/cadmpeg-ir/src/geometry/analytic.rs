@@ -1275,8 +1275,8 @@ impl TryFrom<ParabolaCurveWire> for ParabolaCurve {
 #[serde(try_from = "HyperbolaCurveWire", into = "HyperbolaCurveWire")]
 pub struct HyperbolaCurve {
     center: FinitePoint3,
-    major_radius: PositiveReal,
-    minor_radius: PositiveReal,
+    major_radius: PositiveLength,
+    minor_radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
 
@@ -1304,6 +1304,48 @@ impl HyperbolaCurve {
         self
     }
 
+    /// Build a hyperbola from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again. A hyperbola carries no radius
+    /// ordering, so two positive radii state everything its fields require.
+    ///
+    /// A hyperbola rebuilds from its own parts, in either order:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::HyperbolaCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let hyperbola = HyperbolaCurve::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     2.0,
+    ///     5.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and positive radii");
+    /// let moved = HyperbolaCurve::new(
+    ///     hyperbola.center(),
+    ///     hyperbola.frame(),
+    ///     hyperbola.major_radius(),
+    ///     hyperbola.minor_radius(),
+    /// );
+    /// assert_eq!(moved, hyperbola);
+    /// assert_eq!(moved.major_radius().get(), 2.0);
+    /// ```
+    #[must_use]
+    pub const fn new(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        major_radius: PositiveLength,
+        minor_radius: PositiveLength,
+    ) -> Self {
+        Self {
+            center,
+            major_radius,
+            minor_radius,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,
@@ -1315,22 +1357,23 @@ impl HyperbolaCurve {
         let frame = OrthonormalFrame3::new(axis, major_direction)
             .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")?;
         let center = FinitePoint3::new(center).ok_or("HyperbolaCurve.center must be finite")?;
-        let major_radius = PositiveReal::new(major_radius)
+        let major_radius = PositiveLength::new(major_radius)
             .ok_or("HyperbolaCurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveReal::new(minor_radius)
+        let minor_radius = PositiveLength::new(minor_radius)
             .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
-        Ok(Self {
-            center,
-            major_radius,
-            minor_radius,
-            frame,
-        })
+        Ok(Self::new(center, frame, major_radius, minor_radius))
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -1347,25 +1390,25 @@ impl HyperbolaCurve {
 
     /// Return the major radius.
     #[must_use]
-    pub const fn major_radius(&self) -> f64 {
-        self.major_radius.get()
+    pub const fn major_radius(&self) -> PositiveLength {
+        self.major_radius
     }
 
     /// Return the minor radius.
     #[must_use]
-    pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius.get()
+    pub const fn minor_radius(&self) -> PositiveLength {
+        self.minor_radius
     }
 }
 
 impl From<HyperbolaCurve> for HyperbolaCurveWire {
     fn from(value: HyperbolaCurve) -> Self {
         Self {
-            center: *value.center(),
+            center: value.center().get(),
             axis: *value.axis(),
             major_direction: *value.major_direction(),
-            major_radius: value.major_radius(),
-            minor_radius: value.minor_radius(),
+            major_radius: value.major_radius().get(),
+            minor_radius: value.minor_radius().get(),
         }
     }
 }
@@ -1400,16 +1443,47 @@ struct DegenerateCurveWire {
 }
 
 impl DegenerateCurve {
+    /// Build a degenerate curve from a checked point. The argument type states
+    /// the whole invariant, so nothing is checked again.
+    ///
+    /// A line's admitted origin degenerates without readmission:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::{DegenerateCurve, LineCurve};
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let line = LineCurve::try_new(
+    ///     Point3::new(1.0, 2.0, 3.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    /// )
+    /// .expect("finite origin and unit direction");
+    /// let degenerate = DegenerateCurve::new(line.origin());
+    /// assert_eq!(degenerate.point(), line.origin());
+    /// ```
+    ///
+    /// A raw point has no way in:
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::geometry::analytic::DegenerateCurve;
+    /// use cadmpeg_ir::math::Point3;
+    ///
+    /// let degenerate = DegenerateCurve::new(Point3::new(1.0, 2.0, 3.0));
+    /// ```
+    #[must_use]
+    pub const fn new(point: FinitePoint3) -> Self {
+        Self { point }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(point: Point3) -> Result<Self, &'static str> {
         let point = FinitePoint3::new(point).ok_or("DegenerateCurve.point must be finite")?;
-        Ok(Self { point })
+        Ok(Self::new(point))
     }
 
     /// Return the point.
     #[must_use]
-    pub const fn point(&self) -> &Point3 {
-        self.point.as_raw()
+    pub const fn point(&self) -> FinitePoint3 {
+        self.point
     }
 }
 

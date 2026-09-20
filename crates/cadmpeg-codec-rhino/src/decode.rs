@@ -5412,7 +5412,7 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let point = *degenerate_curve.point();
+            let point = degenerate_curve.point().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(placed_point(
                     transform, point,

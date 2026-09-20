@@ -483,8 +483,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_hyperbola_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)), "plane_cone_hyperbola"))
                 if {
-                    let major_radius = hyperbola_curve.major_radius();
-        let minor_radius = hyperbola_curve.minor_radius();
+                    let major_radius = hyperbola_curve.major_radius().get();
+        let minor_radius = hyperbola_curve.minor_radius().get();
                     major_radius > 0.0 && minor_radius > 0.0
                 })
     );

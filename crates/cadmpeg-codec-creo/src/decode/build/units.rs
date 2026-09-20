@@ -1516,11 +1516,11 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
@@ -1531,7 +1531,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let point = degenerate_curve.point();
+            let point = degenerate_curve.point().get();
             *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
                 Point3::new(point.x * scale, point.y * scale, point.z * scale),
             )

@@ -1070,14 +1070,14 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(vertex) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction)
+            point_valid(center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let point = degenerate_curve.point();
-            point_valid(*point)
+            let point = degenerate_curve.point().get();
+            point_valid(point)
         }
         SolvedCurveGeometry::Nurbs(curve) => {
             curve.control_points().iter().copied().all(point_valid)

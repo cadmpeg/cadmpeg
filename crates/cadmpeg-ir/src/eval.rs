@@ -2666,8 +2666,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             Some(vector_sum(&[
                 (scaled_sinh_cosh(major_radius, t)?.0, *major_direction),
                 (
@@ -2741,8 +2741,8 @@ fn curve_second_derivative_inner(
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             Some(vector_sum(&[
                 (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
                 (
@@ -3944,14 +3944,11 @@ fn direct_curve_parameter_near_point(
             crate::math::multiply_divide(transverse, 0.5, focal_distance)?
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let minor_radius = hyperbola_curve.minor_radius();
-            if minor_radius == 0.0 {
-                return None;
-            }
-            let (_, transverse, _) = components(*center, *axis, *major_direction);
+            let minor_radius = hyperbola_curve.minor_radius().get();
+            let (_, transverse, _) = components(center, *axis, *major_direction);
             (transverse / minor_radius).asinh()
         }
         SolvedCurveGeometry::Nurbs(curve) => {
@@ -3970,7 +3967,7 @@ fn direct_curve_parameter_near_point(
             direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let stored = degenerate_curve.point();
+            let stored = degenerate_curve.point().get();
             let error = (stored.x - point.x)
                 .hypot(stored.y - point.y)
                 .hypot(stored.z - point.z);
@@ -4109,13 +4106,13 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             ))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             Some(offset(
-                *center,
+                center,
                 &[
                     (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
                     (
@@ -4125,10 +4122,7 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
                 ],
             ))
         }
-        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let point = degenerate_curve.point();
-            Some(*point)
-        }
+        SolvedCurveGeometry::Degenerate(degenerate_curve) => Some(degenerate_curve.point().get()),
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?;
             nurbs_curve_point(

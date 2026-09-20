@@ -3278,18 +3278,18 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             // The hyperbola parameterization satisfies p(-u) = p(u) with its
             // transverse axis reversed. Emit that equivalent frame with the
             // reflected interval so the Type 104 endpoints follow the
             // reversed coedge without introducing an approximation.
             let reversed_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                    *center,
+                    center,
                     axis.scale(-1.0),
                     *major_direction,
                     major_radius,
@@ -5914,19 +5914,14 @@ fn curve_entity(
             })
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
-            if range[0] == range[1]
-                || !major_radius.is_finite()
-                || !minor_radius.is_finite()
-                || major_radius <= 0.0
-                || minor_radius <= 0.0
-            {
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
+            if range[0] == range[1] {
                 return Err(CodecError::Malformed(
-                    "IGES hyperbola requires positive radii and a finite span".into(),
+                    "IGES hyperbola requires a finite non-zero parameter span".into(),
                 ));
             }
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "hyperbola basis")?;
@@ -5954,7 +5949,7 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(*center, major, y_axis, axis)?),
+                transform: Some(placement(center, major, y_axis, axis)?),
             })
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
@@ -6253,11 +6248,11 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = *hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = *hyperbola_curve.axis();
             let major_direction = *hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                     point(center)?,
@@ -6270,7 +6265,7 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let value = *degenerate_curve.point();
+            let value = degenerate_curve.point().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point(value)?)
                     .map_err(cadmpeg_core::CodecError::malformed)?,

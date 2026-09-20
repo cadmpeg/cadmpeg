@@ -473,11 +473,11 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
             (
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],

@@ -616,7 +616,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 }
             }
             Some(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = *degenerate_curve.point();
+                let point = degenerate_curve.point().get();
                 native_curve_base(records, "degenerate_curve")?;
                 native_point(
                     records,

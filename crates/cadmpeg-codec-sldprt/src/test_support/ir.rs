@@ -56,21 +56,18 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-                let center = hyperbola_curve.center();
-                let axis = hyperbola_curve.axis();
-                let major_direction = hyperbola_curve.major_direction();
+                let frame = hyperbola_curve.frame();
                 let major_radius = hyperbola_curve.major_radius();
                 let minor_radius = hyperbola_curve.minor_radius();
-                let mut center = *center;
+                let mut center = hyperbola_curve.center().get();
                 center.x += dx;
-                *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+                let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
+                *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
                     center,
-                    *axis,
-                    *major_direction,
+                    frame,
                     major_radius,
                     minor_radius,
-                )
-                .unwrap();
+                );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
                 let frame = parabola_curve.frame();
@@ -85,11 +82,10 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = degenerate_curve.point();
-                let mut point = *point;
+                let mut point = degenerate_curve.point().get();
                 point.x += dx;
-                *degenerate_curve =
-                    cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point).unwrap();
+                let point = cadmpeg_ir::features::FinitePoint3::new(point).unwrap();
+                *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 nurbs
