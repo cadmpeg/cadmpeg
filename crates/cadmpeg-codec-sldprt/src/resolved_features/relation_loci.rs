@@ -1497,7 +1497,7 @@ fn unique_repaired_profile_distance_loci_pair(
     })
 }
 
-pub(super) fn unique_profile_axis_distance_locus(
+fn unique_profile_axis_distance_locus(
     sketch: &SketchId,
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -1532,7 +1532,7 @@ fn unique_repaired_profile_axis_distance_pair(
     })
 }
 
-pub(super) fn unique_profile_axis_distance_pair(
+fn unique_profile_axis_distance_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -1547,7 +1547,7 @@ pub(super) fn unique_profile_axis_distance_pair(
     })
 }
 
-pub(super) fn unique_profile_distance_loci_pair(
+fn unique_profile_distance_loci_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -1658,7 +1658,7 @@ fn unique_repaired_entity_pair(
     sole_sorted(candidates)
 }
 
-pub(super) fn unique_profile_line_distance_entity(
+fn unique_profile_line_distance_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -1708,7 +1708,7 @@ fn unique_marker_line_distance_entity(
     )
 }
 
-pub(super) fn unique_profile_line_distance_pair(
+fn unique_profile_line_distance_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -1722,7 +1722,7 @@ pub(super) fn unique_profile_line_distance_pair(
     })
 }
 
-pub(super) fn unique_repaired_profile_line_distance_pair(
+fn unique_repaired_profile_line_distance_pair(
     sketch: &SketchId,
     first: &SketchEntityId,
     second: &SketchEntityId,
@@ -1758,7 +1758,7 @@ pub(super) fn line_line_distance(first: &SketchEntity, second: &SketchEntity) ->
     )
 }
 
-pub(super) fn unique_profile_line_angle_entity(
+fn unique_profile_line_angle_entity(
     sketch: &SketchId,
     known: &SketchEntityId,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -2572,7 +2572,7 @@ fn collect_marker_identity_ids(
     }
 }
 
-pub(super) fn unique_profile_line_angle_pair(
+fn unique_profile_line_angle_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -2586,7 +2586,7 @@ pub(super) fn unique_profile_line_angle_pair(
     })
 }
 
-pub(super) fn unique_repaired_profile_line_angle_pair(
+fn unique_repaired_profile_line_angle_pair(
     sketch: &SketchId,
     first: &SketchEntityId,
     second: &SketchEntityId,
@@ -2635,7 +2635,7 @@ pub(super) fn same_dimension_angle(left: f64, right: f64) -> bool {
         <= EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9 * left.abs().max(right.abs()).max(1.0)
 }
 
-pub(super) fn unique_profile_point_line_entity(
+fn unique_profile_point_line_entity(
     sketch: &SketchId,
     point: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -2662,7 +2662,7 @@ pub(super) fn unique_profile_point_line_entity(
     Some(candidate.clone())
 }
 
-pub(super) fn unique_profile_line_point_locus(
+fn unique_profile_line_point_locus(
     sketch: &SketchId,
     line: &SketchEntityId,
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -2690,7 +2690,7 @@ pub(super) fn unique_profile_line_point_locus(
     Some(candidate.clone())
 }
 
-pub(super) fn unique_profile_point_line_pair(
+fn unique_profile_point_line_pair(
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -2735,7 +2735,7 @@ pub(super) fn unique_profile_point_line_pair(
     Some(candidate.clone())
 }
 
-pub(super) fn unique_repaired_profile_point_line_pair(
+fn unique_repaired_profile_point_line_pair(
     sketch: &SketchId,
     point: &SketchLocus,
     line: &SketchEntityId,
@@ -3202,7 +3202,7 @@ pub(super) fn qualified_point_marker_key(marker_id: &str) -> String {
     format!("{marker_id}:qualified-point")
 }
 
-pub(super) fn resolved_marker_locus(
+fn resolved_marker_locus(
     marker_id: &str,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,

@@ -22,6 +22,7 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, HashMap};
 mod direct_points;
+mod relation_geometry;
 
 fn marker(
     id: &str,

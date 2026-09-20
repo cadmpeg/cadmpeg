@@ -10,7 +10,10 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchEntity;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
+pub(in crate::resolved_features) fn marker(
+    id: &str,
+    coordinates_m: Option<[f64; 2]>,
+) -> SketchInputEntity {
     {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -33,7 +36,6 @@ mod frames;
 mod join;
 mod patterns;
 mod profile;
-mod relation_geometry;
 mod relation_links;
 mod relation_operands;
 mod selection;

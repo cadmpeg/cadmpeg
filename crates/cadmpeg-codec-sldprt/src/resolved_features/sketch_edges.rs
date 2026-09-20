@@ -282,12 +282,7 @@ pub(super) fn project_edge(
     }
 }
 
-pub(super) fn circle_contains_point(
-    center: Point2,
-    radius: f64,
-    point: Point2,
-    tolerance: f64,
-) -> bool {
+fn circle_contains_point(center: Point2, radius: f64, point: Point2, tolerance: f64) -> bool {
     let distance = (point.u - center.u).hypot(point.v - center.v);
     distance.is_finite()
         && radius.is_finite()
@@ -295,7 +290,7 @@ pub(super) fn circle_contains_point(
             <= tolerance.max(radius.abs() * EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9)
 }
 
-pub(super) fn ellipse_contains_point(
+fn ellipse_contains_point(
     center: Point2,
     major_angle: f64,
     major_radius: f64,

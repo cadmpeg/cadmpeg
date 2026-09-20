@@ -2426,7 +2426,7 @@ fn fixed_reference_plane_frame_candidates(
         .collect()
 }
 
-pub(super) fn offset_reference_plane_frame_pair(
+fn offset_reference_plane_frame_pair(
     payload: &[u8],
     distance: f64,
 ) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
@@ -2722,7 +2722,7 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
         .collect()
 }
 
-pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = View::f64_le_at(bytes, relative)?;

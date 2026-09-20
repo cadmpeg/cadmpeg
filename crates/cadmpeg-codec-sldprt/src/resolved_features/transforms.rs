@@ -891,4 +891,4 @@ fn marker_entities_inner(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::resolved_features) mod tests;
