@@ -777,8 +777,8 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
         expression: "1 mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(1.0).unwrap())),
-        dependencies: Default::default(),
-        properties: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     });
