@@ -59,9 +59,10 @@ fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT).as_str()
+        ),
         0
     );
 }

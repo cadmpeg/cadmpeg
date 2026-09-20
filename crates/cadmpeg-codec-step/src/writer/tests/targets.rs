@@ -57,7 +57,12 @@ fn written_text(plan: ExportPlan) -> String {
 }
 
 fn target_of(plan: &ExportPlan) -> Option<String> {
-    plan.report().target().map(ToString::to_string)
+    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        &(plan.report()),
+        "identity/target",
+    )
+    .as_ref()
+    .map(ToString::to_string)
 }
 
 /// Encoder planning always returns its typed loss rows, even when a direct
@@ -390,7 +395,10 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         )
         .expect("AP214 is a catalog row");
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
     let loss = plan
@@ -415,7 +423,10 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
         )
         .expect("AP203 edition 1 is a catalog row");
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
 }
@@ -482,11 +493,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 TargetRequest::Explicit(schema.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("a STEP write always names its schema");
+        let claimed = cadmpeg_test_support::wire::field_or_default::<
+            Option<cadmpeg_core::dialect::DialectId>,
+        >(&(plan.report()), "identity/target")
+        .as_ref()
+        .cloned()
+        .expect("a STEP write always names its schema");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");
 

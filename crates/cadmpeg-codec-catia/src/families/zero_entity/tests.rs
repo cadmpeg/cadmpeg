@@ -145,14 +145,16 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
         .expect("decode zero-entity parametric support");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT).as_str()
         ),
         1
     );
@@ -207,14 +209,16 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
         .expect("decode zero-entity exact support");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT).as_str()
         ),
         0
     );
@@ -788,111 +792,129 @@ fn decode_reports_zero_entity_surface_support_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity support run");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_05_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_LOOP_TERMINAL_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_LOOP_RECORD_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_41_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_50_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_LOOP_CLASS_C1_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_FORWARD_LOOP_MEMBER_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_REVERSED_LOOP_MEMBER_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_LOOP_MEMBER_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_RUN_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_OCCURRENCE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_PCURVE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CURVE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_SUPPORT_MODEL_CONSTRUCTION_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_UV_ENDPOINT_PAIR_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_MODEL_MIDPOINT_COUNT).as_str()
+        ),
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -918,69 +940,80 @@ fn decode_reports_separate_zero_entity_topology_registries() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode zero-entity topology registries");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT).as_str()
+        ),
         8
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT).as_str()
+        ),
         5
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT).as_str()
+        ),
         3
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT).as_str()
         ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_PAIR_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_COUNT).as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_ORIENTED_USE_ALLOCATION_COUNT).as_str()
+        ),
         4
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_VERTEX_INCIDENCE_ALLOCATION_COUNT).as_str()
+        ),
         3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_ZERO_ENTITY_VERTEX_OWNER_BINDING_COUNT).as_str()
+        ),
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {

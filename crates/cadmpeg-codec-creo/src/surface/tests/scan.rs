@@ -281,17 +281,15 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             }
         );
         assert_eq!(
-            result
-                .report()
-                .coverage()
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(&(result
+                .report()), "coverage")
                 .get("decoded_torus_radius_override_count")
                 .copied(),
             Some(1)
         );
         assert_eq!(
-            result
-                .report()
-                .coverage()
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(&(result
+                .report()), "coverage")
                 .get("decoded_torus_outline_extent_count")
                 .copied(),
             Some(0)
@@ -932,9 +930,10 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
         }])
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_VARIABLE_RADIUS_FILLET_FEATURE_COUNT).as_str()
+        ),
         1
     );
 
@@ -987,9 +986,10 @@ fn prototype_minor_radius_replays_define_a_constant_round_radius() {
         .expect("decode");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT).as_str()
+        ),
         2
     );
     assert!(matches!(

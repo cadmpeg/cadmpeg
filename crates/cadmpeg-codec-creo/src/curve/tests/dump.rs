@@ -80,14 +80,16 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert!(start_angle.get().abs() <= EPS_HELIX_FEATURE);
     assert!(!clockwise);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_NATIVE_AXIS_HELIX_FEATURE_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_INCOMPLETE_OTHER_CONSTRUCTION_FEATURE_COUNT).as_str()
         ),
         0
     );
@@ -223,16 +225,24 @@ fn decode_retains_complete_scoped_curve_expression_dependencies() {
     assert!(!parameter.properties.contains_key("ambiguous_dependencies"));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         0
     );
 }
@@ -314,56 +324,65 @@ fn decode_retains_simultaneous_curve_expression_blocks() {
         11.0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
-        5
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
-        5
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
         ),
-        2
+        5
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
+        5
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT).as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SIMULTANEOUS_EQUATION_COUNT).as_str()
+        ),
         2
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_ASSIGNMENT_COUNT).as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT).as_str()
+        ),
+        2
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::UNRESOLVED_ACTIVE_CURVE_EXPRESSION_SOLVE_CONTROL_COUNT).as_str()
         ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT).as_str()
         ),
         0
     );
@@ -419,14 +438,16 @@ fn decode_evaluates_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT).as_str()
         ),
         2
     );
@@ -472,8 +493,9 @@ fn decode_evaluates_dimensioned_affine_simultaneous_curve_expression_blocks() {
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][0], 6.0);
     assert_eq!(native.fields()["solve_blocks"][0]["solutions"][1], 4.0);
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_VARIABLE_COUNT).as_str()
         ),
         2
     );
@@ -517,9 +539,10 @@ fn decode_evaluates_dimensioned_relation_string_conversion() {
         ))
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         3
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
@@ -594,15 +617,18 @@ fn decode_retains_scoped_assignment_targets_without_emitting_local_parameters() 
         "width:fid_25:cid_12"
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SCOPED_SYMBOL_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         2
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT).as_str()
+        ),
         2
     );
 }
@@ -640,15 +666,18 @@ fn decode_retains_system_symbol_targets_without_emitting_user_parameters() {
         "dimension"
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_SYSTEM_SYMBOL_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT).as_str()
+        ),
         1
     );
 }
@@ -696,15 +725,18 @@ fn decode_retains_registered_function_write_targets_without_emitting_parameters(
     assert_eq!(dependencies[2], "column");
     assert_eq!(dependencies[3], "driver");
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_FUNCTION_WRITE_ASSIGNMENT_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT).as_str()
+        ),
         1
     );
 }
@@ -752,20 +784,23 @@ fn decode_retains_table_cell_assignments_without_emitting_scalar_parameters() {
         )]
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         3
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_CURVE_EXPRESSION_PARAMETER_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_ACTIVE_CURVE_EXPRESSION_TABLE_CELL_ASSIGNMENT_COUNT).as_str()
         ),
         2
     );
@@ -848,11 +883,17 @@ fn decode_retains_prohibited_curve_expression_strings_without_values() {
     assert_eq!(native.fields()["prohibited_constructs"][0], "itos");
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT).as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -1025,15 +1066,24 @@ fn decode_transfers_curve_expression_conditional_activation() {
     assert_eq!(prohibited[2], "if");
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::ACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::INACTIVE_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(coverage),
+            (crate::coverage::CONDITIONAL_CURVE_EXPRESSION_ASSIGNMENT_COUNT).as_str()
+        ),
         0
     );
 }

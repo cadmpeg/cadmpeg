@@ -21,13 +21,16 @@ fn source_in(dialect: &'static str) -> CadIr {
 
 /// The resolved target `plan` reports for one request.
 fn resolved(ir: &CadIr, encoder: RhinoCodec, request: TargetRequest<'_>) -> String {
-    Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
-        .expect("the request resolves")
-        .report()
-        .target()
-        .expect("a Rhino write always names its archive version")
-        .as_str()
-        .to_owned()
+    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        &(Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
+            .expect("the request resolves")
+            .report()),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("a Rhino write always names its archive version")
+    .as_str()
+    .to_owned()
 }
 
 /// `convert old.3dm -o new.3dm` with no target flag keeps the archive version
@@ -134,7 +137,10 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     )
     .expect("archive 70 is in the catalog");
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
     let loss = plan
@@ -159,7 +165,10 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     )
     .expect("archive 50 is in the catalog");
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
 }
@@ -244,11 +253,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("a Rhino write always names its archive version");
+        let claimed = cadmpeg_test_support::wire::field_or_default::<
+            Option<cadmpeg_core::dialect::DialectId>,
+        >(&(plan.report()), "identity/target")
+        .as_ref()
+        .cloned()
+        .expect("a Rhino write always names its archive version");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");
 

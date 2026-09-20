@@ -568,7 +568,15 @@ fn decode_yields_metadata_and_honest_report() {
 
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());
-    assert!(result.report().error_count() >= 1);
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.severity >= cadmpeg_ir::report::Severity::Error)
+            .count()
+            >= 1
+    );
     assert!(result.report().losses.iter().any(|l| matches!(
         l.code.category(),
         cadmpeg_ir::report::loss::LossCategory::Geometry

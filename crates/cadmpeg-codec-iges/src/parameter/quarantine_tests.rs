@@ -99,7 +99,11 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
         .expect("typed entity ledger row");
     assert_eq!(entity_row.target(), Some("iges:entity:directory#1"));
     assert_eq!(
-        entity_row.note(),
+        cadmpeg_test_support::wire::field_or_default::<Option<String>>(
+            &(entity_row.outcome),
+            "note"
+        )
+        .as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
     let quarantine_row = ledger
@@ -107,7 +111,13 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
         .find(|entry| entry.source == "D1:parameter")
         .expect("quarantined parameter ledger row");
     assert_eq!(quarantine_row.target(), Some("iges:quarantine:parameter#1"));
-    assert_eq!(quarantine_row.disposition(), TransferDisposition::Retained);
+    assert_eq!(
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
+            &(quarantine_row.outcome),
+            "disposition"
+        ),
+        TransferDisposition::Retained
+    );
 }
 
 #[test]

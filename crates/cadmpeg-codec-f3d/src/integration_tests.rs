@@ -327,10 +327,13 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    plan.report()
-        .target()
-        .expect("an F3D write always names its dialect")
-        .to_string()
+    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        &(plan.report()),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("an F3D write always names its dialect")
+    .to_string()
 }
 
 /// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the

@@ -333,7 +333,7 @@ fn an_alias_and_an_id_reach_the_encoder_unresolved_and_both_resolve() {
             )
             .expect("the catalog carries the row under both spellings");
         assert_eq!(
-            plan.report().target().map(DialectId::as_str),
+            cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(&(plan.report()), "identity/target").as_ref().map(DialectId::as_str),
             Some("rhino:archive-60")
         );
     }

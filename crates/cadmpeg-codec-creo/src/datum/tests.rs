@@ -532,7 +532,10 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     assert_eq!(cylinders[0].fields()["datum_id"], 8);
     assert_eq!(cylinders[0].fields()["radius"], 0.75);
     assert_eq!(
-        result.report().coverage()["transferred_active_datum_cylinder_count"],
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(result.report()),
+            "coverage"
+        )["transferred_active_datum_cylinder_count"],
         1
     );
 }

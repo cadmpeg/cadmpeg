@@ -38,7 +38,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     .expect("explicit transcode plans");
 
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     let displacement = plan
@@ -67,7 +70,10 @@ fn cross_format_write_has_no_dialect_displacement() {
     )
     .expect("cross-format synthesis plans");
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     assert!(plan.report().losses.iter().all(|loss| loss.code
@@ -88,7 +94,10 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     // No fidelity was offered, so the sealed wrapper owns this state and
     // stamps `NotProvided`; the missing-image fact survives as the typed loss.
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotProvided {}
     );
     assert!(plan

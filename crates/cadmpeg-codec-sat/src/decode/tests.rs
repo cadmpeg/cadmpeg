@@ -127,7 +127,10 @@ fn an_unverified_band_that_decodes_nothing_reports_honest_coverage() {
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());
     assert!(!result.report().geometry_transferred());
-    assert!(result.report().coverage().contains_key("unknown_records"));
+    assert!(cadmpeg_test_support::wire::field_or_default::<
+        std::collections::BTreeMap<String, usize>,
+    >(&(result.report()), "coverage")
+    .contains_key("unknown_records"));
     let codes = result
         .report()
         .losses

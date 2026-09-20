@@ -80,15 +80,17 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     assert_eq!(result.ir().model.edges.len(), 6);
     assert_eq!(result.ir().model.coedges.len(), 12);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -135,9 +137,10 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.coedges.len(), 4);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -160,9 +163,10 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert!(!result.report().losses.iter().any(|loss| {
@@ -198,8 +202,9 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT).as_str()
         ),
         1
     );

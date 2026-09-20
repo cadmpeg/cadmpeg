@@ -275,75 +275,87 @@ fn decode_retains_outer_object_graph_order_and_references() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_GRAPH_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_OBJECT_GRAPH_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_OBJECT_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_OBJECT_RECORD_COUNT).as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_OBJECT_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_FIELD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_FIELD_COUNT).as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FEATURE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_FEATURE_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_PARAMETER_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_SKETCH_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_CONFIGURATION_COUNT).as_str()
+        ),
         0
     );
     assert!(decoded.report().losses.iter().any(|loss| {

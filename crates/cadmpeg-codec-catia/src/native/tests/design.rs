@@ -187,9 +187,10 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
         ]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT).as_str()
+        ),
         2
     );
 
@@ -238,9 +239,10 @@ fn native_design_objects_preserve_relations_to_unowned_fields() {
         }]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_UNOWNED_FIELD_RELATION_COUNT).as_str()
+        ),
         1
     );
 }
@@ -277,15 +279,17 @@ fn native_design_objects_preserve_reflexive_field_relations() {
         }]
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_SAME_OBJECT_RELATION_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_REFLEXIVE_FIELD_RELATION_COUNT).as_str()
+        ),
         1
     );
 }
@@ -441,9 +445,10 @@ fn null_storage_roles_are_not_unresolved_storage_links() {
         .expect("decode null storage role");
 
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_STORAGE_RECORD_COUNT).as_str()
+        ),
         0
     );
 }
@@ -755,9 +760,10 @@ fn decode_links_design_objects_through_their_owner_record_group() {
     );
     assert_eq!(native.design_objects[1].owner_design_object, None);
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DESIGN_OBJECT_OWNER_LINK_COUNT).as_str()
+        ),
         1
     );
 }
