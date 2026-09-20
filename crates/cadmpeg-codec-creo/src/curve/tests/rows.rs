@@ -821,3 +821,73 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
     }];
     assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());
 }
+
+#[test]
+fn numerical_ranges_fc05_cap_agreement_separates_lengths_and_directions() {
+    let circle = |curve_id, ordinate, offset| Fc05Circle {
+        curve_id,
+        center_row_frame: [0.0, 0.0],
+        radius_mm: 2.0,
+        sample_direction_row_frame: [1.0, 0.0],
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
+        cap_ordinate_row_frame: Some(ordinate),
+        point_count: 8,
+        max_residual: 0.0,
+        offset,
+    };
+    let topology = |curve_id, plane_id, offset| CurveTopologyRow {
+        id: curve_id,
+        type_byte: 5,
+        feature_id: 4,
+        directions: [1, 0xf6],
+        faces: [
+            std::num::NonZeroU32::new(10),
+            std::num::NonZeroU32::new(plane_id),
+        ],
+        next_edges: [curve_id, curve_id],
+        offset,
+    };
+    let surface = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        kind,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: usize::try_from(id).expect("fixture id fits usize"),
+    };
+
+    let topology = [topology(20, 11, 100), topology(21, 12, 200)];
+    let surfaces = [
+        surface(10, crate::surface::SurfaceKind::Cylinder),
+        surface(11, crate::surface::SurfaceKind::Plane),
+        surface(12, crate::surface::SurfaceKind::Plane),
+    ];
+    for radius in [1e-6, 1.0, 1e12] {
+        let mut caps = [
+            circle(20, -radius * 10., 100),
+            circle(21, radius * 10., 200),
+        ];
+        for cap in &mut caps {
+            cap.radius_mm = radius;
+        }
+        assert_eq!(
+            fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).len(),
+            1
+        );
+        let mut wrong_radius = caps.clone();
+        wrong_radius[1].radius_mm *= 1.0005;
+        assert!(fc05_cylinder_cap_pairs(&wrong_radius, &topology, &surfaces).is_empty());
+        let mut wrong_center = caps.clone();
+        wrong_center[1].center_row_frame[0] = radius * 0.0005;
+        assert!(fc05_cylinder_cap_pairs(&wrong_center, &topology, &surfaces).is_empty());
+        caps[1].angle_parameter = crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [0., 1.],
+        };
+        assert!(fc05_cylinder_cap_pairs(&caps, &topology, &surfaces).is_empty());
+    }
+}

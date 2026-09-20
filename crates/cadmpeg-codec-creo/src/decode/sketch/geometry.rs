@@ -81,8 +81,10 @@ pub(in crate::decode) fn section_arc_geometry(
     let second_offset = offset(second);
     let first_radius = first_offset[0].hypot(first_offset[1]);
     let second_radius = second_offset[0].hypot(second_offset[1]);
-    let scale = first_radius.max(second_radius).max(1.0);
-    if first_radius <= EPS_POINT_NONZERO
+    let scale = first_radius.max(second_radius);
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || first_radius <= EPS_POINT_NONZERO
         || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
         return None;
@@ -398,11 +400,13 @@ pub(in crate::decode) fn saved_section_arc_carrier(
     };
     let first_radius = (first_u - center_u).hypot(first_v - center_v);
     let second_radius = (second_u - center_u).hypot(second_v - center_v);
-    let radial_scale = first_radius.max(second_radius).max(1.0);
-    if first_radius <= EPS_POINT_NONZERO
+    let radial_scale = first_radius.max(second_radius);
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || first_radius <= EPS_POINT_NONZERO
         || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale
         || arc.radius.is_some_and(|stored| {
-            (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius).max(1.0)
+            (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius)
         })
     {
         return None;
@@ -446,7 +450,7 @@ pub(in crate::decode) fn saved_section_arc(
     let second = [second_u - center_u, second_v - center_v];
     let first_radius = first[0].hypot(first[1]);
     let second_radius = second[0].hypot(second[1]);
-    let scale = radius.max(first_radius).max(second_radius).max(1.0);
+    let scale = radius.max(first_radius).max(second_radius);
     if (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
         || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
@@ -547,9 +551,11 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             let second = [second_u - center_u, second_v - center_v];
             let scale = radius
                 .max(first[0].hypot(first[1]))
-                .max(second[0].hypot(second[1]))
-                .max(1.0);
-            if (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+                .max(second[0].hypot(second[1]));
+            if ![radius, first[0], first[1], second[0], second[1], scale]
+                .into_iter()
+                .all(f64::is_finite)
+                || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
                 || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
             {
                 return None;
@@ -984,7 +990,7 @@ pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
                         ..
                     },
                 ) => {
-                    let radius_scale = stored_radius.get().max(saved_radius.get()).max(1.0);
+                    let radius_scale = stored_radius.get().max(saved_radius.get());
                     saved_points_coincide(
                         [stored_center.u, stored_center.v],
                         [saved_center.u, saved_center.v],
@@ -1007,3 +1013,6 @@ pub(in crate::decode) fn resolved_section_segment_geometry_with_missing_line(
         (None, None) => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

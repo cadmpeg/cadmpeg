@@ -1363,7 +1363,8 @@ fn validate_nurbs_trim(
     for span in breaks.windows(2) {
         for step in 0..=16 {
             let fraction = f64::from(step) / 16.0;
-            let parameter = span[0] + (span[1] - span[0]) * fraction;
+            let parameter = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
+                .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
             let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "pcurve {} cannot be evaluated over its edge domain",
@@ -1398,10 +1399,7 @@ fn validate_nurbs_trim(
                     edge.curve_id
                 ))
             })?;
-            let distance = ((mapped.x - edge_point.x).powi(2)
-                + (mapped.y - edge_point.y).powi(2)
-                + (mapped.z - edge_point.z).powi(2))
-            .sqrt();
+            let distance = mapped.distance(edge_point);
             if !distance.is_finite() || distance > tolerance {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} misses directed edge curve {} by {distance}",

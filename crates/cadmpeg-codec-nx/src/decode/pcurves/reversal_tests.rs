@@ -276,3 +276,52 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 }
+
+#[test]
+fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
+    let range = [1e308, 1.4e308];
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![range[0], range[0], range[1], range[1]],
+            vec![Point2::new(0., 0.), Point2::new(1., 1.)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    let reversed = reverse_pcurve_over_range(&pcurve, range).unwrap().unwrap();
+    assert_eq!(
+        cadmpeg_ir::eval::pcurve_uv(&reversed, range[0]),
+        Some(Point2::new(1., 1.))
+    );
+    assert_eq!(
+        cadmpeg_ir::eval::pcurve_uv(&reversed, range[1]),
+        Some(Point2::new(0., 0.))
+    );
+    assert_eq!(
+        reverse_pcurve_over_range(&reversed, range).unwrap(),
+        Some(pcurve)
+    );
+}
+#[test]
+fn numerical_ranges_parabola_reversal_reuses_scaled_evaluation() {
+    let pcurve = PcurveGeometry::Parabola(
+        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
+            Point2::new(0., 0.),
+            Point2::new(1., 0.),
+            Point2::new(0., 1.),
+            1e200,
+        )
+        .unwrap(),
+    );
+    let range = [1e200, 2e200];
+    let reversed = reverse_pcurve_over_range(&pcurve, range).unwrap().unwrap();
+    for t in [0., 0.5, 1.] {
+        // The reversed quadratic retains the original parameter domain.
+        let point = cadmpeg_ir::eval::pcurve_uv(&reversed, (1. + t) * 1e200).unwrap();
+        let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, (2. - t) * 1e200).unwrap();
+        assert!((point.u / expected.u - 1.).abs() < 64. * f64::EPSILON);
+        assert!((point.v / expected.v - 1.).abs() < 64. * f64::EPSILON);
+    }
+}
