@@ -174,7 +174,12 @@ impl<'a> DecodeContext<'a> {
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
         let index = self.next_space.get();
         let next = index.checked_add(1).ok_or_else(|| {
-            self.refuse_codec_limit("decode address spaces", usize::MAX as u64, u64::MAX)
+            // Root owns zero; the remaining allocatable IDs count derived spaces.
+            self.refuse_codec_limit(
+                "decode address spaces",
+                (usize::MAX - 1) as u64,
+                index as u64,
+            )
         })?;
         self.next_space.set(next);
         Ok(SpaceId::from_index(index))
@@ -565,7 +570,15 @@ mod tests {
             .register_slice(root, range)
             .expect("last allocatable id");
         assert_eq!(view.space().index(), usize::MAX - 1);
-        assert!(ctx.register_slice(root, range).is_err());
+        let error = ctx
+            .register_slice(root, range)
+            .expect_err("space IDs are exhausted");
+        let crate::CodecError::ResourceLimit(limit) = error else {
+            panic!("exhausted IDs return a resource refusal");
+        };
+        assert_eq!(limit.limit, (usize::MAX - 1) as u64);
+        assert_eq!(limit.used, (usize::MAX - 1) as u64);
+        assert_eq!(limit.additional, 1);
         assert!(ctx.register_slice(root, range).is_err());
         assert!(ctx.finish_session().is_err());
     }
