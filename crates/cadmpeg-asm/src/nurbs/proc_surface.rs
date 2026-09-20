@@ -42,7 +42,7 @@ pub enum EmbeddedOffsetLayout {
 }
 
 /// A decoded native procedural definition with layout-owned cache tolerance.
-pub struct DecodedProceduralSurface {
+pub(crate) struct DecodedProceduralSurface {
     definition: DecodedProceduralSurfaceDefinition,
     cache: ProceduralSurfaceCache,
 }
@@ -71,7 +71,7 @@ impl DecodedProceduralSurface {
     }
 
     /// Borrow the native construction definition.
-    pub fn definition(&self) -> &DecodedProceduralSurfaceDefinition {
+    pub(crate) fn definition(&self) -> &DecodedProceduralSurfaceDefinition {
         &self.definition
     }
 
@@ -85,7 +85,7 @@ impl DecodedProceduralSurface {
     }
 
     /// Return the effective fit tolerance of the solved surface cache.
-    pub fn cache_fit_tolerance(&self) -> Option<f64> {
+    pub(crate) fn cache_fit_tolerance(&self) -> Option<f64> {
         match self.cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => self.definition.revision_cache_fit_tolerance(),
@@ -4371,7 +4371,7 @@ fn resolve_t_spline_subtransform(
 }
 
 /// Decode a native procedural definition, following nested subtype-table references.
-pub fn procedural_surface_resolving_refs(
+pub(crate) fn procedural_surface_resolving_refs(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
