@@ -726,6 +726,34 @@ class ScriptTestCollection(TempSourceCase):
         self.assertEqual(self.findings("script_test_collection"), [])
 
 
+class AuthoringPaths(TempSourceCase):
+    PATH = "/home/author/side2/cadmpeg/target/debug/deps/libdemo.rlib"
+
+    def test_every_text_record_suffix_is_scanned(self) -> None:
+        for name in (
+            "docs/audits/run/evidence/probe.command",
+            "docs/audits/run/evidence/probe.log",
+            "docs/audits/run/evidence/probe.exit",
+            "docs/audits/run/notes.md",
+            "docs/audits/run/sources.json",
+            "crates/demo/src/lib.rs",
+        ):
+            with self.subTest(name=name):
+                path = self.write(name, f"rustc --extern demo={self.PATH}\n")
+                findings = self.findings("authoring_path")
+                self.assertEqual([(f.path, f.line) for f in findings], [(name, 1)])
+                self.assertIn("/home/author/", findings[0].message)
+                path.unlink()
+
+    def test_a_relative_path_and_a_url_segment_are_not_authoring_paths(self) -> None:
+        self.write(
+            "docs/audits/run/evidence/probe.command",
+            "rustc --extern demo=target/debug/deps/libdemo.rlib\n"
+            "# see https://example.invalid/home/user/page\n",
+        )
+        self.assertEqual(self.findings("authoring_path"), [])
+
+
 class SourcePolicyCommand(TempSourceCase):
     def run_check(self, *args: str) -> tuple[int, str]:
         output = io.StringIO()
