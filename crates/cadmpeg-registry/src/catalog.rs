@@ -4,8 +4,8 @@
 //!
 //! Prefix detection is the cheap candidate stage. It is legitimately
 //! ambiguous — a ZIP with no format marker is `Low` for every ZIP-based
-//! format at once — and it settles nothing about a dialect. [`crate::identify`]
-//! is the stage that opens the container.
+//! format at once — and it settles nothing about a dialect.
+//! [`crate::resolve_and_inspect_with`] opens the resolved container.
 
 use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
@@ -81,20 +81,6 @@ pub struct AmbiguousDetection {
 }
 
 impl AmbiguousDetection {
-    /// Admits a tie with at least two candidate formats.
-    pub fn new(
-        confidence: Confidence,
-        candidates: Vec<FormatId>,
-    ) -> Result<Self, ResolveSourceError> {
-        if candidates.len() < 2 {
-            return Err(ResolveSourceError::InsufficientCandidates(candidates.len()));
-        }
-        Ok(Self {
-            confidence,
-            candidates,
-        })
-    }
-
     fn from_tie(
         confidence: Confidence,
         first: FormatId,
@@ -149,17 +135,6 @@ pub enum Selection {
     Forced,
 }
 
-impl Selection {
-    /// Detection confidence, or `None` when the codec was forced.
-    #[must_use]
-    pub const fn confidence(self) -> Option<Confidence> {
-        match self {
-            Self::Detected { confidence } => Some(confidence),
-            Self::Forced => None,
-        }
-    }
-}
-
 /// Resolved input after forced selection or content detection.
 pub enum ResolvedSource<'a> {
     /// A native codec will decode or inspect the file.
@@ -184,9 +159,6 @@ pub enum ResolveSourceError {
     /// The forced native descriptor is absent from this catalog.
     #[error("forced input format {0} is not in this catalog")]
     Unregistered(FormatId),
-    /// An ambiguity request contains fewer than two candidates.
-    #[error("candidates: ambiguity requires at least two formats, received {0}")]
-    InsufficientCandidates(usize),
     /// Multiple codecs tied at the strongest confidence.
     #[error(
         "ambiguous {confidence}-confidence input format: {names}",
@@ -244,8 +216,8 @@ impl InputCatalog {
     ///
     /// The whole candidate set, not the winner. `detect` keeps only the
     /// strongest candidate or tied candidates because loading and inspection
-    /// need one resolution tier; [`crate::identify`] exposes that detected
-    /// outcome without discarding a strongest-tier ambiguity.
+    /// need one resolution tier. The detected outcome retains a strongest-tier
+    /// ambiguity.
     pub fn candidates(&self, prefix: &[u8]) -> Vec<(&dyn Codec, Confidence)> {
         let mut matches = self
             .descriptors
@@ -287,18 +259,6 @@ impl InputCatalog {
     /// Every registered input format, in catalog order.
     pub fn descriptors(&self) -> impl Iterator<Item = &InputDescriptor> {
         self.descriptors.iter()
-    }
-
-    /// Returns the descriptor whose format id is spelled `id`.
-    pub fn descriptor(&self, id: &str) -> Option<&InputDescriptor> {
-        self.descriptors
-            .iter()
-            .find(|descriptor| descriptor.format_id().as_str() == id)
-    }
-
-    /// Returns the decoder whose format id is spelled `id`.
-    pub fn by_id(&self, id: &str) -> Option<&dyn Codec> {
-        self.descriptor(id)?.codec()
     }
 
     /// Resolves a forced format or content detection into a source selection.
@@ -355,29 +315,8 @@ mod tests {
     use cadmpeg_ir::codec::{Confidence, FormatId};
 
     use super::{
-        AmbiguousDetection, DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError,
-        ResolvedSource, Selection,
+        DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection,
     };
-
-    #[test]
-    fn ambiguity_requires_at_least_two_candidates() {
-        for candidates in [Vec::new(), vec![FormatId::new("step")]] {
-            assert!(matches!(
-                AmbiguousDetection::new(Confidence::Low, candidates),
-                Err(ResolveSourceError::InsufficientCandidates(_))
-            ));
-        }
-        let tie = AmbiguousDetection::new(
-            Confidence::Low,
-            vec![FormatId::new("step"), FormatId::new("f3d")],
-        )
-        .unwrap();
-        assert_eq!(
-            tie.candidates(),
-            &[FormatId::new("step"), FormatId::new("f3d")]
-        );
-        assert_eq!(tie.confidence(), Confidence::Low);
-    }
 
     /// The rendered format rows retain the input catalog's readable formats
     /// and extension data while adding write capability.
@@ -390,7 +329,8 @@ mod tests {
         assert!(rows.iter().all(|row| !row.extensions.is_empty()));
         for row in rows {
             let input = catalog
-                .descriptor(row.id.as_str())
+                .descriptors()
+                .find(|descriptor| descriptor.format_id() == row.id)
                 .expect("each format row comes from an input descriptor");
             assert_eq!(row.extensions, input.extensions());
         }
@@ -421,7 +361,10 @@ mod tests {
     #[cfg(feature = "step")]
     #[test]
     fn step_is_registered_as_a_reader() {
-        assert!(InputCatalog::with_builtins().by_id("step").is_some());
+        assert!(InputCatalog::with_builtins()
+            .descriptors()
+            .any(|descriptor| descriptor.format_id().as_str() == "step"
+                && descriptor.codec().is_some()));
     }
 
     #[cfg(feature = "inventor")]
@@ -429,7 +372,8 @@ mod tests {
     fn inventor_is_registered_as_a_read_only_family_codec() {
         let catalog = InputCatalog::with_builtins();
         let descriptor = catalog
-            .descriptor("inventor")
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "inventor")
             .expect("Inventor descriptor exists");
         assert_eq!(descriptor.extensions(), ["ipt", "iam"]);
         assert!(descriptor.codec().is_some());
@@ -439,7 +383,10 @@ mod tests {
     #[cfg(feature = "iges")]
     #[test]
     fn iges_is_registered_as_a_reader() {
-        assert!(InputCatalog::with_builtins().by_id("iges").is_some());
+        assert!(InputCatalog::with_builtins()
+            .descriptors()
+            .any(|descriptor| descriptor.format_id().as_str() == "iges"
+                && descriptor.codec().is_some()));
     }
 
     #[test]

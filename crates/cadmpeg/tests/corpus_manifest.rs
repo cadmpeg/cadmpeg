@@ -63,8 +63,8 @@ fn manifest_path() -> PathBuf {
 /// Classifies one fixture: the primary layer's registry id, as `inspect()` reads it.
 ///
 /// The manifest's format vocabulary is the input catalog's ids, and
-/// `cadmpeg-registry` owns that catalog, so the lookup goes through
-/// `InputCatalog::by_id`. A key the catalog does not know is a manifest that
+/// `cadmpeg-registry` owns that catalog, so the lookup selects its input
+/// descriptor. A key the catalog does not know is a manifest that
 /// names a format this build does not ship, which is a failure and not a skip.
 ///
 /// `None` means the codec identified no registry row for the primary layer —
@@ -73,7 +73,9 @@ fn manifest_path() -> PathBuf {
 fn classify(format: &str, bytes: &[u8]) -> String {
     let catalog = cadmpeg_registry::InputCatalog::with_builtins();
     let codec = catalog
-        .by_id(format)
+        .descriptors()
+        .find(|descriptor| descriptor.format_id().as_str() == format)
+        .and_then(cadmpeg_registry::InputDescriptor::codec)
         .unwrap_or_else(|| panic!("manifest format {format:?} has no codec in this build"));
     let summary = codec
         .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
