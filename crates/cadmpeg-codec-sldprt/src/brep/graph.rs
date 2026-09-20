@@ -2516,13 +2516,13 @@ fn fold_surface_frame(
                 return Ok(());
             }
             SolvedSurfaceGeometry::Cone(payload) => {
-                let origin = payload.origin();
+                let origin = payload.origin().get();
                 let axis = payload.axis();
                 let radius = payload.radius().get();
                 let ratio = payload.ratio().get();
                 let half_angle = payload.half_angle().get();
                 *payload = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    *origin,
+                    origin,
                     *axis,
                     u_reference,
                     radius,

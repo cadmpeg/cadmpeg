@@ -124,13 +124,13 @@ pub fn analytic_surface_parameters_solved(
             Point2::new((y / radius).atan2(x / radius), v)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
-            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            let (x, y, v) = components(origin, *axis, *ref_direction);
             let local_radius = radius + v * half_angle.tan();
             if local_radius == 0.0 {
                 return None;
@@ -4226,7 +4226,7 @@ fn surface_point_with_budget_inner(
             ))
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -4238,7 +4238,7 @@ fn surface_point_with_budget_inner(
             let radial_slope = half_angle.tan();
             let local_radius = radius + v * radial_slope;
             Some(offset(
-                *origin,
+                origin,
                 &[
                     (local_radius * cosine, *ref_direction),
                     (local_radius * ratio * sine, transverse),
@@ -4556,7 +4556,7 @@ fn surface_second_partials_inner(
             })
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -4569,7 +4569,7 @@ fn surface_second_partials_inner(
             let local_radius = radius + v * radial_slope;
             Some(SurfaceSecondPartials {
                 point: offset(
-                    *origin,
+                    origin,
                     &[
                         (local_radius * cosine, *ref_direction),
                         (local_radius * ratio * sine, transverse),
