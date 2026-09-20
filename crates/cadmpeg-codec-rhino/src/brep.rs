@@ -1012,16 +1012,18 @@ struct LegacyVertex {
 }
 
 impl LegacyVertex {
-    fn into_vertex(mut self) -> RawBrepVertex {
+    /// Answer the vertex carrying the mean of the endpoints merged into it, or
+    /// refuse a scaled sum that left the range its own construction states.
+    fn into_vertex(mut self) -> Option<RawBrepVertex> {
         if self.point_count != 0 {
-            let count = self.point_count as f64;
-            self.vertex.point = Point3([
-                (self.point_sum[0] / count).clamp(-1.0, 1.0) * self.point_scale[0],
-                (self.point_sum[1] / count).clamp(-1.0, 1.0) * self.point_scale[1],
-                (self.point_sum[2] / count).clamp(-1.0, 1.0) * self.point_scale[2],
-            ]);
+            let mut point = [0.0; 3];
+            for (axis, coordinate) in point.iter_mut().enumerate() {
+                *coordinate =
+                    scaled_mean(self.point_sum[axis], self.point_count)? * self.point_scale[axis];
+            }
+            self.vertex.point = Point3(point);
         }
-        self.vertex
+        Some(self.vertex)
     }
 
     // Sum relative coordinates before dividing by the endpoint count. Finite
@@ -1037,6 +1039,31 @@ impl LegacyVertex {
         }
         self.point_count += 1;
     }
+}
+
+/// Answer the mean of the endpoint coordinates `add_point` divided by the
+/// largest magnitude among them.
+///
+/// Every scaled coordinate lies in `[-1, 1]`, so the exact mean does too.
+/// `add_point` rounds twice per endpoint, once rescaling the running sum and
+/// once adding the new coordinate, and the division here rounds once more, so
+/// the computed mean can leave the interval by `2 * count * f64::EPSILON` and
+/// no more. Only that excess is mapped onto the interval end. A mean beyond it
+/// does not come from that rounding: the scaled sum no longer states the
+/// endpoints that were read, and it is refused. A non-finite coordinate
+/// carries through to the point, where the Brep validator owns it.
+fn scaled_mean(sum: f64, count: usize) -> Option<f64> {
+    let mean = sum / count as f64;
+    if mean.abs() > 1.0 + 2.0 * count as f64 * f64::EPSILON {
+        return None;
+    }
+    if mean < -1.0 {
+        return Some(-1.0);
+    }
+    if mean > 1.0 {
+        return Some(1.0);
+    }
+    Some(mean)
 }
 
 fn parse_legacy_major2(
@@ -1387,8 +1414,15 @@ fn parse_legacy_major2(
     }
     let mut vertices = vertices
         .into_iter()
-        .map(LegacyVertex::into_vertex)
-        .collect::<Vec<_>>();
+        .map(|vertex| {
+            vertex.into_vertex().ok_or_else(|| {
+                error(
+                    reader.position(),
+                    "legacy Brep vertex mean left the scaled endpoint range",
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     for (trim_index, trim) in trims.iter_mut().enumerate() {
         trim.vertices = [
             i32::try_from(endpoint_vertices[legacy_trim_endpoint(trim_index, 0)])
@@ -2862,6 +2896,19 @@ fn finish_anonymous_ranges(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn numerical_followup_legacy_vertex_mean_refuses_a_broken_scaled_sum() {
+        // Three endpoints scaled by the largest of them sum to three at most.
+        assert_eq!(super::scaled_mean(3.0, 3), Some(1.0));
+        assert_eq!(super::scaled_mean(-3.0, 3), Some(-1.0));
+        assert_eq!(super::scaled_mean(1.5, 3), Some(0.5));
+        // The rounding of three endpoints reaches six ulps of one, and the
+        // admitted excess is mapped onto the interval end.
+        assert_eq!(super::scaled_mean(3.0 + 5.0 * f64::EPSILON, 3), Some(1.0));
+        // A sum beyond the band no longer states the endpoints that were read.
+        assert_eq!(super::scaled_mean(3.3, 3), None);
+    }
+
+    #[test]
     fn numerical_followup_legacy_vertex_mean_stays_finite() {
         for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
             let mut vertices = Vec::new();
@@ -2869,7 +2916,7 @@ mod tests {
             for x in endpoints {
                 vertices[0].add_point(Point3([x, 0., 0.]));
             }
-            let vertex = vertices.pop().unwrap().into_vertex();
+            let vertex = vertices.pop().unwrap().into_vertex().unwrap();
             assert_eq!(
                 vertex.point.0,
                 [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
