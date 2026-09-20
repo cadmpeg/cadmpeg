@@ -86,11 +86,26 @@ pub fn line_circle_parameters(
     }
     let length = d.u.hypot(d.v);
     let unit = Point2::new(d.u / length, d.v / length);
-    let perpendicular = super::sum::finite_dot(
-        [start.u, -center.u, start.v, -center.v],
-        [unit.v, unit.v, -unit.u, -unit.u],
-    )?
-    .abs();
+    let mut denominator = ExactSignedSum::default();
+    denominator.add_product(length, direction_scale);
+    let denominator = denominator.finish()?;
+    // Form the determinant from the original coordinates. Normalizing the
+    // direction first can rotate a distant, exactly incident line off a small circle.
+    let mut determinant = ExactSignedSum::default();
+    for (left, right) in [
+        (end.u, start.v),
+        (-end.u, center.v),
+        (start.u, center.v),
+        (-end.v, start.u),
+        (end.v, center.u),
+        (-start.v, center.u),
+    ] {
+        determinant.add_product(left, right);
+    }
+    let perpendicular = determinant
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(denominator))?
+        .abs();
     let radial_scale = radius.max(perpendicular);
     let r = radius / radial_scale;
     let perpendicular = perpendicular / radial_scale;
@@ -101,9 +116,6 @@ pub fn line_circle_parameters(
         return None;
     }
     let half_chord = (r - perpendicular).max(0.0).sqrt() * (r + perpendicular).sqrt();
-    let mut denominator = ExactSignedSum::default();
-    denominator.add_product(length, direction_scale);
-    let denominator = denominator.finish()?;
     let parameter = |sign| {
         let mut numerator = ExactSignedSum::default();
         for (coordinate, direction) in [
@@ -177,6 +189,24 @@ pub fn circle_intersections(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn distant_diagonal_line_preserves_exact_circle_incidence() {
+        const RADIUS: f64 = 1e-10;
+        for exponent in [-600, 0, 600] {
+            let scale = 2.0_f64.powi(exponent);
+            let roots = line_circle_parameters(
+                Point2::new(1e8 * scale, 3e8 * scale),
+                Point2::new((1e8 + 1.0) * scale, (3e8 + 3.0) * scale),
+                Point2::new(0.0, 0.0),
+                RADIUS * scale,
+            )
+            .unwrap();
+            for root in roots {
+                assert!((root + 1e8).abs() <= 2.0 * f64::EPSILON * 1e8);
+            }
+        }
+    }
+
     #[test]
     fn distant_line_origin_does_not_change_circle_intersections() {
         let center = Point2::new(0.0, 0.0);
