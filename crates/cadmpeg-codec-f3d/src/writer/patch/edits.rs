@@ -3290,7 +3290,13 @@ pub(super) fn validate_surface_edits(
                 // `NonNegativeLength` admits zero and `Angle` admits every
                 // finite angle, so the cone carrier states neither condition.
                 // The record holds the reference direction scaled by the
-                // radius, which a zero radius erases.
+                // radius, which a zero radius erases. The record states the
+                // half angle as a sine and a cosine whose signs carry the axis
+                // and normal senses, and the reader rebuilds the angle as
+                // `sine.abs().atan2(cosine.abs())`
+                // (`cadmpeg-asm/src/brep/geometry.rs:149`), whose range is
+                // [0, pi/2]. A negative half angle and one above pi/2 are
+                // shapes no f3d document holds.
                 if cone_surface.radius().get() == 0.0 {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D cone surface {id} has a zero cross-section radius"
