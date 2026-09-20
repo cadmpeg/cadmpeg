@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::document::{EntityRewrite, Model, SourceMeta};
+use crate::document::{ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -48,21 +48,30 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
     }
 
-    assert_eq!(
-        crate::schema::EntityKind::ALL.len(),
-        Model::arena_names().len()
-    );
+    assert_eq!(crate::schema::EntityKind::ALL.len(), ArenaName::ALL.len());
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut ids = std::collections::HashSet::new();
     collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
     let mut missing = Vec::new();
-    ir.model
-        .visit_references(&mut |reference| {
-            if !ids.contains(&reference.target) {
-                missing.push(reference.target);
-            }
-        })
-        .expect("every entity states its typed references");
+    let mut visit = |reference: crate::schema::Reference| {
+        if !ids.contains(&reference.target) {
+            missing.push(reference.target);
+        }
+    };
+    macro_rules! visit_arenas {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            $(for entity in &ir.model.$field {
+                crate::schema::EntitySchema::visit_references(entity, &mut visit)
+                    .expect("every entity states its typed references");
+            })*
+        };
+    }
+    super::arena_registry!(visit_arenas);
+    for parent in ir.model.feature_regeneration_parents.0.values() {
+        visit(crate::schema::Reference {
+            target: parent.as_str().to_owned(),
+        });
+    }
     assert!(missing.is_empty(), "unresolved references: {missing:?}");
 }
 
@@ -76,11 +85,12 @@ fn arena_registry_drives_counts_and_diff_dispatch() {
         .map(|arena| arena.kind.to_string())
         .collect::<Vec<_>>();
 
-    assert_eq!(
-        &diff_kinds[..Model::arena_names().len()],
-        Model::arena_names()
-    );
-    for name in Model::arena_names() {
+    let arena_names = ArenaName::ALL
+        .iter()
+        .map(|arena| arena.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(&diff_kinds[..ArenaName::ALL.len()], arena_names);
+    for name in &arena_names {
         assert!(
             report.entity_counts.contains_key(*name),
             "entity counts omitted registered arena {name}"
