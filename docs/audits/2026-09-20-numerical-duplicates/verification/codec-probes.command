@@ -1,0 +1,1 @@
+rustc --edition=2021 --test /tmp/cadmpeg-audit-fixes/codec-probes.rs -L dependency=target/debug/deps -o /tmp/cadmpeg-audit-fixes/codec-probes --extern cadmpeg_ir=target/debug/deps/libcadmpeg_ir-1d96036679349f3a.rlib --extern cadmpeg_core=target/debug/deps/libcadmpeg_core-a092963e445a343b.rlib

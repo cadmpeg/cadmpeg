@@ -1,0 +1,1047 @@
+#![allow(dead_code,unused_imports)]
+use cadmpeg_ir::math::{Point2,Point3,Vector3};
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_core::CodecError;
+mod f3d_rotation { use super::*;
+const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12:f64=1e-12; const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8:f64=1e-8;
+fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
+    use cadmpeg_ir::features::AxisAngle;
+    use cadmpeg_ir::scalar::Angle;
+
+    let trace = transform[0][0] + transform[1][1] + transform[2][2];
+    let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
+    if angle.abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12 {
+        return None;
+    }
+    let (x, y, z) =
+        if (std::f64::consts::PI - angle).abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8 {
+            // The largest diagonal supplies a nonzero axis component at a half-turn.
+            // Recover the other signs from its row; the X component may be zero.
+            let pivot = (0..3).max_by(|&a, &b| transform[a][a].total_cmp(&transform[b][b]))?;
+            let mut axis = [0.0; 3];
+            axis[pivot] = ((transform[pivot][pivot] + 1.0) * 0.5).max(0.0).sqrt();
+            if axis[pivot] == 0.0 {
+                return None;
+            }
+            for other in 0..3 {
+                if other != pivot {
+                    axis[other] =
+                        (transform[pivot][other] + transform[other][pivot]) / (4.0 * axis[pivot]);
+                }
+            }
+            (axis[0], axis[1], axis[2])
+        } else {
+            let scale = 2.0 * angle.sin();
+            (
+                (transform[2][1] - transform[1][2]) / scale,
+                (transform[0][2] - transform[2][0]) / scale,
+                (transform[1][0] - transform[0][1]) / scale,
+            )
+        };
+    let norm = x.hypot(y).hypot(z);
+    (norm > EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12).then_some(AxisAngle {
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            x / norm,
+            y / norm,
+            z / norm,
+        ))?,
+        angle: Angle::new(angle)?,
+    })
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
+    let transform = [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let rotation = super::matrix_axis_angle(&transform).unwrap();
+    assert_eq!(rotation.angle.get(), std::f64::consts::PI);
+    let axis = [
+        rotation.direction.x,
+        rotation.direction.y,
+        rotation.direction.z,
+    ];
+    for row in 0..3 {
+        for column in 0..3 {
+            let reconstructed =
+                2.0 * axis[row] * axis[column] - (if row == column { 1.0 } else { 0.0 });
+            assert!((reconstructed - transform[row][column]).abs() <= 8.0 * f64::EPSILON);
+        }
+    }
+}
+}}
+mod f3d_intersection { use super::*;
+enum ProfileBoundarySegment {Line{start:Point2,end:Point2},Arc{center:Point2,radius:f64,start_angle:f64,end_angle:f64}}
+fn line_arc_intersection_points(
+    (start, end): (Point2, Point2),
+    arc: &ProfileBoundarySegment,
+) -> Option<Vec<Point2>> {
+    let ProfileBoundarySegment::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = arc
+    else {
+        return None;
+    };
+    let direction = Point2::new(end.u - start.u, end.v - start.v);
+    let offset = Point2::new(start.u - center.u, start.v - center.v);
+    let scale = direction
+        .u
+        .abs()
+        .max(direction.v.abs())
+        .max(offset.u.abs())
+        .max(offset.v.abs())
+        .max(radius.abs());
+    if !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
+    let d = Point2::new(direction.u / scale, direction.v / scale);
+    let o = Point2::new(offset.u / scale, offset.v / scale);
+    let radius = radius / scale;
+    let quadratic = d.u * d.u + d.v * d.v;
+    if quadratic == 0.0 {
+        return Some(Vec::new());
+    }
+    let linear = 2.0 * (o.u * d.u + o.v * d.v);
+    let constant = o.u * o.u + o.v * o.v - radius * radius;
+    let discriminant = linear * linear - 4.0 * quadratic * constant;
+    let error = 64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs());
+    if discriminant < -error {
+        return Some(Vec::new());
+    }
+    let root = discriminant.max(0.0).sqrt();
+    let mut points = Vec::new();
+    let q = -0.5 * (linear + root.copysign(linear));
+    let parameters = if root == 0.0 {
+        [-linear / (2.0 * quadratic); 2]
+    } else {
+        [q / quadratic, constant / q]
+    };
+    for parameter in parameters {
+        if (0.0..=1.0).contains(&parameter) {
+            let point = Point2::new(
+                start.u + parameter * direction.u,
+                start.v + parameter * direction.v,
+            );
+            if directed_angle_parameter(
+                (point.v - center.v).atan2(point.u - center.u),
+                *start_angle,
+                *end_angle,
+            )
+            .is_some()
+                && !points.contains(&point)
+            {
+                points.push(point);
+            }
+        }
+    }
+    Some(points)
+}
+fn directed_angle_parameter(angle: f64, start: f64, end: f64) -> Option<f64> {
+    let sweep = end - start;
+    if sweep == 0.0 || sweep.abs() > std::f64::consts::TAU {
+        return None;
+    }
+    let displacement = if sweep > 0.0 {
+        (angle - start).rem_euclid(std::f64::consts::TAU)
+    } else {
+        -(start - angle).rem_euclid(std::f64::consts::TAU)
+    };
+    (displacement.abs() <= sweep.abs()).then_some(displacement / sweep)
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_line_circle_intersections_are_scale_invariant() {
+    for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
+        let circle = ProfileBoundarySegment::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::TAU,
+        };
+        assert!(super::line_arc_intersection_points(
+            (
+                Point2::new(-radius, 2.0 * radius),
+                Point2::new(radius, 2.0 * radius)
+            ),
+            &circle
+        )
+        .unwrap()
+        .is_empty());
+        let tangent = super::line_arc_intersection_points(
+            (Point2::new(-radius, radius), Point2::new(radius, radius)),
+            &circle,
+        )
+        .unwrap();
+        assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
+    }
+}
+}}
+mod creo { use super::*;
+const TRIM_INTERSECTION_EPS:f64=1e-12; const TRIM_COORDINATE_EPS:f64=1e-9;
+fn trim_line_circle_intersection(
+    start: [f64; 2],
+    end: [f64; 2],
+    center: [f64; 2],
+    radius: f64,
+) -> Option<[f64; 2]> {
+    let direction = [end[0] - start[0], end[1] - start[1]];
+    let relative = [start[0] - center[0], start[1] - center[1]];
+    let coordinate_scale = direction
+        .into_iter()
+        .chain(relative)
+        .map(f64::abs)
+        .fold(radius.abs(), f64::max);
+    if !coordinate_scale.is_finite() || coordinate_scale == 0.0 {
+        return None;
+    }
+    let d = direction.map(|value| value / coordinate_scale);
+    let r = relative.map(|value| value / coordinate_scale);
+    let radius = radius / coordinate_scale;
+    let quadratic = d[0].mul_add(d[0], d[1] * d[1]);
+    if quadratic <= 0.0 || !quadratic.is_finite() {
+        return None;
+    }
+    let linear = 2.0 * r[0].mul_add(d[0], r[1] * d[1]);
+    let constant = r[0].mul_add(r[0], r[1] * r[1]) - radius * radius;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let scale = linear.abs().max((4.0 * quadratic * constant).abs().sqrt());
+    let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
+    if !discriminant.is_finite() || discriminant < -tolerance {
+        return None;
+    }
+    let in_segment =
+        |parameter: f64| (-TRIM_COORDINATE_EPS..=1.0 + TRIM_COORDINATE_EPS).contains(&parameter);
+    let point = |parameter: f64| {
+        let coordinate = [
+            start[0] + parameter * direction[0],
+            start[1] + parameter * direction[1],
+        ];
+        coordinate
+            .into_iter()
+            .all(f64::is_finite)
+            .then_some(coordinate)
+    };
+    if discriminant.abs() <= tolerance {
+        let parameter = -linear / (2.0 * quadratic);
+        return in_segment(parameter)
+            .then(|| point(parameter.clamp(0.0, 1.0)))
+            .flatten();
+    }
+    let root = discriminant.sqrt();
+    let q = -0.5 * (linear + root.copysign(linear));
+    let parameters = [q / quadratic, constant / q];
+    let mut matching = parameters
+        .into_iter()
+        .filter(|parameter| in_segment(*parameter));
+    let parameter = matching.next()?;
+    matching
+        .next()
+        .is_none()
+        .then(|| point(parameter.clamp(0.0, 1.0)))
+        .flatten()
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
+        for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
+            assert_eq!(
+                super::trim_line_circle_intersection(
+                    [-radius, 2.0 * radius],
+                    [radius, 2.0 * radius],
+                    [0.0; 2],
+                    radius
+                ),
+                None
+            );
+            assert_eq!(
+                super::trim_line_circle_intersection(
+                    [-radius, radius],
+                    [radius, radius],
+                    [0.0; 2],
+                    radius
+                ),
+                Some([0.0, radius])
+            );
+        }
+    }
+}}
+mod nx { use super::*;
+
+pub(super) fn least_squares_step(
+    du: Vector3,
+    dv: Vector3,
+    residual: Vector3,
+) -> Option<(f64, f64)> {
+    if !du.is_finite() || !dv.is_finite() || !residual.is_finite() {
+        return None;
+    }
+    let du_scale = du.x.abs().max(du.y.abs()).max(du.z.abs());
+    let dv_scale = dv.x.abs().max(dv.y.abs()).max(dv.z.abs());
+    if du_scale == 0.0 || dv_scale == 0.0 {
+        return None;
+    }
+    let du = Vector3::new(du.x / du_scale, du.y / du_scale, du.z / du_scale);
+    let dv = Vector3::new(dv.x / dv_scale, dv.y / dv_scale, dv.z / dv_scale);
+    let du_squared = du.dot(du);
+    let mixed = du.dot(dv);
+    let dv_squared = dv.dot(dv);
+    let determinant = du_squared.mul_add(dv_squared, -mixed * mixed);
+    if determinant <= f64::EPSILON * du_squared * dv_squared {
+        return None;
+    }
+    let residual_scale = residual.x.abs().max(residual.y.abs()).max(residual.z.abs());
+    if residual_scale == 0.0 {
+        return Some((0.0, 0.0));
+    }
+    let residual = Vector3::new(
+        residual.x / residual_scale,
+        residual.y / residual_scale,
+        residual.z / residual_scale,
+    );
+    let du_residual = du.dot(residual);
+    let dv_residual = dv.dot(residual);
+    let u = cadmpeg_ir::math::multiply_divide(
+        (dv_squared * du_residual - mixed * dv_residual) / determinant,
+        residual_scale,
+        du_scale,
+    )?;
+    let v = cadmpeg_ir::math::multiply_divide(
+        (du_squared * dv_residual - mixed * du_residual) / determinant,
+        residual_scale,
+        dv_scale,
+    )?;
+    (u.is_finite() && v.is_finite()).then_some((u, v))
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_least_squares_checks_rank_independent_of_column_scale() {
+        use cadmpeg_ir::math::Vector3;
+        let tiny = Vector3::new(1.0e-200, 0.0, 0.0);
+        let huge = Vector3::new(0.0, 1.0e200, 0.0);
+        assert_eq!(
+            super::least_squares_step(tiny, huge, huge),
+            Some((0.0, 1.0))
+        );
+        for scale in [1.0e-200, 1.0e-9, 1.0, 1.0e200] {
+            let du = Vector3::new(1.0, 0.0, 0.0);
+            let dv = Vector3::new(0.0, scale, 0.0);
+            assert_eq!(super::least_squares_step(du, dv, dv), Some((0.0, 1.0)));
+            assert_eq!(super::least_squares_step(du, du, dv), None);
+        }
+    }
+}}
+mod freecad { use super::*;
+// SPDX-License-Identifier: Apache-2.0
+
+use cadmpeg_ir::transform::Transform;
+
+
+/// A finite right-handed orthonormal affine frame.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub(crate) struct FiniteFrame(Transform);
+
+impl TryFrom<[[f64; 4]; 4]> for FiniteFrame {
+    type Error = String;
+    fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
+        (rows[3] == [0.0, 0.0, 0.0, 1.0])
+            .then(|| Transform::affine([rows[0], rows[1], rows[2]]))
+            .flatten()
+            .filter(Transform::is_proper_rigid)
+            .map(Self)
+            .ok_or_else(|| "frame must be finite, affine, and orthonormal".to_owned())
+    }
+}
+impl From<FiniteFrame> for [[f64; 4]; 4] {
+    fn from(value: FiniteFrame) -> Self {
+        value.rows()
+    }
+}
+impl FiniteFrame {
+    pub(crate) fn rows(self) -> [[f64; 4]; 4] {
+        self.0.rows()
+    }
+    pub(crate) fn transform(self) -> Transform {
+        self.0
+    }
+}
+
+/// A scale vector with finite components.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FiniteVec3([f64; 3]);
+impl TryFrom<[f64; 3]> for FiniteVec3 {
+    type Error = String;
+    fn try_from(values: [f64; 3]) -> Result<Self, Self::Error> {
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err("scale vector components must be finite".to_owned());
+        }
+        Ok(Self(values))
+    }
+}
+impl From<FiniteVec3> for [f64; 3] {
+    fn from(value: FiniteVec3) -> Self {
+        value.0
+    }
+}
+impl FiniteVec3 {
+    pub(crate) fn values(self) -> [f64; 3] {
+        self.0
+    }
+}
+
+pub(crate) fn placement_components(values: &[f64]) -> Option<FiniteFrame> {
+    let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    let scale = x.abs().max(y.abs()).max(z.abs()).max(w.abs());
+    if scale == 0.0 {
+        return None;
+    }
+    let (x, y, z, w) = (x / scale, y / scale, z / scale, w / scale);
+    let norm = x.hypot(y).hypot(z).hypot(w);
+    let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
+    FiniteFrame::try_from([
+        [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y - z * w),
+            2.0 * (x * z + y * w),
+            px,
+        ],
+        [
+            2.0 * (x * y + z * w),
+            1.0 - 2.0 * (x * x + z * z),
+            2.0 * (y * z - x * w),
+            py,
+        ],
+        [
+            2.0 * (x * z - y * w),
+            2.0 * (y * z + x * w),
+            1.0 - 2.0 * (x * x + y * y),
+            pz,
+        ],
+        [0.0, 0.0, 0.0, 1.0],
+    ])
+    .ok()
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_quaternion_frame_is_invariant_under_nonzero_scaling() {
+        for scale in [f64::from_bits(1), 1.0e-200, 1.0, 1.0e200, f64::MAX] {
+            let frame =
+                super::placement_components(&[2.0, 3.0, 4.0, 0.0, 0.0, scale, 0.0]).unwrap();
+            assert_eq!(
+                frame.rows(),
+                [
+                    [-1.0, 0.0, 0.0, 2.0],
+                    [0.0, -1.0, 0.0, 3.0],
+                    [0.0, 0.0, 1.0, 4.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            );
+        }
+        assert!(super::placement_components(&[0.0; 7]).is_none());
+    }
+}}
+mod sld_angles { use super::*;
+const SKETCH_POINT_TOLERANCE:f64=1e-9;
+fn line_direction(line: [[f64; 2]; 2]) -> [f64; 2] {
+    [line[1][0] - line[0][0], line[1][1] - line[0][1]]
+}
+pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let first = line_direction(first);
+    let second = line_direction(second);
+    let first = cadmpeg_ir::math::Vector3::new(first[0], first[1], 0.0);
+    let second = cadmpeg_ir::math::Vector3::new(second[0], second[1], 0.0);
+    if first.norm() <= SKETCH_POINT_TOLERANCE || second.norm() <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    Some(
+        first
+            .unit_nonzero()?
+            .dot(second.unit_nonzero()?)
+            .clamp(-1.0, 1.0)
+            .acos(),
+    )
+}
+pub(super) fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let angle = line_line_angle(first, second)?;
+    Some(angle.min(std::f64::consts::PI - angle))
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_line_angles_are_finite_for_large_directions() {
+        let x = [[0.0, 0.0], [1.0e200, 0.0]];
+        let y = [[0.0, 0.0], [0.0, 1.0e200]];
+        assert_eq!(super::line_line_angle(x, x), Some(0.0));
+        assert_eq!(
+            super::line_line_angle(x, y),
+            Some(std::f64::consts::FRAC_PI_2)
+        );
+        assert_eq!(super::dynamic_line_line_angle(x, x), Some(0.0));
+    }
+}}
+mod sld_holes { use super::*;
+use std::collections::HashMap;use cadmpeg_ir::features::holes::HolePlacement;const EPS_HOLE_POSITION:f64=1e-8;const EPS_HOLE_EXACT_GEOMETRY:f64=1e-12;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum GridCoordinate {
+    BelowRange(u64),
+    Cell(i64),
+    AboveRange(u64),
+}
+
+impl GridCoordinate {
+    fn new(value: f64, quantum: f64) -> Self {
+        let cell = (value / quantum).round();
+        if cell < i64::MIN as f64 {
+            Self::BelowRange(!value.to_bits())
+        } else if cell >= -(i64::MIN as f64) {
+            Self::AboveRange(value.to_bits())
+        } else {
+            Self::Cell(cell as i64)
+        }
+    }
+
+    fn coordinate(self, quantum: f64) -> f64 {
+        match self {
+            Self::BelowRange(bits) => f64::from_bits(!bits),
+            Self::Cell(cell) => cell as f64 * quantum,
+            Self::AboveRange(bits) => f64::from_bits(bits),
+        }
+    }
+}
+
+
+fn canonical_axis(axis: Vector3) -> Vector3 {
+    let sign = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .find(|component| component.abs() > EPS_HOLE_EXACT_GEOMETRY)
+        .map_or(1.0, f64::signum);
+    Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
+}
+fn carrier_placements(
+    axes: impl IntoIterator<Item = (Point3, Vector3)>,
+) -> Option<Vec<HolePlacement>> {
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
+    let mut carriers = axes
+        .into_iter()
+        .map(|(origin, axis)| {
+            let axis = canonical_axis(axis);
+            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
+            let closest = Point3::new(
+                origin.x - station * axis.x,
+                origin.y - station * axis.y,
+                origin.z - station * axis.z,
+            );
+            Some((
+                [
+                    quantize(closest.x),
+                    quantize(closest.y),
+                    quantize(closest.z),
+                    quantize(axis.x),
+                    quantize(axis.y),
+                    quantize(axis.z),
+                ],
+                HolePlacement::Axis {
+                    origin: cadmpeg_ir::features::FinitePoint3::new(closest)?,
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
+                },
+            ))
+        })
+        .collect::<Option<HashMap<_, _>>>()?
+        .into_iter()
+        .collect::<Vec<_>>();
+    carriers.sort_by_key(|(key, _)| *key);
+    let placements = carriers
+        .into_iter()
+        .map(|(_, placement)| placement)
+        .collect::<Vec<_>>();
+    (!placements.is_empty()).then_some(placements)
+}
+fn hole_axis_key(placement: &HolePlacement) -> Option<[GridCoordinate; 6]> {
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
+    let HolePlacement::Axis { origin, axis } = placement else {
+        return None;
+    };
+    let axis = canonical_axis(axis.get());
+    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
+    let closest = Point3::new(
+        origin.x - station * axis.x,
+        origin.y - station * axis.y,
+        origin.z - station * axis.z,
+    );
+    if !closest.is_finite() || !axis.is_finite() {
+        return None;
+    }
+    Some([
+        quantize(closest.x),
+        quantize(closest.y),
+        quantize(closest.z),
+        quantize(axis.x),
+        quantize(axis.y),
+        quantize(axis.z),
+    ])
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    for positions in [[1.0e12, 2.0e12], [-2.0e12, -1.0e12], [1.0e300, 2.0e300]] {
+        let placements = super::carrier_placements(
+            positions.map(|x| (Point3::new(x, 0.0, 0.0), axis)),
+        )
+        .unwrap();
+        assert_eq!(placements.len(), 2);
+        assert_ne!(hole_axis_key(&placements[0]), hole_axis_key(&placements[1]));
+    }
+}
+}}
+mod rhino_mesh { use super::*;
+
+pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> {
+    let mut triangles = Vec::with_capacity(faces.len().saturating_mul(2));
+    for face in faces {
+        if unique_face_vertices(face) == 3 {
+            let mut unique = Vec::with_capacity(3);
+            for index in face {
+                if !unique.contains(index) {
+                    unique.push(*index);
+                }
+            }
+            triangles.push([unique[0], unique[1], unique[2]]);
+        } else if unique_face_vertices(face) == 4 {
+            let diagonal_02 = vertices[face[0] as usize].distance(vertices[face[2] as usize]);
+            let diagonal_13 = vertices[face[1] as usize].distance(vertices[face[3] as usize]);
+            if diagonal_02 <= diagonal_13 {
+                triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
+            } else {
+                triangles.extend([[face[0], face[1], face[3]], [face[1], face[2], face[3]]]);
+            }
+        }
+    }
+    triangles
+}
+fn unique_face_vertices(face: &[u32; 4]) -> usize {
+    let mut unique = Vec::with_capacity(4);
+    for index in face {
+        if !unique.contains(index) {
+            unique.push(*index);
+        }
+    }
+    unique.len()
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_quad_uses_shorter_large_diagonal() {
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0e200, 0.0, 0.0),
+            Point3::new(2.0e200, 2.0e200, 0.0),
+            Point3::new(0.0, 1.0e200, 0.0),
+        ];
+        assert_eq!(
+            super::triangulate_faces(&[[0, 1, 2, 3]], &vertices),
+            vec![[0, 1, 3], [1, 2, 3]]
+        );
+    }
+}}
+mod iges_orientation { use super::*;
+const EPS_SURFACES_SIMILARITY_ORIENTATION_E10:f64=1e-10;
+fn similarity_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
+    let rows = transform.affine_rows();
+    let scale = rows
+        .iter()
+        .flat_map(|row| &row[..3])
+        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+    if scale == 0.0 {
+        return None;
+    }
+    let column = |index| {
+        Vector3::new(
+            rows[0][index] / scale,
+            rows[1][index] / scale,
+            rows[2][index] / scale,
+        )
+    };
+    let [x, y, z] = [column(0), column(1), column(2)];
+    let squared_scale = x.dot(x);
+    if !squared_scale.is_finite() || squared_scale <= 0.0 {
+        return None;
+    }
+    let tolerance = squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10;
+    if (y.dot(y) - squared_scale).abs() > tolerance
+        || (z.dot(z) - squared_scale).abs() > tolerance
+        || x.dot(y).abs() > tolerance
+        || x.dot(z).abs() > tolerance
+        || y.dot(z).abs() > tolerance
+    {
+        return None;
+    }
+    let determinant = x.dot(y.cross(z));
+    let determinant_tolerance =
+        squared_scale.sqrt() * squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10;
+    (determinant.is_finite() && determinant.abs() > determinant_tolerance)
+        .then(|| determinant.signum())
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn numerical_audit_similarity_orientation_survives_uniform_scale() {
+    for scale in [f64::from_bits(1), 1.0e-110, 1.0, 1.0e110, f64::MAX] {
+        for orientation in [-1.0, 1.0] {
+            let transform = cadmpeg_ir::transform::Transform::affine([
+                [scale * orientation, 0.0, 0.0, 0.0],
+                [0.0, scale, 0.0, 0.0],
+                [0.0, 0.0, scale, 0.0],
+            ])
+            .unwrap();
+            assert_eq!(super::similarity_orientation(transform), Some(orientation));
+        }
+    }
+    let skew = cadmpeg_ir::transform::Transform::affine([
+        [1.0e110, 1.0e110, 0.0, 0.0],
+        [0.0, 1.0e110, 0.0, 0.0],
+        [0.0, 0.0, 1.0e110, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(super::similarity_orientation(skew), None);
+}
+}}
+mod iges_real {use super::*;
+fn malformed(message:&str)->CodecError {CodecError::Malformed(message.into())}
+struct BitReader<'a>{bytes:&'a[u8],byte:usize,bit:u8}
+impl<'a> BitReader<'a>{
+fn new(bytes: &'a [u8]) -> Self {
+        Self {
+            bytes,
+            byte: 0,
+            bit: 0,
+        }
+    }
+fn read_bits(&mut self, count: u8) -> Result<u64, CodecError> {
+        if count > 64 {
+            return Err(malformed("a Binary primitive requests more than 64 bits"));
+        }
+        let mut value = 0_u64;
+        for _ in 0..count {
+            let byte = *self
+                .bytes
+                .get(self.byte)
+                .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
+            let shift = 7_u8.saturating_sub(self.bit);
+            value = (value << 1) | u64::from((byte >> shift) & 1);
+            self.bit += 1;
+            if self.bit == 8 {
+                self.bit = 0;
+                self.byte = self
+                    .byte
+                    .checked_add(1)
+                    .ok_or_else(|| malformed("a Binary bit offset overflows"))?;
+            }
+        }
+        Ok(value)
+    }
+fn align_zero(&mut self) -> Result<(), CodecError> {
+        if self.bit == 0 {
+            return Ok(());
+        }
+        let padding = self.read_bits(8 - self.bit)?;
+        if padding != 0 {
+            return Err(malformed("Binary primitive padding contains a one bit"));
+        }
+        Ok(())
+    }
+fn read_real(&mut self, exponent_bits: u8, fraction_bits: u8) -> Result<f64, CodecError> {
+        if exponent_bits == 0 {
+            return Err(malformed("a Binary real has zero exponent width"));
+        }
+        let total_bits = 1_u16
+            .checked_add(u16::from(exponent_bits))
+            .and_then(|bits| bits.checked_add(u16::from(fraction_bits)))
+            .ok_or_else(|| malformed("a Binary real width overflows"))?;
+        if total_bits > 64 {
+            return Err(malformed(
+                "a Binary real exceeds the supported 64-bit primitive width",
+            ));
+        }
+        let negative = self.read_bits(1)? == 1;
+        let biased_exponent = self.read_bits(exponent_bits)?;
+        let fraction = self.read_bits(fraction_bits)?;
+        self.align_zero()?;
+        if biased_exponent == 0 {
+            return Ok(0.0);
+        }
+        let bias = 1_u64 << (exponent_bits - 1);
+        let exponent = i128::from(biased_exponent) - i128::from(bias);
+        if exponent > 1024 {
+            return Err(malformed("a Binary real is not finite"));
+        }
+        if exponent < -1074 {
+            return Ok(if negative { -0.0 } else { 0.0 });
+        }
+        // The range checks prove this conversion and keep the power finite.
+        let exponent = exponent as i32;
+        let fraction = 0.5 + (fraction as f64 / 2_f64.powi(i32::from(fraction_bits) + 1));
+        let value = if exponent >= -1021 {
+            (fraction * 2.0) * 2_f64.powi(exponent - 1)
+        } else {
+            (fraction * 2_f64.powi(exponent + 1074)) * f64::from_bits(1)
+        };
+        if !value.is_finite() {
+            return Err(malformed("a Binary real is not finite"));
+        }
+        Ok(if negative { -value } else { value })
+    }
+}
+#[derive(Default)]struct BitWriter{bytes:Vec<u8>,bit:u8}
+impl BitWriter {fn push_bits(&mut self, value: u64, count: u8) {
+            for index in (0..count).rev() {
+                let bit = ((value >> index) & 1) as u8;
+                if self.bit == 0 {
+                    self.bytes.push(0);
+                }
+                if bit != 0 {
+                    let last = self.bytes.len() - 1;
+                    self.bytes[last] |= 1 << (7 - self.bit);
+                }
+                self.bit += 1;
+                if self.bit == 8 {
+                    self.bit = 0;
+                }
+            }
+        }
+}
+#[cfg(test)]mod tests{use super::*;#[test]
+fn numerical_audit_binary_real_keeps_representable_exponent_boundary() {
+        for negative in [0, 1] {
+            let mut writer = BitWriter::default();
+            writer.push_bits(negative, 1);
+            writer.push_bits(3072, 12);
+            writer.push_bits(0, 51);
+            let value = super::BitReader::new(&writer.bytes)
+                .read_real(12, 51)
+                .unwrap();
+            assert_eq!(
+                value,
+                if negative == 0 {
+                    2.0_f64.powi(1023)
+                } else {
+                    -2.0_f64.powi(1023)
+                }
+            );
+        }
+        // Integer exponent subtraction also preserves low bits with a wide field.
+        let mut writer = BitWriter::default();
+        writer.push_bits(0, 1);
+        writer.push_bits((1_u64 << 62) + 1, 63);
+        assert_eq!(
+            super::BitReader::new(&writer.bytes)
+                .read_real(63, 0)
+                .unwrap(),
+            1.0
+        );
+    }
+}}
+mod sld_integer { use super::*;
+use std::collections::{BTreeMap,HashMap}; use cadmpeg_ir::features::ParameterValue; use cadmpeg_ir::scalar::{Length,Angle}; const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9:f64=1e-9;pub(crate) fn exact_integer_f64(value: i64) -> Option<f64> {
+    let encoded = value as f64;
+    ((encoded as i128) == i128::from(value)).then_some(encoded)
+}
+
+pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
+    let parameter_kinds = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| Some((&parameter.id, parameter.value.as_ref()?)))
+        .collect::<HashMap<_, _>>();
+    for value in ir
+        .model
+        .configurations
+        .iter_mut()
+        .flat_map(|configuration| &mut configuration.parameter_values)
+    {
+        let (parameter, value) = value;
+        let Some(canonical) = parameter_kinds.get(parameter) else {
+            continue;
+        };
+        let aligned = match (&**canonical, &*value) {
+            (ParameterValue::Length(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer)
+                    .and_then(Length::new)
+                    .map(ParameterValue::Length)
+            }
+            (ParameterValue::Length(_), ParameterValue::Real(real)) => {
+                Length::new(real.get()).map(ParameterValue::Length)
+            }
+            (ParameterValue::Angle(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer)
+                    .and_then(Angle::new)
+                    .map(ParameterValue::Angle)
+            }
+            (ParameterValue::Angle(_), ParameterValue::Real(real)) => {
+                Angle::new(real.get()).map(ParameterValue::Angle)
+            }
+            (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer)
+                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+                    .map(ParameterValue::Real)
+            }
+            (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
+                let integer = real.get() as i64;
+                (real.get() >= i64::MIN as f64
+                    && real.get() < -(i64::MIN as f64)
+                    && integer as f64 == real.get())
+                .then_some(ParameterValue::Integer(integer))
+            }
+            // Configuration lanes can provisionally classify an untyped scalar
+            // as a length. The canonical integer wins only when the values agree.
+            (ParameterValue::Integer(expected), ParameterValue::Length(candidate)) => {
+                let candidate = candidate.get();
+
+                exact_integer_f64(*expected)
+                    .filter(|expected_value| {
+                        (candidate - expected_value).abs()
+                            <= EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9
+                                * candidate.abs().max(expected_value.abs()).max(1.0)
+                    })
+                    .map(|_| ParameterValue::Integer(*expected))
+            }
+            _ => None,
+        };
+        if let Some(aligned) = aligned {
+            *value = aligned;
+        }
+    }
+    for configuration in &mut ir.model.configurations {
+        configuration.parameter_values.retain(|parameter, value| {
+            let Some(canonical) = parameter_kinds.get(parameter) else {
+                return true;
+            };
+            std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
+        });
+    }
+}
+#[cfg(test)]mod tests {use super::*;
+#[test]
+fn configuration_numeric_override_inherits_parameter_dimension() {
+    use cadmpeg_ir::features::{
+        ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
+        ParameterValue,
+    };
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let parameter_id = ParameterId::mint("test:model:parameter#depth").expect("identity grammar");
+    let count_id = ParameterId::mint("test:model:parameter#count").expect("identity grammar");
+    ir.model.parameters.push(DesignParameter {
+        id: parameter_id.clone(),
+        owner: Some(FeatureId::mint("test:model:feature#extrude").expect("identity grammar")),
+        ordinal: 0,
+        name: "Depth".into(),
+        expression: "7mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.parameters.push(DesignParameter {
+        id: count_id.clone(),
+        owner: Some(FeatureId::mint("test:model:feature#pattern").expect("identity grammar")),
+        ordinal: 0,
+        name: "Count".into(),
+        expression: "7".into(),
+        display: None,
+        value: Some(ParameterValue::Integer(7)),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#default").expect("identity grammar"),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Default".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: Some(cadmpeg_ir::features::DistinctMembers::default()),
+        parameter_values: BTreeMap::from([
+            (parameter_id.clone(), ParameterValue::Integer(7)),
+            (
+                count_id.clone(),
+                ParameterValue::Length(Length::new(0.007).unwrap()),
+            ),
+        ]),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+
+    align_configuration_parameter_kinds(&mut ir);
+
+    assert_eq!(
+        ir.model.configurations[0].parameter_values[&parameter_id],
+        ParameterValue::Length(Length::new(7.0).unwrap())
+    );
+    assert!(!ir.model.configurations[0]
+        .parameter_values
+        .contains_key(&count_id));
+
+    ir.model.configurations[0].parameter_values.insert(
+        count_id.clone(),
+        ParameterValue::Length(Length::new(7.0).unwrap()),
+    );
+    align_configuration_parameter_kinds(&mut ir);
+    assert_eq!(
+        ir.model.configurations[0].parameter_values[&count_id],
+        ParameterValue::Integer(7)
+    );
+
+    ir.model.configurations[0].parameter_values.insert(
+        count_id.clone(),
+        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.0).unwrap()),
+    );
+    align_configuration_parameter_kinds(&mut ir);
+    assert_eq!(
+        ir.model.configurations[0].parameter_values[&count_id],
+        ParameterValue::Integer(7)
+    );
+
+    ir.model.configurations[0].parameter_values.insert(
+        count_id.clone(),
+        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap()),
+    );
+    align_configuration_parameter_kinds(&mut ir);
+    assert!(!ir.model.configurations[0]
+        .parameter_values
+        .contains_key(&count_id));
+    for (real, expected) in [
+        (-(i64::MIN as f64), None),
+        (i64::MIN as f64, Some(i64::MIN)),
+        (
+            f64::from_bits((i64::MAX as f64).to_bits() - 1),
+            Some(i64::MAX - 1023),
+        ),
+    ] {
+        ir.model.configurations[0].parameter_values.insert(
+            count_id.clone(),
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(real).unwrap()),
+        );
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values.get(&count_id),
+            expected.map(ParameterValue::Integer).as_ref()
+        );
+    }
+}
+}}

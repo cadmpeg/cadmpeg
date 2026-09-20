@@ -1,5 +1,8 @@
 # Workspace duplicate-function and numerical audit
 
+Implementation follow-up: all 47 ranked entries are fixed. See [resolutions and post-commit verification](resolutions.md). The original audit below records the pre-fix state.
+
+
 47 ranked per-crate entries: 36 contain numerical defects and 11 concern duplication only. Some numerical entries also identify duplication. Twelve crates have findings; nine have no new local finding confirmed in this pass. These are per-crate entries, not 47 independent root causes: shared norm arithmetic and two cross-crate consolidation opportunities recur under their affected crates. No crate reached the requested cap of 30; the largest list has nine.
 
 The first fixes should be the F3D half-turn axis, the three Rhino NURBS join/elevation defects, and the F3D/Creo false line-circle intersections. They change geometry without needing values near floating-point limits. Shared IR signed-weight isocurve admission and rational evaluation follow because multiple codecs use them. Range-limit findings are retained below with explicit triggers; they are not evidence of widespread failure in normal CAD files.

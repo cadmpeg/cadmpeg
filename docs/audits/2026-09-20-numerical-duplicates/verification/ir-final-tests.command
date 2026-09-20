@@ -1,0 +1,1 @@
+cargo test -q -p cadmpeg-ir --lib -- eval:: math:: transform::
