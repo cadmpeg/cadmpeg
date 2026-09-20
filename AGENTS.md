@@ -4,12 +4,12 @@
 - Open-items fields are Question, Known, Need, Conflict, and Note only. Delete a resolved item in the same change that writes the answer into the specification. Do not keep a Resolved part.
 - Do not treat finite evidence as an unknown. Do not put research history, project status, implementation bugs, or export behavior in specs.
 - When moving code, update callers to import from the owning module. Do not retain old paths through top-level or orchestration re-exports.
-- Commit early, commit often.
+- Commit coherent, compiling checkpoints. A commit boundary alone does not require another full gate; final assigned coverage remains due.
 
 Multi-agent repository etiquette:
 
-- One worktree and one branch per agent. Do not edit or build inside another agent's worktree.
-- Unstaged changes you did not make belong to another agent. Do not commit them, revert them, or bypass hooks because of them.
+- Use the assigned worktree and branch. Use one worktree per agent unless the user has authorized a shared checkout; then keep file ownership disjoint and use the assigned commit procedure. Do not create extra worktrees or edit outside the assigned checkout without authorization.
+- Staged and unstaged changes you did not make belong to another agent. Do not commit them, revert them, clear their staging, or bypass hooks because of them. Before committing, inspect the unfiltered staged file list; a path-filtered diff does not show everything a plain commit includes.
 - Use `--no-verify` only with the reason stated in the commit body.
 - In a conflicted merge, restore a file from a merge stage with `scripts/restore-merge-stage.sh`, not with `git checkout` or `git restore`.
 
@@ -23,16 +23,17 @@ Test placement policy:
 - Golden tests live under `src/golden_tests.rs` or a semantic `golden_tests/` tree. They are excluded from test-file size limits. Do not regenerate snapshots during test moves.
 - A crate root may expose only three test-only entry points: `golden_tests`, `integration_tests`, and `test_support`. Unit-test modules are declared by their production owners.
 - Do not split production only because a cohesive test suite is large. Split production only when an independent review finds a real responsibility seam.
-- Test moves preserve behavior. Do not change assertions, expected values, byte literals, tolerances, snapshots, test names, or ignored status.
+- Test moves preserve inputs, assertions, expected values, byte literals, tolerances, snapshots, names and ignored status. Equivalent import/path changes and lint-required respellings are permitted when they preserve those properties; a panic-message assertion also has to remain true. Meet lints without changing what the test checks.
 - Feature work and test movement use separate commits.
 - Prohibited final-tree forms: `crates/*/src/tests.rs`; `#[path]` that includes a test-only module; numbered test files; one oversized `integration_tests.rs` or `test_support.rs`; and production re-exports that preserve obsolete paths after a module split.
 
 Build and test operations:
 
 - Run several tests in one invocation with filters after the separator: `cargo test -- name_a name_b`. Plain `cargo test name_a name_b` fails with `unexpected argument`. Fast suite: `cargo test-fast`. Regenerate golden snapshots after an intended change: `UPDATE_GOLDEN=1 cargo test-fast golden`, then review the diff.
-- Type-check with `cargo check -q -p <crate>` (add `--tests` when a test file changed). `cargo build` is for a binary you are about to run, nothing else; `--workspace --all-targets` belongs to the closing gate only. Before changing a signature or a wire shape, `git grep -n <name>` the complete caller inventory and edit every site, then check once — never let the compiler find callers one error at a time. Regenerate goldens once, after every wire change is in the tree, not once per change.
+- Type-check with `cargo check -q -p <crate>` (add `--tests` when a test file changed). `cargo build` is for a binary you are about to run, nothing else; `--workspace --all-targets` belongs to the closing gate only. Before changing a signature or a wire shape, `git grep -n <name>` the complete affected caller inventory and edit every site before checking. For moves and visibility changes, account for imports in both resulting modules, module accessibility, inherited cfg/lint attributes and types exposed through signatures, fields, variants and aliases. After a failure, read the relevant diagnostics and repair the understood family together before rechecking. Regenerate goldens once, after every wire change is in the tree, not once per change.
 - Build and test with `-q`: `cargo build -q`, `cargo test -q` (`cargo test-fast` is quiet already). The flag removes the `Compiling` status lines and condenses the per-test list to one character per test; warnings, errors, and failure detail still print in full. A quiet build with exit status 0 is a completed build — do not rerun it verbosely to confirm. Use `--verbose` only when the compile plan itself is the question.
-- The pre-commit gate scopes clippy and tests to the staged crates plus their workspace dependents. Triage a lint finding once and apply a targeted `#[allow]` with a comment; do not rerun the full gate against code you did not touch.
+- The pre-commit gate scopes clippy and tests to the staged crates plus their workspace dependents. Triage a lint finding once and prefer a behavior-preserving fix. A targeted `#[allow]` with a reason is available only when the assignment and source policy permit it; an explicit no-allow assignment requires fixing the lint or reporting the unresolved condition. A known unrelated failure does not justify repeating the full gate without changed inputs or a new diagnostic question.
+- For dispatched work under `illegal-cut-6-exec`, its `BUILD-DISCIPLINE.md` owns execution, evidence reuse, waiting and commit mechanics. The brief assigns checkpoint, final worker and integrator coverage. Saved proof must match relevant working-tree inputs, dependencies and configuration; a matching HEAD alone is insufficient.
 - The `JsonSchema` derives are behind a `schema` feature that is off by default in `cadmpeg-ir`, `cadmpeg-core`, and `cadmpeg-asm`. Codec-private records do not generate schemas; CADIR represents them through `NativeRecord`. `cargo test-fast` does not build them. After changing an IR or native record type run `cargo test -p cadmpeg-ir --features schema --lib`. Do not add `JsonSchema` to a bare `derive` list; use `#[cfg_attr(feature = "schema", derive(JsonSchema))]`.
 - Changes to `cadmpeg-ir` or `cadmpeg-core` fan out to every codec crate and diverge all goldens. Add struct fields through `Default` or constructor helpers and plan the fan-out before editing.
 - A successful dump is not a checked model. Dump does not auto-check; the dump command report leaves `check_report` null and prints `check: not run`. Run `cadmpeg check` (or convert, which checks unless overridden). Application validation composes `validate_neutral` + source fidelity + registered native validators. Decoder/export admission uses documented `Check` subsets in `docs/admissibility-routes.md`, not full final-document validation.
