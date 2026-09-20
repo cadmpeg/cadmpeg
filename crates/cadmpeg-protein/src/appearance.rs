@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral projection of Protein texture assets and material property names.
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{BumpMap, TextureMap2d, TextureRef};
 
 #[derive(Clone, PartialEq)]
@@ -32,12 +33,14 @@ impl TextureAsset {
 
 /// Project a bitmap or bump asset and count distances with unknown units.
 /// Unknown distances use zero; the caller decides whether to retain the asset.
-pub fn texture_asset(record: &crate::DecodedRecord) -> (Option<TextureAsset>, usize) {
+pub fn texture_asset(
+    record: &crate::DecodedRecord,
+) -> Result<(Option<TextureAsset>, usize), CodecError> {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
     ) {
-        return (None, 0);
+        return Ok((None, 0));
     }
     let paths = record
         .properties
@@ -65,12 +68,15 @@ pub fn texture_asset(record: &crate::DecodedRecord) -> (Option<TextureAsset>, us
     });
     let mut untyped_distance_properties = 0usize;
     let mut distance = |suffix: &str, default| match distance_property(record, suffix) {
-        Ok(Some(value)) => value,
-        Ok(None) => default,
-        Err(_) => {
+        Ok(value) => Ok(value.unwrap_or(default)),
+        Err(DistanceError::UnknownUnit(_)) => {
             untyped_distance_properties += 1;
-            default
+            Ok(default)
         }
+        Err(DistanceError::NonFinite) => Err(CodecError::malformed(format_args!(
+            "Protein asset {} distance {suffix} is non-finite after millimetre conversion",
+            record.guid
+        ))),
     };
     let mapping = TextureMap2d {
         map_channel: integer_property(record, "MapChannel").unwrap_or(1),
@@ -82,16 +88,20 @@ pub fn texture_asset(record: &crate::DecodedRecord) -> (Option<TextureAsset>, us
         rotation: float_property(record, "WAngle").unwrap_or(0.0).to_radians(),
         repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
         repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
-        real_world_offset_x: distance("RealWorldOffsetX", 0.0),
-        real_world_offset_y: distance("RealWorldOffsetY", 0.0),
-        real_world_scale_x: distance("RealWorldScaleX", 0.0),
-        real_world_scale_y: distance("RealWorldScaleY", 0.0),
+        real_world_offset_x: distance("RealWorldOffsetX", 0.0)?,
+        real_world_offset_y: distance("RealWorldOffsetY", 0.0)?,
+        real_world_scale_x: distance("RealWorldScaleX", 0.0)?,
+        real_world_scale_y: distance("RealWorldScaleY", 0.0)?,
     };
-    let bump = (record.schema == "BumpMapSchema").then(|| BumpMap {
-        normal_map: integer_property(record, "bumpmap_Type") == Some(1),
-        depth: distance("bumpmap_Depth", 0.0),
-        normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
-    });
+    let bump = if record.schema == "BumpMapSchema" {
+        Some(BumpMap {
+            normal_map: integer_property(record, "bumpmap_Type") == Some(1),
+            depth: distance("bumpmap_Depth", 0.0)?,
+            normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
+        })
+    } else {
+        None
+    };
     let texture = TextureAsset {
         asset_guid: record.guid.clone(),
         schema: record.schema.clone(),
@@ -100,7 +110,7 @@ pub fn texture_asset(record: &crate::DecodedRecord) -> (Option<TextureAsset>, us
         mapping,
         bump,
     };
-    (Some(texture), untyped_distance_properties)
+    Ok((Some(texture), untyped_distance_properties))
 }
 
 fn property_with_suffix<'a>(
@@ -150,18 +160,32 @@ fn boolean_property(record: &crate::DecodedRecord, suffix: &str) -> Option<bool>
     }
 }
 
-fn distance_property(record: &crate::DecodedRecord, suffix: &str) -> Result<Option<f64>, u32> {
+#[derive(Debug, PartialEq)]
+enum DistanceError {
+    UnknownUnit(u32),
+    NonFinite,
+}
+
+fn distance_property(
+    record: &crate::DecodedRecord,
+    suffix: &str,
+) -> Result<Option<f64>, DistanceError> {
     let Some(crate::property::PropertyValue::Distance { unit, value }) =
         property_with_suffix(record, suffix)
     else {
         return Ok(None);
     };
-    match *unit {
-        0x2016 => Ok(Some(*value * 25.4)),
-        0x200e => Ok(Some(*value)),
-        0x200d => Ok(Some(*value * 10.0)),
-        unit => Err(unit),
+    let factor = match *unit {
+        0x2016 => 25.4,
+        0x200e => 1.0,
+        0x200d => 10.0,
+        unit => return Err(DistanceError::UnknownUnit(unit)),
+    };
+    let millimetres = value * factor;
+    if !millimetres.is_finite() {
+        return Err(DistanceError::NonFinite);
     }
+    Ok(Some(millimetres))
 }
 
 #[cfg(test)]
