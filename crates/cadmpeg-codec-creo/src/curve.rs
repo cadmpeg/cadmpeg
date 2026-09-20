@@ -6570,22 +6570,35 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
         let first = points[0];
         let middle = points[points.len() / 2];
         let last = points[points.len() - 1];
-        let a11 = 2.0 * (middle.0 - first.0);
-        let a12 = 2.0 * (middle.1 - first.1);
-        let a21 = 2.0 * (last.0 - middle.0);
-        let a22 = 2.0 * (last.1 - middle.1);
-        let determinant = a11.mul_add(a22, -(a12 * a21));
-        if determinant.abs() < 1e-15 {
+        let middle_delta = [middle.0 - first.0, middle.1 - first.1];
+        let last_delta = [last.0 - first.0, last.1 - first.1];
+        let scale = middle_delta
+            .into_iter()
+            .chain(last_delta)
+            .map(f64::abs)
+            .fold(0.0, f64::max);
+        if !scale.is_finite() || scale == 0.0 {
             continue;
         }
-        let bx = middle.0.mul_add(middle.0, middle.1 * middle.1)
-            - first.0.mul_add(first.0, first.1 * first.1);
-        let bz = last.0.mul_add(last.0, last.1 * last.1)
-            - middle.0.mul_add(middle.0, middle.1 * middle.1);
-        let center_x = bx.mul_add(a22, -(a12 * bz)) / determinant;
-        let center_z = a11.mul_add(bz, -(bx * a21)) / determinant;
+        let middle_delta = middle_delta.map(|value| value / scale);
+        let last_delta = last_delta.map(|value| value / scale);
+        let determinant = middle_delta[0].mul_add(last_delta[1], -middle_delta[1] * last_delta[0]);
+        if determinant.abs() <= 64.0 * f64::EPSILON {
+            continue;
+        }
+        // Fit in a translated chart so subtracting squared world positions
+        // cannot erase a small circle's radius.
+        let middle_squared =
+            middle_delta[0].mul_add(middle_delta[0], middle_delta[1] * middle_delta[1]);
+        let last_squared = last_delta[0].mul_add(last_delta[0], last_delta[1] * last_delta[1]);
+        let center_u = 0.5 * middle_squared.mul_add(last_delta[1], -middle_delta[1] * last_squared)
+            / determinant;
+        let center_v = 0.5 * middle_delta[0].mul_add(last_squared, -middle_squared * last_delta[0])
+            / determinant;
+        let center_x = center_u.mul_add(scale, first.0);
+        let center_z = center_v.mul_add(scale, first.1);
         let radius = (first.0 - center_x).hypot(first.1 - center_z);
-        if radius <= 0.0 {
+        if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
             continue;
         }
         let residuals = points

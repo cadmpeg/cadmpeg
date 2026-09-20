@@ -121,3 +121,26 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
     assert_eq!(point.v, 0.);
     assert_eq!(pcurve_tangent(&curve, 1.), None);
 }
+
+#[test]
+fn numerical_ranges_nurbs_basis_supports_spans_wider_than_f64() {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![-1e308, -1e308, 1e308, 1e308],
+            vec![Point2::new(0., 0.), Point2::new(1., 0.)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    for (parameter, expected) in [(-1e308, 0.), (0., 0.5), (1e308, 1.)] {
+        assert_eq!(
+            pcurve_uv(&pcurve, parameter),
+            Some(Point2::new(expected, 0.))
+        );
+        let tangent = pcurve_tangent(&pcurve, parameter).unwrap();
+        assert!((tangent.u / 5e-309 - 1.).abs() < EPS_RELATIVE);
+        assert_eq!(tangent.v, 0.);
+    }
+}

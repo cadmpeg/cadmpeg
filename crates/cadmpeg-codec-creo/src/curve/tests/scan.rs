@@ -668,7 +668,7 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
 
 #[test]
 fn numerical_ranges_fc05_circle_residual_scales_with_radius() {
-    const RADIUS: f64 = 1e-6;
+    const RADIUS: f64 = 1.0 / 1_048_576.0;
     for (perturbation, accepted) in [(0.0, true), (5e-10, false)] {
         let mut payload = visibgeom_payload(0, 1);
         payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
@@ -678,7 +678,7 @@ fn numerical_ranges_fc05_circle_residual_scales_with_radius() {
             [-RADIUS, 0., std::f64::consts::PI],
             [0., -RADIUS, 3. * std::f64::consts::FRAC_PI_2],
         ] {
-            for value in [x, z, t, 2.] {
+            for value in [3.0 + x, 3.0 + z, 2.0 + t, 2.] {
                 world(&mut payload, value);
             }
         }
