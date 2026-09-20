@@ -1298,7 +1298,7 @@ fn prune_ordered_face_endpoint_support(
     }
 }
 
-pub(crate) fn prune_implicit_ordered_face_endpoint_support(
+pub(super) fn prune_implicit_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     coordinate_domains: &MeshCoordinateRootDomains,
@@ -1769,7 +1769,7 @@ fn advance_compact_boundary_domains<'a>(
 }
 
 #[cfg(test)]
-pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
+pub(super) fn compact_boundary_domains_jointly_viable<'a>(
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
