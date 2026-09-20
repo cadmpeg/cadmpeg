@@ -62,6 +62,36 @@ fn scaled_displacement(start: Point2, end: Point2, minimum_scale: f64) -> (Point
     }
 }
 
+/// The half chord of a circle cut at a perpendicular distance, both lengths
+/// divided by the larger of the two so that one of them is exactly one.
+/// `None` states a cut that misses the circle.
+///
+/// A tangent touches at one point, so the difference is read against the
+/// rounding error its own two sides carry. Round to nearest moves a value by at
+/// most `f64::EPSILON / 2` of itself, and both callers form the perpendicular
+/// distance through the same five stages: a displacement scaled by its own
+/// largest component, the hypotenuse of that displacement, two exact sums, and
+/// one quotient of those sums. Those stages hold eight such steps — three in the
+/// scaled displacement, whose overflow form divides each coordinate before it
+/// subtracts, one ulp for the hypotenuse, the final rounding of each of the two
+/// exact sums, and the quotient. Dividing by the larger of the two lengths
+/// rounds one side once more and leaves the other exactly one, which the
+/// `radius` term counts. Products of those relative errors are second order
+/// against the half ulp each step rounds up to, and the subtraction itself is
+/// exact while the two sides stay within a factor of two, which is every case
+/// the band decides.
+fn half_chord(radius: f64, perpendicular: f64) -> Option<f64> {
+    let difference = radius - perpendicular;
+    let tangency_error = 0.5 * f64::EPSILON * (8.0 * perpendicular + radius);
+    if difference.abs() <= tangency_error {
+        return Some(0.0);
+    }
+    if difference < 0.0 {
+        return None;
+    }
+    Some(difference.sqrt() * (radius + perpendicular).sqrt())
+}
+
 /// Parameters on the infinite line `start + t * (end - start)` at a circle.
 /// A tangent returns the same parameter twice. Invalid, degenerate and disjoint inputs return `None`.
 pub fn line_circle_parameters(
@@ -118,25 +148,7 @@ pub fn line_circle_parameters(
     let radial_scale = radius.max(perpendicular);
     let normalized_radius = radius / radial_scale;
     let perpendicular = perpendicular / radial_scale;
-    // A tangent touches at one point, so the difference is read against the
-    // rounding error its own two sides carry. Round to nearest moves a value by at
-    // most `f64::EPSILON / 2` of itself. `perpendicular` passes through eight such
-    // steps: the two coordinate differences and the two divisions that form
-    // `direction`, one ulp for the hypotenuse, the final rounding of each of the
-    // two exact sums, the quotient, and the division by `radial_scale`.
-    // `normalized_radius` passes through one. Products of those relative errors
-    // are second order against the half ulp each step rounds up to, and the
-    // subtraction itself is exact while the two sides stay within a factor of two,
-    // which is every case the band decides.
-    let difference = normalized_radius - perpendicular;
-    let tangency_error = 0.5 * f64::EPSILON * (8.0 * perpendicular + normalized_radius);
-    let half_chord = if difference.abs() <= tangency_error {
-        0.0
-    } else if difference < 0.0 {
-        return None;
-    } else {
-        difference.sqrt() * (normalized_radius + perpendicular).sqrt()
-    };
+    let half_chord = half_chord(normalized_radius, perpendicular)?;
     let parameter = |sign: f64| {
         let mut numerator = ExactSignedSum::default();
         for (coordinate, component) in [
@@ -200,12 +212,18 @@ pub fn circle_intersections(
     else {
         return Some(Vec::new());
     };
-    let radial_fraction = (along / first_radius).abs();
-    if radial_fraction > 1.0 + 64.0 * f64::EPSILON {
+    // `along` is the signed perpendicular distance from the smaller circle's
+    // center to the radical line, so the chord it cuts answers the same question
+    // a line cutting that circle does. Only radial quantities contribute to the
+    // comparison, and the larger of the two normalizes both, which keeps a
+    // radius below the normal range from carrying the offset out of range.
+    let perpendicular = along.abs();
+    let radial_scale = first_radius.max(perpendicular);
+    let Some(half_chord) = half_chord(first_radius / radial_scale, perpendicular / radial_scale)
+    else {
         return Some(Vec::new());
-    }
-    let radial_fraction = radial_fraction.min(1.0);
-    let height = first_radius * ((1.0 - radial_fraction).sqrt() * (1.0 + radial_fraction).sqrt());
+    };
+    let height = radial_scale * half_chord;
     let unit = Point2::new(delta.u / distance, delta.v / distance);
     let mut points = Vec::new();
     for height in [height, -height] {
@@ -351,6 +369,41 @@ mod tests {
             )
             .unwrap(),
             [-0.5; 2]
+        );
+    }
+
+    // Two unit circles a distance `d` apart put the radical line `d / 2` from
+    // the first center, and `d * d` and `2 * d` both reach the accumulator
+    // exactly, so one last bit of `d` moves that distance by half a last bit of
+    // the radius. The outcome then reads the offset against the band alone.
+    fn unit_circles_cut(distance: f64) -> Vec<Point2> {
+        circle_intersections(Point2::new(0.0, 0.0), 1.0, Point2::new(distance, 0.0), 1.0).unwrap()
+    }
+
+    #[test]
+    fn a_radical_line_inside_the_tangency_band_states_one_point() {
+        assert_eq!(unit_circles_cut(2.0), vec![Point2::new(1.0, 0.0)]);
+        assert_eq!(
+            unit_circles_cut(2.0 + 2.0 * f64::EPSILON),
+            vec![Point2::new(1.0 + f64::EPSILON, 0.0)]
+        );
+        assert_eq!(
+            unit_circles_cut(2.0 - 2.0 * f64::EPSILON),
+            vec![Point2::new(1.0 - f64::EPSILON, 0.0)]
+        );
+        let secant = unit_circles_cut(2.0 - 64.0 * f64::EPSILON);
+        assert_eq!(secant.len(), 2);
+        for point in secant {
+            assert_eq!(point.u, 1.0 - 32.0 * f64::EPSILON);
+            assert!((point.v.abs() - (64.0 * f64::EPSILON).sqrt()).abs() <= 8.0 * f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn a_radical_line_past_the_tangency_band_states_no_point() {
+        assert_eq!(
+            unit_circles_cut(2.0 + 32.0 * f64::EPSILON),
+            Vec::<Point2>::new()
         );
     }
 
