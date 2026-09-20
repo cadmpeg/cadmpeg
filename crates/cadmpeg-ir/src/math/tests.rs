@@ -84,3 +84,24 @@ fn unit_vector_refuses_each_nonfinite_component() {
         }
     }
 }
+
+#[test]
+fn numerical_audit_lengths_and_nonzero_directions_keep_the_finite_range() {
+    for magnitude in [f64::from_bits(1), 1.0e-200, 1.0, 1.0e200, f64::MAX] {
+        let vector = Vector3::new(magnitude, 0.0, 0.0);
+        assert_eq!(vector.norm(), magnitude);
+        assert_eq!(
+            Point3::new(magnitude, 0.0, 0.0).distance(Point3::new(0.0, 0.0, 0.0)),
+            magnitude
+        );
+        assert_eq!(vector.unit_nonzero(), Some(Vector3::new(1.0, 0.0, 0.0)));
+    }
+    let diagonal = Vector3::new(f64::MAX, f64::MAX, 0.0)
+        .unit_nonzero()
+        .unwrap();
+    assert!((diagonal.norm() - 1.0).abs() <= EPS_UNIT_RESULT);
+    assert!(Vector3::new(0.0, 0.0, 0.0).unit_nonzero().is_none());
+    assert!(Vector3::new(f64::INFINITY, 0.0, 0.0)
+        .unit_nonzero()
+        .is_none());
+}

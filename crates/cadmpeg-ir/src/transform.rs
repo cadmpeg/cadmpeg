@@ -7,6 +7,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::{Point2, Point3, Vector3};
 
+/// A finite dot product with an exact-product fallback for range loss or cancellation.
+fn finite_dot<const N: usize>(coefficients: [f64; N], components: [f64; N]) -> Option<f64> {
+    if coefficients
+        .iter()
+        .chain(&components)
+        .any(|value| !value.is_finite())
+    {
+        return None;
+    }
+    let products = std::array::from_fn(|index| coefficients[index] * components[index]);
+    if let Some(value) = fast_dot(coefficients, components, products) {
+        return Some(value);
+    }
+    let mut sum = ExactSignedSum::default();
+    for (coefficient, component) in coefficients.into_iter().zip(components) {
+        sum.add_product(coefficient, component);
+    }
+    let Some(value) = sum.finish() else {
+        return Some(0.0);
+    };
+    let exponent = value.exponent.0;
+    let outer = exponent.clamp(-1022, 1023);
+    let result =
+        (value.sign * value.mantissa * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
+    result.is_finite().then_some(result)
+}
+
 /// A row-major affine transform applied to two-dimensional geometry.
 ///
 /// The two stored rows preserve the source coefficients. The bottom row
@@ -394,7 +421,11 @@ fn scaled_finite(value: f64) -> Option<ScaledValue> {
     })
 }
 
-fn fast_dot(coefficients: [f64; 3], components: [f64; 3], products: [f64; 3]) -> Option<f64> {
+fn fast_dot<const N: usize>(
+    coefficients: [f64; N],
+    components: [f64; N],
+    products: [f64; N],
+) -> Option<f64> {
     if products.iter().any(|product| !product.is_finite()) {
         return None;
     }
@@ -512,9 +543,8 @@ impl Transform {
         let mut rows = [[0.0; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate() {
-                *value = (0..4)
-                    .map(|inner| left[row][inner] * right[inner][column])
-                    .sum();
+                *value = finite_dot(left[row], std::array::from_fn(|inner| right[inner][column]))
+                    .ok_or(TransformError::NonFinite)?;
             }
         }
         Self::affine(rows).ok_or(TransformError::NonFinite)
@@ -527,21 +557,12 @@ impl Transform {
     /// The result is absent when any coordinate is not finite.
     #[must_use]
     pub fn apply_point(self, point: Point3) -> Option<Point3> {
-        let result = Point3::new(
-            self.rows[0][0] * point.x
-                + self.rows[0][1] * point.y
-                + self.rows[0][2] * point.z
-                + self.rows[0][3],
-            self.rows[1][0] * point.x
-                + self.rows[1][1] * point.y
-                + self.rows[1][2] * point.z
-                + self.rows[1][3],
-            self.rows[2][0] * point.x
-                + self.rows[2][1] * point.y
-                + self.rows[2][2] * point.z
-                + self.rows[2][3],
-        );
-        result.is_finite().then_some(result)
+        let components = [point.x, point.y, point.z, 1.0];
+        Some(Point3::new(
+            finite_dot(self.rows[0], components)?,
+            finite_dot(self.rows[1], components)?,
+            finite_dot(self.rows[2], components)?,
+        ))
     }
 
     /// Applies this transform's linear component to a vector.
@@ -550,12 +571,13 @@ impl Transform {
     /// coefficients and a finite operand still produce by overflow.
     #[must_use]
     pub fn apply_vector(self, vector: Vector3) -> Option<Vector3> {
-        let result = Vector3::new(
-            self.rows[0][0] * vector.x + self.rows[0][1] * vector.y + self.rows[0][2] * vector.z,
-            self.rows[1][0] * vector.x + self.rows[1][1] * vector.y + self.rows[1][2] * vector.z,
-            self.rows[2][0] * vector.x + self.rows[2][1] * vector.y + self.rows[2][2] * vector.z,
-        );
-        result.is_finite().then_some(result)
+        let components = [vector.x, vector.y, vector.z];
+        let linear = self.rows.map(|row| [row[0], row[1], row[2]]);
+        Some(Vector3::new(
+            finite_dot(linear[0], components)?,
+            finite_dot(linear[1], components)?,
+            finite_dot(linear[2], components)?,
+        ))
     }
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
@@ -606,11 +628,8 @@ impl Transform {
         let mut rows = [[0.0; 4]; 3];
         for row in 0..3 {
             rows[row][..3].copy_from_slice(&inverse_linear[row]);
-            rows[row][3] = -inverse_linear[row]
-                .iter()
-                .zip(translation)
-                .map(|(coefficient, value)| coefficient * value)
-                .sum::<f64>();
+            rows[row][3] =
+                -finite_dot(inverse_linear[row], translation).ok_or(TransformError::NonFinite)?;
         }
         Self::affine(rows).ok_or(TransformError::NonFinite)
     }

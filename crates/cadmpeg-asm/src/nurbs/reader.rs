@@ -81,11 +81,6 @@ impl ReadPoles3 {
 /// Millimetres per ASM model-space length unit (centimetres).
 pub const LEN_TO_MM: f64 = 10.0;
 
-pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
-    let norm = vector.norm();
-    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}
-
 pub(crate) const NUBS_MARKER: &[u8] = b"\x0d\x04nubs";
 
 const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
@@ -438,7 +433,7 @@ pub(crate) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
 }
 
 pub(crate) fn normalized(value: [f64; 3]) -> Option<Vector3> {
-    unit_vector(Vector3::from(value))
+    Vector3::unit_nonzero(Vector3::from(value))
 }
 
 pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {

@@ -86,7 +86,7 @@ use crate::native::om::display_color::{
     RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
 };
 use crate::native::segments::BooleanOffsetStoreResolution;
-use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use crate::native::vector::{cross_vector, dot_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
@@ -5857,7 +5857,7 @@ fn block_placement(
     }
 
     fn canonical_normal(mut normal: Vector3, angular_tolerance: f64) -> Option<Vector3> {
-        normal = unit_vector(normal)?;
+        normal = Vector3::unit_nonzero(normal)?;
         let leading = [normal.x, normal.y, normal.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)?;
@@ -7307,7 +7307,7 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
     let angular_tolerance = ir.tolerances.angular.get();
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
-        let Some(mut axis) = unit_vector(axis) else {
+        let Some(mut axis) = Vector3::unit_nonzero(axis) else {
             return Vec::new();
         };
         let Some(leading) = [axis.x, axis.y, axis.z]
@@ -7378,7 +7378,7 @@ struct BlindBoreCylinderWitness {
 }
 
 fn canonical_axis(axis: Vector3, angular_tolerance: f64) -> Option<Vector3> {
-    let mut axis = unit_vector(axis)?;
+    let mut axis = Vector3::unit_nonzero(axis)?;
     let leading = [axis.x, axis.y, axis.z]
         .into_iter()
         .find(|component| component.abs() > angular_tolerance)?;

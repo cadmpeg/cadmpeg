@@ -6294,13 +6294,9 @@ fn apply_rigid_transform(
 }
 
 fn unit(vector: Vector3, label: &str) -> Result<Vector3, CodecError> {
-    let norm = vector.norm();
-    if !norm.is_finite() || norm <= f64::EPSILON {
-        return Err(CodecError::malformed(format_args!(
-            "IGES {label} is degenerate"
-        )));
-    }
-    Ok(vector.scale(1.0 / norm))
+    vector.unit().ok_or_else(|| CodecError::malformed(format_args!(
+        "IGES {label} is degenerate"
+    )))
 }
 
 fn orthonormal_pair(

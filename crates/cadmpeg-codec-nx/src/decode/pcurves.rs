@@ -25,7 +25,7 @@ use super::support_uv::{
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
 use crate::framing::node_kind::NodeKind;
-use crate::native::vector::{dot_vector, unit_vector};
+use crate::native::vector::{dot_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
@@ -674,7 +674,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             // missing surface chart or a tie states no selection.
             let selected_forward = (|| {
                 let curve = index.curves(curve.as_str())?;
-                let curve_tangent = unit_vector(curve_tangent_with_budget(
+                let curve_tangent = Vector3::unit_nonzero(curve_tangent_with_budget(
                     &curve.geometry,
                     range[0],
                     geometry_budget,
@@ -689,7 +689,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         uv.v,
                         geometry_budget,
                     )?;
-                    let tangent = unit_vector(Vector3::new(
+                    let tangent = Vector3::unit_nonzero(Vector3::new(
                         uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                         uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
                         uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
@@ -3009,14 +3009,14 @@ pub(crate) fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     if !distance.is_finite() || (distance - radius).abs() > tolerance {
         return false;
     }
-    let Some(radial) = unit_vector(radial) else {
+    let Some(radial) = Vector3::unit_nonzero(radial) else {
         return false;
     };
     let Some(curve) = index.curves(spine.as_str()) else {
         return false;
     };
     let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
-        .and_then(unit_vector)
+        .and_then(Vector3::unit_nonzero)
     else {
         return false;
     };

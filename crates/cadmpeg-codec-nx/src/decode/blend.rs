@@ -10,7 +10,7 @@ use super::offset::{
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
-use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use crate::native::vector::{cross_vector, dot_vector};
 use cadmpeg_core::decode::alloc_filled;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
@@ -454,7 +454,7 @@ fn blend_surface_parameters_inner(
             depth + 1,
             geometry_budget,
         )?;
-        let radial = unit_vector(Vector3::new(
+        let radial = Vector3::unit_nonzero(Vector3::new(
             point.x - center.x,
             point.y - center.y,
             point.z - center.z,
@@ -1555,7 +1555,7 @@ fn spine_contact_direction_with_index_and_budget_and_options(
         contact_seeds,
         geometry_budget,
     )?;
-    unit_vector(Vector3::new(
+    Vector3::unit_nonzero(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
@@ -1837,7 +1837,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
             contact_seeds,
             geometry_budget,
         )?;
-    let radial = unit_vector(Vector3::new(
+    let radial = Vector3::unit_nonzero(Vector3::new(
         point.x - center.x,
         point.y - center.y,
         point.z - center.z,
@@ -2888,7 +2888,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             {
                 continue;
             }
-            let Some(radial) = unit_vector(radial) else {
+            let Some(radial) = Vector3::unit_nonzero(radial) else {
                 continue;
             };
             // The gate is the stated fit tolerance over the stated radius. A
@@ -3395,7 +3395,7 @@ fn surface_contact_direction_with_index_and_budget(
         contact.z - center.z,
     );
     (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
-        .then(|| unit_vector(offset))
+        .then(|| Vector3::unit_nonzero(offset))
         .flatten()
 }
 
@@ -3412,7 +3412,7 @@ fn blend_surface_contact_direction_with_budget(
         closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?;
     let frame =
         blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?;
-    let radial = unit_vector(Vector3::new(
+    let radial = Vector3::unit_nonzero(Vector3::new(
         point.x - frame.0.x,
         point.y - frame.0.y,
         point.z - frame.0.z,
@@ -3433,7 +3433,7 @@ fn blend_surface_contact_direction_with_budget(
         .min_by(|first, second| {
             point_distance(*first, point).total_cmp(&point_distance(*second, point))
         })?;
-    unit_vector(Vector3::new(
+    Vector3::unit_nonzero(Vector3::new(
         candidate.x - point.x,
         candidate.y - point.y,
         candidate.z - point.z,
@@ -3457,7 +3457,7 @@ fn model_curve_tangent_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
     let carrier = index.curves(curve.as_str())?;
-    unit_vector(curve_tangent_with_budget(
+    Vector3::unit_nonzero(curve_tangent_with_budget(
         &carrier.geometry,
         parameter,
         geometry_budget,

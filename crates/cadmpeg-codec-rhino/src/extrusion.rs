@@ -866,20 +866,12 @@ fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
     if !present {
         return None;
     }
-    let length = value.norm();
-    if !length.is_finite() || length <= 0.0 {
-        return None;
-    }
-    let unit = value.scale(1.0 / length);
+    let unit = value.unit_nonzero()?;
     (unit.z > MITER_Z_MINIMUM).then_some(unit)
 }
 
 fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
-    let length = value.norm();
-    if !length.is_finite() || length <= 0.0 {
-        return Err(error(offset, format!("{name} is invalid")));
-    }
-    Ok(value.scale(1.0 / length))
+    value.unit_nonzero().ok_or_else(|| error(offset, format!("{name} is invalid")))
 }
 
 fn local_to_world_vector(

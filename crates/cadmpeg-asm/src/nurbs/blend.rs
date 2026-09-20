@@ -22,7 +22,7 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::{
     marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
-    take_optional_range_value, take_tagged_int, unit_vector, Nullable, LEN_TO_MM,
+    take_optional_range_value, take_tagged_int, Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
@@ -327,7 +327,7 @@ pub(crate) fn decode_rolling_ball_curve(
                         origin[1] * LEN_TO_MM,
                         origin[2] * LEN_TO_MM,
                     ),
-                    unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
+                    Vector3::unit_nonzero(Vector3::new(direction[0], direction[1], direction[2]))?,
                 )
                 .ok()?,
             ))
@@ -347,8 +347,8 @@ pub(crate) fn decode_rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        unit_vector(reference)?,
+                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        Vector3::unit_nonzero(reference)?,
                         major_radius,
                     )
                     .ok()?,
@@ -361,8 +361,8 @@ pub(crate) fn decode_rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        unit_vector(reference)?,
+                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        Vector3::unit_nonzero(reference)?,
                         major_radius,
                         major_radius * ratio.abs(),
                     )
@@ -568,7 +568,7 @@ pub(crate) fn rolling_ball_curve(
                         origin[1] * LEN_TO_MM,
                         origin[2] * LEN_TO_MM,
                     ),
-                    unit_vector(Vector3::new(direction[0], direction[1], direction[2]))?,
+                    Vector3::unit_nonzero(Vector3::new(direction[0], direction[1], direction[2]))?,
                 )
                 .ok()?,
             ))
@@ -588,8 +588,8 @@ pub(crate) fn rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        unit_vector(reference)?,
+                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        Vector3::unit_nonzero(reference)?,
                         major_radius,
                     )
                     .ok()?,
@@ -602,8 +602,8 @@ pub(crate) fn rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        unit_vector(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        unit_vector(reference)?,
+                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
+                        Vector3::unit_nonzero(reference)?,
                         major_radius,
                         major_radius * ratio.abs(),
                     )
