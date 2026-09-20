@@ -1,0 +1,3 @@
+30 findings; 27 numerical, 3 duplicate; all 21 crates in coverage; per-crate cap satisfied.
+All finding and probe source hashes match the report checkout.
+All referenced probe names exist in the 26-test passing witness log.

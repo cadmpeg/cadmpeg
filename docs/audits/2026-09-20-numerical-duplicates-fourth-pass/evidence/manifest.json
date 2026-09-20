@@ -1,0 +1,82 @@
+[
+  {
+    "path": "crates/cadmpeg-ir/src/eval.rs",
+    "sha256": "fae2ae7804c9873c9918e701c897e04608e97d73dccb71afe539e91b1a0b0aca"
+  },
+  {
+    "path": "crates/cadmpeg-ir/src/math/sum.rs",
+    "sha256": "512229d37805b572110d2294a08292cda1e76b9537bb0647b3ff5360cc88041c"
+  },
+  {
+    "path": "crates/cadmpeg-codec-catia/src/families/standard/decode.rs",
+    "sha256": "3d3ba6b4f47a3fb0fb80090776aeae105814e26e0ac883a9fc1aed9d14550264"
+  },
+  {
+    "path": "crates/cadmpeg-codec-f3d/src/design/dimensions.rs",
+    "sha256": "088e9660e640b8e4c2803a49688e27ddecba48baa62de99eb5d3f24d8617256e"
+  },
+  {
+    "path": "crates/cadmpeg-codec-f3d/src/design/geometry.rs",
+    "sha256": "844f2b6c60f385e275613f38f3a45de8b967bc7ea2aca38e1ec0b7e24674bec2"
+  },
+  {
+    "path": "crates/cadmpeg-codec-creo/src/decode/sweep/profiles.rs",
+    "sha256": "9ece36018cf72953bc625d32ac3d5981e6ccc84e8ff6cfacf1fe32a68531e2ee"
+  },
+  {
+    "path": "crates/cadmpeg-codec-nx/src/decode/offset.rs",
+    "sha256": "d75ab29c17529fa1120a9087ded63531df7d71541bb656b4dfe79232760a7073"
+  },
+  {
+    "path": "crates/cadmpeg-codec-sldprt/src/resolved_features/helix.rs",
+    "sha256": "235603f086bd632539144239d3c2dd895262900c80d3aaca5c12145fc8892ec4"
+  },
+  {
+    "path": "crates/cadmpeg-ir/src/validate/sketches.rs",
+    "sha256": "175ed8143633e2ac3b8952286a9d27593f5b15b04a4d3f783b1620ee91ef39d8"
+  },
+  {
+    "path": "crates/cadmpeg-codec-sldprt/src/resolved_features/transforms.rs",
+    "sha256": "ccc80be7fff60a77e4eb5a99cc54d5863bfe4e6b34455d8a6e2f71b5cc0f9bd3"
+  },
+  {
+    "path": "crates/cadmpeg-codec-freecad/src/design.rs",
+    "sha256": "de8be3d6b0a7e454bf98f2d85cdc9339348cf0a97d38afbb28e32013af1fbddf"
+  },
+  {
+    "path": "crates/cadmpeg-codec-iges/src/writer.rs",
+    "sha256": "9e8d6524a046aa48cf209e2fb7306efdeb582cc3a3dad4813b7cf68b7ff0e968"
+  },
+  {
+    "path": "crates/cadmpeg-ir/src/math/planar.rs",
+    "sha256": "df8b7f5773e223fff3d542bb088a06fb51cb2ae2642ed28b6c005ef279a3d82b"
+  },
+  {
+    "path": "crates/cadmpeg-codec-iges/src/entities/evaluation.rs",
+    "sha256": "8d58673a4f979089f11655fd885ff1acf578189d635fc32cfaca53206ec9b6b0"
+  },
+  {
+    "path": "crates/cadmpeg-codec-iges/src/entities/conics.rs",
+    "sha256": "e96a51da89afda45146da07f29abacabb76e7eebcc82e39c166aeddb0d44e201"
+  },
+  {
+    "path": "crates/cadmpeg-codec-rhino/src/writer.rs",
+    "sha256": "37f89ffc9bd823865059589fd97b8bfdda9961e0be655854eb02e1c297a93376"
+  },
+  {
+    "path": "crates/cadmpeg-codec-f3d/src/records/mesh.rs",
+    "sha256": "3e6a2f28fb0d5ff396299dc606b4a8634943d5f232748b1f8cef55573650e030"
+  },
+  {
+    "path": "crates/cadmpeg-codec-f3d/src/design/decode/mesh.rs",
+    "sha256": "07350d340976c6b4b2026588b77cf05ad6aa627c018f7f32a10f12e7e625c552"
+  },
+  {
+    "path": "crates/cadmpeg-asm/src/edit.rs",
+    "sha256": "5428cfe145436472a999d81c8d93ffc51db584d365ed4a8a6bd4a1ef918b3c9d"
+  },
+  {
+    "path": "crates/cadmpeg-ir/src/geometry/pcurve.rs",
+    "sha256": "e396909d90286d9d3a06cd50d9b0bf535d2d2d29b0783e36f05a48f9304bb894"
+  }
+]

@@ -1,0 +1,73 @@
+
+running 26 tests
+test asm::finite_translation_patch ... ASM native translation=0, expected=0.1
+ok
+test catia::axial_cancellation ... CATIA radius-one cylinder, exact point (1,0,0): Some(true)
+CATIA radius-one cylinder, exact point (1,0,100000000): Some(false)
+ok
+test catia_axis::disjoint_circle_and_sphere ... CATIA sphere radius 1, circle radius 1 center=(1e200,0,0): axis=Some(Vector3 { x: 1.0, y: 0.0, z: 0.0 }); expected None
+ok
+test coordinate_scaling::parabola_parameter_is_not_preserved ... IR parabola coordinate scale 3 at fixed t=1: before=Point2 { u: 0.125, v: 1.0 }, after=Point2 { u: 0.041666666666666664, v: 1.0 }, expected=Point2 { u: 0.375, v: 3.0 }
+ok
+test creo::small_crossing_segments ... Creo perpendicular segment half-length=1e0: intersect=true
+Creo perpendicular segment half-length=1e-5: intersect=false
+ok
+test expressions::freecad_default_extrusion_length ... FreeCAD extrusion Dir=(1e200,0,0), magnitude=inf
+ok
+test expressions::iges_conic_coefficients ... IGES conic radius=1e-200 coefficient=inf
+IGES conic radius=1e200 coefficient=0
+ok
+test expressions::ir_distance_admission ... IR spatial separation=1e200 expected=1 measured=inf accepted=true
+ok
+test expressions::radius_keys ... SLD radius keys for 1e14 and 2e14: 9223372036854775807, 9223372036854775807
+ok
+test f3d::incorrect_spatial_dimension ... F3D 1e200 separation accepted for dimension 1: true
+ok
+test f3d::remote_ellipse_membership ... F3D unit ellipse accepts (1e200,0): true
+ok
+test f3d::short_line_membership ... F3D point 1e-4 off 1e-6 segment, tolerance 1e-9: accepted=true
+ok
+test f3d_mesh::valid_anisotropic_normal ... F3D admitted anisotropic transform, input Z normal: Err(Malformed("F3D mesh placement produces a degenerate normal")); expected Z normal
+ok
+test iges_eval::parabola_parameterization ... IGES parabola f=2 t=1: Point2 { u: 2.0, v: 4.0 }; neutral evaluator=Point2 { u: 0.125, v: 1.0 }
+ok
+test iges_eval::weighted_nurbs_overflow ... IGES rational pcurve=Point2 { u: inf, v: 0.0 }, neutral=None
+ok
+test ir::remaining_chain_rules ... LN x=1e-310 dx=1e-310: None
+COT x=1e-200 dx=1e-200: None
+CSC x=1e-200 dx=1e-200: None
+ARCSECH x=1e-310 dx=1e-310: None
+EXP x=-7.5e2 dx=1e300: Some(ScalarSweepDifferential { value: 0.0, derivative: 0.0 })
+ok
+test ir_more::affine_cancel ... IR evaluator affine point=Point3 { x: NaN, y: 2.0, z: 3.0 }; shared Transform=Point3 { x: 3.0, y: 2.0, z: 3.0 }
+ok
+test ir_more::great_circle_derivative ... IR great-circle slope=1e200 at 0.5: tangent=Point2 { u: 1.0, v: -0.0 }; latitude derivative ~-6.225e-201
+ok
+test ir_more::polar_scale ... IR polar harmonic scale=1e0: point=Some(Point2 { u: 0.0, v: 0.0 }), tangent=Some(Point2 { u: 1.0, v: 0.0 }); expected (0,0), (1,0)
+IR polar harmonic scale=1e-200: point=None, tangent=None; expected (0,0), (1,0)
+IR polar harmonic scale=1e200: point=Some(Point2 { u: 0.0, v: 0.0 }), tangent=None; expected (0,0), (1,0)
+ok
+test ir_more::polyline_interpolation ... IR symmetric polyline midpoint=Some(Point3 { x: inf, y: 0.0, z: 0.0 }), expected origin
+IR finite wide-domain midpoint=None, expected (0.5,0,0)
+ok
+test ir_more::reflection_orientation ... IR scaled reflection scale=1e0: orientation=-1, expected=-1
+IR scaled reflection scale=1e-200: orientation=1, expected=-1
+IR scaled reflection scale=1e200: orientation=1, expected=-1
+ok
+test more_expressions::conic_coefficient_scale ... IGES common-scaled unit circle A=C=1e0, F=-1e0: ellipse=true hyperbola=false
+IGES common-scaled unit circle A=C=1e-200, F=-1e-200: ellipse=false hyperbola=false
+ok
+test more_expressions::rhino_reversed_trim_break ... Rhino reversed trim knot=inf, robust=1.2000000000000001e308
+ok
+test nx::scaled_rank_deficient_solve ... NX rank-three consistent system scale=1e0: Some([0.9999999999989999, 0.9999999999989999, 0.9999999999989999, 0.0]); exact step=(1,1,1,0)
+NX rank-three consistent system scale=1e-200: None; exact step=(1,1,1,0)
+NX rank-three consistent system scale=1e200: None; exact step=(1,1,1,0)
+ok
+test planar::finite_intersections_lost ... IR tiny line at unit-circle center: roots=None, expected +/-1e200
+IR radius 1e308 externally tangent circles: None, expected origin
+ok
+test sld::small_helix ... SLD exact helix radius=1e0: Some((Point3 { x: 0.0, y: -6.071532165918826e-17, z: -9.933574430856653e-17 }, Vector3 { x: -9.933574430856654e-17, y: 1.7356756417897117e-16, z: 1.0 }, 1.0, 1.0))
+SLD exact helix radius=1e-8: None
+ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
