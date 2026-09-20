@@ -574,7 +574,7 @@ fn placement(
     let Some(property) = sole_named_property("joint", properties, name)? else {
         return Ok(None);
     };
-    crate::product::placement_matrix(property)
+    crate::placement::placement_matrix(property)
 }
 
 #[cfg(test)]

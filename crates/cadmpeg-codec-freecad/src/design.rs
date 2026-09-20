@@ -1873,70 +1873,11 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vect
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    let value = property(properties, "Placement")
-        .or_else(|| property(properties, "AttachmentOffset"))
-        .and_then(|property| {
-            property
-                .values()
-                .iter()
-                .find(|value| value.tag == "PropertyPlacement")
-        })?;
-    let component = |name: &str| {
-        value
-            .attributes
-            .get(name)
-            .and_then(|value| value.parse::<f64>().ok())
-            .filter(|value| value.is_finite())
-    };
-    let quaternion = if value.attributes.contains_key("A") {
-        let axis = [component("Ox")?, component("Oy")?, component("Oz")?];
-        let angle = component("A")?;
-        let axis_norm = axis
-            .iter()
-            .map(|component| component * component)
-            .sum::<f64>()
-            .sqrt();
-        let (axis_x, axis_y, axis_z) = if axis_norm.is_finite() && axis_norm > 0.0 {
-            (
-                axis[0] / axis_norm,
-                axis[1] / axis_norm,
-                axis[2] / axis_norm,
-            )
-        } else if axis_norm == 0.0 {
-            (0.0, 0.0, 1.0)
-        } else {
-            return None;
-        };
-        let half_angle = angle / 2.0;
-        let scale = half_angle.sin();
-        [
-            axis_x * scale,
-            axis_y * scale,
-            axis_z * scale,
-            half_angle.cos(),
-        ]
-    } else {
-        [
-            component("Q0")?,
-            component("Q1")?,
-            component("Q2")?,
-            component("Q3")?,
-        ]
-    };
-    let norm = quaternion
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>()
-        .sqrt();
-    if !norm.is_finite() || norm == 0.0 {
-        return None;
-    }
-    Some((
-        Point3::new(component("Px")?, component("Py")?, component("Pz")?),
-        rotate_vector(quaternion, [0.0, 0.0, 1.0]),
-        rotate_vector(quaternion, [1.0, 0.0, 0.0]),
-        rotate_vector(quaternion, [0.0, 1.0, 0.0]),
-    ))
+    let property = property(properties, "Placement")
+        .or_else(|| property(properties, "AttachmentOffset"))?;
+    let matrix = crate::placement::placement_matrix(property).ok()??.rows();
+    let column = |index| Vector3::new(matrix[0][index], matrix[1][index], matrix[2][index]);
+    Some((Point3::new(matrix[0][3], matrix[1][3], matrix[2][3]), column(2), column(0), column(1)))
 }
 
 fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
@@ -1967,27 +1908,6 @@ fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), Codec
         return Err(CodecError::Malformed(message));
     }
     Ok(())
-}
-
-fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
-    let [x, y, z, w] = quaternion;
-    let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if !norm.is_finite() || norm == 0.0 {
-        return Vector3::new(vector[0], vector[1], vector[2]);
-    }
-    let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
-    let [vx, vy, vz] = vector;
-    Vector3::new(
-        (1.0 - 2.0 * (y * y + z * z)) * vx
-            + 2.0 * (x * y - z * w) * vy
-            + 2.0 * (x * z + y * w) * vz,
-        2.0 * (x * y + z * w) * vx
-            + (1.0 - 2.0 * (x * x + z * z)) * vy
-            + 2.0 * (y * z - x * w) * vz,
-        2.0 * (x * z - y * w) * vx
-            + 2.0 * (y * z + x * w) * vy
-            + (1.0 - 2.0 * (x * x + y * y)) * vz,
-    )
 }
 
 fn feature_state(

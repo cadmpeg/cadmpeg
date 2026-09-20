@@ -2,6 +2,7 @@
 //! Product containers and link occurrences recovered from the application graph.
 
 use crate::native::frame::FiniteFrame;
+use crate::placement::{placement_matrix, placement_components};
 use crate::native::joint::JointRecord;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -1109,139 +1110,6 @@ fn bool_list(properties: &[&PropertyRecord], name: &str) -> Result<Vec<bool>, Co
     // belongs to element zero. The raw XML remains on the property record;
     // this projection follows the element order used by the other carriers.
     Ok(encoded.bytes().rev().map(|byte| byte == b'1').collect())
-}
-
-pub(crate) fn placement_matrix(
-    property: &PropertyRecord,
-) -> Result<Option<FiniteFrame>, CodecError> {
-    if property.type_name != "App::PropertyPlacement" {
-        return Err(CodecError::malformed(format_args!(
-            "placement property {} has a non-placement runtime type",
-            property.id
-        )));
-    }
-    if property.values().len() != 1 {
-        return Err(malformed(format!(
-            "placement property {} requires one placement value",
-            property.id
-        )));
-    }
-    let value = &property.values()[0];
-    if value.tag != "PropertyPlacement" {
-        return Err(malformed(format!(
-            "placement property {} requires one PropertyPlacement value",
-            property.id
-        )));
-    }
-    let number = |name: &str| {
-        value
-            .attributes
-            .get(name)
-            .and_then(|value| value.parse().ok())
-            .filter(|value: &f64| value.is_finite())
-    };
-    let position = ["Px", "Py", "Pz"]
-        .into_iter()
-        .map(|name| {
-            number(name).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "placement property {} has an invalid {name} component",
-                    property.id
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let quaternion = if value.attributes.contains_key("A") {
-        let axis = ["Ox", "Oy", "Oz"]
-            .into_iter()
-            .map(|name| {
-                number(name).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "placement property {} has an invalid {name} axis component",
-                        property.id
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let angle = number("A").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "placement property {} has an invalid A angle component",
-                property.id
-            ))
-        })?;
-        let axis_norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
-        let (x, y, z) = if axis_norm.is_finite() && axis_norm > 0.0 {
-            (
-                axis[0] / axis_norm,
-                axis[1] / axis_norm,
-                axis[2] / axis_norm,
-            )
-        } else if axis_norm == 0.0 {
-            (0.0, 0.0, 1.0)
-        } else {
-            return Err(CodecError::malformed(format_args!(
-                "placement property {} has an invalid axis norm",
-                property.id
-            )));
-        };
-        let half_angle = angle / 2.0;
-        let scale = half_angle.sin();
-        vec![x * scale, y * scale, z * scale, half_angle.cos()]
-    } else {
-        ["Q0", "Q1", "Q2", "Q3"]
-            .into_iter()
-            .map(|name| {
-                number(name).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "placement property {} has an invalid {name} quaternion component",
-                        property.id
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    let values = position.into_iter().chain(quaternion).collect::<Vec<_>>();
-    let matrix = placement_components(&values).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "placement property {} has an invalid rotation",
-            property.id
-        ))
-    })?;
-    Ok(Some(matrix))
-}
-
-fn placement_components(values: &[f64]) -> Option<FiniteFrame> {
-    let [px, py, pz, x, y, z, w] = *<&[f64; 7]>::try_from(values).ok()?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
-    let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if !norm.is_finite() || norm == 0.0 {
-        return None;
-    }
-    let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
-    FiniteFrame::try_from([
-        [
-            1.0 - 2.0 * (y * y + z * z),
-            2.0 * (x * y - z * w),
-            2.0 * (x * z + y * w),
-            px,
-        ],
-        [
-            2.0 * (x * y + z * w),
-            1.0 - 2.0 * (x * x + z * z),
-            2.0 * (y * z - x * w),
-            py,
-        ],
-        [
-            2.0 * (x * z - y * w),
-            2.0 * (y * z + x * w),
-            1.0 - 2.0 * (x * x + y * y),
-            pz,
-        ],
-        [0.0, 0.0, 0.0, 1.0],
-    ])
-    .ok()
 }
 
 pub(crate) fn product_cycle_nodes<'a>(

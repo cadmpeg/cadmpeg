@@ -176,7 +176,7 @@ fn placement_matrix(
     let Some(property) = property else {
         return Ok(None);
     };
-    crate::product::placement_matrix(property)
+    crate::placement::placement_matrix(property)
 }
 
 fn support_links(property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, CodecError> {
