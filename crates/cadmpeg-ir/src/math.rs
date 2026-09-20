@@ -9,6 +9,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Scaled least-squares solvers.
+pub mod solve;
 pub(crate) mod sum;
 
 /// A point in 3D model space, in the document's length unit.
