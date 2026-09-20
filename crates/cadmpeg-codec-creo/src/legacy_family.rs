@@ -210,15 +210,9 @@ impl<'a> Index<'a> {
             }
         }
 
-        let mut integers_by_parent_name = BTreeMap::new();
-        add_value_index(
-            &mut integers_by_parent_name,
-            &persistence.integer_values.rows,
-        );
-        let mut reals_by_parent_name = BTreeMap::new();
-        add_value_index(&mut reals_by_parent_name, &persistence.real_values.rows);
-        let mut strings_by_parent_name = BTreeMap::new();
-        add_value_index(&mut strings_by_parent_name, &persistence.string_values);
+        let integers_by_parent_name = legacy::value_index(&persistence.integer_values.rows);
+        let reals_by_parent_name = legacy::value_index(&persistence.real_values.rows);
+        let strings_by_parent_name = legacy::value_index(&persistence.string_values);
 
         let mut typed_field_names = BTreeMap::new();
         add_typed_field_names(&mut typed_field_names, &persistence.integer_values.rows);
@@ -240,20 +234,6 @@ impl<'a> Index<'a> {
             strings_by_parent_name,
             typed_field_names,
         })
-    }
-}
-
-fn add_value_index<'a, K: legacy::LegacyCode>(
-    index: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<K>>>,
-    records: &'a [legacy::ValueRecord<K>],
-) {
-    for record in records {
-        if let Some(parent) = record.parent {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_default()
-                .push(record);
-        }
     }
 }
 

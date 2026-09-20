@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature dependency graphs, affected ids, and link reconciliation.
 
+use crate::feature::rows::agreed_feature_affected_ids;
 use super::super::surfaces::prototypes::unique_surface_prototype_associations;
 use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
@@ -279,20 +280,6 @@ pub(in super::super) fn surface_merge_entity_dependencies(
             }
             dependencies
         })
-}
-
-pub(in super::super) fn agreed_feature_affected_ids(
-    records: &[crate::feature::rows::FeatureAffectedIds],
-    feature_id: u32,
-    kind: crate::feature::rows::AffectedIdKind,
-) -> Option<&[u32]> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.feature_id == feature_id && record.kind == kind);
-    let ids = matches.next()?.ids.as_slice();
-    matches
-        .all(|record| record.ids.as_slice() == ids)
-        .then_some(ids)
 }
 
 pub(in super::super) fn has_feature_affected_ids(

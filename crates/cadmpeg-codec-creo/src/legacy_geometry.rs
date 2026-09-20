@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
+use crate::legacy::value_index;
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -131,8 +132,8 @@ type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
 pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
     let object_ids = object_id_index(&persistence.objects);
     let children = child_index(&persistence.objects);
-    let integer_fields = integer_field_index(&persistence.integer_values.rows);
-    let real_fields = real_field_index(&persistence.real_values.rows);
+    let integer_fields = value_index(&persistence.integer_values.rows);
+    let real_fields = value_index(&persistence.real_values.rows);
     let (rows, mut carriers) = namespace(
         &persistence.objects,
         &object_ids,
@@ -646,32 +647,6 @@ fn child_index(objects: &[ObjectRecord]) -> ChildIndex<'_> {
     for object in objects {
         if let Some(parent) = object.parent {
             index.entry(parent).or_insert_with(Vec::new).push(object);
-        }
-    }
-    index
-}
-
-fn integer_field_index(records: &[legacy::IntegerRecord]) -> IntegerFieldIndex<'_> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        if let Some(parent) = record.parent {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_insert_with(Vec::new)
-                .push(record);
-        }
-    }
-    index
-}
-
-fn real_field_index(records: &[RealRecord]) -> RealFieldIndex<'_> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        if let Some(parent) = record.parent {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_insert_with(Vec::new)
-                .push(record);
         }
     }
     index

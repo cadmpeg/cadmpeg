@@ -13,6 +13,21 @@ mod numeric_array;
 pub(crate) mod type_code;
 use type_code::LegacyTypeCode;
 
+pub(crate) fn value_index<K: LegacyCode>(
+    records: &[ValueRecord<K>],
+) -> BTreeMap<(usize, &str), Vec<&ValueRecord<K>>> {
+    let mut index = BTreeMap::new();
+    for record in records {
+        if let Some(parent) = record.parent {
+            index
+                .entry((parent, record.name.as_str()))
+                .or_insert_with(Vec::new)
+                .push(record);
+        }
+    }
+    index
+}
+
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";

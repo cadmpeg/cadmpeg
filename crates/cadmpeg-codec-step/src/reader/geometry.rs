@@ -5150,7 +5150,7 @@ fn references(value: &Value) -> Option<Vec<u64>> {
     value.list()?.iter().map(Value::reference).collect()
 }
 
-fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
+pub(super) fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     let record = exchange.records().get(&id)?;
     if record.partials.iter().any(|partial| {
         matches!(

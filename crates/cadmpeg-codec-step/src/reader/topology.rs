@@ -6,11 +6,13 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
+use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
+    nurbs_pcurve_parameter_domain,
     model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_curve_parameter_domain,
     pcurve_tangent, pcurve_uv,
@@ -1613,7 +1615,7 @@ fn edge_curve_id_reported(
         return None;
     };
     let curve = exchange.records().get(&curve_step);
-    let carrier = curve_carrier_step(curve_step, exchange);
+    let carrier = curve_carrier_record(curve_step, exchange);
     if carrier.is_none()
         && curve.is_some_and(|record| {
             record.partials.iter().any(|partial| {
@@ -1748,17 +1750,6 @@ fn named_logical(
         .iter()
         .find(|partial| partial.name == name)
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
-}
-
-fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
-    if record.partials.len() == 1 {
-        return record.parameter(1).and_then(ValueExt::reference);
-    }
-    record
-        .partial("SURFACE_CURVE")
-        .or_else(|| record.partial("SEAM_CURVE"))
-        .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
 }
 
 fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
@@ -3376,20 +3367,6 @@ fn implicit_face_plane(
     )))
 }
 
-fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
-    let curve = exchange.records().get(&curve_step)?;
-    if curve.partials.iter().any(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-        )
-    }) {
-        surface_curve_basis(curve)
-    } else {
-        Some(curve_step)
-    }
-}
-
 fn associated_pcurves(
     curve_step: u64,
     surface_step: u64,
@@ -3563,7 +3540,7 @@ fn pcurve_locus_witness(
 ) -> bool {
     let Some(curve_step) = edge
         .curve()
-        .and_then(|curve| curve_carrier_step(curve, exchange))
+        .and_then(|curve| curve_carrier_record(curve, exchange))
     else {
         return false;
     };
@@ -4068,13 +4045,13 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
 
 fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs { nurbs } => selection_nurbs_parameter_domain(
+        PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
             nurbs.control_points().len(),
         ),
         PcurveGeometry::PolarNurbs { nurbs } => {
-            selection_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -4155,8 +4132,8 @@ fn surface_selection_parameter_domains_from_geometry(
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let (u_count, v_count) = (surface.u_count(), surface.v_count());
             [
-                selection_nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
-                selection_nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
+                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
+                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
             ]
         }
         SolvedSurfaceGeometry::Transformed { basis, .. } => {
@@ -4209,22 +4186,6 @@ fn curve_selection_parameter_domain_from_geometry(
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => None,
     }
-}
-
-fn selection_nurbs_parameter_domain(
-    degree: u32,
-    knots: &[f64],
-    control_point_count: usize,
-) -> Option<[f64; 2]> {
-    let degree = usize::try_from(degree).ok()?;
-    if control_point_count <= degree
-        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
-    {
-        return None;
-    }
-    let start = *knots.get(degree)?;
-    let end = *knots.get(control_point_count)?;
-    (start.is_finite() && end.is_finite() && start < end).then_some([start, end])
 }
 
 #[derive(Clone)]
