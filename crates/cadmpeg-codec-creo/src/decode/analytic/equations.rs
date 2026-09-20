@@ -5,13 +5,12 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::decode::quadratic::{real_roots, Coefficient};
+use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
 
 const EPS_PLANE_RESIDUAL: f64 = 1.0e-6;
-const EPS_CONIC_RESIDUAL: f64 = 1.0e-8;
 const EPS_ROOT_CLUSTER: f64 = 1.0e-7;
 const EPS_PARAM_UNIQUE: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;
@@ -373,38 +372,78 @@ fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
     })
 }
 
-fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
+/// A polynomial coefficient beside the bound on its distance from the exact
+/// coefficient of the exact polynomial.
+///
+/// The two travel together because the degree of a polynomial formed by
+/// cancelling sums is stated by its leading coefficient against that bound.
+#[derive(Clone, Copy)]
+struct BoundedCoefficient {
+    value: f64,
+    bound: f64,
+}
+
+/// The factor on a coefficient's term magnitudes that bounds its distance from
+/// the exact coefficient.
+///
+/// A product in either polynomial built for `real_polynomial_roots` — the
+/// conic resultant and the torus line polynomial — has at most four factors,
+/// and each factor is within one `cancellation_bound` of its own exact value,
+/// so the bars contribute at most four times that bound against the product of
+/// the term magnitudes. The construction's own rounding is three
+/// multiplications and at most four additions on each product's path, which is
+/// `7 u` against the bound's `128 u`; products of two bars are smaller again by
+/// that same ratio. The fifth multiple covers both.
+const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
+
+/// Return the finite real roots in ascending order.
+///
+/// The degree is stated by each leading coefficient against its own bound: a
+/// coefficient inside that bound is the rounding residue of a cancellation and
+/// the polynomial is of lower degree. A residue kept as a leading coefficient
+/// states roots of order `1 / residue` that no exact polynomial has; a real
+/// leading coefficient dropped loses the roots it carries.
+fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<f64> {
     let scale = coefficients
         .iter()
-        .copied()
-        .map(f64::abs)
+        .map(|coefficient| coefficient.value.abs())
         .fold(0.0, f64::max);
     if scale == 0.0 || !scale.is_finite() {
         return Vec::new();
     }
-    let mut coefficients = coefficients
+    let mut scaled = coefficients
         .iter()
-        .map(|coefficient| coefficient / scale)
+        .map(|coefficient| BoundedCoefficient {
+            value: coefficient.value / scale,
+            bound: coefficient.bound / scale,
+        })
         .collect::<Vec<_>>();
-    while coefficients.len() > 1
-        && coefficients
+    while scaled.len() > 1
+        && scaled
             .last()
-            .is_some_and(|value| value.abs() <= 1e-14)
+            .is_some_and(|coefficient| coefficient.value.abs() <= coefficient.bound)
     {
-        coefficients.pop();
+        scaled.pop();
     }
-    let degree = coefficients.len() - 1;
+    let degree = scaled.len() - 1;
     if degree == 0 {
         return Vec::new();
     }
+    let coefficients = scaled
+        .iter()
+        .map(|coefficient| coefficient.value)
+        .collect::<Vec<_>>();
     if degree == 1 {
         return vec![-coefficients[0] / coefficients[1]];
     }
-    let derivative = coefficients
+    let derivative = scaled
         .iter()
         .enumerate()
         .skip(1)
-        .map(|(power, coefficient)| *coefficient * power as f64)
+        .map(|(power, coefficient)| BoundedCoefficient {
+            value: coefficient.value * power as f64,
+            bound: coefficient.bound * power as f64,
+        })
         .collect::<Vec<_>>();
     let leading = coefficients[degree].abs();
     let bound = 1.0
@@ -513,19 +552,21 @@ const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
     ([3, 2, 1, 0], 1.0),
 ];
 
-fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec<f64> {
+/// The Sylvester matrix of the two conics read as quadratics in v, with each
+/// entry taken from its coefficient by `entry`.
+fn sylvester_matrix(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    entry: impl Fn(Coefficient) -> f64,
+) -> [[Vec<f64>; 4]; 4] {
     let zero = vec![0.0];
-    let first_y2 = vec![first.vv.stated()];
-    let first_y = vec![first.v.stated(), first.uv.stated()];
-    let first_constant = vec![first.constant.stated(), first.u.stated(), first.uu.stated()];
-    let second_y2 = vec![second.vv.stated()];
-    let second_y = vec![second.v.stated(), second.uv.stated()];
-    let second_constant = vec![
-        second.constant.stated(),
-        second.u.stated(),
-        second.uu.stated(),
-    ];
-    let matrix = [
+    let first_y2 = vec![entry(first.vv)];
+    let first_y = vec![entry(first.v), entry(first.uv)];
+    let first_constant = vec![entry(first.constant), entry(first.u), entry(first.uu)];
+    let second_y2 = vec![entry(second.vv)];
+    let second_y = vec![entry(second.v), entry(second.uv)];
+    let second_constant = vec![entry(second.constant), entry(second.u), entry(second.uu)];
+    [
         [
             first_y2.clone(),
             first_y.clone(),
@@ -540,17 +581,47 @@ fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec
             zero.clone(),
         ],
         [zero, second_y2, second_y, second_constant],
-    ];
+    ]
+}
+
+/// The determinant of the Sylvester matrix as a polynomial in u.
+///
+/// `sign` is the identity for the determinant itself and `f64::abs` for the
+/// sum of the magnitudes of the same products, which is what a matrix of term
+/// magnitudes folds to.
+fn sylvester_polynomial(matrix: &[[Vec<f64>; 4]; 4], sign: impl Fn(f64) -> f64) -> Vec<f64> {
     let mut determinant = vec![0.0; 9];
-    for (permutation, sign) in QUARTIC_RESULTANT_PERMUTATIONS {
+    for (permutation, permutation_sign) in QUARTIC_RESULTANT_PERMUTATIONS {
         let term = (0..4).fold(vec![1.0], |term, row| {
             polynomial_product(&term, &matrix[row][permutation[row]])
         });
         for (power, coefficient) in term.into_iter().enumerate() {
-            determinant[power] += sign * coefficient;
+            determinant[power] += sign(permutation_sign) * coefficient;
         }
     }
     determinant
+}
+
+fn conic_resultant(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+) -> Vec<BoundedCoefficient> {
+    let values = sylvester_polynomial(
+        &sylvester_matrix(first, second, Coefficient::stated),
+        |sign| sign,
+    );
+    let terms = sylvester_polynomial(
+        &sylvester_matrix(first, second, Coefficient::terms),
+        f64::abs,
+    );
+    values
+        .into_iter()
+        .zip(terms)
+        .map(|(value, terms)| BoundedCoefficient {
+            value,
+            bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms),
+        })
+        .collect()
 }
 
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
@@ -562,12 +633,64 @@ fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
         + conic.constant.stated()
 }
 
+/// A refined chart parameter pair beside the last correction the refinement
+/// applied to it.
+///
+/// A Newton step is the distance from the pair to the root of the linearised
+/// system, so once the step is applied and met the refinement's convergence
+/// rule what remains is of that step's own order. That is what the pair is
+/// known to. A pair the refinement left without a converged step — a singular
+/// Jacobian, or twelve steps that never settled — carries no correction, and
+/// its only accuracy is the arithmetic that produced the coefficients.
+#[derive(Clone, Copy)]
+struct RefinedParameters {
+    point: [f64; 2],
+    correction: [f64; 2],
+}
+
+/// The bound on `plane_conic_value` at a refined pair whose exact conic passes
+/// through the pair's own uncertainty.
+///
+/// Three quantities reach the residual and nothing else does.
+///
+/// Each coefficient multiplies a monomial of the point, so its own bound
+/// reaches the residual scaled by that monomial; over the six that is one
+/// `cancellation_bound` of the weighted term magnitudes. The evaluation formed
+/// here is six products and five additions over values no larger than those
+/// same weighted terms, which is `17 u` against the bound's `128 u`, so a
+/// second `cancellation_bound` covers it. Last, the exact zero of the conic can
+/// sit anywhere inside the refinement's own correction, and the conic over that
+/// displacement is its gradient times the correction plus the exact quadratic
+/// remainder; both are read against the coefficients' term magnitudes, which
+/// bound their values.
+fn plane_conic_residual_bound(conic: PlaneConicEquation, refined: RefinedParameters) -> f64 {
+    let [u, v] = refined.point;
+    let [correction_u, correction_v] = refined.correction;
+    let terms = conic.uu.terms() * u * u
+        + conic.uv.terms() * (u * v).abs()
+        + conic.vv.terms() * v * v
+        + conic.u.terms() * u.abs()
+        + conic.v.terms() * v.abs()
+        + conic.constant.terms();
+    let gradient_u =
+        2.0 * conic.uu.terms() * u.abs() + conic.uv.terms() * v.abs() + conic.u.terms();
+    let gradient_v =
+        conic.uv.terms() * u.abs() + 2.0 * conic.vv.terms() * v.abs() + conic.v.terms();
+    2.0 * cancellation_bound(terms)
+        + gradient_u * correction_u
+        + gradient_v * correction_v
+        + conic.uu.terms() * correction_u * correction_u
+        + conic.uv.terms() * correction_u * correction_v
+        + conic.vv.terms() * correction_v * correction_v
+}
+
 fn refine_plane_conic_intersection(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
     mut u: f64,
     mut v: f64,
-) -> [f64; 2] {
+) -> RefinedParameters {
+    let mut correction = [0.0, 0.0];
     for _ in 0..12 {
         let first_value = plane_conic_value(first, u, v);
         let second_value = plane_conic_value(second, u, v);
@@ -590,10 +713,14 @@ fn refine_plane_conic_intersection(
         u += delta_u;
         v += delta_v;
         if delta_u.abs().max(delta_v.abs()) <= 1e-13 * u.abs().max(v.abs()).max(1.0) {
+            correction = [delta_u.abs(), delta_v.abs()];
             break;
         }
     }
-    [u, v]
+    RefinedParameters {
+        point: [u, v],
+        correction,
+    }
 }
 
 /// The conic parameters v that satisfy the conic at the given u.
@@ -627,28 +754,13 @@ pub(super) fn common_plane_conic_parameters(
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
-            let candidate = refine_plane_conic_intersection(first, second, u, v);
+            let refined = refine_plane_conic_intersection(first, second, u, v);
+            let candidate = refined.point;
             let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
-            let coefficient_scale = [
-                first.uu,
-                first.uv,
-                first.vv,
-                first.u,
-                first.v,
-                first.constant,
-                second.uu,
-                second.uv,
-                second.vv,
-                second.u,
-                second.v,
-                second.constant,
-            ]
-            .into_iter()
-            .map(|coefficient| coefficient.stated().abs())
-            .fold(1.0, f64::max);
-            let tolerance = EPS_CONIC_RESIDUAL * coefficient_scale * scale * scale;
-            if plane_conic_value(first, candidate[0], candidate[1]).abs() <= tolerance
-                && plane_conic_value(second, candidate[0], candidate[1]).abs() <= tolerance
+            if plane_conic_value(first, candidate[0], candidate[1]).abs()
+                <= plane_conic_residual_bound(first, refined)
+                && plane_conic_value(second, candidate[0], candidate[1]).abs()
+                    <= plane_conic_residual_bound(second, refined)
                 && !parameters.iter().any(|known| {
                     (known[0] - candidate[0])
                         .abs()
@@ -718,25 +830,48 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
     }
     let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - torus.center[index]);
     let squared_distance = [dot(relative, relative), 2.0 * dot(relative, direction), 1.0];
+    let squared_distance_terms = [
+        abs_dot(relative, relative),
+        2.0 * abs_dot(relative, direction),
+        1.0,
+    ];
     let axial = [dot(relative, axis), dot(direction, axis)];
+    let axial_terms = [abs_dot(relative, axis), abs_dot(direction, axis)];
     let axial_squared = [
         axial[0] * axial[0],
         2.0 * axial[0] * axial[1],
         axial[1] * axial[1],
     ];
+    let axial_squared_terms = [
+        axial_terms[0] * axial_terms[0],
+        2.0 * axial_terms[0] * axial_terms[1],
+        axial_terms[1] * axial_terms[1],
+    ];
     let mut shifted_distance = squared_distance;
     shifted_distance[0] +=
         torus.major_radius * torus.major_radius - torus.minor_radius * torus.minor_radius;
+    let mut shifted_distance_terms = squared_distance_terms;
+    shifted_distance_terms[0] +=
+        torus.major_radius * torus.major_radius + torus.minor_radius * torus.minor_radius;
     let mut polynomial = [0.0; 5];
+    let mut polynomial_terms = [0.0; 5];
     for (left_power, left) in shifted_distance.into_iter().enumerate() {
         for (right_power, right) in shifted_distance.into_iter().enumerate() {
             polynomial[left_power + right_power] += left * right;
+            polynomial_terms[left_power + right_power] +=
+                shifted_distance_terms[left_power] * shifted_distance_terms[right_power];
         }
     }
     let radial_scale = 4.0 * torus.major_radius * torus.major_radius;
     for power in 0..=2 {
         polynomial[power] -= radial_scale * (squared_distance[power] - axial_squared[power]);
+        polynomial_terms[power] +=
+            radial_scale * (squared_distance_terms[power] + axial_squared_terms[power]);
     }
+    let polynomial = std::array::from_fn::<_, 5, _>(|power| BoundedCoefficient {
+        value: polynomial[power],
+        bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
+    });
     let coordinate_scale = torus
         .center
         .into_iter()
