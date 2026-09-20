@@ -1,5 +1,7 @@
 # Fourth numerical and duplication audit — 2026-09-20
 
+All 30 findings are now fixed. See the [repair record and verification](repairs/README.md).
+
 30 ranked findings: 27 numerical issues and 3 pure duplication groups, across 10 crates. All 21 crates were screened. The maximum is 10 findings in cadmpeg-ir; the requested cap is 30 per crate. The other 11 crates have no new established finding in this pass, not a proof of correctness.
 
 The first three audit repair lists were excluded. Remaining copies or different call paths of an earlier bug family are identified explicitly below. No production code was changed in this audit.
