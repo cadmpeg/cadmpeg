@@ -10,7 +10,7 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
-use crate::decode::quadratic::Coefficient;
+use crate::decode::quadratic::{real_roots, Coefficient};
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
@@ -120,6 +120,15 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
+/// The points where a line meets a conic.
+///
+/// A line in the conic's plane restricts the conic to a quadratic in the line
+/// parameter whose three coefficients are cancelling sums: the quadratic one
+/// cancels where the direction is a hyperbola asymptote, the linear one where
+/// the line origin is the conic centre, and the constant where the line origin
+/// is on the conic. `real_roots` owns the degree and discriminant decisions for
+/// that problem, so the coefficients reach it with the magnitudes of their own
+/// terms.
 fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();
@@ -167,69 +176,47 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
     }
     let local_origin = [dot(relative, x_axis), dot(relative, y_axis)];
     let local_direction = [dot(direction, x_axis), dot(direction, y_axis)];
-    let line_quadratic = quadratic[0].mul_add(
-        local_direction[0].powi(2),
-        quadratic[1] * local_direction[1].powi(2),
+    let line_quadratic = Coefficient::summed(
+        quadratic[0].mul_add(
+            local_direction[0].powi(2),
+            quadratic[1] * local_direction[1].powi(2),
+        ),
+        quadratic[0].abs() * local_direction[0].powi(2)
+            + quadratic[1].abs() * local_direction[1].powi(2),
     );
-    let line_linear =
+    let line_linear = Coefficient::summed(
         2.0 * quadratic[0].mul_add(
             local_origin[0] * local_direction[0],
             quadratic[1] * local_origin[1] * local_direction[1],
-        ) + linear[0].mul_add(local_direction[0], linear[1] * local_direction[1]);
-    let line_constant = quadratic[0].mul_add(
-        local_origin[0].powi(2),
-        quadratic[1] * local_origin[1].powi(2),
-    ) + linear[0].mul_add(local_origin[0], linear[1] * local_origin[1])
-        + constant;
-    let coefficient_scale = line_linear
-        .abs()
-        .max((line_quadratic * line_constant).abs().sqrt())
-        .max(1.0);
-    let coefficient_tolerance = 1e-14 * coefficient_scale;
-    if !line_quadratic.is_finite() || !line_linear.is_finite() || !line_constant.is_finite() {
-        return Vec::new();
-    }
-    if line_quadratic.abs() <= coefficient_tolerance {
-        if line_linear.abs() <= coefficient_tolerance {
-            return Vec::new();
-        }
-        let parameter = -line_constant / line_linear;
-        let point = std::array::from_fn(|coordinate| {
-            direction[coordinate].mul_add(parameter, origin[coordinate])
-        });
-        return curve_contains_points(conic, [point, point])
-            .then_some(point)
-            .into_iter()
-            .collect();
-    }
-    let discriminant = line_linear.mul_add(line_linear, -4.0 * line_quadratic * line_constant);
-    let tolerance = EPS_NEAR_ZERO * coefficient_scale * coefficient_scale;
-    if !discriminant.is_finite() || discriminant < -tolerance {
-        return Vec::new();
-    }
-    let root = discriminant.max(0.0).sqrt();
-    let first_parameter = -line_linear / (2.0 * line_quadratic);
-    let first = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(first_parameter, origin[coordinate])
-    });
-    if root <= EPS_AGREE * coefficient_scale {
-        return curve_contains_points(conic, [first, first])
-            .then_some(first)
-            .into_iter()
-            .collect();
-    }
-    let root_product = -0.5 * (line_linear + root.copysign(line_linear));
-    let first_parameter = root_product / line_quadratic;
-    let second_parameter = line_constant / root_product;
-    let first = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(first_parameter, origin[coordinate])
-    });
-    let second = std::array::from_fn(|coordinate| {
-        direction[coordinate].mul_add(second_parameter, origin[coordinate])
-    });
-    [first, second]
+        ) + linear[0].mul_add(local_direction[0], linear[1] * local_direction[1]),
+        2.0 * ((quadratic[0] * local_origin[0] * local_direction[0]).abs()
+            + (quadratic[1] * local_origin[1] * local_direction[1]).abs())
+            + (linear[0] * local_direction[0]).abs()
+            + (linear[1] * local_direction[1]).abs(),
+    );
+    let line_constant = Coefficient::summed(
+        quadratic[0].mul_add(
+            local_origin[0].powi(2),
+            quadratic[1] * local_origin[1].powi(2),
+        ) + linear[0].mul_add(local_origin[0], linear[1] * local_origin[1])
+            + constant,
+        quadratic[0].abs() * local_origin[0].powi(2)
+            + quadratic[1].abs() * local_origin[1].powi(2)
+            + (linear[0] * local_origin[0]).abs()
+            + (linear[1] * local_origin[1]).abs()
+            + constant.abs(),
+    );
+    real_roots(line_quadratic, line_linear, line_constant)
         .into_iter()
-        .filter(|point| curve_contains_points(conic, [*point, *point]))
+        .map(|parameter| {
+            std::array::from_fn(|coordinate| {
+                direction[coordinate].mul_add(parameter, origin[coordinate])
+            })
+        })
+        .filter(|point: &[f64; 3]| {
+            point.iter().all(|value| value.is_finite())
+                && curve_contains_points(conic, [*point, *point])
+        })
         .collect()
 }
 
@@ -702,8 +689,8 @@ mod tests {
     use super::super::equations::common_plane_conic_parameters;
     use super::super::planes::CarrierSolveDiagnostics;
     use super::{
-        carrier_failure_kind, pcurve_endpoint_is_ambiguous, restrict_planar_conic_to_chart,
-        unique_model_curve, CarrierFailureKind,
+        carrier_failure_kind, line_conic_intersections, pcurve_endpoint_is_ambiguous,
+        restrict_planar_conic_to_chart, unique_model_curve, CarrierFailureKind,
     };
     use crate::vecmath::normalize;
     use cadmpeg_ir::document::CadIr;
@@ -835,6 +822,115 @@ mod tests {
         let chart =
             restrict_planar_conic_to_chart(ellipse, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS);
         assert_eq!(chart.constant.stated(), 0.0);
+    }
+
+    #[test]
+    fn numerical_followup_residual_bound_refuses_a_candidate_off_both_conics() {
+        // The hyperbola crosses the circle twice. Beside one of the two the
+        // resultant states a further root, and the refinement leaves it 4e-3
+        // away with a residual of 2.6e-5 against the circle and 3.8e-5 against
+        // the hyperbola, read against conic constants of -1. No coefficient
+        // bound and no correction of the refinement reaches that; only a
+        // tolerance that grows with the candidate's own magnitude does.
+        let heading = std::f64::consts::FRAC_PI_4;
+        let hyperbola = PlanarConicEquation {
+            origin: [200.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            x_axis: normalize([heading.cos(), heading.sin(), 0.0]).expect("planar unit axis"),
+            y_axis: normalize([-heading.sin(), heading.cos(), 0.0]).expect("planar unit axis"),
+            quadratic: [1.0 / (20.0 * 20.0), -1.0 / (40.0 * 40.0)],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: 40.0,
+        };
+        let circle = chart_circle(100.0);
+
+        let parameters = stated_parameters(circle, hyperbola);
+
+        assert_eq!(parameters.len(), 2);
+        for parameter in parameters {
+            let point = chart_point(parameter);
+            assert!(conic_value(circle, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+            assert!(conic_value(hyperbola, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+        }
+    }
+
+    #[test]
+    fn numerical_followup_resultant_quartic_term_states_both_branch_crossings() {
+        // The circle of radius 10000 crosses each branch of the hyperbola
+        // twice, so the resultant is a real quartic in u. Its quartic
+        // coefficient is 3.2e-15 of its largest one, and a rule that reads that
+        // ratio against a fixed fraction drops it and states the left branch
+        // pair alone.
+        let hyperbola = PlanarConicEquation {
+            origin: [5000.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            x_axis: CHART_U_AXIS,
+            y_axis: CHART_V_AXIS,
+            quadratic: [1.0 / (20.0 * 20.0), -1.0 / (80.0 * 80.0)],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: 80.0,
+        };
+        let circle = chart_circle(10000.0);
+
+        let parameters = stated_parameters(circle, hyperbola);
+
+        assert_eq!(parameters.len(), 4);
+        assert_eq!(
+            parameters
+                .iter()
+                .filter(|parameter| parameter[0] > 5000.0)
+                .count(),
+            2
+        );
+        assert_eq!(
+            parameters
+                .iter()
+                .filter(|parameter| parameter[0] < 5000.0)
+                .count(),
+            2
+        );
+        for parameter in parameters {
+            let point = chart_point(parameter);
+            assert!(conic_value(circle, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+            assert!(conic_value(hyperbola, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+        }
+    }
+
+    #[test]
+    fn numerical_followup_line_tangent_to_a_circle_states_one_point() {
+        // The line x = 100 touches the circle of radius 100 at (100, 0, 0), so
+        // the exact discriminant of the conic restricted to the line is zero.
+        // The line origin is 1000 along the line from the tangency, which puts
+        // the linear coefficient at 2e-3 and the rounding of its square above
+        // the coefficient scale the solver used to state a repeated root.
+        const RADIUS: f64 = 100.0;
+        const LINE_OFFSET: f64 = 1000.0;
+        const EPS_TEST_TANGENCY: f64 = 1.0e-9;
+        let circle = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                RADIUS,
+            )
+            .expect("valid CircleCurve fixture"),
+        ));
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(RADIUS, LINE_OFFSET, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .expect("valid LineCurve fixture"),
+        ));
+
+        let points = line_conic_intersections(&line, &circle);
+
+        assert_eq!(points.len(), 1);
+        assert!((points[0][0] - RADIUS).abs() <= EPS_TEST_TANGENCY);
+        assert!(points[0][1].abs() <= EPS_TEST_TANGENCY);
+        assert!(points[0][2].abs() <= EPS_TEST_TANGENCY);
     }
 
     #[test]

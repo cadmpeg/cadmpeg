@@ -22,6 +22,16 @@
 /// equal-length constant four, well inside it.
 const EPS_QUADRATIC_CANCELLATION: f64 = 64.0 * f64::EPSILON;
 
+/// The bound on the difference between a sum of products computed in f64 and
+/// the exact sum of the exact products.
+///
+/// `terms` is the sum of the magnitudes of those products. Callers that form a
+/// value from several such sums, or from products of them, state their own
+/// multiple of this bound beside the operation count that earns it.
+pub(super) fn cancellation_bound(terms: f64) -> f64 {
+    EPS_QUADRATIC_CANCELLATION * terms.abs()
+}
+
 /// A coefficient of a quadratic root problem, with the sum of the magnitudes of
 /// the products that formed it.
 ///
@@ -46,7 +56,7 @@ impl Coefficient {
     /// the origin of the restriction satisfies the equation.
     pub(super) fn summed(value: f64, terms: f64) -> Self {
         let terms = terms.abs();
-        if value.abs() <= EPS_QUADRATIC_CANCELLATION * terms {
+        if value.abs() <= cancellation_bound(terms) {
             return Self { value: 0.0, terms };
         }
         Self { value, terms }
