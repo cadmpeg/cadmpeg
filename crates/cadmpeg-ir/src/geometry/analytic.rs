@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic curves and surfaces with admitted frames and dimensions.
+//!
+//! Each type states what its caller supplies through three constructor forms:
+//!
+//! | Inputs | Constructor |
+//! |---|---|
+//! | Raw values requiring admission | `try_new(...) -> Result<Self, &'static str>` |
+//! | Checked parts that establish every invariant | `new(...) -> Self` |
+//! | Checked parts with a remaining relationship | `try_from_parts(...) -> Result<Self, &'static str>` |
+//!
+//! `try_new` admits each raw component and delegates, so wire deserialization
+//! and model code reach the same stored state through one admission path. A
+//! getter returns the checked type of the stored value, so an unchanged
+//! component moves into another model object without a second admission.
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
@@ -31,18 +44,59 @@ struct PlaneSurfaceWire {
 }
 
 impl PlaneSurface {
+    /// Build a plane from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// Checked parts taken from one plane rebuild another without readmission:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let plane = PlaneSurface::try_new(
+    ///     Point3::new(1.0, 2.0, 3.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    /// )
+    /// .expect("orthonormal frame and finite origin");
+    /// let moved = PlaneSurface::new(plane.origin(), plane.frame());
+    /// assert_eq!(moved, plane);
+    /// ```
+    ///
+    /// Raw coordinates and directions do not reach it:
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let plane = PlaneSurface::new(
+    ///     Point3::new(1.0, 2.0, 3.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    /// );
+    /// ```
+    #[must_use]
+    pub const fn new(origin: FinitePoint3, frame: OrthonormalFrame3) -> Self {
+        Self { origin, frame }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Result<Self, &'static str> {
         let frame = OrthonormalFrame3::new(normal, u_axis)
             .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("PlaneSurface.origin must be finite")?;
-        Ok(Self { origin, frame })
+        Ok(Self::new(origin, frame))
     }
 
     /// Return the origin.
     #[must_use]
-    pub const fn origin(&self) -> &Point3 {
-        self.origin.as_raw()
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the normal.
@@ -61,7 +115,7 @@ impl PlaneSurface {
 impl From<PlaneSurface> for PlaneSurfaceWire {
     fn from(value: PlaneSurface) -> Self {
         Self {
-            origin: *value.origin(),
+            origin: value.origin().get(),
             normal: *value.normal(),
             u_axis: *value.u_axis(),
         }
