@@ -949,7 +949,7 @@ pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<f64> {
         .then_some(value)
 }
 
-pub(in super::super) fn equal_distance_chamfer_setback(
+fn equal_distance_chamfer_setback(
     cones: &[ConeEquation],
     support_planes: &[PlaneEquation],
 ) -> Option<f64> {

@@ -283,7 +283,7 @@ fn cylinder_frame_agrees_with_model(
     dot(radial, radial).sqrt() <= EPS_CYLINDER_CARRIER * scale
 }
 
-pub(in super::super) fn ordered_parallel_cap_extent(
+pub(super) fn ordered_parallel_cap_extent(
     start: PlaneEquation,
     end: PlaneEquation,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
