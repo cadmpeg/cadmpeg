@@ -72,7 +72,10 @@ fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
             }
             let mut record = distance_record(0x2016, 1.0e308);
             record.schema = schema.into();
-            let property = record.properties.remove("test_Depth").unwrap();
+            let property = record
+                .properties
+                .remove("test_Depth")
+                .expect("the synthetic record carries test_Depth");
             record.properties.insert(suffix.into(), property);
             assert!(super::texture_asset(&record).is_err(), "{schema} {suffix}");
         }
