@@ -7,8 +7,8 @@
 //! only be unique within their owning state.
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
-//! components before `#`). Use [`is_valid_identity`] / [`format_identity`] at
-//! mint time.
+//! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
+//! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
 use serde::Deserialize;
 

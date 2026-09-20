@@ -297,9 +297,9 @@ pub struct CadirEncoder;
 impl EncoderBackend for CadirEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
 
-    /// CADIR is the neutral document, not a native format: its version is
-    /// data about cadmpeg, never a dialect, and `ExportReport::target` is
-    /// `None` on every CADIR write.
+    /// CADIR writes the neutral document. Its version identifies the CADIR
+    /// schema. The serialized export report uses the `cadir` identity variant,
+    /// which has no native dialect target.
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 

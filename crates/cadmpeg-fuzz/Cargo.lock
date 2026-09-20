@@ -296,6 +296,7 @@ name = "cadmpeg-protein"
 version = "0.6.0"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-ir",
  "flate2",
  "roxmltree",
  "serde",
