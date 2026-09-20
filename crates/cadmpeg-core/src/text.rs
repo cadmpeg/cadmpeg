@@ -178,15 +178,6 @@ pub enum NamedEntryError {
     },
 }
 
-impl NamedEntryError {
-    /// The record the reader named as the owner of the property set.
-    pub fn record(&self) -> &str {
-        match self {
-            Self::Blank { record } | Self::Restated { record, .. } => record,
-        }
-    }
-}
-
 impl std::fmt::Display for NamedEntryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -427,7 +418,9 @@ mod tests {
 
         let (kept, refused) = named_entries_reporting("feature 7", entries.clone());
         assert_eq!(refused.len(), 1);
-        assert_eq!(refused[0].record(), "feature 7");
+        assert!(
+            matches!(&refused[0], super::NamedEntryError::Blank { record } if record == "feature 7")
+        );
         assert_eq!(
             refused[0].to_string(),
             "feature 7 states a property with a blank key"

@@ -96,13 +96,24 @@ fn refusal(
     error: &CodecError,
 ) -> (
     &str,
-    Option<&str>,
+    Option<String>,
     &'static [cadmpeg_core::target::TargetDescriptor],
 ) {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected a target refusal, got {error}");
     };
-    (refusal.format(), refusal.requested(), refusal.available())
+    (
+        refusal.format(),
+        {
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        },
+        refusal.available(),
+    )
 }
 
 /// The flagship case: `convert in.step -o out.step` on a file that is not the
@@ -194,7 +205,7 @@ fn inherit_refuses_an_edition_unspecified_ap242_source() {
         .expect_err("an edition-unspecified AP242 source has no write target");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, Some("step:ap242"));
+    assert_eq!(requested.as_deref(), Some("step:ap242"));
     for schema in StepSchema::ALL {
         assert!(
             available
@@ -226,7 +237,7 @@ fn inherit_refuses_an_unrecognized_source_declaration() {
     let error =
         inherit(&StepCodec::default(), decoded.ir()).expect_err("step:unknown has no write target");
     let (_, requested, available) = refusal(&error);
-    assert_eq!(requested, Some("step:unknown"));
+    assert_eq!(requested.as_deref(), Some("step:unknown"));
     assert!(
         available
             .iter()
@@ -256,7 +267,7 @@ fn inherit_refuses_a_step_source_that_records_no_dialect() {
         .expect_err("a STEP source with no dialect has nothing to preserve");
     let (format, requested, available) = refusal(&error);
     assert_eq!(format, "step");
-    assert_eq!(requested, None);
+    assert_eq!(requested.as_deref(), None);
     assert!(
         available
             .iter()
