@@ -112,20 +112,8 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
         )
         .unwrap()
         .add_object("Part", "App::Part")
-        .unwrap()
-        .add_dependency("Part", "Box")
-        .unwrap()
-        .add_property(
-            "Part",
-            "Group",
-            "App::PropertyLinkList",
-            vec![crate::FcstdPropertyValue::empty("LinkList")
-                .with_attribute("count", "1")
-                .with_child(crate::FcstdPropertyValue::attribute("Link", "value", "Box"))],
-        )
-        .unwrap()
-        .add_side_entry("Payload.bin", b"first payload".to_vec())
         .unwrap();
+    crate::builder::test_support::attach_part_fixture(&mut builder, b"first payload");
     let mut ir = builder.build().unwrap();
     FcstdCodec
         .set_property_value_attribute(
