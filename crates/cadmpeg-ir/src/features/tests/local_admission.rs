@@ -32,12 +32,24 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert!(TreeChildren::new(vec![first.clone()], Some(second.clone())).is_err());
     let mut children = TreeChildren::new(vec![first.clone()], Some(first)).unwrap();
     let before = children.clone();
-    assert!(children.set_active_child(Some(second.clone())).is_err());
+    assert!({
+        let active = Some(second.clone());
+        cadmpeg_test_support::edit::replace(&mut children, |previous| {
+            crate::features::TreeChildren::new(previous.to_vec(), active)
+        })
+    }
+    .is_err());
     assert_eq!(children, before);
     children.insert(second.clone());
     children.insert(second.clone());
     assert_eq!(children.len(), 2);
-    children.set_active_child(Some(second)).unwrap();
+    {
+        let active = Some(second);
+        cadmpeg_test_support::edit::replace(&mut children, |previous| {
+            crate::features::TreeChildren::new(previous.to_vec(), active)
+        })
+    }
+    .unwrap();
 }
 
 #[test]

@@ -528,11 +528,15 @@ fn spatial_sketch_paths_round_trip_through_json() {
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
-    let native = PathRef::spatial_sketch_selection(
-        SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        vec!["native:path-selection#0".into()],
-    )
-    .unwrap();
+    let native =
+        crate::features::NativeSelections::try_from(vec!["native:path-selection#0".into()])
+            .map(
+                |selections| crate::features::PathRef::SpatialSketchSelection {
+                    sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+                    selections,
+                },
+            )
+            .unwrap();
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }

@@ -144,15 +144,13 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[0].id)
+        cadmpeg_test_support::assembly::resolved_transform(&graph, &link_occurrences[0].id)
             .unwrap()
             .rows()[0][3],
         115.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[1].id)
+        cadmpeg_test_support::assembly::resolved_transform(&graph, &link_occurrences[1].id)
             .unwrap()
             .rows()[0][3],
         118.0
@@ -971,22 +969,19 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Inner").id)
+        cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence("Inner").id)
             .unwrap()
             .rows()[0][3],
         8.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Outer").id)
+        cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence("Outer").id)
             .unwrap()
             .rows()[0][3],
         20.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Override").id)
+        cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence("Override").id)
             .unwrap()
             .rows()[0][3],
         14.0

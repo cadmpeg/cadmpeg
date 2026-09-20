@@ -465,8 +465,7 @@ mod product_roundtrip {
             .map(|occurrence| {
                 (
                     path(occurrence, &occurrences, &definitions, &mut memo),
-                    graph
-                        .resolved_transform(&occurrence.id)
+                    cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence.id)
                         .expect("resolved transform")
                         .rows(),
                 )

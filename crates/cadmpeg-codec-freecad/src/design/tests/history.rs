@@ -263,12 +263,16 @@ fn transfers_ordered_body_membership_and_active_tip() {
         else {
             panic!("body tree node");
         };
-        assert!(children
-            .set_active_child(Some(
+        assert!({
+            let active = Some(
                 cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
                     .expect("identity grammar"),
-            ))
-            .is_err());
+            );
+            cadmpeg_test_support::edit::replace(children, |previous| {
+                cadmpeg_ir::features::TreeChildren::new(previous.to_vec(), active)
+            })
+        }
+        .is_err());
     });
     assert_valid_document(&corrupted);
 }

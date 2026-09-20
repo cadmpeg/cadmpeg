@@ -468,8 +468,7 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
 
     let graph = cadmpeg_ir::products::AssemblyGraph::new(&decoded.ir().model.occurrences)
         .expect("merged occurrence graph");
-    let resolved = graph
-        .resolved_transform(&child.id)
+    let resolved = cadmpeg_test_support::assembly::resolved_transform(&graph, &child.id)
         .expect("resolved nested occurrence transform");
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
@@ -569,7 +568,9 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences)
             .expect("nested occurrence graph");
         assert_eq!(
-            graph.resolved_transform(&child.id).unwrap().rows(),
+            cadmpeg_test_support::assembly::resolved_transform(&graph, &child.id)
+                .unwrap()
+                .rows(),
             expected
         );
         assert_eq!(ir.model.bodies.len(), 1);
