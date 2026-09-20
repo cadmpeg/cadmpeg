@@ -154,8 +154,11 @@ fn numerical_followup_hyperbolic_laws_preserve_values_and_chain_derivatives() {
 #[test]
 fn analytic_line_search_preserves_subnormal_scale_residuals() {
     let line = SolvedCurveGeometry::Line(
-        crate::geometry::LineCurve::try_new(Point3::new(0., 0., 0.), Vector3::new(1., 0., 0.))
-            .unwrap(),
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(0., 0., 0.),
+            Vector3::new(1., 0., 0.),
+        )
+        .unwrap(),
     );
     assert_eq!(
         direct_curve_parameter_near_point(&line, Point3::new(0., 1e-200, 0.), 0., 0.),
