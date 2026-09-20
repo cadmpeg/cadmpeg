@@ -466,6 +466,7 @@ dependencies = [
  "cadmpeg-ir",
  "serde",
  "serde_json",
+ "thiserror",
  "toml",
 ]
 

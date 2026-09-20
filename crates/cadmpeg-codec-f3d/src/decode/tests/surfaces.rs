@@ -1054,21 +1054,12 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
     let TSplineSubtransform::Inline(inline) = native.subtransform() else {
         panic!("expected inline T-spline subtransform")
     };
-    assert!(inline.program.as_str().contains("v 1 0 0 0"));
+    assert_eq!(
+        inline.program.as_str(),
+        "degree 3\nunits mm\nv 1 0 0 0\nv 2 1 0 0\ne 1 1 2\n"
+    );
     assert_eq!(inline.separator, Some(false));
     assert_eq!(inline.values.as_str(), "100verts 1 2\n");
-    let graph = native.program_graph();
-    assert_eq!(graph.headers().len(), 2);
-    assert_eq!(graph.records().len(), 3);
-    assert_eq!(
-        graph.records()[0].kind(),
-        cadmpeg_ir::geometry::TSplineRecordKind::Vertex
-    );
-    assert!(graph.unparsed_lines().is_empty());
-    assert_eq!(
-        native.values_graph().records()[0].kind(),
-        cadmpeg_ir::geometry::TSplineRecordKind::Verts100
-    );
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;

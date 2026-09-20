@@ -12,8 +12,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 
-use crate::archive::{CfbSpanRole, PhysicalSpan, SpanRole};
-
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
@@ -480,211 +478,6 @@ impl<'a> CompoundSnapshot<'a> {
                 }
             })
             .collect()
-    }
-
-    /// Partitions every physical input byte by CFB structural role.
-    pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
-        let mut structural = BTreeMap::new();
-        for &sector in &self.parsed.fat_sectors {
-            structural.insert(sector, CfbSpanRole::Fat);
-        }
-        for &sector in &self.parsed.difat_sectors {
-            structural.insert(sector, CfbSpanRole::Difat);
-        }
-        for &sector in self
-            .parsed
-            .directory_chain
-            .iter()
-            .flat_map(SectorChain::iter)
-        {
-            structural.insert(sector, CfbSpanRole::Directory);
-        }
-        for &sector in self
-            .parsed
-            .mini_fat_chain
-            .iter()
-            .flat_map(SectorChain::iter)
-        {
-            structural.insert(sector, CfbSpanRole::MiniFat);
-        }
-        let mut regular = BTreeMap::new();
-        let mut mini = BTreeMap::new();
-        for entry in &self.entries {
-            let CompoundEntry::Stream(stream) = entry else {
-                continue;
-            };
-            let Some(allocation) = stream.allocation() else {
-                continue;
-            };
-            let width = match allocation {
-                CompoundAllocation::Regular => self.parsed.version.sector_size(),
-                CompoundAllocation::Mini => MINI_SECTOR_SIZE,
-            };
-            let mut remaining = stream.logical_size();
-            for &sector in stream.sectors() {
-                let payload = remaining.min(width as u64) as usize;
-                remaining = remaining.saturating_sub(payload as u64);
-                match allocation {
-                    CompoundAllocation::Regular => {
-                        regular.insert(sector, (stream.path.clone(), payload));
-                    }
-                    CompoundAllocation::Mini => {
-                        mini.insert(sector, (stream.path.clone(), payload));
-                    }
-                }
-            }
-        }
-        let mut spans = vec![PhysicalSpan {
-            start: 0,
-            end: self.parsed.version.sector_size() as u64,
-            role: SpanRole::Cfb(CfbSpanRole::Header),
-        }];
-        let root_size = directory_root(&self.parsed.directory)?.size;
-        let root_sectors = self
-            .parsed
-            .root_mini_chain
-            .iter()
-            .flat_map(SectorChain::iter)
-            .enumerate()
-            .map(|(ordinal, sector)| (*sector, ordinal))
-            .collect::<BTreeMap<_, _>>();
-        for index in 0..self.parsed.sector_count {
-            let start = self
-                .parsed
-                .version
-                .sector_size()
-                .checked_add(
-                    index
-                        .checked_mul(self.parsed.version.sector_size())
-                        .ok_or_else(|| {
-                            CodecError::Malformed("CFB ledger offset overflow".into())
-                        })?,
-                )
-                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
-                as u64;
-            let window_len = self.root.window().len() as u64;
-            let sector_end = start
-                .checked_add(self.parsed.version.sector_size() as u64)
-                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?;
-            // The sector count divides the window with `div_ceil`, so the file
-            // holds a partial final sector when its length is not a whole
-            // number of sectors. Every other sector covers a whole sector.
-            let available = window_len.checked_sub(start).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "CFB sector {index} starts at byte {start}, but the file holds {window_len} bytes"
-                ))
-            })?;
-            let sector_span = if sector_end <= window_len {
-                self.parsed.version.sector_size() as u64
-            } else if index + 1 == self.parsed.sector_count {
-                available
-            } else {
-                return malformed(format!(
-                    "CFB sector {index} declares its end at byte {sector_end}, but the file holds {window_len} bytes"
-                ));
-            };
-            let sector_length = usize::try_from(sector_span)
-                .map_err(|_| CodecError::Malformed("CFB ledger sector length overflow".into()))?;
-            let sector = u32::try_from(index)
-                .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
-            if self.parsed.range_lock_sector == Some(sector) {
-                push_span(
-                    &mut spans,
-                    start,
-                    sector_length,
-                    CfbSpanRole::RangeLockSector,
-                );
-            } else if let Some(role) = structural.get(&sector) {
-                push_span(&mut spans, start, sector_length, role.clone());
-            } else if let Some((entry, payload)) = regular.get(&sector) {
-                if *payload > sector_length {
-                    return malformed(format!("CFB stream {entry} is shorter than declared"));
-                }
-                push_span(
-                    &mut spans,
-                    start,
-                    *payload,
-                    CfbSpanRole::RegularStreamPayload(entry.clone()),
-                );
-                push_span(
-                    &mut spans,
-                    start + *payload as u64,
-                    sector_length - *payload,
-                    CfbSpanRole::Padding {
-                        entry: Some(entry.clone()),
-                    },
-                );
-            } else if let Some(root_ordinal) = root_sectors.get(&sector) {
-                for mini_ordinal in 0..sector_length.div_ceil(MINI_SECTOR_SIZE) {
-                    let logical_mini = root_ordinal
-                        .checked_mul(self.parsed.version.sector_size() / MINI_SECTOR_SIZE)
-                        .and_then(|base| base.checked_add(mini_ordinal))
-                        .ok_or_else(|| {
-                            CodecError::Malformed("CFB mini-sector id overflow".into())
-                        })?;
-                    let mini_offset = mini_ordinal * MINI_SECTOR_SIZE;
-                    let mini_length = (sector_length - mini_offset).min(MINI_SECTOR_SIZE);
-                    let mini_start = start + mini_offset as u64;
-                    let root_offset = (logical_mini * MINI_SECTOR_SIZE) as u64;
-                    let mapped = root_size
-                        .saturating_sub(root_offset)
-                        .min(mini_length as u64) as usize;
-                    let logical_mini = u32::try_from(logical_mini).map_err(|_| {
-                        CodecError::Malformed("CFB mini-sector id exceeds u32".into())
-                    })?;
-                    if let Some((entry, payload)) = mini.get(&logical_mini) {
-                        if *payload > mini_length {
-                            return malformed(format!(
-                                "CFB stream {entry} is shorter than declared"
-                            ));
-                        }
-                        push_span(
-                            &mut spans,
-                            mini_start,
-                            *payload,
-                            CfbSpanRole::MiniStreamPayload(entry.clone()),
-                        );
-                        push_span(
-                            &mut spans,
-                            mini_start + *payload as u64,
-                            mini_length - *payload,
-                            CfbSpanRole::Padding {
-                                entry: Some(entry.clone()),
-                            },
-                        );
-                    } else {
-                        push_span(
-                            &mut spans,
-                            mini_start,
-                            mapped,
-                            CfbSpanRole::MiniStreamPadding,
-                        );
-                        push_span(
-                            &mut spans,
-                            mini_start + mapped as u64,
-                            mini_length - mapped,
-                            CfbSpanRole::Padding { entry: None },
-                        );
-                    }
-                }
-            } else {
-                push_span(
-                    &mut spans,
-                    start,
-                    sector_length,
-                    CfbSpanRole::UnallocatedSector,
-                );
-            }
-        }
-        if spans.first().is_none_or(|span| span.start != 0)
-            || spans.windows(2).any(|pair| pair[0].end != pair[1].start)
-            || spans
-                .last()
-                .is_none_or(|span| span.end != self.root.window().len() as u64)
-        {
-            return malformed("physical CFB ledger has a gap or overlap");
-        }
-        Ok(spans)
     }
 
     fn regular_sector_view(&self, sector: u32) -> Result<View<'a>, CodecError> {
@@ -1890,17 +1683,6 @@ fn join_sectors<'a>(
     Ok(output)
 }
 
-fn push_span(spans: &mut Vec<PhysicalSpan>, start: u64, length: usize, role: CfbSpanRole) {
-    if length == 0 {
-        return;
-    }
-    spans.push(PhysicalSpan {
-        start,
-        end: start + length as u64,
-        role: SpanRole::Cfb(role),
-    });
-}
-
 fn sector_range(
     sector_size: usize,
     count: usize,
@@ -2031,15 +1813,6 @@ mod tests {
             snapshot.entry("STORE"),
             Some(CompoundEntry::Storage(_))
         ));
-        assert_eq!(
-            snapshot
-                .physical_ledger()
-                .expect("physical ledger builds")
-                .last()
-                .expect("ledger contains the header")
-                .end,
-            file.len() as u64
-        );
     }
 
     #[test]
@@ -2098,15 +1871,6 @@ mod tests {
             .expect("regular stream opens through the partial sector");
         assert_eq!(stream.window().len(), 4110);
         assert!(stream.window().iter().all(|byte| *byte == 0x5a));
-        assert_eq!(
-            snapshot
-                .physical_ledger()
-                .expect("physical ledger builds")
-                .last()
-                .expect("ledger contains the partial sector")
-                .end,
-            file.len() as u64
-        );
 
         let mut too_large = partial_regular_fixture();
         sector_mut(&mut too_large, 0)[3 * 128 + 120..4 * 128]

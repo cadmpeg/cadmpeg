@@ -111,28 +111,36 @@ mod tests {
         RHINO_INSTANCE_CHECKS, SLDPRT_EXPORT_PRECONDITION_CHECKS,
     };
     use crate::report::check::Check;
-    use crate::validate::admissibility_freeze::{
+    use cadmpeg_test_support::admissibility::{
         accepted_empty, rejected_missing_point, rejected_missing_region,
     };
 
+    // The shared fixture crate links the library instance of CadIr. Unit tests
+    // compile a separate instance, so transfer fixture data through its wire form.
+    fn fixture(value: impl serde::Serialize) -> crate::CadIr {
+        serde_json::from_value(serde_json::to_value(value).expect("fixture serializes"))
+            .expect("fixture deserializes into the unit-test IR")
+    }
+
     #[test]
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
-        let accepted = accepted_empty();
+        let accepted = fixture(accepted_empty());
         assert!(super::super::validate_neutral(&accepted, Vec::new()).is_ok());
         assert!(admit(&accepted, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
 
-        let missing_point = rejected_missing_point("test:model").expect("valid identity");
+        let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_point, Vec::new()).is_ok());
         assert!(!admit(&missing_point, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
 
-        let missing_region = rejected_missing_region("test:model").expect("valid identity");
+        let missing_region =
+            fixture(rejected_missing_region("test:model").expect("valid identity"));
         assert!(!super::super::validate_neutral(&missing_region, Vec::new()).is_ok());
         assert!(!admit(&missing_region, DRAFT_CORE_CHECKS, Vec::new()).is_ok());
     }
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
-        let ir = rejected_missing_point("test:model").expect("valid identity");
+        let ir = fixture(rejected_missing_point("test:model").expect("valid identity"));
         let filtered = admit(&ir, &[Check::Identity], Vec::new());
         assert!(
             filtered.is_ok(),
@@ -176,8 +184,8 @@ mod tests {
         assert!(!DRAFT_CORE_CHECKS.contains(&Check::Counts));
         assert!(!RHINO_DRAFT_CHECKS.contains(&Check::ArenaOrder));
 
-        let accepted = accepted_empty();
-        let rejected = rejected_missing_point("test:model").expect("valid identity");
+        let accepted = fixture(accepted_empty());
+        let rejected = fixture(rejected_missing_point("test:model").expect("valid identity"));
         for allowed in [
             DRAFT_CORE_CHECKS,
             RHINO_DRAFT_CHECKS,
