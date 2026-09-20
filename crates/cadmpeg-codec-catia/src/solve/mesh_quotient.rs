@@ -3793,23 +3793,23 @@ fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<
 }
 
 struct MeshSelectionSearch<'a> {
-    pub(crate) assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
+    assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
     #[cfg(test)]
-    pub(crate) possible_face_equations: Vec<Vec<[usize; 2]>>,
-    pub(crate) possible_face_choices: Vec<Vec<Vec<[usize; 2]>>>,
-    pub(crate) face_work: Vec<Option<usize>>,
-    pub(crate) edge_candidates: &'a [Vec<[usize; 2]>],
-    pub(crate) edge_rows: &'a [EdgeRow],
-    pub(crate) vertex_points: &'a [[f64; 3]],
-    pub(crate) candidate_gauge: Option<MeshCandidateGauge<'a>>,
-    pub(crate) port_identities: Option<&'a [[u32; 2]]>,
-    pub(crate) fixed_face_directions: Vec<Option<MeshFaceDirectionOptions>>,
-    pub(crate) fixed_edge_orientations: Vec<Option<bool>>,
-    pub(crate) edge_has_fixed_direction: Vec<bool>,
-    pub(crate) selected: Vec<MeshFaceSelection>,
-    pub(crate) visited_states: HashSet<MeshSelectionStateSignature>,
-    pub(crate) outcome: SearchOutcome<(StandardTopology, Vec<usize>)>,
-    pub(crate) face_equation_cache: MeshFaceEquationCache,
+    possible_face_equations: Vec<Vec<[usize; 2]>>,
+    possible_face_choices: Vec<Vec<Vec<[usize; 2]>>>,
+    face_work: Vec<Option<usize>>,
+    edge_candidates: &'a [Vec<[usize; 2]>],
+    edge_rows: &'a [EdgeRow],
+    vertex_points: &'a [[f64; 3]],
+    candidate_gauge: Option<MeshCandidateGauge<'a>>,
+    port_identities: Option<&'a [[u32; 2]]>,
+    fixed_face_directions: Vec<Option<MeshFaceDirectionOptions>>,
+    fixed_edge_orientations: Vec<Option<bool>>,
+    edge_has_fixed_direction: Vec<bool>,
+    selected: Vec<MeshFaceSelection>,
+    visited_states: HashSet<MeshSelectionStateSignature>,
+    outcome: SearchOutcome<(StandardTopology, Vec<usize>)>,
+    face_equation_cache: MeshFaceEquationCache,
 }
 
 fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec<[usize; 2]>> {
