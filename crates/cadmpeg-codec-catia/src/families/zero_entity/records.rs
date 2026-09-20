@@ -1378,7 +1378,7 @@ pub(super) fn zero_entity_neutral_pcurve(
             (radius.recip(), 1.0)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle().get();
             (1.0, half_angle.cos())
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -1526,11 +1526,11 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if { (cone_surface.ratio() == 1.0) && (constant_coordinate(0).is_some()) } =>
+            if { (cone_surface.ratio().get() == 1.0) && (constant_coordinate(0).is_some()) } =>
         {
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle().get();
             let angle = constant_coordinate(0)?;
             let transverse = axis.cross(*ref_direction);
             let radial = cadmpeg_ir::math::Vector3::new(
@@ -1554,13 +1554,13 @@ fn zero_entity_model_curve(
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if { (cone_surface.ratio() == 1.0) && (constant_coordinate(1).is_some()) } =>
+            if { (cone_surface.ratio().get() == 1.0) && (constant_coordinate(1).is_some()) } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let slant = constant_coordinate(1)?;
             let circle_radius = radius + slant * half_angle.sin();
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
@@ -1700,14 +1700,14 @@ fn zero_entity_model_curve_construction(
     else {
         return None;
     };
-    if !(cone_surface.ratio() == 1.0) {
+    if !(cone_surface.ratio().get() == 1.0) {
         return None;
     }
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = cone_surface.radius();
-    let half_angle = cone_surface.half_angle();
+    let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
     if nurbs.degree() != 1 || nurbs.weights().is_some() || nurbs.periodic() {
         return None;
     }
@@ -1798,15 +1798,15 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
-                let ratio = cone_surface.ratio();
+                let ratio = cone_surface.ratio().get();
                 ratio == 1.0
             } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let transverse = axis.cross(*ref_direction);
             let axial = v * half_angle.cos();
             let radial = radius + v * half_angle.sin();
@@ -2835,7 +2835,7 @@ mod tests {
         cone[112..120].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cone(&cone), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
-                if { cone_surface.radius() == 2_000_000.0 })
+                if { cone_surface.radius().get() == 2_000_000.0 })
         );
 
         let mut torus = vec![0_u8; 120];

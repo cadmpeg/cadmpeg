@@ -1125,7 +1125,9 @@ mod tests {
             _ => false,
         });
         assert_eq!(
-            ir.model.procedural_surfaces[0].record_bounds(),
+            ir.model.procedural_surfaces[0]
+                .record_bounds()
+                .map(cadmpeg_ir::geometry::RecordBounds::get),
             Some([Some(-2.0), Some(3.0), Some(0.0), Some(1.0)])
         );
     }

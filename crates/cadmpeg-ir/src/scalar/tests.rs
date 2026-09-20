@@ -114,3 +114,61 @@ fn unit_scalar_names_share_const_admitted_domains() {
     assert_eq!(nonnegative.get(), 0.0);
     assert_eq!(INVALID, None);
 }
+
+#[test]
+fn every_subset_edge_widens_without_a_check_and_restricts_through_admission() {
+    use crate::scalar::{
+        Angle, FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, NonNegativeReal,
+        NonZeroAngle, NonZeroLength, NonZeroReal, PositiveAngle, PositiveLength, PositiveReal,
+        SlopeAngle,
+    };
+
+    // Each row is one subset edge: the source domain, a value inside it, and a
+    // value the destination accepts that the source refuses.
+    macro_rules! edge {
+        ($from:ty => $to:ty, inside: $inside:expr, outside: $outside:expr) => {{
+            let inside: f64 = $inside;
+            let outside: f64 = $outside;
+            let source = <$from>::new(inside).expect("an inside value");
+            let widened: $to = <$to>::from(source);
+            assert_eq!(widened.get().to_bits(), inside.to_bits());
+            let restricted = <$from>::try_from(widened).expect("the value stays inside");
+            assert_eq!(restricted.get().to_bits(), inside.to_bits());
+            let refused = <$to>::new(outside).expect("an outside value the destination accepts");
+            assert!(<$from>::try_from(refused).is_err());
+            1_usize
+        }};
+    }
+
+    let edges = edge!(PositiveLength => NonZeroLength, inside: 2.0, outside: -2.0)
+        + edge!(PositiveLength => NonNegativeLength, inside: 2.0, outside: 0.0)
+        + edge!(PositiveLength => Length, inside: 2.0, outside: -2.0)
+        + edge!(NonZeroLength => Length, inside: -2.0, outside: 0.0)
+        + edge!(NonNegativeLength => Length, inside: 0.0, outside: -2.0)
+        + edge!(InteriorAngle => PositiveAngle, inside: 1.0, outside: 4.0)
+        + edge!(InteriorAngle => NonZeroAngle, inside: 1.0, outside: -1.0)
+        + edge!(InteriorAngle => Angle, inside: 1.0, outside: 0.0)
+        + edge!(PositiveAngle => NonZeroAngle, inside: 1.0, outside: -1.0)
+        + edge!(PositiveAngle => Angle, inside: 1.0, outside: -1.0)
+        + edge!(NonZeroAngle => Angle, inside: -1.0, outside: 0.0)
+        + edge!(SlopeAngle => Angle, inside: 1.0, outside: 3.0)
+        + edge!(PositiveReal => NonZeroReal, inside: 2.0, outside: -2.0)
+        + edge!(PositiveReal => NonNegativeReal, inside: 2.0, outside: 0.0)
+        + edge!(PositiveReal => FiniteReal, inside: 2.0, outside: -2.0)
+        + edge!(NonZeroReal => FiniteReal, inside: -2.0, outside: 0.0)
+        + edge!(NonNegativeReal => FiniteReal, inside: 0.0, outside: -2.0)
+        + edge!(Fraction => NonNegativeReal, inside: 0.5, outside: 2.0)
+        + edge!(Fraction => FiniteReal, inside: 0.5, outside: -0.5);
+    assert_eq!(edges, 19);
+}
+
+#[test]
+fn a_widening_edge_carries_a_signed_zero_and_a_domain_boundary_unchanged() {
+    use crate::scalar::{Fraction, Length, NonNegativeLength, NonNegativeReal};
+
+    let zero = NonNegativeLength::new(-0.0).expect("a negative zero is nonnegative");
+    assert!(Length::from(zero).get().is_sign_negative());
+
+    let one = Fraction::new(1.0).expect("one is a fraction");
+    assert_eq!(NonNegativeReal::from(one).get(), 1.0);
+}

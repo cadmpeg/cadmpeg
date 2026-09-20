@@ -66,9 +66,9 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
-        let half_angle = cone_surface.half_angle();
-                    (cone_surface.radius() == 0.0)
-                        && (cone_surface.ratio() == 1.0)
+        let half_angle = cone_surface.half_angle().get();
+                    (cone_surface.radius().get() == 0.0)
+                        && (cone_surface.ratio().get() == 1.0)
                         && ((origin.x - 37.01).abs() < EPS_CONE_FRAME
                             && origin.y.abs() < EPS_CONE_FRAME
                             && origin.z.abs() < EPS_CONE_FRAME
@@ -428,9 +428,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     let origin = *cone_surface.origin();
     let axis = *cone_surface.axis();
     let ref_direction = *cone_surface.ref_direction();
-    let radius = cone_surface.radius();
-    let ratio = cone_surface.ratio();
-    let half_angle = cone_surface.half_angle();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio().get();
+    let half_angle = cone_surface.half_angle().get();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(axis, [0.0, 0.0, -1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());

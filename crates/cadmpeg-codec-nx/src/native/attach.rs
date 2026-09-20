@@ -3464,7 +3464,7 @@ fn attach_feature_operations(
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
                 FeatureOperation::Sphere {
                     center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.get())?,
+                    radius: cadmpeg_ir::scalar::PositiveLength::try_from(*radius).ok()?,
                     op: sphere_op,
                 },
             ))
@@ -6487,7 +6487,7 @@ fn non_boolean_feature_definition_with_parameters(
                         _ => template_exit_kind,
                     },
                     hole.diameter.and_then(|diameter| {
-                        cadmpeg_ir::scalar::PositiveLength::new(diameter.get())
+                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
                     }),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -6516,8 +6516,9 @@ fn non_boolean_feature_definition_with_parameters(
                 hole.grouped_simple_through
                     .then_some(hole.chamfer)
                     .flatten(),
-                hole.diameter
-                    .and_then(|diameter| cadmpeg_ir::scalar::PositiveLength::new(diameter.get())),
+                hole.diameter.and_then(|diameter| {
+                    cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                }),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -8072,11 +8073,8 @@ fn simple_hole_chamfers(
             };
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let half_angle = cone_surface.half_angle();
-            if !half_angle.is_finite()
-                || half_angle <= 0.0
-                || half_angle >= std::f64::consts::FRAC_PI_2
-            {
+            let half_angle = cone_surface.half_angle().get();
+            if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return BTreeMap::new();
             }
             let matching_bores = bores

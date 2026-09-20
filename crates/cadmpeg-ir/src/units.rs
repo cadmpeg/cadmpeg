@@ -5,7 +5,7 @@
 //! radians.
 
 use crate::math::{Point2, Vector3};
-use crate::scalar::PositiveReal;
+use crate::scalar::{PositiveAngle, PositiveLength};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -33,9 +33,6 @@ enum CanonicalLengthUnitWire {
 /// that binds a carrier to topology applies the same bound, so a binding it
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
-
-const DEFAULT_LINEAR_TOLERANCE: PositiveReal = PositiveReal::UNIT_LINEAR_DEFAULT;
-const DEFAULT_ANGULAR_TOLERANCE: PositiveReal = PositiveReal::UNIT_ANGULAR_DEFAULT;
 
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,28 +134,55 @@ where
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 
-crate::units::named_field!(deserialize_linear, PositiveReal, "linear");
+crate::units::named_field!(deserialize_linear, PositiveLength, "linear");
 
-crate::units::named_field!(deserialize_angular, PositiveReal, "angular");
+crate::units::named_field!(deserialize_angular, PositiveAngle, "angular");
 
 /// Document-wide linear and angular tolerances.
+///
+/// The field types carry the units. A linear tolerance cannot be stored in
+/// `angular`, and the defaults below are the document policy for a file that
+/// states no tolerance of its own: `1.0e-6` millimetres and `1.0e-10` radians.
+///
+/// Moving each stated tolerance into its own field compiles:
+///
+/// ```
+/// let stated = cadmpeg_ir::units::Tolerances::new(1.0e-3, 1.0e-4)
+///     .expect("positive finite tolerances");
+/// let moved = cadmpeg_ir::units::Tolerances {
+///     linear: stated.linear,
+///     angular: stated.angular,
+/// };
+/// assert_eq!(moved, stated);
+/// ```
+///
+/// Exchanging them does not:
+///
+/// ```compile_fail
+/// let stated = cadmpeg_ir::units::Tolerances::new(1.0e-3, 1.0e-4)
+///     .expect("positive finite tolerances");
+/// let swapped = cadmpeg_ir::units::Tolerances {
+///     linear: stated.angular,
+///     angular: stated.linear,
+/// };
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Tolerances {
     /// Linear tolerance in millimeters.
     #[serde(deserialize_with = "deserialize_linear")]
-    pub linear: PositiveReal,
+    pub linear: PositiveLength,
     /// Angular tolerance in radians.
     #[serde(deserialize_with = "deserialize_angular")]
-    pub angular: PositiveReal,
+    pub angular: PositiveAngle,
 }
 
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: DEFAULT_LINEAR_TOLERANCE,
-            angular: DEFAULT_ANGULAR_TOLERANCE,
+            linear: PositiveLength::UNIT_LINEAR_DEFAULT,
+            angular: PositiveAngle::UNIT_ANGULAR_DEFAULT,
         }
     }
 }
@@ -167,9 +191,9 @@ impl Tolerances {
     /// Construct positive finite document tolerances.
     pub fn new(linear: f64, angular: f64) -> Result<Self, String> {
         Ok(Self {
-            linear: PositiveReal::new(linear)
+            linear: PositiveLength::new(linear)
                 .ok_or_else(|| "linear tolerance must be positive and finite".to_owned())?,
-            angular: PositiveReal::new(angular)
+            angular: PositiveAngle::new(angular)
                 .ok_or_else(|| "angular tolerance must be positive and finite".to_owned())?,
         })
     }

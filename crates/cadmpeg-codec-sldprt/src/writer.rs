@@ -627,8 +627,8 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     for surface in &ir.model.surfaces {
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let ratio = cone_surface.ratio();
-                let half_angle = cone_surface.half_angle();
+                let ratio = cone_surface.ratio().get();
+                let half_angle = cone_surface.half_angle().get();
                 if ratio != 1.0 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
@@ -3148,9 +3148,9 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             if ratio != 1.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact cone carriers encode circular cones only".into(),

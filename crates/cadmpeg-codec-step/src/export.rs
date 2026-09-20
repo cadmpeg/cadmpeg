@@ -3778,7 +3778,7 @@ impl<'a> Builder<'a> {
             .filter(|surface| {
                 matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
-                    let ratio = cone_surface.ratio();
+                    let ratio = cone_surface.ratio().get();
                     ratio != 1.0
                 })
             })

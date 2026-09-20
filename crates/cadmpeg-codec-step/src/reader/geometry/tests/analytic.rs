@@ -626,7 +626,7 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
-            let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle().get();
             half_angle == 0.0
         })
     }));

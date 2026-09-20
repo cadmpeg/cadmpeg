@@ -2386,9 +2386,9 @@ fn boundary_curve_speed_bound_with_index(
         Some(SolvedSurfaceGeometry::Cone(cone_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let local_radius = radius + origin.v * half_angle.tan();
             let speed = local_radius.abs() * ratio.abs().max(1.0) * direction.u.abs();
             speed.is_finite().then_some(speed)

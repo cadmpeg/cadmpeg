@@ -23,7 +23,7 @@ use crate::units::COINCIDENCE_TOLERANCE;
 
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
-fn allowance(document_tolerance: crate::scalar::PositiveReal, tolerances: &[Option<f64>]) -> f64 {
+fn allowance(document_tolerance: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
     tolerances.iter().flatten().copied().fold(
         COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
         f64::max,
@@ -34,7 +34,7 @@ fn allowance(document_tolerance: crate::scalar::PositiveReal, tolerances: &[Opti
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
 fn procedural_support_allowance(
-    document_tolerance: crate::scalar::PositiveReal,
+    document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
 ) -> f64 {
     COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])

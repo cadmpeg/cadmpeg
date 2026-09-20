@@ -1380,9 +1380,9 @@ fn scale_surface_geometry(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
@@ -2335,7 +2335,9 @@ mod tests {
             177.8,
         );
         assert_eq!(
-            surface.record_bounds(),
+            surface
+                .record_bounds()
+                .map(cadmpeg_ir::geometry::RecordBounds::get),
             Some([Some(8.0), None, Some(9.0), None])
         );
 

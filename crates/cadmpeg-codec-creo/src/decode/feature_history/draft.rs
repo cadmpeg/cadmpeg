@@ -442,7 +442,9 @@ pub(in super::super) fn schema_feature_definition(
                     .or_else(|| {
                         stepped_dimensions.and_then(|(diameter, _, _)| Length::new(diameter))
                     })
-                    .and_then(|diameter| cadmpeg_ir::scalar::PositiveLength::new(diameter.get())),
+                    .and_then(|diameter| {
+                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                    }),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
