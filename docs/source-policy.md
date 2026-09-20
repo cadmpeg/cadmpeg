@@ -28,6 +28,14 @@ each violation by rule, file, line, and explanation.
   types stay outside the rule: the compiler can require the wider marker for
   them. A module named by a non-private `use` keeps the reach the re-export
   grants.
+- Every member of a serde wire mirror in `cadmpeg-ir` carries a doc comment. The
+  mirror is the type a `#[serde(try_from = "…")]` or `#[serde(from = "…")]`
+  container attribute names, and its members are its fields, an enum's variants
+  and the fields of a struct-shaped variant. The published JSON schema reads
+  each member's doc as that property's `description`, so a member with no doc
+  leaves the schema silent about the value the wire carries. The target name is
+  resolved in the file that names it and then across the crate, so a mirror
+  held in a child module is reached and a same-named type elsewhere is not.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
