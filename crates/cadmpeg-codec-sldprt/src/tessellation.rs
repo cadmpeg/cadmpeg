@@ -1965,7 +1965,7 @@ fn cylindrical_trim(
         .collect::<Vec<_>>();
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
-        origin: origin,
+        origin,
         axis,
         ref_direction: *ref_direction,
         radius,
@@ -2114,7 +2114,7 @@ fn conical_trim(
     let (min_axial, max_axial) = axial_bounds?;
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(ConicalTrim {
-        origin: origin,
+        origin,
         axis,
         ref_direction: *ref_direction,
         radius,
