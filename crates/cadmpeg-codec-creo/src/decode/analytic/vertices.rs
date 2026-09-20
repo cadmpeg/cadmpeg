@@ -129,6 +129,9 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
 /// is on the conic. `real_roots` owns the degree and discriminant decisions for
 /// that problem, so the coefficients reach it with the magnitudes of their own
 /// terms.
+///
+/// The points are in ascending order of the line parameter, which is the order
+/// `real_roots` states its roots in.
 fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();

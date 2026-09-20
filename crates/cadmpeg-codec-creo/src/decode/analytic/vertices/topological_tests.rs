@@ -58,9 +58,12 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     let tangent = line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]);
     let skew = line([-3.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
 
+    // The points are in ascending order of the line parameter. The secant runs
+    // from (-3, 0, 0) along +x, so it meets the circle of radius 2 at the
+    // parameters 1 and 5.
     assert_eq!(
         line_conic_intersections(&secant, &circle),
-        [[2.0, 0.0, 0.0], [-2.0, 0.0, 0.0]]
+        [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
     );
     assert_eq!(
         line_conic_intersections(&tangent, &circle),
@@ -80,7 +83,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     ));
     assert_eq!(
         line_conic_intersections(&secant, &ellipse),
-        [[3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]]
+        [[-3.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
     );
 
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
@@ -94,7 +97,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
     ));
     assert_eq!(
         line_conic_intersections(&line([1.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &parabola),
-        [[1.0, 2.0, 0.0], [1.0, -2.0, 0.0]]
+        [[1.0, -2.0, 0.0], [1.0, 2.0, 0.0]]
     );
     assert_eq!(
         line_conic_intersections(&line([-3.0, 2.0, 0.0], [1.0, 0.0, 0.0]), &parabola),
