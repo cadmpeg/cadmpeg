@@ -2637,8 +2637,15 @@ impl VariableBlendSurfacePayload {
         None
     }
 
-    pub(super) fn cache_mut(&mut self) -> &mut super::VariableBlendCache {
-        &mut self.construction.cache
+    /// Change the effective fit tolerance of the approximation cache.
+    ///
+    /// The narrow write route: the borrow of the cache stays inside this
+    /// method, so the payload lends no admitted interior.
+    pub(super) fn write_cache_fit_tolerance(
+        &mut self,
+        value: Option<super::FitTolerance>,
+    ) -> Result<(), super::CacheContractError> {
+        super::set_variable_blend_cache(&mut self.construction.cache, value)
     }
 }
 

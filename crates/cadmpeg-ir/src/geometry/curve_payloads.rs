@@ -1139,11 +1139,7 @@ impl SpringCurvePayload {
         value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(
-            self.layout.cache_first_mut().map(|form| &mut form.cache),
-            value,
-            write,
-        )
+        self.layout.write_revision_fit_tolerance(value, write)
     }
 }
 
