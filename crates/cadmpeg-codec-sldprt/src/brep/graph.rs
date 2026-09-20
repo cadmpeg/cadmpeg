@@ -3588,6 +3588,32 @@ fn derive_revolved_circle_pcurves(
     }
 }
 
+/// Answer the sphere latitude of a circle whose plane is normal to the sphere
+/// axis, or refuse a plane the sphere does not carry.
+///
+/// `height` is the signed axial distance from the sphere center to the circle
+/// plane, so a circle on the sphere has `height.abs() <= radius.abs()` and the
+/// latitude is `asin(height / radius)`. The radius match that precedes this
+/// compares the circle radius against `sqrt(radius^2 - height^2)`, which
+/// saturates at zero, so a small circle passes that match at any height beyond
+/// the pole. The height is therefore stated here against the same distance
+/// tolerance, and only the excess that tolerance admits is mapped onto the
+/// pole. A larger height states a circle on another sphere.
+fn sphere_latitude(height: f64, radius: f64) -> Option<f64> {
+    let pole = radius.abs() + EPS_CIRCLE_RADIUS_MATCH;
+    if !(-pole..=pole).contains(&height) {
+        return None;
+    }
+    let sine = height / radius;
+    if sine < -1.0 {
+        return Some(-std::f64::consts::FRAC_PI_2);
+    }
+    if sine > 1.0 {
+        return Some(std::f64::consts::FRAC_PI_2);
+    }
+    Some(sine.asin())
+}
+
 fn derive_spherical_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
@@ -3654,9 +3680,12 @@ fn derive_spherical_pcurves(
             {
                 continue;
             }
+            let Some(latitude) = sphere_latitude(height, radius) else {
+                continue;
+            };
             PcurveGeometry::Line(
                 match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    cadmpeg_ir::math::Point2::new(0.0, (height / radius).clamp(-1.0, 1.0).asin()),
+                    cadmpeg_ir::math::Point2::new(0.0, latitude),
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                 ) {
                     Ok(payload) => payload,
@@ -5899,6 +5928,7 @@ fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
 
 #[cfg(test)]
 mod tests {
+    use super::sphere_latitude;
     use super::unique_face_colors;
     use crate::brep::entity;
     use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
@@ -5947,6 +5977,22 @@ mod tests {
             false,
         )
         .expect("valid test NURBS surface")
+    }
+
+    #[test]
+    fn sphere_latitude_refuses_a_circle_plane_beyond_the_pole() {
+        use std::f64::consts::FRAC_PI_2;
+        // Planes the sphere carries: the equator and the pole.
+        assert_eq!(sphere_latitude(0.0, 2.0), Some(0.0));
+        assert_eq!(sphere_latitude(2.0, 2.0), Some(FRAC_PI_2));
+        // The rounding the radius match admits reaches the pole and no further.
+        assert_eq!(sphere_latitude(2.0 + 1.0e-9, 2.0), Some(FRAC_PI_2));
+        // A plane beyond that band states a circle on another sphere. The
+        // radius match alone admits it, because a circle radius near zero
+        // matches the saturated `sqrt(radius^2 - height^2)`.
+        assert_eq!(sphere_latitude(2.1, 2.0), None);
+        // A signed radius keeps the signed ratio.
+        assert_eq!(sphere_latitude(2.0, -2.0), Some(-FRAC_PI_2));
     }
 
     #[test]
