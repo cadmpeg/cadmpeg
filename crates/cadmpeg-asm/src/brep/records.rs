@@ -805,6 +805,39 @@ mod tests {
         );
     }
 
+    /// `WireMembers` writes a map keyed by `edges` or `free_vertex`, and the
+    /// `JsonSchema` derive reads `#[serde(try_from = "WireMembersWire")]`, so
+    /// the published schema states those two properties rather than the
+    /// neutral enum's `Edges` and `Vertex` arms.
+    #[cfg(feature = "schema")]
+    #[test]
+    fn the_wire_member_schema_states_the_keys_the_writer_states() {
+        let schema =
+            serde_json::to_value(schemars::schema_for!(WireMembers)).expect("members schema");
+        let properties: std::collections::BTreeSet<String> = schema["properties"]
+            .as_object()
+            .expect("the members schema states properties")
+            .keys()
+            .cloned()
+            .collect();
+        let edge = EdgeId::mint("asm:test:edge#1").expect("edge id");
+        let vertex = VertexId::mint("asm:test:vertex#2").expect("vertex id");
+        let written: std::collections::BTreeSet<String> =
+            [WireMembers::Edges(vec![edge]), WireMembers::Vertex(vertex)]
+                .iter()
+                .flat_map(|members| {
+                    serde_json::to_value(members)
+                        .expect("serialize members")
+                        .as_object()
+                        .expect("members write a map")
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+        assert_eq!(properties, written);
+    }
+
     /// `target` carries no `skip_serializing_if`, so its writer states `null`
     /// for the native null reference and the reader admits that spelling.
     #[test]
