@@ -1,0 +1,30 @@
+
+running 15 tests
+diagonal secant None
+
+thread 'distant_diagonal_secant' (1605332) panicked at /tmp/cadmpeg-numeric-fixes-6/regressions.rs:2049:192:
+assertion failed: result.is_some()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test catia::tests::circle::analytic_curve_angles_preserve_extreme_radii ... ok
+test f3d::tests::numerical::reflection_preserves_finite_points_at_extreme_scales ... ok
+test ir_offset::offset_frames_reject_extreme_perpendicular_tangents ... ok
+test asm::circle_recognition_is_invariant_under_common_weight_scale ... ok
+test distant_diagonal_secant ... FAILED
+test ir_parallel::tests::extreme_lines_preserve_parallelism_and_span_separation ... ok
+test nx::tests::analytic_reversal_preserves_finite_coefficients_at_extreme_parameters ... ok
+test rhino_tolerance::legacy_tolerance_retains_large_finite_distance ... ok
+test sld::tests::line_angles_retain_shallow_and_near_opposite_angles ... ok
+test rhino::solid_orientation_preserves_scale_translation_and_sense ... ok
+test planar::intersections_preserve_independent_direction_and_position_scales ... ok
+test iges::parabola_focal_distance_preserves_coefficient_scale ... ok
+test planar::distant_line_origin_does_not_change_circle_intersections ... ok
+test planar::intersections_and_orientation_preserve_scale ... ok
+test creo::tests::intersection_candidate_multiplicity_is_invariant_under_length_scale ... ok
+
+failures:
+
+failures:
+    distant_diagonal_secant
+
+test result: FAILED. 14 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

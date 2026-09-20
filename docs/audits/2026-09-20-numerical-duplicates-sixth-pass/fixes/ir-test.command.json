@@ -1,0 +1,1 @@
+["cargo", "test", "-q", "-p", "cadmpeg-ir", "--features", "schema", "--lib", "--", "math::planar", "extreme_lines_preserve", "offset_frames_reject"]
