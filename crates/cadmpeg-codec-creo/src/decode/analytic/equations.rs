@@ -730,80 +730,136 @@ fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
 /// system, so once the step is applied and met the refinement's convergence
 /// rule what remains is of that step's own order. That is what the pair is
 /// known to. A pair the refinement left without a converged step — a singular
-/// Jacobian, or twelve steps that never settled — carries no correction, and
-/// its only accuracy is the arithmetic that produced the coefficients.
+/// Jacobian, or twelve steps that never settled — carries `None`, and its only
+/// accuracy is the arithmetic that produced the coefficients.
 #[derive(Clone, Copy)]
 struct RefinedParameters {
     point: [f64; 2],
-    correction: [f64; 2],
+    correction: Option<[f64; 2]>,
 }
 
-/// The bound on `plane_conic_value` at a refined pair whose exact conic passes
-/// through the pair's own uncertainty.
-///
-/// Three quantities reach the residual and nothing else does.
-///
-/// Each coefficient multiplies a monomial of the point, so its own bound
-/// reaches the residual scaled by that monomial; over the six that is one
-/// `cancellation_bound` of the weighted term magnitudes. The evaluation formed
-/// here is six products and five additions over values no larger than those
-/// same weighted terms, which is `17 u` against the bound's `128 u`, so a
-/// second `cancellation_bound` covers it. Last, the exact zero of the conic can
-/// sit anywhere inside the refinement's own correction, and the conic over that
-/// displacement is its gradient times the correction plus the exact quadratic
-/// remainder; both are read against the coefficients' term magnitudes, which
-/// bound their values.
-fn plane_conic_residual_bound(conic: PlaneConicEquation, refined: RefinedParameters) -> f64 {
-    let [u, v] = refined.point;
-    let [correction_u, correction_v] = refined.correction;
-    let terms = conic.uu.terms() * u * u
+/// The term magnitudes `plane_conic_value` sums at a parameter pair: each
+/// coefficient's own terms scaled by the monomial it multiplies.
+fn plane_conic_terms(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
+    conic.uu.terms() * u * u
         + conic.uv.terms() * (u * v).abs()
         + conic.vv.terms() * v * v
         + conic.u.terms() * u.abs()
         + conic.v.terms() * v.abs()
-        + conic.constant.terms();
-    let gradient_u =
-        2.0 * conic.uu.terms() * u.abs() + conic.uv.terms() * v.abs() + conic.u.terms();
-    let gradient_v =
-        conic.uv.terms() * u.abs() + 2.0 * conic.vv.terms() * v.abs() + conic.v.terms();
-    2.0 * cancellation_bound(terms)
-        + gradient_u * correction_u
-        + gradient_v * correction_v
-        + conic.uu.terms() * correction_u * correction_u
-        + conic.uv.terms() * correction_u * correction_v
-        + conic.vv.terms() * correction_v * correction_v
+        + conic.constant.terms()
 }
 
-fn refine_plane_conic_intersection(
-    first: PlaneConicEquation,
-    second: PlaneConicEquation,
+/// The bound on the distance between `plane_conic_value` and the exact conic's
+/// value at the same pair.
+///
+/// Each coefficient's own bound reaches the value scaled by the monomial it
+/// multiplies, which over the six is one `cancellation_bound` of the weighted
+/// term magnitudes. The evaluation is six products and five additions over
+/// values no larger than those same weighted terms, which is `17 u` against
+/// the bound's `128 u`, so a second `cancellation_bound` covers it.
+fn plane_conic_value_bound(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
+    2.0 * cancellation_bound(plane_conic_terms(conic, u, v))
+}
+
+/// The gradient of a chart conic at a parameter pair, beside the term
+/// magnitudes each of its two entries was summed from.
+fn plane_conic_gradient(conic: PlaneConicEquation, u: f64, v: f64) -> ([f64; 2], [f64; 2]) {
+    (
+        [
+            2.0 * conic.uu.stated() * u + conic.uv.stated() * v + conic.u.stated(),
+            conic.uv.stated() * u + 2.0 * conic.vv.stated() * v + conic.v.stated(),
+        ],
+        [
+            2.0 * conic.uu.terms() * u.abs() + conic.uv.terms() * v.abs() + conic.u.terms(),
+            conic.uv.terms() * u.abs() + 2.0 * conic.vv.terms() * v.abs() + conic.v.terms(),
+        ],
+    )
+}
+
+/// The bound on `values[0] * values[1] - values[2] * values[3]` where each
+/// factor is within its own entry of `bounds` of the exact one.
+///
+/// The bars reach the difference through the other factor of their product and
+/// through each other, and the arithmetic itself is two multiplications and one
+/// fused difference, which is `3 u` against the `cancellation_bound`'s `128 u`.
+fn product_difference_bound(values: [f64; 4], bounds: [f64; 4]) -> f64 {
+    let [first, second, third, fourth] = values;
+    let [first_bound, second_bound, third_bound, fourth_bound] = bounds;
+    first.abs() * second_bound
+        + second.abs() * first_bound
+        + first_bound * second_bound
+        + third.abs() * fourth_bound
+        + fourth.abs() * third_bound
+        + third_bound * fourth_bound
+        + cancellation_bound((first * second).abs() + (third * fourth).abs())
+}
+
+/// A pair of equations in the chart parameters, each quantity beside the bound
+/// on its distance from the exact one.
+struct NewtonSystem {
+    values: [f64; 2],
+    value_bounds: [f64; 2],
+    jacobian: [[f64; 2]; 2],
+    jacobian_bounds: [[f64; 2]; 2],
+}
+
+/// The steps a refinement takes before it states that the iteration has not
+/// settled.
+const REFINEMENT_STEPS: usize = 12;
+
+/// Newton's method on a pair of equations that state their own accuracy.
+///
+/// Two decisions are taken each step and both are read against the arithmetic
+/// that formed the quantity they judge.
+///
+/// The determinant of the Jacobian is a difference of two products of entries
+/// that are themselves three-term sums, so it states singular inside
+/// `product_difference_bound`: past that the linearised system has no stated
+/// solution and the iteration stops.
+///
+/// The step is that difference of products over the determinant, so the step
+/// states zero exactly when its numerator does. The numerator's bound comes
+/// from the two residuals' own bounds, which is the floor the iteration can
+/// reach: past it a further step is the rounding of the residuals rather than
+/// a correction. That is convergence, and the step that reached it is what the
+/// pair is known to.
+fn newton_refine(
+    system: impl Fn(f64, f64) -> NewtonSystem,
     mut u: f64,
     mut v: f64,
 ) -> RefinedParameters {
-    let mut correction = [0.0, 0.0];
-    for _ in 0..12 {
-        let first_value = plane_conic_value(first, u, v);
-        let second_value = plane_conic_value(second, u, v);
-        let first_u = 2.0 * first.uu.stated() * u + first.uv.stated() * v + first.u.stated();
-        let first_v = first.uv.stated() * u + 2.0 * first.vv.stated() * v + first.v.stated();
-        let second_u = 2.0 * second.uu.stated() * u + second.uv.stated() * v + second.u.stated();
-        let second_v = second.uv.stated() * u + 2.0 * second.vv.stated() * v + second.v.stated();
+    let mut correction = None;
+    for _ in 0..REFINEMENT_STEPS {
+        let NewtonSystem {
+            values: [first_value, second_value],
+            value_bounds: [first_bound, second_bound],
+            jacobian: [[first_u, first_v], [second_u, second_v]],
+            jacobian_bounds: [[bound_first_u, bound_first_v], [bound_second_u, bound_second_v]],
+        } = system(u, v);
         let determinant = first_u.mul_add(second_v, -(first_v * second_u));
-        let scale = first_u
-            .abs()
-            .max(first_v.abs())
-            .max(second_u.abs())
-            .max(second_v.abs())
-            .max(1.0);
-        if determinant.abs() <= 1e-14 * scale * scale {
+        let determinant_bound = product_difference_bound(
+            [first_u, second_v, first_v, second_u],
+            [bound_first_u, bound_second_v, bound_first_v, bound_second_u],
+        );
+        if determinant.abs() <= determinant_bound {
             break;
         }
-        let delta_u = (-first_value).mul_add(second_v, first_v * second_value) / determinant;
-        let delta_v = first_value.mul_add(second_u, -(first_u * second_value)) / determinant;
+        let numerator_u = first_v.mul_add(second_value, -(first_value * second_v));
+        let numerator_v = first_value.mul_add(second_u, -(first_u * second_value));
+        let numerator_u_bound = product_difference_bound(
+            [first_v, second_value, first_value, second_v],
+            [bound_first_v, second_bound, first_bound, bound_second_v],
+        );
+        let numerator_v_bound = product_difference_bound(
+            [first_value, second_u, first_u, second_value],
+            [first_bound, bound_second_u, bound_first_u, second_bound],
+        );
+        let delta_u = numerator_u / determinant;
+        let delta_v = numerator_v / determinant;
         u += delta_u;
         v += delta_v;
-        if delta_u.abs().max(delta_v.abs()) <= 1e-13 * u.abs().max(v.abs()).max(1.0) {
-            correction = [delta_u.abs(), delta_v.abs()];
+        if numerator_u.abs() <= numerator_u_bound && numerator_v.abs() <= numerator_v_bound {
+            correction = Some([delta_u.abs(), delta_v.abs()]);
             break;
         }
     }
@@ -811,6 +867,132 @@ fn refine_plane_conic_intersection(
         point: [u, v],
         correction,
     }
+}
+
+/// The bound on `plane_conic_value` at a refined pair whose exact conic passes
+/// through the pair's own uncertainty.
+///
+/// Three quantities reach the residual and nothing else does. The first two are
+/// the coefficients' own bounds and the evaluation's rounding, which is
+/// `plane_conic_value_bound`. The third is the pair's own uncertainty: the
+/// exact zero of the conic can sit anywhere inside the refinement's correction,
+/// and the conic over that displacement is its gradient times the correction
+/// plus the exact quadratic remainder, both read against the coefficients'
+/// term magnitudes, which bound their values. A pair with no converged
+/// correction carries the first two alone.
+fn plane_conic_residual_bound(conic: PlaneConicEquation, refined: RefinedParameters) -> f64 {
+    let [u, v] = refined.point;
+    let [correction_u, correction_v] = refined.correction.unwrap_or([0.0, 0.0]);
+    let (_, [gradient_u, gradient_v]) = plane_conic_gradient(conic, u, v);
+    plane_conic_value_bound(conic, u, v)
+        + gradient_u * correction_u
+        + gradient_v * correction_v
+        + conic.uu.terms() * correction_u * correction_u
+        + conic.uv.terms() * correction_u * correction_v
+        + conic.vv.terms() * correction_v * correction_v
+}
+
+/// The pair `first = 0, second = 0`, whose root is a transversal intersection
+/// of the two conics.
+fn plane_conic_pair_system(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    u: f64,
+    v: f64,
+) -> NewtonSystem {
+    let (first_gradient, first_terms) = plane_conic_gradient(first, u, v);
+    let (second_gradient, second_terms) = plane_conic_gradient(second, u, v);
+    NewtonSystem {
+        values: [
+            plane_conic_value(first, u, v),
+            plane_conic_value(second, u, v),
+        ],
+        value_bounds: [
+            plane_conic_value_bound(first, u, v),
+            plane_conic_value_bound(second, u, v),
+        ],
+        jacobian: [first_gradient, second_gradient],
+        jacobian_bounds: [
+            first_terms.map(cancellation_bound),
+            second_terms.map(cancellation_bound),
+        ],
+    }
+}
+
+fn refine_plane_conic_intersection(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    u: f64,
+    v: f64,
+) -> RefinedParameters {
+    newton_refine(|u, v| plane_conic_pair_system(first, second, u, v), u, v)
+}
+
+/// The pair `first = 0` and `first_u second_v - first_v second_u = 0`, whose
+/// root is a contact of the two conics.
+///
+/// Where the two conics touch they share a point and their gradients are
+/// parallel, so the second equation holds there and the pair states the contact
+/// as a simple root — which the pair of conics itself does not, because a
+/// contact is a double root of both the resultant and the Jacobian. The second
+/// equation's derivatives are exact in the conics' coefficients: the second
+/// derivatives of a conic are its quadratic coefficients.
+fn plane_conic_tangency_system(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    u: f64,
+    v: f64,
+) -> NewtonSystem {
+    let (first_gradient, first_terms) = plane_conic_gradient(first, u, v);
+    let (second_gradient, second_terms) = plane_conic_gradient(second, u, v);
+    let [first_u, first_v] = first_gradient;
+    let [second_u, second_v] = second_gradient;
+    let [first_u_bound, first_v_bound] = first_terms.map(cancellation_bound);
+    let [second_u_bound, second_v_bound] = second_terms.map(cancellation_bound);
+    let tangency = first_u.mul_add(second_v, -(first_v * second_u));
+    let tangency_bound = product_difference_bound(
+        [first_u, second_v, first_v, second_u],
+        [first_u_bound, second_v_bound, first_v_bound, second_u_bound],
+    );
+    let tangency_u = 2.0 * first.uu.stated() * second_v + first_u * second.uv.stated()
+        - first.uv.stated() * second_u
+        - 2.0 * second.uu.stated() * first_v;
+    let tangency_v = first.uv.stated() * second_v + 2.0 * second.vv.stated() * first_u
+        - 2.0 * first.vv.stated() * second_u
+        - second.uv.stated() * first_v;
+    let tangency_u_terms = 2.0 * first.uu.terms() * second_v.abs()
+        + first_u.abs() * second.uv.terms()
+        + first.uv.terms() * second_u.abs()
+        + 2.0 * second.uu.terms() * first_v.abs();
+    let tangency_v_terms = first.uv.terms() * second_v.abs()
+        + 2.0 * second.vv.terms() * first_u.abs()
+        + 2.0 * first.vv.terms() * second_u.abs()
+        + second.uv.terms() * first_v.abs();
+    NewtonSystem {
+        values: [plane_conic_value(first, u, v), tangency],
+        value_bounds: [plane_conic_value_bound(first, u, v), tangency_bound],
+        jacobian: [first_gradient, [tangency_u, tangency_v]],
+        jacobian_bounds: [
+            [first_u_bound, first_v_bound],
+            [
+                cancellation_bound(tangency_u_terms),
+                cancellation_bound(tangency_v_terms),
+            ],
+        ],
+    }
+}
+
+fn refine_plane_conic_tangency(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    u: f64,
+    v: f64,
+) -> RefinedParameters {
+    newton_refine(
+        |u, v| plane_conic_tangency_system(first, second, u, v),
+        u,
+        v,
+    )
 }
 
 /// The conic parameters v that satisfy the conic at the given u.
@@ -845,7 +1027,18 @@ pub(super) fn common_plane_conic_parameters(
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
-            let refined = refine_plane_conic_intersection(first, second, u, v);
+            // A root the resultant shares with its derivative is two
+            // intersections that coincide in u. They are two distinct points on
+            // a chord across the chart u axis, or one point where the conics
+            // touch. The refinement separates the two: a chord has a regular
+            // Jacobian at each of its points and converges, and a contact has
+            // the gradients parallel, so the pair of conics states no converged
+            // step there however near the start is. Only then is the contact
+            // solved for as such.
+            let mut refined = refine_plane_conic_intersection(first, second, u, v);
+            if refined.correction.is_none() && root.multiple {
+                refined = refine_plane_conic_tangency(first, second, u, v);
+            }
             let candidate = refined.point;
             let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
             if plane_conic_value(first, candidate[0], candidate[1]).abs()
