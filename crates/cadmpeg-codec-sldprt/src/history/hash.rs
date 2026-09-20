@@ -147,6 +147,14 @@ pub(crate) fn native_parameter_hash(histories: &[FeatureHistory]) -> Result<Stri
     hash_records(&parameters)
 }
 
+fn hash_keyed_records<K: Ord + Serialize, V: Serialize>(
+    records: impl Iterator<Item = (K, V)>,
+) -> Result<String, CodecError> {
+    let mut records = records.collect::<Vec<_>>();
+    records.sort_by(|left, right| left.0.cmp(&right.0));
+    hash_records(&records)
+}
+
 #[cfg(test)]
 mod tests {
     use super::hash_records;
@@ -200,12 +208,4 @@ mod tests {
             hash_records(&history("Plate")).expect("the record digests"),
         );
     }
-}
-
-fn hash_keyed_records<K: Ord + Serialize, V: Serialize>(
-    records: impl Iterator<Item = (K, V)>,
-) -> Result<String, CodecError> {
-    let mut records = records.collect::<Vec<_>>();
-    records.sort_by(|left, right| left.0.cmp(&right.0));
-    hash_records(&records)
 }

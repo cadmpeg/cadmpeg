@@ -1194,3 +1194,24 @@ fn scaled_planar_intersections_preserve_separation_and_witnesses() {
         }
     }
 }
+
+#[test]
+fn disparate_segment_and_point_scales_preserve_distance() {
+    let segment = (Point2::new(0., 0.), Point2::new(1e-200, 0.));
+    assert_eq!(
+        super::point_segment_distance(Point2::new(0., 1e200), segment),
+        1e200
+    );
+    let arc = ProfileBoundarySegment::Arc {
+        center: Point2::new(0., 0.),
+        radius: 1e-6,
+        start_angle: 0.,
+        end_angle: std::f64::consts::TAU,
+    };
+    assert!(super::line_arc_intersection_points(
+        (Point2::new(-1e200, 1.), Point2::new(1e200, 1.)),
+        &arc
+    )
+    .unwrap()
+    .is_empty());
+}

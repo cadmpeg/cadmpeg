@@ -1283,9 +1283,12 @@ fn surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
 }
 
 fn cross_section_surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    collect_cross_section_records(sections, surface::cross_section_rows, |record| {
-        &mut record.offset
-    })
+    collect_cross_section_records(
+        sections,
+        surface::cross_section_rows,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn surface_prototype_count(sections: &[ScannedSection<'_>]) -> usize {
@@ -1510,9 +1513,12 @@ fn plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> 
 }
 
 fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    collect_cross_section_records(sections, surface::cross_section_plane_envelopes, |record| {
-        &mut record.offset
-    })
+    collect_cross_section_records(
+        sections,
+        surface::cross_section_plane_envelopes,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
@@ -1671,9 +1677,12 @@ fn curve_topology_rows(
 }
 
 fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRow> {
-    collect_cross_section_records(sections, curve::depdb_cross_section_rows, |record| {
-        &mut record.offset
-    })
+    collect_cross_section_records(
+        sections,
+        curve::depdb_cross_section_rows,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn cross_section_curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
@@ -2797,6 +2806,29 @@ pub(crate) fn scan_bytes<'a>(
 ///
 /// Only tests use it. A refusal is a defect in the fixture, so it fails the
 /// test rather than returning a shortened scan.
+fn collect_cross_section_records<T>(
+    sections: &[ScannedSection<'_>],
+    decode: impl Fn(&[u8]) -> Vec<T>,
+    relocate: impl Fn(&mut T, usize),
+    offset: impl Fn(&T) -> usize,
+) -> Vec<T> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.section.name() == "Xsections")
+    {
+        if find(section.region, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(decode(section.region).into_iter().map(|mut record| {
+            relocate(&mut record, section.section.offset());
+            record
+        }));
+    }
+    records.sort_by_key(offset);
+    records
+}
+
 #[cfg(test)]
 pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     match scan_bytes(data) {
@@ -3150,31 +3182,3 @@ mod feature_row_definition_tests {
 
 #[cfg(test)]
 mod tests;
-
-fn collect_cross_section_records<T>(
-    sections: &[ScannedSection<'_>],
-    decode: impl Fn(&[u8]) -> Vec<T>,
-    offset: impl Fn(&mut T) -> &mut usize,
-) -> Vec<T> {
-    let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        if find(section.region, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        records.extend(decode(section.region).into_iter().map(|mut record| {
-            *offset(&mut record) += section.section.offset();
-            record
-        }));
-    }
-    // Sorting a keyed pair keeps the field accessor unique, without requiring
-    // a trait solely to read and relocate an offset.
-    let mut keyed = records
-        .into_iter()
-        .map(|mut record| (*offset(&mut record), record))
-        .collect::<Vec<_>>();
-    keyed.sort_by_key(|(offset, _)| *offset);
-    keyed.into_iter().map(|(_, record)| record).collect()
-}

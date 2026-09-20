@@ -2659,6 +2659,18 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
     })
 }
 
+fn v1_nurbs_object<T>(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    decode: impl FnOnce(&[u8], std::ops::Range<usize>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
+    let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
+    let value = decode(data, data_chunk.body())?;
+    reader.skip_remaining().map_err(malformed)?;
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -3519,16 +3531,4 @@ mod tests {
         let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
         assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
-}
-
-fn v1_nurbs_object<T>(
-    data: &[u8],
-    range: std::ops::Range<usize>,
-    decode: impl FnOnce(&[u8], std::ops::Range<usize>) -> Result<T, CodecError>,
-) -> Result<T, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
-    let value = decode(data, data_chunk.body())?;
-    reader.skip_remaining().map_err(malformed)?;
-    Ok(value)
 }

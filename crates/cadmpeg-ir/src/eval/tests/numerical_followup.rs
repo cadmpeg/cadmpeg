@@ -223,3 +223,41 @@ fn reciprocal_hyperbolic_laws_preserve_exponential_tails() {
     let expected = -4. * (-400.0_f64).exp() * (1e300 * (-400.0_f64).exp());
     assert!((result.derivative / expected - 1.).abs() <= 8. * f64::EPSILON);
 }
+
+#[test]
+fn inverse_cosecant_hyperbolic_retains_subnormal_arguments() {
+    for x in [-1e-320_f64, 1e-320] {
+        let result = scalar_unary_sweep_law_differential(
+            "ARCCSCH",
+            ScalarSweepDifferential {
+                value: x,
+                derivative: x.abs(),
+            },
+        )
+        .unwrap();
+        let expected = (std::f64::consts::LN_2 - x.abs().ln()).copysign(x);
+        assert!((result.value / expected - 1.).abs() <= 4. * f64::EPSILON);
+        assert_eq!(result.derivative, -1.);
+    }
+}
+#[test]
+fn reciprocal_hyperbolic_laws_preserve_ordinary_values() {
+    for x in [-1.0_f64, 1.] {
+        for (op, value, derivative) in [
+            ("COTH", 1. / x.tanh(), -3. / x.sinh().powi(2)),
+            ("SECH", 1. / x.cosh(), -3. * x.tanh() / x.cosh()),
+            ("CSCH", 1. / x.sinh(), -3. * x.cosh() / x.sinh().powi(2)),
+        ] {
+            let result = scalar_unary_sweep_law_differential(
+                op,
+                ScalarSweepDifferential {
+                    value: x,
+                    derivative: 3.,
+                },
+            )
+            .unwrap();
+            assert!((result.value / value - 1.).abs() <= 8. * f64::EPSILON);
+            assert!((result.derivative / derivative - 1.).abs() <= 8. * f64::EPSILON);
+        }
+    }
+}

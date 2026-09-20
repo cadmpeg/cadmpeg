@@ -706,12 +706,14 @@ fn line_arc_intersection_points(
                 start.u + parameter * direction.u,
                 start.v + parameter * direction.v,
             );
-            if directed_angle_parameter(
-                (point.v - center.v).atan2(point.u - center.u),
-                *start_angle,
-                *end_angle,
-            )
-            .is_some()
+            let radial = (point.u - center.u).hypot(point.v - center.v);
+            if (radial - radius).abs() <= 128.0 * f64::EPSILON * radius
+                && directed_angle_parameter(
+                    (point.v - center.v).atan2(point.u - center.u),
+                    *start_angle,
+                    *end_angle,
+                )
+                .is_some()
                 && !points.contains(&point)
             {
                 points.push(point);
@@ -2132,8 +2134,15 @@ pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point
     }
     let u = du / scale;
     let v = dv / scale;
-    let parameter = (((point.u - start.u) / scale * u + (point.v - start.v) / scale * v)
-        / (u * u + v * v))
+    let relative = Point2::new(point.u - start.u, point.v - start.v);
+    let relative_scale = relative.u.abs().max(relative.v.abs());
+    if relative_scale == 0.0 {
+        return 0.0;
+    }
+    let projection =
+        ((relative.u / relative_scale) * u + (relative.v / relative_scale) * v) / (u * u + v * v);
+    let parameter = cadmpeg_ir::math::multiply_divide(projection, relative_scale, scale)
+        .unwrap_or(f64::INFINITY.copysign(projection))
         .clamp(0.0, 1.0);
     point_distance(
         point,
