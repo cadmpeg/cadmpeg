@@ -1351,47 +1351,29 @@ fn cross_section_surface_parameters(
 }
 
 fn surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            surface::contour_records(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.envelope_offset += section.section.offset();
-                    record.surface_row_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        surface::contour_records,
+        |record, base| {
+            record.offset += base;
+            record.envelope_offset += base;
+            record.surface_row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn cross_section_surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord> {
-    let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        records.extend(
-            surface::cross_section_contour_records(payload)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.envelope_offset += section.section.offset();
-                    record.surface_row_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        cross_sections(sections),
+        surface::cross_section_contour_records,
+        |record, base| {
+            record.offset += base;
+            record.envelope_offset += base;
+            record.surface_row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
@@ -1478,98 +1460,71 @@ fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEn
 }
 
 fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
-    let mut prototypes = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        prototypes.extend(
-            curve::prototypes(section_bytes)
-                .into_iter()
-                .map(|mut prototype| {
-                    prototype.offset += section.section.offset();
-                    prototype
-                }),
-        );
-    }
-    prototypes.sort_by_key(|prototype| prototype.offset);
-    prototypes
+    collect_section_records(
+        sections.iter(),
+        curve::prototypes,
+        |prototype, base| prototype.offset += base,
+        |prototype| prototype.offset,
+    )
 }
 
 fn curve_expressions(
     sections: &[ScannedSection<'_>],
     model_name: Option<&str>,
 ) -> Vec<CurveExpressionRecord> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            curve::expression_records_with_model_name(section_bytes, model_name)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.expression_offset += section.section.offset();
-                    for line in &mut record.lines {
-                        line.offset += section.section.offset();
-                    }
-                    for assignment in &mut record.assignments {
-                        assignment.offset += section.section.offset();
-                    }
-                    for block in &mut record.solve_blocks {
-                        block.offset += section.section.offset();
-                        block.for_offset += section.section.offset();
-                        for equation in &mut block.equations {
-                            equation.offset += section.section.offset();
-                        }
-                        for assignment in &mut block.assignments {
-                            assignment.offset += section.section.offset();
-                        }
-                    }
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        |bytes| curve::expression_records_with_model_name(bytes, model_name),
+        |record, base| {
+            record.offset += base;
+            record.expression_offset += base;
+            for line in &mut record.lines {
+                line.offset += base;
+            }
+            for assignment in &mut record.assignments {
+                assignment.offset += base;
+            }
+            for block in &mut record.solve_blocks {
+                block.offset += base;
+                block.for_offset += base;
+                for equation in &mut block.equations {
+                    equation.offset += base;
+                }
+                for assignment in &mut block.assignments {
+                    assignment.offset += base;
+                }
+            }
+        },
+        |record| record.offset,
+    )
 }
 
 fn curve_parameters(
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
 ) -> Vec<CurveParameterRecord> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            curve::parameter_records_with_face_ids(section_bytes, Some(face_ids))
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.body_offset += section.section.offset();
-                    record.suffix_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        |bytes| curve::parameter_records_with_face_ids(bytes, Some(face_ids)),
+        |record, base| {
+            record.offset += base;
+            record.body_offset += base;
+            record.suffix_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn two_chart_pcurves(
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
 ) -> Vec<TwoChartPcurveSamples> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            curve::two_chart_pcurve_samples(section_bytes, Some(face_ids))
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
+    let mut records = collect_section_records(
+        sections.iter(),
+        |bytes| curve::two_chart_pcurve_samples(bytes, Some(face_ids)),
+        |record, base| record.offset += base,
+        |record| record.offset,
+    );
     let mut counts = BTreeMap::new();
     for record in &records {
         *counts.entry(record.curve_id).or_insert(0usize) += 1;
@@ -1579,57 +1534,33 @@ fn two_chart_pcurves(
 }
 
 fn prototype_pcurves(sections: &[ScannedSection<'_>]) -> Vec<PrototypePcurveEndpoints> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            curve::prototype_pcurve_endpoints(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        curve::prototype_pcurve_endpoints,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn curve_prototype_topology(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototypeTopology> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            curve::prototype_topology(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        curve::prototype_topology,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn curve_topology_rows(
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
 ) -> Vec<CurveTopologyRow> {
-    let mut rows = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        rows.extend(
-            curve::topology_rows_with_face_ids(section_bytes, Some(face_ids))
-                .into_iter()
-                .map(|mut row| {
-                    row.offset += section.section.offset();
-                    row
-                }),
-        );
-    }
-    rows.sort_by_key(|row| row.offset);
-    rows
+    collect_section_records(
+        sections.iter(),
+        |bytes| curve::topology_rows_with_face_ids(bytes, Some(face_ids)),
+        |row, base| row.offset += base,
+        |row| row.offset,
+    )
 }
 
 fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRow> {
@@ -1642,62 +1573,38 @@ fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRo
 }
 
 fn cross_section_curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
-    let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        records.extend(curve::prototypes(payload).into_iter().map(|mut record| {
-            record.offset += section.section.offset();
-            record
-        }));
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        cross_sections(sections),
+        curve::prototypes,
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )
 }
 
 fn datum_planes(sections: &[ScannedSection<'_>]) -> Vec<DatumPlaneRecord> {
-    let mut planes = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "ActDatums")
-    {
-        let section_bytes = section.region;
-        planes.extend(datum::planes(section_bytes).into_iter().map(|mut plane| {
-            plane.offset_in_payload += section.section.offset();
-            plane
-        }));
-        if let Some(mut plane) = datum::named_plane(section_bytes) {
-            plane.offset_in_payload += section.section.offset();
-            planes.push(plane);
-        }
-    }
-    planes.sort_by_key(|plane| plane.offset_in_payload);
-    planes
+    collect_section_records(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "ActDatums"),
+        |bytes| {
+            let mut planes = datum::planes(bytes);
+            planes.extend(datum::named_plane(bytes));
+            planes
+        },
+        |plane, base| plane.offset_in_payload += base,
+        |plane| plane.offset_in_payload,
+    )
 }
 
 fn datum_cylinders(sections: &[ScannedSection<'_>]) -> Vec<DatumCylinder> {
-    let mut cylinders = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "ActDatums")
-    {
-        let section_bytes = section.region;
-        cylinders.extend(
-            datum::cylinders(section_bytes)
-                .into_iter()
-                .map(|mut cylinder| {
-                    cylinder.offset_in_payload += section.section.offset();
-                    cylinder
-                }),
-        );
-    }
-    cylinders.sort_by_key(|cylinder| cylinder.offset_in_payload);
-    cylinders
+    collect_section_records(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "ActDatums"),
+        datum::cylinders,
+        |cylinder, base| cylinder.offset_in_payload += base,
+        |cylinder| cylinder.offset_in_payload,
+    )
 }
 
 fn structural_feature_ids(
