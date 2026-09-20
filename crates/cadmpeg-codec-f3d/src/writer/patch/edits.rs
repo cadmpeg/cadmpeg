@@ -3088,12 +3088,14 @@ pub(super) fn validate_curve_edits(
             ) => {}
             (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
                 // `NurbsCurve` admission states finite poles and finite
-                // nonzero weights. A degree outside 1..=20 is malformed: no
+                // nonzero weights, and the record states each weight as a
+                // plain little-endian f64 payload, so the weight sign carries
+                // no condition. A degree outside 1..=20 is malformed: no
                 // spline layout reader admits such a record, so no f3d
                 // document holds one. The rest are edits an f3d document can
                 // state and this writer does not write: a carrier it does not
-                // address, a changed distinct-knot count, a changed rational
-                // form or pole count, and a negative weight.
+                // address, a changed distinct-knot count, and a changed
+                // rational form or pole count.
                 if !(id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
@@ -3121,14 +3123,6 @@ pub(super) fn validate_curve_edits(
                 if before.pole_count() != after.pole_count() {
                     return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} changes the NURBS control-point count"
-                    )));
-                }
-                if after
-                    .weights()
-                    .is_some_and(|weights| weights.iter().any(|weight| *weight < 0.0))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "edited F3D curve {id} has a negative NURBS weight"
                     )));
                 }
             }
@@ -3316,12 +3310,14 @@ pub(super) fn validate_surface_edits(
                 Some(SolvedSurfaceGeometry::Nurbs(after)),
             ) => {
                 // `NurbsSurface` admission states finite poles and finite
-                // nonzero weights. A u or v degree outside 1..=20 is
-                // malformed: no spline layout reader admits such a record, so
-                // no f3d document holds one. The rest are edits an f3d
-                // document can state and this writer does not write: a carrier
-                // it does not address, a changed distinct-knot count, a changed
-                // rational form or pole count, and a negative weight.
+                // nonzero weights, and the record states each weight as a
+                // plain little-endian f64 payload, so the weight sign carries
+                // no condition. A u or v degree outside 1..=20 is malformed:
+                // no spline layout reader admits such a record, so no f3d
+                // document holds one. The rest are edits an f3d document can
+                // state and this writer does not write: a carrier it does not
+                // address, a changed distinct-knot count, and a changed
+                // rational form or pole count.
                 if !(id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
@@ -3363,14 +3359,6 @@ pub(super) fn validate_surface_edits(
                 if before.weights().is_some() != after.weights().is_some() {
                     return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS rational form"
-                    )));
-                }
-                if after
-                    .pole_weights()
-                    .is_some_and(|weights| weights.into_iter().any(|weight| weight < 0.0))
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "edited F3D surface {id} has a negative NURBS weight"
                     )));
                 }
             }
@@ -4092,23 +4080,30 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_curve_edit_that_writes_a_negative_weight_is_not_implemented() {
-        let error = validate_curve_edits(
-            &curve(
-                "f3d:brep:entity#7",
-                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, 1.0])),
+    fn a_pole_edit_on_a_nurbs_curve_carrier_with_a_negative_baseline_weight_is_admitted() {
+        let weights = Some(vec![1.0, -1.0]);
+        let baseline = curve(
+            "f3d:brep:entity#7",
+            nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, weights.clone()),
+        );
+        let target = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
+                    weights,
+                    false,
+                )
+                .expect("degree, knots and control points agree"),
             ),
-            &curve(
-                "f3d:brep:entity#7",
-                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, -1.0])),
-            ),
-        )
-        .expect_err("this writer does not write a negative weight");
-        assert!(
-            error
-                .to_string()
-                .contains("edited F3D curve f3d:brep:entity#7 has a negative NURBS weight"),
-            "{error}"
+        );
+        let edited = validate_curve_edits(&baseline, &target)
+            .expect("a negative baseline weight refuses no pole edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#7".to_owned()])
         );
     }
 
@@ -4408,35 +4403,38 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_writes_a_negative_weight_is_not_implemented() {
-        let error = validate_surface_edits(
-            &surface(
-                "f3d:brep:entity#9",
-                nurbs_surface(
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    2,
-                    2,
-                    Some(weight_grid(2, 2, 1.0)),
-                ),
+    fn a_pole_edit_on_a_nurbs_surface_carrier_with_a_negative_baseline_weight_is_admitted() {
+        let baseline = surface(
+            "f3d:brep:entity#9",
+            nurbs_surface(
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+                2,
+                2,
+                Some(weight_grid(2, 2, -1.0)),
             ),
-            &surface(
-                "f3d:brep:entity#9",
-                nurbs_surface(
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    2,
-                    2,
-                    Some(weight_grid(2, 2, -1.0)),
-                ),
+        );
+        let moved = vec![
+            poles(2),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 5.0)],
+        ];
+        let target = surface(
+            "f3d:brep:entity#9",
+            SolvedSurfaceGeometry::Nurbs(
+                NurbsSurface::from_lanes(
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(moved, Some(weight_grid(2, 2, -1.0))),
+                    false,
+                )
+                .expect("degrees, knots and control grid agree"),
             ),
-        )
-        .expect_err("this writer does not write a negative weight");
-        assert!(
-            error
-                .to_string()
-                .contains("edited F3D surface f3d:brep:entity#9 has a negative NURBS weight"),
-            "{error}"
+        );
+        let edited = validate_surface_edits(&baseline, &target)
+            .expect("a negative baseline weight refuses no pole edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#9".to_owned()])
         );
     }
 
