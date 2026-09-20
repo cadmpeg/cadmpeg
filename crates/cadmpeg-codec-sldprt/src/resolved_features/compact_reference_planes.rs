@@ -195,11 +195,11 @@ fn compact_declared_reference_plane_record(bytes: &[u8]) -> Option<u32> {
 }
 
 #[cfg(test)]
-pub(super) fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
+fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
     CompactReferencePlaneIndex::new(payload).reference_source(0, payload.len())
 }
 
-pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const RECORD_LEN: usize = 138;
     const NATIVE_TO_IR: f64 = 1000.0;
 

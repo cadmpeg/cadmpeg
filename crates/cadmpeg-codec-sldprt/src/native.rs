@@ -14,7 +14,7 @@ use crate::records::{
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
 
-pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
+const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
     "feature_histories",
     "feature_input_body_selections",

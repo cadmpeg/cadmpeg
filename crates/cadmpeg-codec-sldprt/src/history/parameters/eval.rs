@@ -53,7 +53,7 @@ impl<'a> ParameterExpressionParser<'a> {
     }
 
     #[cfg(test)]
-    pub(crate) fn new_flat(
+    pub(in crate::history) fn new_flat(
         input: &'a str,
         aliases: &'a HashMap<String, Option<ParameterId>>,
         values: &'a HashMap<ParameterId, ParameterValue>,

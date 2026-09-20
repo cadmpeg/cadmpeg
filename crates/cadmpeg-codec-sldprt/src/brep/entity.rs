@@ -14,33 +14,33 @@ const FACE_COLOR_FAMILY: &str = "SDL/TYSA_COLOUR";
 pub(crate) struct FaceColor {
     pub(crate) face_attr: u16,
     pub(crate) color_attr: u16,
-    pub(crate) face_seq: u32,
-    pub(crate) stream_order: usize,
+    pub(super) face_seq: u32,
+    pub(super) stream_order: usize,
     pub(crate) color: Color,
     pub(crate) offset: usize,
     pub(crate) target: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct FaceColorVersion {
-    pub(crate) face_attr: u16,
-    pub(crate) seq: u32,
-    pub(crate) stream_order: usize,
+pub(super) struct FaceColorVersion {
+    pub(super) face_attr: u16,
+    pub(super) seq: u32,
+    pub(super) stream_order: usize,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Facts {
     /// Number of framed top-level model entity records in the stream.
-    pub(crate) entity_count: usize,
+    pub(super) entity_count: usize,
     /// Face-color links whose current framed records conflict.
-    pub(crate) unresolved_face_colors: usize,
+    pub(super) unresolved_face_colors: usize,
     /// Version of every face record that can carry a color.
-    pub(crate) face_color_versions: Vec<FaceColorVersion>,
-    pub(crate) face_colors: Vec<FaceColor>,
+    pub(super) face_color_versions: Vec<FaceColorVersion>,
+    pub(super) face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
-    pub(crate) face_atoms: Vec<super::attrib::RawFaceAtom>,
+    pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
     /// Body-to-history ordinals carried by Parasolid attributes.
-    pub(crate) body_modifiers: Vec<super::attrib::BodyModifier>,
+    pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
 }
 
 #[derive(Debug, Clone)]

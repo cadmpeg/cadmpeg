@@ -133,7 +133,7 @@ fn feature_input_lane(
     })
 }
 
-pub(super) fn legacy_feature_input_section(section: &str) -> bool {
+fn legacy_feature_input_section(section: &str) -> bool {
     let normalized = section.replace('\\', "/");
     let Some(configuration) = normalized
         .strip_prefix("Contents/Config-")
@@ -144,7 +144,7 @@ pub(super) fn legacy_feature_input_section(section: &str) -> bool {
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-pub(super) fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
+fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
     let classes = class_declarations(payload, "legacy-sketch-probe");
     classes.iter().any(|class| class.name == "sgSketch")
         && classes

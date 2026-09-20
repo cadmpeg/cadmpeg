@@ -2185,11 +2185,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     }
 }
 
-pub(super) fn unique_cylindrical_face(
-    radius: f64,
-    faces: &[Face],
-    surfaces: &[Surface],
-) -> Option<FaceId> {
+fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
@@ -2217,10 +2213,7 @@ pub(super) fn unique_cylindrical_face(
     candidates.next().is_none().then_some(selected)
 }
 
-pub(super) fn unique_topological_cylindrical_face(
-    faces: &[Face],
-    surfaces: &[Surface],
-) -> Option<FaceId> {
+fn unique_topological_cylindrical_face(faces: &[Face], surfaces: &[Surface]) -> Option<FaceId> {
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| {
@@ -2272,7 +2265,7 @@ pub(crate) fn project_unbound_offset_plane_faces(
     }
 }
 
-pub(super) fn unique_planar_face(
+fn unique_planar_face(
     origin: Point3,
     normal: Vector3,
     faces: &[Face],

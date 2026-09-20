@@ -49,7 +49,7 @@ const EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
 const EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9: f64 = 1e-9;
 const EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
 
-pub(super) fn reconcile_reference_plane_frame_with_source(
+fn reconcile_reference_plane_frame_with_source(
     explicit: Option<(Point3, Vector3, Vector3)>,
     constraint: Option<(Point3, Vector3, Vector3)>,
 ) -> Option<((Point3, Vector3, Vector3), SketchPlaneUAxisSource)> {
@@ -1259,7 +1259,7 @@ fn coordinate_system_frame_key(
     ]
 }
 
-pub(super) fn select_reference_plane_frame_source<'a>(
+fn select_reference_plane_frame_source<'a>(
     candidates: impl Iterator<Item = &'a str>,
 ) -> Option<String> {
     let mut sources = candidates.collect::<Vec<_>>();
@@ -1271,7 +1271,7 @@ pub(super) fn select_reference_plane_frame_source<'a>(
     Some((*source).to_string())
 }
 
-pub(super) fn offset_plane_reference_frame_matches(
+fn offset_plane_reference_frame_matches(
     reference: (Point3, Vector3, Vector3),
     offset: (Point3, Vector3, Vector3),
     distance: f64,
@@ -1469,11 +1469,7 @@ fn sketch_block_record_local_id(payload: &[u8], start: usize, end: usize) -> Opt
     sketch_block_record_identity(payload, start, end).map(|(local_id, _)| local_id)
 }
 
-pub(super) fn sketch_block_record_origin(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<Point3> {
+fn sketch_block_record_origin(payload: &[u8], start: usize, end: usize) -> Option<Point3> {
     const ABSOLUTE_POINT_CLASS: &[u8] = b"moAbsolutePoint_c";
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -1498,7 +1494,7 @@ pub(super) fn sketch_block_record_origin(
     Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
 }
 
-pub(super) fn sketch_block_identity_normalization_origin(
+fn sketch_block_identity_normalization_origin(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -1748,7 +1744,7 @@ pub(crate) fn enrich_history_reference_axes(
     }
 }
 
-pub(super) fn complete_reference_axis_triad(
+fn complete_reference_axis_triad(
     frames: [Option<(Point3, Vector3)>; 3],
 ) -> Option<(usize, (Point3, Vector3))> {
     const ANGULAR_TOLERANCE: f64 = 1e-9;
@@ -1833,7 +1829,7 @@ pub(super) fn complete_reference_axis_triad(
     Some((missing, (origin, normalize(direction)?)))
 }
 
-pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
+fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const UNIT_TOLERANCE: f64 = 1e-9;
     const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1e-9;
@@ -1917,7 +1913,7 @@ fn reference_axis_frame_key((origin, direction): &(Point3, Vector3)) -> [u64; 6]
     ]
 }
 
-pub(super) fn legacy_reference_axis_triads(
+fn legacy_reference_axis_triads(
     features: &[crate::records::Feature],
 ) -> Vec<([usize; 3], [[u32; 2]; 3])> {
     let mut by_source = HashMap::<u32, Option<usize>>::new();
@@ -1977,7 +1973,7 @@ pub(super) fn legacy_reference_axis_triads(
         .collect()
 }
 
-pub(super) fn plane_intersection_axis_frame(
+fn plane_intersection_axis_frame(
     first: (Point3, Vector3, Vector3),
     second: (Point3, Vector3, Vector3),
 ) -> Option<(Point3, Vector3)> {
@@ -2020,7 +2016,7 @@ pub(super) fn plane_intersection_axis_frame(
     .then_some((origin, direction))
 }
 
-pub(super) fn plane_intersection_axis_sources(
+fn plane_intersection_axis_sources(
     payload: &[u8],
     known_sources: &HashSet<u32>,
 ) -> Option<[u32; 2]> {
@@ -2050,7 +2046,7 @@ pub(super) fn plane_intersection_axis_sources(
     (first != second).then_some([*first, *second])
 }
 
-pub(super) fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
+fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
     const TRAILER: &[u8] = &[
         0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x2d, 0x80, 0x2b, 0x80,
@@ -2065,7 +2061,7 @@ pub(super) fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
     matches.next().is_none().then_some(source)
 }
 
-pub(super) fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
     const RECORD_LEN: usize = 140;
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     payload
@@ -2100,7 +2096,7 @@ pub(super) fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
         .collect()
 }
 
-pub(super) fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
     const TRAILER: &[u8] = b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00";
     payload
         .windows(4 + TRAILER.len())
@@ -2111,7 +2107,7 @@ pub(super) fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
         .collect()
 }
 
-pub(super) fn offset_plane_reference_source(
+fn offset_plane_reference_source(
     payload: &[u8],
     known_sources: &HashSet<u32>,
     known_reference_plane_sources: &HashSet<u32>,
@@ -2160,7 +2156,7 @@ pub(super) fn offset_plane_reference_source(
     Some(*source)
 }
 
-pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
+fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
     const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
     let mut aliases = payload
         .windows(115)
@@ -2196,7 +2192,7 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
     Some(*alias)
 }
 
-pub(super) const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
+const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
@@ -2262,7 +2258,7 @@ pub(super) fn explicit_reference_plane_frame(
     }
 }
 
-pub(super) fn constraint_reference_plane_frame(
+fn constraint_reference_plane_frame(
     payload: &[u8],
     class_offset: usize,
     class_name: &str,
@@ -2317,7 +2313,7 @@ pub(super) fn reference_plane_frame_key(
     ]
 }
 
-pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     if bytes.len() != fixed_plane::LEN || bytes.get(fixed_plane::FRAME_MARKER) != Some(&1) {
         return None;
@@ -2502,7 +2498,7 @@ pub(super) fn offset_reference_plane_frame_pair(
     Some(*pair)
 }
 
-pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
     const NATIVE_TO_IR: f64 = 1000.0;
     let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
@@ -2639,7 +2635,7 @@ fn angled_reference_plane_frame_candidates(
     frames
 }
 
-pub(super) fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     let frames = matrix_reference_plane_frames(payload);
     let [frame] = frames.as_slice() else {
         return None;
@@ -2767,7 +2763,7 @@ pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
     Some(*frame)
 }
 
-pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     let mut frames = compact_reference_plane_frame_candidates(payload)
         .into_iter()
         .map(|(_, frame)| frame)

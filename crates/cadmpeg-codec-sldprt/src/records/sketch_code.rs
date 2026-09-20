@@ -13,7 +13,7 @@ pub(crate) enum LowMarkerCode {
 }
 
 impl LowMarkerCode {
-    pub(crate) fn value(self) -> u32 {
+    pub(super) fn value(self) -> u32 {
         match self {
             Self::Zero => 0,
             Self::One => 1,
@@ -41,7 +41,7 @@ impl std::error::Error for LowMarkerCode {}
 pub(crate) struct NativeSketchCode(u32);
 
 impl NativeSketchCode {
-    pub(crate) fn value(self) -> u32 {
+    pub(super) fn value(self) -> u32 {
         self.0
     }
 }

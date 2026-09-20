@@ -333,7 +333,7 @@ fn patch_spatial_marker_point(
     Ok(())
 }
 
-pub(super) fn patch_spatial_vertex(
+fn patch_spatial_vertex(
     payload: &mut [u8],
     offset: usize,
     point: Point3,
@@ -1129,7 +1129,7 @@ fn validate_solved_binary_relation(
     Ok(())
 }
 
-pub(super) fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
+fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
     match (first.definition(), second.definition()) {
         (SketchGeometryDefinition::Line { start, end }, circular)
         | (circular, SketchGeometryDefinition::Line { start, end }) => {
@@ -1487,7 +1487,7 @@ fn source_less_lane<'a>(
     &mut lanes[index]
 }
 
-pub(super) fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
+fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
     let start = payload.len();
     payload.resize(start + 69, 0);
     payload[start..start + SPATIAL_VERTEX_PREFIX.len()].copy_from_slice(SPATIAL_VERTEX_PREFIX);

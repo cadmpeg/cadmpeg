@@ -707,7 +707,7 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
-pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
+pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
     spatial_vertex_offsets(payload)
         .into_iter()
         .filter_map(|offset| {
@@ -1141,7 +1141,7 @@ pub(crate) fn relation_bindings(
     relation_bindings_scoped(parent, classes, scalars, &[])
 }
 
-pub(crate) fn relation_bindings_scoped(
+pub(super) fn relation_bindings_scoped(
     parent: &str,
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
@@ -1376,10 +1376,7 @@ pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
-pub(super) fn extended_four_link_profile_point_coordinates(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[f64; 2]> {
+fn extended_four_link_profile_point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let valid_trailer_marker = [146, 150, 162, 174].into_iter().any(|relative| {
         offset
             .checked_add(relative)
@@ -1948,7 +1945,7 @@ fn opposite_corner_inline_arc_coordinates(
     validated_inline_arc_coordinates(center, start, end)
 }
 
-pub(super) fn compact_legacy_142_profile_curve_coordinates(
+fn compact_legacy_142_profile_curve_coordinates(
     payload: &[u8],
     offset: usize,
 ) -> Option<[[f64; 2]; 3]> {
@@ -3048,7 +3045,7 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
     ))
 }
 
-pub(super) fn legacy_geometry_locus_alternate_linked_profile_point(
+fn legacy_geometry_locus_alternate_linked_profile_point(
     payload: &[u8],
     offset: usize,
 ) -> Option<LinkedProfilePoint> {

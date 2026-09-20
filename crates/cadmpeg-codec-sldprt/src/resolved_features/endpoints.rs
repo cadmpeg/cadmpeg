@@ -269,10 +269,7 @@ fn linked_profile_curve_record(payload: &[u8], offset: usize) -> Option<LinkedPr
     })
 }
 
-pub(super) fn linked_profile_curve_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn linked_profile_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     let record = linked_profile_curve_record(payload, offset)?;
     (record.state == 0
         && record.reference_count == 3
@@ -281,10 +278,7 @@ pub(super) fn linked_profile_curve_endpoint_indices(
     .then_some(record.references)
 }
 
-pub(super) fn legacy_long_profile_line_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn legacy_long_profile_line_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || marker_native_code(payload, offset) != Some(0)
@@ -837,7 +831,7 @@ fn extended_geometry_locus_terminal_curve(payload: &[u8], offset: usize) -> bool
         && !sketch_marker_prefix_at(payload, offset.saturating_add(102))
 }
 
-pub(super) fn extended_compact_endpoint_markers<'a>(
+fn extended_compact_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -967,7 +961,7 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
     }
 }
 
-pub(super) fn legacy_compact_direct_endpoint_markers<'a>(
+fn legacy_compact_direct_endpoint_markers<'a>(
     payload: &[u8],
     offset: usize,
     curve: &SketchInputEntity,
@@ -1011,7 +1005,7 @@ pub(super) fn legacy_compact_direct_endpoint_markers<'a>(
     }
 }
 
-pub(super) fn current_wide_arc_direct_markers<'a>(
+fn current_wide_arc_direct_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -1068,7 +1062,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
     Some((direct, [center.u, center.v]))
 }
 
-pub(super) fn wide_direct_line_endpoint_markers<'a>(
+fn wide_direct_line_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -1135,7 +1129,7 @@ pub(super) fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> O
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn coordinate_roster_curve_endpoint_markers<'a>(
+fn coordinate_roster_curve_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -1763,10 +1757,7 @@ fn same_index_radius_relation_curve_endpoint_markers<'a>(
     Some(pair)
 }
 
-pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn current_identity_linked_wide_curve_uses_one_based_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92))
@@ -1776,10 +1767,7 @@ pub(super) fn current_identity_linked_wide_curve_uses_one_based_roster(
         && current_direct_92_profile_line_endpoint_indices(payload, offset).is_none()
 }
 
-pub(super) fn current_referenced_compact_curve_uses_marker_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn current_referenced_compact_curve_uses_marker_roster(payload: &[u8], offset: usize) -> bool {
     let distinct_identities = |first: usize, second: usize| {
         let identities =
             [first, second].map(|relative| payload.get(offset + relative..offset + relative + 4));
@@ -2835,10 +2823,7 @@ pub(super) fn extended_geometry_full_circle(
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
 
-pub(super) fn current_long_full_circle_radial_index(
-    payload: &[u8],
-    offset: usize,
-) -> Option<usize> {
+fn current_long_full_circle_radial_index(payload: &[u8], offset: usize) -> Option<usize> {
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -3667,7 +3652,7 @@ fn extended_indexed_arc_uses_point_roster(payload: &[u8], offset: usize) -> bool
             || extended_geometry_116_indexed_arc(payload, offset))
 }
 
-pub(super) fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
+fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
@@ -3721,10 +3706,7 @@ pub(super) fn extended_marker84_line_uses_point_roster(payload: &[u8], offset: u
         && sketch_marker_prefix_at(payload, offset.saturating_add(84))
 }
 
-pub(super) fn extended_state_one_84_profile_line_uses_point_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn extended_state_one_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     let Some(object_index) = marker_object_index(payload, offset) else {
         return false;
     };
@@ -3765,10 +3747,7 @@ pub(super) fn extended_state_one_84_profile_line_uses_point_roster(
     first != second && first != 0 && second != 0 && first != u16::MAX && second != u16::MAX
 }
 
-pub(super) fn extended_compact_84_profile_line_uses_point_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn extended_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
@@ -3803,10 +3782,7 @@ pub(super) fn extended_compact_84_profile_line_uses_point_roster(
         && sketch_marker_prefix_at(payload, offset.saturating_add(84))
 }
 
-pub(super) fn legacy_compact_84_profile_line_uses_point_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn legacy_compact_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
         && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -3898,7 +3874,7 @@ pub(super) fn legacy_unlocated_geometry_handle(payload: &[u8], offset: usize) ->
         || layout(56, 84, 134)
 }
 
-pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
+fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
     let prefix = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?;
     if prefix == SKETCH_MARKER {
         return if current_compact_104_indexed_line_endpoint_indices(payload, offset).is_some() {
@@ -4096,10 +4072,7 @@ fn compact_legacy_96_profile_roster_curve_uses_complete_roster(
         && sketch_marker_prefix_at(payload, offset.saturating_add(legacy_96_roster::LEN))
 }
 
-pub(super) fn packed_legacy_curve_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn packed_legacy_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if !packed_legacy_marker_body(payload, offset)
         || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || !matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
@@ -4143,15 +4116,12 @@ pub(super) fn packed_compact_legacy_curve_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-pub(super) fn legacy_state_five_curve_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn legacy_state_five_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     let relative = legacy_state_five_curve_endpoint_offset(payload, offset)?;
     one_based_u16_endpoint_pair(payload, offset, relative)
 }
 
-pub(super) fn extended_profile_roster_construction_line_endpoint_indices(
+fn extended_profile_roster_construction_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -4182,7 +4152,7 @@ pub(super) fn extended_profile_roster_construction_line_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn extended_compact_84_construction_line_endpoint_indices(
+fn extended_compact_84_construction_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -4302,7 +4272,7 @@ pub(super) fn extended_geometry_locus_construction_line_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-pub(super) fn extended_compact_96_selected_axis_endpoint_indices(
+fn extended_compact_96_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -4341,7 +4311,7 @@ pub(super) fn extended_compact_96_selected_axis_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn current_compact_104_indexed_line_endpoint_indices(
+fn current_compact_104_indexed_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -4380,7 +4350,7 @@ pub(super) fn current_compact_104_indexed_line_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn legacy_compact_104_profile_line_endpoint_indices(
+fn legacy_compact_104_profile_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -4425,10 +4395,7 @@ pub(super) fn legacy_compact_104_profile_line_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn legacy_104_profile_line_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn legacy_104_profile_line_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -4463,10 +4430,7 @@ pub(super) fn legacy_104_profile_line_endpoint_indices(
         .then(|| [u32::from(first) + 1, u32::from(second) + 1])
 }
 
-pub(super) fn legacy_state_one_profile_line_uses_point_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn legacy_state_one_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     let Some(object_index) = marker_object_index(payload, offset) else {
         return false;
     };
@@ -4515,10 +4479,7 @@ pub(super) fn legacy_state_one_profile_line_uses_point_roster(
     first != second && first != u16::MAX && second != u16::MAX
 }
 
-pub(super) fn legacy_state_one_84_profile_line_uses_point_roster(
-    payload: &[u8],
-    offset: usize,
-) -> bool {
+fn legacy_state_one_84_profile_line_uses_point_roster(payload: &[u8], offset: usize) -> bool {
     let Some(object_index) = marker_object_index(payload, offset) else {
         return false;
     };
@@ -4627,7 +4588,7 @@ pub(super) fn current_direct_92_profile_line_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-pub(super) fn current_extended_zero_tail_92_profile_curve(payload: &[u8], offset: usize) -> bool {
+fn current_extended_zero_tail_92_profile_curve(payload: &[u8], offset: usize) -> bool {
     matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
@@ -4836,7 +4797,7 @@ pub(super) fn legacy_undetailed_profile_line(payload: &[u8], offset: usize) -> b
         && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
-pub(super) fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
+fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
     let profile_selector = payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x04, 0x00]);
     let geometry_selector = marker_is_geometry_locus(payload, offset)
@@ -4845,7 +4806,7 @@ pub(super) fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) ->
         && sketch_marker_prefix_at(payload, offset.saturating_add(104))
 }
 
-pub(super) fn extended_profile_terminal_102_indexed_arc(payload: &[u8], offset: usize) -> bool {
+fn extended_profile_terminal_102_indexed_arc(payload: &[u8], offset: usize) -> bool {
     extended_compact_indexed_arc_header(
         payload,
         offset,
@@ -5078,7 +5039,7 @@ pub(super) fn minor_arc_geometry(
     .ok()
 }
 
-pub(super) fn legacy_coordinate_roster_selected_axis_endpoint_indices(
+fn legacy_coordinate_roster_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -5102,7 +5063,7 @@ pub(super) fn legacy_coordinate_roster_selected_axis_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn legacy_profile_roster_selected_axis_endpoint_indices(
+fn legacy_profile_roster_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -5155,14 +5116,14 @@ pub(super) fn compact_legacy_curve_endpoint_indices(
     compact_legacy_curve_endpoint_indices_for_code(payload, offset, 0)
 }
 
-pub(super) fn compact_legacy_short_role_two_curve_endpoint_indices(
+fn compact_legacy_short_role_two_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
     compact_legacy_short_curve_endpoint_indices_for_role(payload, offset, 2)
 }
 
-pub(super) fn compact_legacy_short_role_one_curve_endpoint_indices(
+fn compact_legacy_short_role_one_curve_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -5366,10 +5327,7 @@ pub(super) fn compact_indexed_curve_endpoint_indices(
     )
 }
 
-pub(super) fn compact_indexed_curve_raw_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn compact_indexed_curve_raw_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     let [first, second] = compact_indexed_curve_endpoint_indices(payload, offset)?;
     Some([first.checked_sub(1)?, second.checked_sub(1)?])
 }
@@ -5405,10 +5363,7 @@ pub(super) fn legacy_compact_profile_line(payload: &[u8], offset: usize) -> bool
         }
 }
 
-pub(super) fn direct_indexed_curve_endpoint_indices(
-    payload: &[u8],
-    offset: usize,
-) -> Option<[u32; 2]> {
+fn direct_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -5433,7 +5388,7 @@ pub(super) fn direct_indexed_curve_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-pub(super) fn legacy_compact_84_coordinate_roster_endpoint_indices(
+fn legacy_compact_84_coordinate_roster_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[usize; 2]> {
@@ -5507,7 +5462,7 @@ pub(super) fn legacy_compact_84_coordinate_roster_endpoint_indices(
         .then_some(endpoints)
 }
 
-pub(super) fn legacy_compact_84_construction_line_endpoint_indices(
+fn legacy_compact_84_construction_line_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -6300,7 +6255,7 @@ pub(super) fn legacy_direct_compact_selected_axis_endpoint_indices(
     (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
-pub(super) fn legacy_compact_roster_selected_axis_endpoint_indices(
+fn legacy_compact_roster_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -6317,7 +6272,7 @@ pub(super) fn legacy_compact_roster_selected_axis_endpoint_indices(
         .filter(|endpoints| endpoints[0] != endpoints[1])
 }
 
-pub(super) fn legacy_code_five_or_six_selected_axis_endpoint_indices(
+fn legacy_code_five_or_six_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -6361,7 +6316,7 @@ pub(super) fn legacy_code_five_or_six_selected_axis_endpoint_indices(
     one_based_u16_endpoint_pair(payload, offset, 64)
 }
 
-pub(super) fn standard_legacy_compact_selected_axis_endpoint_indices(
+fn standard_legacy_compact_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -6382,7 +6337,7 @@ pub(super) fn standard_legacy_compact_selected_axis_endpoint_indices(
     one_based_u16_endpoint_pair(payload, offset, 56)
 }
 
-pub(super) fn alternate_current_selected_axis_endpoint_indices(
+fn alternate_current_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {
@@ -6426,7 +6381,7 @@ pub(super) fn current_compact_roster_selected_axis(payload: &[u8], offset: usize
     matches!((endpoint(56), endpoint(58)), (Some(first), Some(second)) if first != second)
 }
 
-pub(super) fn compact_legacy_selected_axis_endpoint_indices(
+fn compact_legacy_selected_axis_endpoint_indices(
     payload: &[u8],
     offset: usize,
 ) -> Option<[u32; 2]> {

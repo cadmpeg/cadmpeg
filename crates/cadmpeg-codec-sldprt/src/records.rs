@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 mod debug;
 pub(crate) mod operand_tag;
 pub(crate) mod relation_scalars;
-pub(crate) mod sketch_code;
+mod sketch_code;
 
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ mod pmi_display_text_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         #[serde(default, deserialize_with = "deserialize_display_text")]
         display_text: Option<String>,
         #[serde(default, deserialize_with = "deserialize_display_text_offset")]
@@ -233,14 +233,14 @@ pub(crate) enum TreeParent {
 }
 
 impl TreeParent {
-    pub(crate) fn record_id(&self) -> Option<&str> {
+    fn record_id(&self) -> Option<&str> {
         match self {
             Self::Record { record_id, .. } => Some(record_id),
             Self::Source(_) => None,
         }
     }
 
-    pub(crate) fn source_id(&self) -> Option<FeatureSource> {
+    fn source_id(&self) -> Option<FeatureSource> {
         match self {
             Self::Record { source_id, .. } => *source_id,
             Self::Source(source_id) => Some(*source_id),
@@ -253,7 +253,7 @@ mod tree_parent_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         #[serde(default, deserialize_with = "deserialize_tree_parent")]
         tree_parent: Option<String>,
         #[serde(default, deserialize_with = "deserialize_parent_source_id")]
@@ -675,7 +675,7 @@ mod surface_selection_kind_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         #[serde(default, deserialize_with = "deserialize_endpoint_selector")]
         endpoint_selector: Option<u32>,
     }
@@ -902,7 +902,7 @@ pub(crate) enum ObjectId {
 
 impl ObjectId {
     /// The identifier, when the trailer names a native object.
-    pub(crate) fn id(self) -> Option<FeatureSourceId> {
+    fn id(self) -> Option<FeatureSourceId> {
         match self {
             Self::Absent => None,
             Self::Id(id) => Some(id),
@@ -985,7 +985,7 @@ mod scalar_operands_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         #[serde(default, deserialize_with = "deserialize_entity_indices")]
         entity_indices: Option<Vec<u16>>,
         #[serde(default)]
@@ -1106,7 +1106,7 @@ mod feature_class_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         name: String,
         #[serde(default, deserialize_with = "deserialize_role")]
         role: Option<FeatureInputClassRole>,
@@ -1266,7 +1266,7 @@ impl SketchInputLinks {
         self.selector
     }
 
-    pub(crate) fn entries(&self) -> &[SketchInputLink] {
+    fn entries(&self) -> &[SketchInputLink] {
         &self.entries
     }
 
@@ -1281,7 +1281,7 @@ mod sketch_input_links_wire {
     use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
 
     #[derive(Deserialize)]
-    pub(super) struct Wire {
+    struct Wire {
         #[serde(default)]
         links: Vec<SketchInputLink>,
         #[serde(default, deserialize_with = "deserialize_link_selector")]
@@ -1812,7 +1812,7 @@ pub(crate) enum SketchRelationKind {
 
 impl SketchRelationKind {
     /// Decodes relation codes `1..85`.
-    pub(crate) fn from_native_code(code: u32) -> Option<Self> {
+    fn from_native_code(code: u32) -> Option<Self> {
         Some(match code {
             1 => Self::Distance,
             2 => Self::Angle,

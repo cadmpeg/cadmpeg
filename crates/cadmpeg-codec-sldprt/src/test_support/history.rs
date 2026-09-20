@@ -49,7 +49,7 @@ pub(crate) fn resolved_feature_classes_with_ids(entries: &[(&str, &str, u32)]) -
     payload
 }
 
-pub(crate) fn resolved_features_payload_with_names_and_relation(
+fn resolved_features_payload_with_names_and_relation(
     codes: &[u32],
     names: &[&str],
     relation_class: &str,

@@ -7,7 +7,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 // the mesh spacing.
 const HELIX_MAX_RELATIVE_RESIDUAL: f64 = 5.0e-4;
 
-pub(crate) fn fit_helix_polyline(
+pub(super) fn fit_helix_polyline(
     points: &[Point3],
     revolutions: f64,
     clockwise: bool,

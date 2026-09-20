@@ -24,7 +24,7 @@ const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
 
 /// Add semantic termination forms carried by compact extrusion end-spec children.
 #[derive(Clone)]
-pub(super) enum TerminationVote {
+enum TerminationVote {
     Blind {
         depth_m: Option<f64>,
     },
@@ -46,7 +46,7 @@ pub(super) enum TerminationVote {
 
 /// A lane reference with its fallback or a resolved consensus reference.
 #[derive(Clone)]
-pub(super) enum FaceReference {
+enum FaceReference {
     Lane {
         reference: String,
         canonical: Option<String>,
@@ -79,7 +79,7 @@ impl FaceReference {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum FaceCondition {
+enum FaceCondition {
     OffsetFromFace,
     ToFace,
 }
@@ -104,7 +104,7 @@ impl TerminationVote {
         }
     }
 
-    pub(super) fn reference(&self) -> Option<&str> {
+    fn reference(&self) -> Option<&str> {
         match self {
             Self::ToVertex { reference } => Some(reference),
             Self::Face { reference, .. } => reference.as_str(),
@@ -426,9 +426,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
     }
 }
 
-pub(super) fn consensus_termination_vote(
-    votes: &[Option<TerminationVote>],
-) -> Option<TerminationVote> {
+fn consensus_termination_vote(votes: &[Option<TerminationVote>]) -> Option<TerminationVote> {
     let first = votes.first()?.as_ref()?;
     if !votes
         .iter()
@@ -593,10 +591,7 @@ pub(crate) fn enrich_history_combine_selections(
     }
 }
 
-pub(super) fn compact_combine_operation_at(
-    payload: &[u8],
-    name_offset: usize,
-) -> Option<&'static str> {
+fn compact_combine_operation_at(payload: &[u8], name_offset: usize) -> Option<&'static str> {
     let name_prefix = payload.get(name_offset..name_offset.checked_add(5)?)?;
     let name_token = View::u16_le_at(name_prefix, 0)?;
     if !is_class_token(name_token) || name_prefix[2..] != [0xff, 0xfe, 0xff] {
@@ -934,7 +929,7 @@ pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<
     })
 }
 
-pub(super) fn compact_body_component_path_at(
+fn compact_body_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1125,7 +1120,7 @@ pub(crate) fn project_compact_combine_paths(
     Ok(())
 }
 
-pub(super) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 1)
         && (compact_extrusion_traversal_tail_at(payload, offset)
             || compact_extrusion_dimensioned_traversal_at(payload, offset)
@@ -1146,14 +1141,14 @@ fn compact_extrusion_dimensioned_traversal_at(payload: &[u8], offset: usize) -> 
         && compact_extrusion_dimension_child_at(payload, offset + 68).is_some()
 }
 
-pub(super) fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_blind_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 0)
         && ((payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
             && compact_extrusion_dimension_child_at(payload, offset + 26).is_some())
             || compact_extrusion_dimension_child_at(payload, offset + 22).is_some())
 }
 
-pub(super) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 2)
         && compact_extrusion_traversal_tail_at(payload, offset)
 }
@@ -1162,7 +1157,7 @@ pub(super) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -
 /// traversal code `1` with second-direction code `1` and the shared traversal
 /// tail, and the dedicated code `9` whose second-direction word is `1` and
 /// whose retained blind dimension child follows immediately.
-pub(super) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usize) -> bool {
     (compact_extrusion_two_direction_header(payload, offset, 1)
         && payload.get(offset + 26..offset + 30) == Some(&[0, 0, 0, 0])
         && compact_extrusion_traversal_body_at(payload, offset))
@@ -1173,7 +1168,7 @@ pub(super) fn compact_extrusion_through_all_both_at(payload: &[u8], offset: usiz
 /// Blind first direction with a through-all second direction: a code `0`
 /// header whose second-direction word is `1`, owning the blind dimension
 /// child.
-pub(super) fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_blind_through_all_second_at(payload: &[u8], offset: usize) -> bool {
     compact_end_spec_identity_at(payload, offset)
         && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
         && View::u32_le_at(payload, offset + 12).is_some_and(|flag| flag <= 1)
@@ -1236,7 +1231,7 @@ fn compact_extrusion_traversal_follow_on_at(payload: &[u8], offset: usize) -> bo
         && compact_extrusion_dimension_child_at(payload, offset + 6).is_some()
 }
 
-pub(super) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
+fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 6)
         && payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
         && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()
@@ -1274,7 +1269,7 @@ fn compact_extrusion_dimension_child_at(payload: &[u8], child: usize) -> Option<
 
 /// Form of the point reference owned by an up-to-vertex end spec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompactPointReferenceKind {
+pub(in crate::resolved_features) enum CompactPointReferenceKind {
     /// Direct vertex reference; the final path entry's component id is the
     /// feature-local vertex id.
     Point,
@@ -1284,7 +1279,7 @@ pub(crate) enum CompactPointReferenceKind {
 }
 
 impl CompactPointReferenceKind {
-    pub(crate) fn endpoint_selector(self) -> Option<u32> {
+    pub(super) fn endpoint_selector(self) -> Option<u32> {
         match self {
             Self::Point => None,
             Self::EdgeEndpoint { selector } => Some(selector),
@@ -1556,7 +1551,7 @@ fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -
         && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
 }
 
-pub(super) fn compact_single_face_reference_path_at(
+fn compact_single_face_reference_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1565,7 +1560,7 @@ pub(super) fn compact_single_face_reference_path_at(
         .or_else(|| legacy_single_face_reference_path_at(payload, marker))
 }
 
-pub(super) fn legacy_single_face_reference_path_at(
+fn legacy_single_face_reference_path_at(
     payload: &[u8],
     body: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {

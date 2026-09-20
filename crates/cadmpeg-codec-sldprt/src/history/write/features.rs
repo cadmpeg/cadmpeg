@@ -37,7 +37,7 @@ pub(crate) struct FeatureInputRename {
     pub(crate) value: cadmpeg_core::text::NonBlankString,
 }
 
-pub(crate) fn synchronize_feature_input_names(
+fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
@@ -107,7 +107,7 @@ pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
     )
 }
 
-pub(crate) fn generated_feature_source_ids(
+fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
@@ -168,7 +168,7 @@ fn allocate_feature_source_id(
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
-pub(crate) fn sync_neutral_features(
+pub(in crate::history) fn sync_neutral_features(
     model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
@@ -532,7 +532,7 @@ pub(crate) fn sync_neutral_features(
     Ok(renames)
 }
 
-pub(crate) fn synchronize_neutral_feature_content(
+fn synchronize_neutral_feature_content(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[DesignParameter],
     record_ids: &HashMap<FeatureId, String>,
@@ -590,7 +590,7 @@ pub(crate) fn synchronize_neutral_feature_content(
     Ok(())
 }
 
-pub(crate) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
+pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let configurations = history
             .configurations
@@ -643,7 +643,7 @@ pub(crate) fn synchronize_history_content_order(native: &mut crate::native::Sldp
     }
 }
 
-pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
+fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let mut children = HashMap::<String, Vec<(u32, String)>>::new();
         for feature in &history.features {

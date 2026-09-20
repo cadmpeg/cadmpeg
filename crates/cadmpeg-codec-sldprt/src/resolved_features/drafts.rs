@@ -52,7 +52,7 @@ pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -
             <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
 }
 
-pub(super) fn draft_operands(
+fn draft_operands(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,

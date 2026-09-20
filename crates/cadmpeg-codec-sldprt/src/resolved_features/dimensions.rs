@@ -1015,7 +1015,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     Ok(())
 }
 
-pub(super) fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
     let marker = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len());
     if marker != Some(LEGACY_SKETCH_MARKER) && marker != Some(LEGACY_EXTENDED_SKETCH_MARKER) {
         return None;
@@ -1077,10 +1077,7 @@ fn radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
         .collect()
 }
 
-pub(super) fn extended_terminal_repeated_radial_circle_index(
-    payload: &[u8],
-    offset: usize,
-) -> Option<usize> {
+fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
@@ -1107,7 +1104,7 @@ pub(super) fn extended_terminal_repeated_radial_circle_index(
     Some(usize::from(View::u16_le_at(payload, offset + 56)?))
 }
 
-pub(super) fn terminal_repeated_radial_circle_pairs<'a>(
+fn terminal_repeated_radial_circle_pairs<'a>(
     radial_index: usize,
     roster: &[&'a SketchInputEntity],
     radius: f64,
@@ -1164,9 +1161,7 @@ pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Opt
     supported.then_some(usize::from(index))
 }
 
-pub(super) fn radial_dimension_radius(
-    parameter: &cadmpeg_ir::features::DesignParameter,
-) -> Option<f64> {
+fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) -> Option<f64> {
     let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
         return None;
     };

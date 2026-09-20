@@ -10,11 +10,11 @@ use super::parasolid::{owned_triangle, parasolid_payload, parasolid_with_body};
 
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
 /// so the decoder recovers the original).
-pub(crate) fn swap_name(name: &str) -> Vec<u8> {
+fn swap_name(name: &str) -> Vec<u8> {
     name.bytes().map(|b| b.rotate_left(4)).collect()
 }
 
-pub(crate) fn raw_deflate(data: &[u8]) -> Vec<u8> {
+fn raw_deflate(data: &[u8]) -> Vec<u8> {
     use flate2::write::DeflateEncoder;
     use flate2::Compression;
     let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
@@ -22,7 +22,7 @@ pub(crate) fn raw_deflate(data: &[u8]) -> Vec<u8> {
     enc.finish().unwrap()
 }
 
-pub(crate) fn zlib(data: &[u8]) -> Vec<u8> {
+pub(super) fn zlib(data: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(data).unwrap();
     encoder.finish().unwrap()

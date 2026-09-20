@@ -177,7 +177,7 @@ pub(crate) fn prepare_features_for_write(
     }
 }
 
-pub(crate) fn validate_embedded_helix_edits(
+fn validate_embedded_helix_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -219,7 +219,7 @@ pub(crate) fn validate_embedded_helix_edits(
     Ok(())
 }
 
-pub(crate) fn validate_surface_sweep_profile_edits(
+fn validate_surface_sweep_profile_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -272,7 +272,7 @@ pub(crate) fn validate_surface_sweep_profile_edits(
     Ok(())
 }
 
-pub(crate) fn project_features_with_native_inputs(
+fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
     Ok(project_feature_model_with_native_inputs(native)?.features)
@@ -317,7 +317,7 @@ fn project_feature_model_with_native_inputs(
     Ok(projection)
 }
 
-pub(crate) fn validate_compact_body_selection_edits(
+fn validate_compact_body_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -378,7 +378,7 @@ pub(crate) fn validate_compact_body_selection_edits(
     Ok(())
 }
 
-pub(crate) fn validate_compact_edge_selection_edits(
+fn validate_compact_edge_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -457,7 +457,7 @@ pub(crate) fn validate_compact_edge_selection_edits(
     Ok(())
 }
 
-pub(crate) fn validate_compact_surface_selection_edits(
+fn validate_compact_surface_selection_edits(
     features: &[cadmpeg_ir::features::Feature],
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {

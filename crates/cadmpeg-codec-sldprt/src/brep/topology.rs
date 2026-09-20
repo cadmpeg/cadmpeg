@@ -27,36 +27,36 @@ use cadmpeg_ir::topology::Sense;
 use crate::layout::world_point as world_pt;
 
 /// The magic anchoring magic-bearing topology records ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
-pub(crate) const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Bridge {
-    pub(crate) attr: u16,
-    pub(crate) refs: [u16; 5],
-    pub(crate) sequence: u32,
-    pub(crate) sense: Sense,
-    pub(crate) owner: Option<u16>,
-    pub(crate) offset: usize,
+pub(super) struct Bridge {
+    pub(super) attr: u16,
+    pub(super) refs: [u16; 5],
+    pub(super) sequence: u32,
+    pub(super) sense: Sense,
+    pub(super) owner: Option<u16>,
+    pub(super) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Loop {
-    pub(crate) attr: u16,
-    pub(crate) refs: [u16; 4],
-    pub(crate) offset: usize,
+pub(in crate::brep) struct Loop {
+    pub(super) attr: u16,
+    pub(super) refs: [u16; 4],
+    pub(super) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EdgeUse {
-    pub(crate) attr: u16,
-    pub(crate) references: EdgeReferences,
-    pub(crate) sequence: u32,
-    pub(crate) offset: usize,
+pub(super) struct EdgeUse {
+    pub(super) attr: u16,
+    pub(super) references: EdgeReferences,
+    pub(super) sequence: u32,
+    pub(super) offset: usize,
 }
 
 /// Bare edge-use cells or the curve-only compact layout.
 #[derive(Debug, Clone, Eq)]
-pub(crate) enum EdgeReferences {
+pub(in crate::brep) enum EdgeReferences {
     Bare([u16; 6]),
     Compact { curve: u16 },
 }
@@ -76,14 +76,14 @@ impl PartialEq for EdgeReferences {
 }
 
 impl EdgeReferences {
-    pub(crate) fn canonical(&self) -> Option<u16> {
+    pub(super) fn canonical(&self) -> Option<u16> {
         match self {
             Self::Bare(refs) => Some(refs[0]),
             Self::Compact { .. } => None,
         }
     }
 
-    pub(crate) fn curve(&self) -> u16 {
+    pub(super) fn curve(&self) -> u16 {
         match self {
             Self::Bare(refs) => refs[3],
             Self::Compact { curve } => *curve,
@@ -92,26 +92,26 @@ impl EdgeReferences {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Coedge {
-    pub(crate) attr: u16,
-    pub(crate) refs: [u16; 9],
-    pub(crate) sense: Sense,
-    pub(crate) offset: usize,
+pub(super) struct Coedge {
+    pub(super) attr: u16,
+    pub(super) refs: [u16; 9],
+    pub(super) sense: Sense,
+    pub(super) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VertexUse {
-    pub(crate) attr: u16,
-    pub(crate) refs: [u16; 5],
-    pub(crate) sequence: u32,
-    pub(crate) offset: usize,
+pub(in crate::brep) struct VertexUse {
+    pub(super) attr: u16,
+    pub(super) refs: [u16; 5],
+    pub(super) sequence: u32,
+    pub(super) offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Point {
-    pub(crate) attr: u16,
-    pub(crate) refs: Vec<u16>,
-    pub(crate) xyz_m: [f64; 3],
+    attr: u16,
+    refs: Vec<u16>,
+    pub(super) xyz_m: [f64; 3],
     pub(crate) xyz_offset: usize,
     pub(crate) offset: usize,
 }
@@ -428,43 +428,43 @@ pub(crate) struct Tables {
 }
 
 impl Tables {
-    pub(crate) fn bridges(&self) -> &HashMap<u16, Bridge> {
+    pub(super) fn bridges(&self) -> &HashMap<u16, Bridge> {
         &self.bridges
     }
 
-    pub(crate) fn insert_bridge(&mut self, record: Bridge) {
+    pub(super) fn insert_bridge(&mut self, record: Bridge) {
         self.bridges.insert(record.attr, record);
     }
 
-    pub(crate) fn loops(&self) -> &HashMap<u16, Loop> {
+    pub(super) fn loops(&self) -> &HashMap<u16, Loop> {
         &self.loops
     }
 
-    pub(crate) fn insert_loop(&mut self, record: Loop) {
+    pub(super) fn insert_loop(&mut self, record: Loop) {
         self.loops.insert(record.attr, record);
     }
 
-    pub(crate) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
+    pub(super) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
         &self.edge_uses
     }
 
-    pub(crate) fn insert_edge_use(&mut self, record: EdgeUse) {
+    fn insert_edge_use(&mut self, record: EdgeUse) {
         self.edge_uses.insert(record.attr, record);
     }
 
-    pub(crate) fn coedges(&self) -> &HashMap<u16, Coedge> {
+    pub(super) fn coedges(&self) -> &HashMap<u16, Coedge> {
         &self.coedges
     }
 
-    pub(crate) fn insert_coedge(&mut self, record: Coedge) {
+    pub(super) fn insert_coedge(&mut self, record: Coedge) {
         self.coedges.insert(record.attr, record);
     }
 
-    pub(crate) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
+    pub(super) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
         &self.vertex_uses
     }
 
-    pub(crate) fn insert_vertex_use(&mut self, record: VertexUse) {
+    fn insert_vertex_use(&mut self, record: VertexUse) {
         self.vertex_uses.insert(record.attr, record);
     }
 
@@ -472,7 +472,7 @@ impl Tables {
         &self.points
     }
 
-    pub(crate) fn insert_point(&mut self, record: Point) {
+    fn insert_point(&mut self, record: Point) {
         self.points.insert(record.attr, record);
     }
 
@@ -480,7 +480,7 @@ impl Tables {
     ///
     /// Preserve partition topology for shared identities and add only deltas
     /// bridges selected by the typed FACE ownership set.
-    pub(crate) fn merge_deltas(
+    pub(super) fn merge_deltas(
         &mut self,
         mut deltas: Self,
         selected_bridge_attrs: Option<&HashSet<u16>>,
@@ -785,7 +785,7 @@ pub(crate) fn scan(body: &[u8]) -> Tables {
 /// An ownership-only typed FACE has a null loop field and must not replace a
 /// separate compact bridge for the same attribute; a shared FACE/bridge record
 /// has a non-null loop field and is the topology record as well.
-pub(crate) fn scan_with_curve_attrs_excluding(
+pub(super) fn scan_with_curve_attrs_excluding(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,
@@ -799,7 +799,7 @@ pub(crate) fn scan_with_curve_attrs_excluding(
 }
 
 /// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
-pub(crate) fn scan_deltas_with_curve_attrs_excluding(
+pub(super) fn scan_deltas_with_curve_attrs_excluding(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
     excluded_bridge_offsets: &HashSet<usize>,

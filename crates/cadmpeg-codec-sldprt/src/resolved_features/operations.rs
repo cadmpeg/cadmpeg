@@ -35,7 +35,7 @@ fn consistent_operation_code(
     Some(first)
 }
 
-pub(super) fn feature_operation_code(
+fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
@@ -107,7 +107,7 @@ pub(super) fn feature_operation_code(
     consistent_operation_code(candidates, form_padding.is_some())
 }
 
-pub(super) fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
+fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
         (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => Some(BooleanOp::NewBody),
         (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
@@ -116,7 +116,7 @@ pub(super) fn revolution_operation(class: Option<&str>, code: u32) -> Option<Boo
     }
 }
 
-pub(super) fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
+fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
         (Some("moExtrusion_c"), 1 | 4 | 82) | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5) | (_, 3) => {
             Some(BooleanOp::Join)
@@ -339,10 +339,7 @@ pub(super) fn feature_inline_operation_fields(
 }
 
 /// Project an inline Boolean operation from a recognized complete family.
-pub(super) fn feature_inline_operation(
-    lane: &FeatureInputLane,
-    name: &FeatureInputName,
-) -> Option<BooleanOp> {
+fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
     match feature_inline_operation_fields(lane, name)? {
         (0x0140, 0) => Some(BooleanOp::Join),
         (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
