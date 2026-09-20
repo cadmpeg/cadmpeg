@@ -2476,7 +2476,7 @@ mod tests {
         );
     }
 
-    pub(crate) fn fixture() -> Vec<u8> {
+    fn fixture() -> Vec<u8> {
         let mut file = vec![0u8; SECTOR_SIZE * 13];
         file[..8].copy_from_slice(&MAGIC);
         put_u16(&mut file, 24, 0x003e);
