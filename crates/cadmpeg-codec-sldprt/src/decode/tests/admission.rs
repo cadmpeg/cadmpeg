@@ -206,13 +206,12 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
 /// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
 #[test]
 fn phase5_freeze_export_precondition_admissibility_fixtures() {
-    let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+    let accepted = cadmpeg_test_support::admissibility::accepted_empty();
     // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
     // :50 precondition is full validate — empty passes validate.
     assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new()).is_ok());
-    let rejected =
-        cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("sldprt:test")
-            .expect("fixture identities are valid");
+    let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("sldprt:test")
+        .expect("fixture identities are valid");
     assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new()).is_ok());
 }
 

@@ -1777,16 +1777,10 @@ pub(crate) enum ArchiveSpanRole {
     ArchivePadding,
 }
 
-impl TryFrom<&cadmpeg_container::SpanRole> for ArchiveSpanRole {
-    type Error = String;
-
-    fn try_from(role: &cadmpeg_container::SpanRole) -> Result<Self, Self::Error> {
-        use cadmpeg_container::{SpanRole, ZipSpanRole};
-        let role = match role {
-            SpanRole::Zip(role) => role,
-            SpanRole::Cfb(_) => return Err("FCStd archive span cannot have a CFB role".to_owned()),
-        };
-        Ok(match role {
+impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
+    fn from(role: &cadmpeg_container::ZipSpanRole) -> Self {
+        use cadmpeg_container::ZipSpanRole;
+        match role {
             ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(entry.clone()),
             ZipSpanRole::LocalFields(entry) => Self::LocalFields(entry.clone()),
             ZipSpanRole::LocalName(entry) => Self::LocalName(entry.clone()),
@@ -1803,7 +1797,7 @@ impl TryFrom<&cadmpeg_container::SpanRole> for ArchiveSpanRole {
             ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
             ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
             ZipSpanRole::EndRecord => Self::EndRecord,
-        })
+        }
     }
 }
 

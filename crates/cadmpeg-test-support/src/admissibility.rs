@@ -5,16 +5,16 @@
 //! production gate switches onto a narrow Check subset. Both accepted and
 //! rejected sides are required: the rollback paths are driven by rejections.
 
-use crate::ids::{PointId, RegionId, ShellId, VertexId};
-use crate::topology::{Point, Shell, Vertex};
-use crate::CadIr;
+use cadmpeg_ir::ids::{PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::topology::{Point, Shell, Vertex};
+use cadmpeg_ir::CadIr;
 
 /// Failure while assembling a frozen admissibility fixture.
 #[derive(Debug, thiserror::Error)]
 pub enum FixtureError {
     /// An identity component or key was not admissible.
     #[error(transparent)]
-    Identity(#[from] crate::ids::IdentityError),
+    Identity(#[from] cadmpeg_ir::ids::IdentityError),
     /// A topological carrier rejected its payload.
     #[error("fixture geometry is invalid: {0}")]
     Geometry(&'static str),
@@ -42,8 +42,12 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     let point = PointId::mint(format!("{prefix}:point#0"))?;
     let vertex = VertexId::mint(format!("{prefix}:vertex#0"))?;
     ir.model.points.push(
-        Point::new(point.clone(), crate::math::Point3::new(0.0, 0.0, 0.0), None)
-            .map_err(FixtureError::Geometry)?,
+        Point::new(
+            point.clone(),
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            None,
+        )
+        .map_err(FixtureError::Geometry)?,
     );
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
@@ -61,10 +65,10 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
 #[cfg(test)]
 mod tests {
     use super::{accepted_empty, rejected_missing_point, rejected_missing_region};
-    use crate::annotations::Annotations;
-    use crate::report::check::Check;
-    use crate::validate::{validate_neutral, validate_neutral_with_annotations};
-    use crate::CadIr;
+    use cadmpeg_ir::annotations::Annotations;
+    use cadmpeg_ir::report::check::Check;
+    use cadmpeg_ir::validate::{validate_neutral, validate_neutral_with_annotations};
+    use cadmpeg_ir::CadIr;
 
     /// Rhino draft gate today: full annotations validation minus `ArenaOrder`.
     fn rhino_draft_gate(ir: &CadIr, annotations: &Annotations) -> bool {

@@ -974,7 +974,7 @@ mod route_tests {
         assert!(neutral_model_is_admissible(&mut valid, &[]));
 
         let mut invalid =
-            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test")
+            cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(&mut invalid, &[]));
     }
@@ -982,10 +982,10 @@ mod route_tests {
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
-        let mut accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+        let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
         assert!(neutral_model_is_admissible(&mut accepted, &[]));
         let mut rejected =
-            cadmpeg_ir::validate::admissibility_freeze::rejected_missing_region("catia:test")
+            cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(&mut rejected, &[]));
     }
