@@ -1626,17 +1626,16 @@ pub(super) fn ellipse_to_nurbs(
     major: [f64; 3],
     ratio: f64,
 ) -> Option<NurbsCurve> {
-    let length = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt();
+    let length = major[0].hypot(major[1]).hypot(major[2]);
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
         normal[1] * major[2] - normal[2] * major[1],
         normal[2] * major[0] - normal[0] * major[2],
         normal[0] * major[1] - normal[1] * major[0],
     ];
-    let minor_length = (minor_direction[0] * minor_direction[0]
-        + minor_direction[1] * minor_direction[1]
-        + minor_direction[2] * minor_direction[2])
-        .sqrt();
+    let minor_length = minor_direction[0]
+        .hypot(minor_direction[1])
+        .hypot(minor_direction[2]);
     (minor_length.is_finite() && minor_length > 0.0).then_some(())?;
     let minor_scale = ratio * length / minor_length;
     let minor = [
@@ -4615,5 +4614,19 @@ mod tail_selector_tests {
         assert_eq!(tail.discontinuities[0], [0.0]);
         assert!(tail.discontinuities[1..].iter().all(Vec::is_empty));
         assert!(!tail.tail_flag);
+    }
+}
+
+#[cfg(test)]
+mod ellipse_tests {
+    #[test]
+    fn numerical_followup_ellipse_accepts_extreme_finite_radii() {
+        for radius in [1.0, 1e200, 1e-200] {
+            let curve =
+                super::ellipse_to_nurbs([0.; 3], [0., 0., 1.], [radius, 0., 0.], 0.5).unwrap();
+            let poles = curve.control_points();
+            assert_eq!(poles[0].x, radius * super::LEN_TO_MM);
+            assert_eq!(poles[2].y, 0.5 * radius * super::LEN_TO_MM);
+        }
     }
 }

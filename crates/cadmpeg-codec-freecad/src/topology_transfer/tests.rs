@@ -1452,3 +1452,27 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 1 -2 1 *
         "refusal names the placed vertex position: {error:?}"
     );
 }
+
+#[test]
+fn numerical_followup_similarity_and_normalization_are_scale_independent() {
+    for a in [1.0, 1e-6, 1e-200, 1e200] {
+        let shear = Transform::affine([
+            [a, 0.5 * a, 0., 0.],
+            [0., 0.75_f64.sqrt() * a, 0., 0.],
+            [0., 0., a, 0.],
+        ])
+        .unwrap();
+        assert!(super::uniform_scale(shear).is_err());
+        let similarity =
+            Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
+        assert_eq!(super::uniform_scale(similarity).unwrap(), a);
+        assert_eq!(
+            super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.)),
+            Some(Vector3::new(1., 0., 0.))
+        );
+        assert_eq!(
+            super::transform_normalized_vector(similarity, Vector3::new(0., 0., 0.)),
+            None
+        );
+    }
+}

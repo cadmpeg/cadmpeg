@@ -1837,15 +1837,23 @@ fn uniform_scale(transform: Transform) -> Result<f64, CodecError> {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = EPS_TOPOLOGY_TRANSFER_DEGENERATE * scale.max(1.0);
+    let lengths = columns.map(|column| column.norm());
+    let units = columns.map(Vector3::unit_nonzero);
     if !scale.is_finite()
         || scale <= 0.0
-        || columns
-            .iter()
-            .any(|column| (column.norm() - scale).abs() > tolerance)
-        || columns[0].dot(columns[1]).abs() > tolerance
-        || columns[0].dot(columns[2]).abs() > tolerance
-        || columns[1].dot(columns[2]).abs() > tolerance
+        || lengths.iter().any(|length| {
+            !length.is_finite() || (*length / scale - 1.0).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE
+        })
+        || units.iter().any(Option::is_none)
+        || units[0]
+            .zip(units[1])
+            .is_some_and(|(a, b)| a.dot(b).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE)
+        || units[0]
+            .zip(units[2])
+            .is_some_and(|(a, b)| a.dot(b).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE)
+        || units[1]
+            .zip(units[2])
+            .is_some_and(|(a, b)| a.dot(b).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE)
     {
         return Err(CodecError::Malformed(
             "B-rep location is not a finite similarity transform".into(),
@@ -1917,20 +1925,7 @@ fn place_polyline_samples(
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {
-    let transformed = transform.apply_vector(vector)?;
-    let magnitude = (transformed.x * transformed.x
-        + transformed.y * transformed.y
-        + transformed.z * transformed.z)
-        .sqrt();
-    if magnitude > 0.0 && magnitude.is_finite() {
-        Some(Vector3::new(
-            transformed.x / magnitude,
-            transformed.y / magnitude,
-            transformed.z / magnitude,
-        ))
-    } else {
-        Some(transformed)
-    }
+    transform.apply_vector(vector)?.unit_nonzero()
 }
 
 fn occurrence_label(shape: usize, transform: Transform) -> String {

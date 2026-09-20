@@ -17,7 +17,6 @@ use crate::decode::sketch_transfer::constraints::section_solver_equation_is_disa
 const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
 const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;
 const EPS_SOLVER_SCALE: f64 = 1.0e-12;
-const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
 const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
@@ -988,34 +987,11 @@ pub(super) fn section_equal_length_coordinate_values(
 }
 
 fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) -> Vec<f64> {
-    let scale = quadratic
-        .abs()
-        .max(linear.abs())
-        .max(constant.abs())
-        .max(1.0);
-    let tolerance = EPS_SOLVER_SCALE * scale;
-    let mut roots = if quadratic.abs() <= tolerance {
-        if linear.abs() <= tolerance {
-            Vec::new()
-        } else {
-            vec![-constant / linear]
-        }
-    } else {
-        let discriminant = linear * linear - 4.0 * quadratic * constant;
-        let discriminant_tolerance = EPS_DISCRIMINANT_SCALE
-            * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
-        if discriminant < -discriminant_tolerance {
-            Vec::new()
-        } else if discriminant.abs() <= discriminant_tolerance {
-            vec![-linear / (2.0 * quadratic)]
-        } else {
-            let root = discriminant.sqrt();
-            vec![
-                (-linear - root) / (2.0 * quadratic),
-                (-linear + root) / (2.0 * quadratic),
-            ]
-        }
-    };
+    let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
+    let scale = quadratic.abs().max(linear.abs()).max(constant.abs());
+    let quadratic = quadratic / scale;
+    let linear = linear / scale;
+    let constant = constant / scale;
     roots.retain(|root| {
         root.is_finite()
             && (quadratic * root * root + linear * root + constant).abs()

@@ -2037,7 +2037,10 @@ fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, [[f3
         return None;
     }
     let rows = [&matrix[0][..3], &matrix[1][..3], &matrix[2][..3]];
-    let lengths = rows.map(|row| row.iter().map(|value| value * value).sum::<f32>().sqrt());
+    let lengths = rows.map(|row| {
+        row.iter()
+            .fold(0.0_f64, |length, value| length.hypot(f64::from(*value)))
+    });
     if lengths
         .iter()
         .any(|length| !length.is_finite() || *length == 0.0)
@@ -2049,8 +2052,8 @@ fn parse_jt9_geometric_transform_body(body: &[u8]) -> Option<(u8, u32, u16, [[f3
             let dot = rows[first]
                 .iter()
                 .zip(rows[second])
-                .map(|(left, right)| left * right)
-                .sum::<f32>();
+                .map(|(left, right)| f64::from(*left) * f64::from(*right))
+                .sum::<f64>();
             if dot.abs() > 1.0e-5 * lengths[first] * lengths[second] {
                 return None;
             }
@@ -4714,6 +4717,22 @@ fn display_jt_tessellation_rows(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_followup_jt_transform_accepts_extreme_finite_scales() {
+        for scale in [1.0_f32, 1e20, 1e-30] {
+            let mut body = 1_u16.to_le_bytes().to_vec();
+            body.push(0);
+            body.extend(0_u32.to_le_bytes());
+            body.extend(1_u16.to_le_bytes());
+            body.extend(0x8420_u16.to_le_bytes());
+            for _ in 0..3 {
+                body.extend(scale.to_le_bytes());
+            }
+            let (_, _, _, matrix) = super::parse_jt9_geometric_transform_body(&body).unwrap();
+            assert_eq!([matrix[0][0], matrix[1][1], matrix[2][2]], [scale; 3]);
+        }
+    }
+
     #[test]
     fn range_limits_admit_only_finite_nonnegative_increasing_values() {
         for valid in [vec![], vec![0.0], vec![0.0, 1.0, 2.0]] {

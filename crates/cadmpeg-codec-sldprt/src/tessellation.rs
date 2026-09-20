@@ -1662,8 +1662,8 @@ fn shortest_arc_span(start: f64, end: f64) -> Option<f64> {
 }
 
 fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
-    let cosine = (1.0 - tolerance / radius).clamp(-1.0, 1.0);
-    let maximum_span = 2.0 * cosine.acos();
+    let half_chord = (0.5 * (tolerance / radius)).clamp(0.0, 1.0).sqrt();
+    let maximum_span = 4.0 * half_chord.asin();
     let requested = if maximum_span.is_finite() && maximum_span > EPS_CYLINDER_ANGLE {
         (span.abs() / maximum_span).ceil() as usize
     } else {
@@ -1671,7 +1671,8 @@ fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
     };
     let segments = requested.clamp(1, MAX_PLANAR_TRIM_ARC_SEGMENTS);
     let actual_span = span.abs() / f64::from(segments as u32);
-    (segments, radius * (1.0 - (actual_span / 2.0).cos()))
+    let sine = (actual_span / 4.0).sin();
+    (segments, (radius * sine) * (2.0 * sine))
 }
 
 #[allow(clippy::too_many_arguments)]

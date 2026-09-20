@@ -1140,3 +1140,24 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
         assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
     }
 }
+
+#[test]
+fn numerical_followup_boolean_line_arc_matches_point_intersections() {
+    let radius = 1e-4;
+    let arc = ProfileBoundarySegment::Arc {
+        center: Point2::new(0., 0.),
+        radius,
+        start_angle: 0.,
+        end_angle: std::f64::consts::TAU,
+    };
+    let line = ProfileBoundarySegment::Line {
+        start: Point2::new(-radius, 2. * radius),
+        end: Point2::new(radius, 2. * radius),
+    };
+    assert!(!super::boundary_segments_intersect(&line, &arc));
+    let point = ProfileBoundarySegment::Line {
+        start: Point2::new(radius, 0.),
+        end: Point2::new(radius, 0.),
+    };
+    assert!(super::boundary_segments_intersect(&point, &arc));
+}

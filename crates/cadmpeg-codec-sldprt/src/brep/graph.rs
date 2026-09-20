@@ -4803,8 +4803,8 @@ fn extended_nurbs_isocurve_axis_candidate(
             let tolerance = inverse_coordinate_tolerance(
                 surface.poles().into_iter().chain(std::iter::once(point)),
             );
-            if let Some(parameters) =
-                nurbs_seeded_surface_projection(surface, point, None).filter(|parameters| {
+            if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point, None)
+                .filter(|parameters| {
                     nurbs_surface_point(surface, parameters.u, parameters.v)
                         .is_some_and(|mapped| point_distance(point, mapped) <= tolerance)
                 })
@@ -4968,19 +4968,11 @@ fn nurbs_edge_endpoint_parameters(
         NURBS_ENDPOINT_TOLERANCE_MM,
     );
     let project = |point| {
-        let parameters = nurbs_seeded_surface_projection(surface, point, None)?;
+        let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
         (point_distance(point, mapped) <= tolerance).then_some(parameters)
     };
     Some([project(first)?, project(last)?])
-}
-
-fn nurbs_seeded_surface_projection(
-    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
-    point: cadmpeg_ir::math::Point3,
-    seed: Option<cadmpeg_ir::math::Point2>,
-) -> Option<cadmpeg_ir::math::Point2> {
-    nurbs_surface_parameter_near_point(surface, point, seed)
 }
 
 fn nurbs_curve_surface_deviation(
@@ -5002,8 +4994,8 @@ fn nurbs_curve_surface_deviation(
             parameter,
         )?;
         let parameters = seed
-            .and_then(|seed| nurbs_seeded_surface_projection(surface, point, Some(seed)))
-            .or_else(|| nurbs_seeded_surface_projection(surface, point, None))?;
+            .and_then(|seed| nurbs_surface_parameter_near_point(surface, point, Some(seed)))
+            .or_else(|| nurbs_surface_parameter_near_point(surface, point, None))?;
         let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v)?;
         seed = Some(parameters);
         maximum = maximum.max(point_distance(point, surface_point));
@@ -5031,8 +5023,8 @@ fn nurbs_degree_one_cache_lanes(
     let mut seed = None;
     for point in &curve_points {
         let parameters = seed
-            .and_then(|seed| nurbs_seeded_surface_projection(surface, *point, Some(seed)))
-            .or_else(|| nurbs_seeded_surface_projection(surface, *point, None))?;
+            .and_then(|seed| nurbs_surface_parameter_near_point(surface, *point, Some(seed)))
+            .or_else(|| nurbs_surface_parameter_near_point(surface, *point, None))?;
         if !parameters.is_finite() {
             return None;
         }

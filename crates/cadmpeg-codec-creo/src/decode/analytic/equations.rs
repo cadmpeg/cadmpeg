@@ -5,6 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+use crate::decode::quadratic::real_roots;
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
@@ -317,7 +318,7 @@ pub(super) fn intersect_two_planes_with_quadric(
     let linear = 2.0 * dot(line_origin, matrix_direction) + dot(quadric.linear, direction);
     let constant =
         dot(line_origin, matrix_origin) + dot(quadric.linear, line_origin) + quadric.constant;
-    quadratic_real_roots(quadratic, linear, constant)
+    real_roots(quadratic, linear, constant)
         .into_iter()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
@@ -513,39 +514,6 @@ fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec
     determinant
 }
 
-pub(in crate::decode) fn quadratic_real_roots(
-    quadratic: f64,
-    linear: f64,
-    constant: f64,
-) -> Vec<f64> {
-    let scale = quadratic
-        .abs()
-        .max(linear.abs())
-        .max(constant.abs())
-        .max(1.0);
-    if quadratic.abs() <= 1e-14 * scale {
-        return if linear.abs() > 1e-14 * scale {
-            vec![-constant / linear]
-        } else {
-            Vec::new()
-        };
-    }
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    if discriminant < -EPS_NEAR_ZERO * scale * scale {
-        return Vec::new();
-    }
-    let root = if discriminant.abs() <= EPS_NEAR_ZERO * scale * scale {
-        0.0
-    } else {
-        discriminant.sqrt()
-    };
-    let mut roots = vec![(-linear - root) / (2.0 * quadratic)];
-    if root > EPS_NEAR_ZERO * scale {
-        roots.push((-linear + root) / (2.0 * quadratic));
-    }
-    roots
-}
-
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
     conic.uu * u * u
         + conic.uv * u * v
@@ -596,12 +564,12 @@ pub(super) fn common_plane_conic_parameters(
     let resultant = conic_resultant(first, second);
     let mut parameters = Vec::<[f64; 2]>::new();
     for u in real_polynomial_roots(&resultant) {
-        let first_v_roots = quadratic_real_roots(
+        let first_v_roots = real_roots(
             first.vv,
             first.uv.mul_add(u, first.v),
             first.uu * u * u + first.u * u + first.constant,
         );
-        let second_v_roots = quadratic_real_roots(
+        let second_v_roots = real_roots(
             second.vv,
             second.uv.mul_add(u, second.v),
             second.uu * u * u + second.u * u + second.constant,
