@@ -73,7 +73,7 @@ pub(in crate::history) fn feature_input_lane(
     }
 }
 
-fn design_configuration(
+pub(in crate::history) fn design_configuration(
     id: &str,
     ordinal: u32,
     source_index: Option<u32>,
@@ -95,7 +95,11 @@ fn design_configuration(
     }
 }
 
-fn native_configuration(id: &str, ordinal: u32, source_index: Option<u32>) -> Configuration {
+pub(in crate::history) fn native_configuration(
+    id: &str,
+    ordinal: u32,
+    source_index: Option<u32>,
+) -> Configuration {
     Configuration {
         id: id.into(),
         parent: "history".into(),
@@ -107,21 +111,17 @@ fn native_configuration(id: &str, ordinal: u32, source_index: Option<u32>) -> Co
     }
 }
 
-fn with_configuration_id(mut configuration: DesignConfiguration, id: u32) -> DesignConfiguration {
+pub(in crate::history) fn with_configuration_id(
+    mut configuration: DesignConfiguration,
+    id: u32,
+) -> DesignConfiguration {
     configuration
         .properties
         .insert(cadmpeg_core::nonblank_literal!("id"), id.to_string());
     configuration
 }
 
-fn native_with_configuration_id(mut configuration: Configuration, id: u32) -> Configuration {
-    configuration
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("id"), id.to_string());
-    configuration
-}
-
-fn native_with_configuration_lanes(
+pub(in crate::history) fn native_with_configuration_lanes(
     configurations: Vec<Configuration>,
     lanes: Vec<crate::records::FeatureInputLane>,
 ) -> crate::native::SldprtNative {
@@ -139,12 +139,9 @@ fn native_with_configuration_lanes(
     }
 }
 
-mod configuration;
 mod equations;
 mod extrusion_profile;
 mod feature_operations;
-mod parameters;
 mod sketch_bind;
 mod sketch_relations;
-mod split_and_identity;
 mod tree_binding;

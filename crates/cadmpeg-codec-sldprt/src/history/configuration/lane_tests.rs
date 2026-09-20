@@ -2,13 +2,6 @@
 //! Configuration-lane membership and inherited-state tests.
 #![allow(clippy::unwrap_used)]
 
-use super::design_configuration;
-use super::feature;
-use super::feature_input_lane;
-use super::native_configuration;
-use super::native_with_configuration_id;
-use super::native_with_configuration_lanes;
-use super::with_configuration_id;
 use crate::history::bind::bind_unique_sketch_feature;
 use crate::history::configuration::align_configuration_parameter_kinds;
 use crate::history::configuration::bind_configuration_topology_selections;
@@ -19,7 +12,14 @@ use crate::history::configuration::inherit_configuration_shared_semantics;
 use crate::history::configuration::project_configuration_sketch_states;
 use crate::history::configuration::project_configuration_supplemental_edge_selections;
 use crate::history::configuration::unresolved_configuration_lanes;
+use crate::history::tests::design_configuration;
+use crate::history::tests::feature;
+use crate::history::tests::feature_input_lane;
+use crate::history::tests::native_configuration;
+use crate::history::tests::native_with_configuration_lanes;
+use crate::history::tests::with_configuration_id;
 use crate::history::write::configurations::sync_neutral_configurations;
+use crate::records::Configuration;
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::DesignConfiguration;
@@ -28,6 +28,13 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use std::collections::BTreeMap;
+
+fn native_with_configuration_id(mut configuration: Configuration, id: u32) -> Configuration {
+    configuration
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("id"), id.to_string());
+    configuration
+}
 
 #[test]
 fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {

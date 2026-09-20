@@ -27,7 +27,7 @@ use crate::geometry::{
     SweepSurfaceLayout,
 };
 use crate::math::solve::least_squares_step;
-use crate::math::sum::{scaled_ratio_products, ExactSignedSum};
+use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -4917,7 +4917,7 @@ fn scalar_unary_sweep_law_differential(
             product.add_factors([half, half, operand.derivative]);
             return finite_sweep_differential(
                 value,
-                product.finish().map_or(Some(0.0), |value| value.finite())?,
+                product.finish().map_or(Some(0.0), ScaledValue::finite)?,
             );
         }
         "COT" | "CSC" | "TAN" | "SEC" | "ARCSECH" => {
@@ -7630,14 +7630,14 @@ fn pcurve_uv_differential_inner(
                 .and_then(|first| {
                     let mut sum = ExactSignedSum::default();
                     sum.add_product(first, azimuth_rate);
-                    sum.finish().map_or(Some(0.0), |value| value.finite())
+                    sum.finish().map_or(Some(0.0), ScaledValue::finite)
                 })
                 .map(|value| Point2::new(azimuth_rate, value));
             let acceleration = second
                 .and_then(|second| {
                     let mut sum = ExactSignedSum::default();
                     sum.add_factors([second, azimuth_rate, azimuth_rate]);
-                    sum.finish().map_or(Some(0.0), |value| value.finite())
+                    sum.finish().map_or(Some(0.0), ScaledValue::finite)
                 })
                 .map(|value| Point2::new(0.0, value));
             return point.is_finite().then_some(PcurveDifferential {

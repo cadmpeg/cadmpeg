@@ -1,0 +1,145 @@
+error: unnecessary `!=` operation
+   --> crates/cadmpeg-codec-iges/src/entities/conics.rs:239:28
+    |
+239 |               let radius_x = if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
+    |  ____________________________^
+240 | |                 coeff_f.abs().sqrt() / coeff_a.abs().sqrt()
+241 | |             } else {
+242 | |                 0.0
+243 | |             };
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#if_not_else
+    = note: `-D clippy::if-not-else` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::if_not_else)]`
+help: try
+    |
+239 ~             let radius_x = if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
+240 +                 0.0
+241 +             } else {
+242 +                 coeff_f.abs().sqrt() / coeff_a.abs().sqrt()
+243 ~             };
+    |
+
+error: unnecessary `!=` operation
+   --> crates/cadmpeg-codec-iges/src/entities/conics.rs:244:28
+    |
+244 |               let radius_y = if coeff_f.is_sign_positive() != coeff_c.is_sign_positive() {
+    |  ____________________________^
+245 | |                 coeff_f.abs().sqrt() / coeff_c.abs().sqrt()
+246 | |             } else {
+247 | |                 0.0
+248 | |             };
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#if_not_else
+help: try
+    |
+244 ~             let radius_y = if coeff_f.is_sign_positive() == coeff_c.is_sign_positive() {
+245 +                 0.0
+246 +             } else {
+247 +                 coeff_f.abs().sqrt() / coeff_c.abs().sqrt()
+248 ~             };
+    |
+
+error: unnecessary `!=` operation
+   --> crates/cadmpeg-codec-iges/src/entities/conics.rs:303:17
+    |
+303 | /                 if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
+304 | |                     (
+305 | |                         basis_x,
+306 | |                         basis_y,
+...   |
+317 | |                 };
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#if_not_else
+help: try
+    |
+303 ~                 if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
+304 +                     (
+305 +                         basis_y,
+306 +                         basis_x.scale(-1.0),
+307 +                         coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
+308 +                         coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+309 +                     )
+310 +                 } else {
+311 +                     (
+312 +                         basis_x,
+313 +                         basis_y,
+314 +                         coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+315 +                         coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
+316 +                     )
+317 ~                 };
+    |
+
+error: could not compile `cadmpeg-codec-iges` (lib) due to 3 previous errors
+error: returning the result of a `let` binding from a block
+    --> crates/cadmpeg-codec-nx/src/decode/offset.rs:2192:17
+     |
+2188 | /                 let residual = (0..4)
+2189 | |                     .map(|column| matrix[row][column] * scaled_step[column])
+2190 | |                     .sum::<f64>()
+2191 | |                     - rhs[row];
+     | |_______________________________- unnecessary `let` binding
+2192 |                   residual
+     |                   ^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#let_and_return
+     = note: `-D clippy::let-and-return` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::let_and_return)]`
+help: return the expression directly
+     |
+2188 ~                 
+2189 ~                 (0..4)
+2190 +                     .map(|column| matrix[row][column] * scaled_step[column])
+2191 +                     .sum::<f64>()
+2192 +                     - rhs[row]
+     |
+
+error: could not compile `cadmpeg-codec-nx` (lib) due to 1 previous error
+error: redundant closure
+    --> crates/cadmpeg-ir/src/eval.rs:4920:52
+     |
+4920 |                 product.finish().map_or(Some(0.0), |value| value.finite())?,
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::math::sum::ScaledValue::finite`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure_for_method_calls
+     = note: `-D clippy::redundant-closure-for-method-calls` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+
+error: redundant closure
+    --> crates/cadmpeg-ir/src/eval.rs:7633:52
+     |
+7633 |                     sum.finish().map_or(Some(0.0), |value| value.finite())
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::math::sum::ScaledValue::finite`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure_for_method_calls
+
+error: redundant closure
+    --> crates/cadmpeg-ir/src/eval.rs:7640:52
+     |
+7640 |                     sum.finish().map_or(Some(0.0), |value| value.finite())
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `super::math::sum::ScaledValue::finite`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#redundant_closure_for_method_calls
+
+error: calling `DistinctMembers::default()` is more clear than this expression
+   --> crates/cadmpeg-ir/src/validate/sketches/tests.rs:780:23
+    |
+780 |         dependencies: Default::default(),
+    |                       ^^^^^^^^^^^^^^^^^^ help: try: `DistinctMembers::default()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_trait_access
+    = note: `-D clippy::default-trait-access` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::default_trait_access)]`
+
+error: calling `BTreeMap::default()` is more clear than this expression
+   --> crates/cadmpeg-ir/src/validate/sketches/tests.rs:781:21
+    |
+781 |         properties: Default::default(),
+    |                     ^^^^^^^^^^^^^^^^^^ help: try: `BTreeMap::default()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#default_trait_access
+
+error: could not compile `cadmpeg-ir` (lib test) due to 5 previous errors
