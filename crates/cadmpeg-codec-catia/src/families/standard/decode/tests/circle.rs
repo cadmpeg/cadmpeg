@@ -190,10 +190,11 @@ fn analytic_curve_angles_preserve_extreme_radii() {
         let reference = Vector3::new(1.0, 0.0, 0.0);
         for geometry in [
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                CircleCurve::try_new(center, axis, reference, radius).unwrap(),
+                CircleCurve::try_new(center, axis, reference, radius).expect("valid test circle"),
             )),
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                EllipseCurve::try_new(center, axis, reference, radius, 0.5 * radius).unwrap(),
+                EllipseCurve::try_new(center, axis, reference, radius, 0.5 * radius)
+                    .expect("valid test ellipse"),
             )),
         ] {
             assert_eq!(
@@ -221,11 +222,12 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid test circle"),
     ));
     let point = |angle: f64| Point3::new(angle.cos(), angle.sin(), 0.0);
     let range = crate::families::standard::decode::standard_analytic_curve_parameter_range;
-    let actual = range(&geometry, point(0.0), point(0.001), Some(point(0.0005))).unwrap();
+    let actual = range(&geometry, point(0.0), point(0.001), Some(point(0.0005)))
+        .expect("a witnessed short arc has a parameter range");
     assert_eq!(actual[0], 0.0);
     assert!((actual[1] - 0.001).abs() <= 8.0 * f64::EPSILON * 0.001);
     assert_eq!(
