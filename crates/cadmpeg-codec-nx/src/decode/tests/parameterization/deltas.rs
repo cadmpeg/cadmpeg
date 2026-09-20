@@ -453,7 +453,7 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
-        let radius = cylinder_surface.radius();
+        let radius = cylinder_surface.radius().get();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)

@@ -1374,7 +1374,7 @@ pub(super) fn zero_entity_neutral_pcurve(
 ) -> Option<PcurveGeometry> {
     let (u_scale, v_scale) = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             (radius.recip(), 1.0)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
@@ -1506,7 +1506,7 @@ fn zero_entity_model_curve(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let height = constant_coordinate(1)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1781,7 +1781,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let angle = u / radius;
             let transverse = axis.cross(*ref_direction);
             Point3::new(
@@ -2825,7 +2825,7 @@ mod tests {
         cylinder[81..89].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
         assert!(
             matches!(zero_entity_cylinder(&cylinder), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
-                if { cylinder_surface.radius() == 2_000_000.0 })
+                if { cylinder_surface.radius().get() == 2_000_000.0 })
         );
 
         let mut cone = vec![0_u8; 120];

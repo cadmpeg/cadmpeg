@@ -1082,7 +1082,7 @@ fn encode_face_topology_smbh(
                 let origin = *cylinder_surface.origin();
                 let axis = *cylinder_surface.axis();
                 let ref_direction = *cylinder_surface.ref_direction();
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 native_surface_base(&mut records, "cone")?;
                 native_point(
                     &mut records,

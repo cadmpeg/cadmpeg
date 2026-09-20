@@ -1367,7 +1367,7 @@ fn scale_surface_geometry(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                 Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
                 *axis,
@@ -2422,7 +2422,7 @@ mod tests {
         };
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = cylinder_surface.radius();
+        let radius = cylinder_surface.radius().get();
         assert_point3(*origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(radius, 101.6);

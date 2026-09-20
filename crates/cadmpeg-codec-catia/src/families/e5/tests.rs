@@ -38,7 +38,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     let surfaces =
         crate::families::e5::records::e5_surfaces(&stream, &mut crate::nurbs::LaneRefusals::new());
     assert!(
-        matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius() == 2.5 })
+        matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
     );
 
     let mut small = e5_circle_stream();

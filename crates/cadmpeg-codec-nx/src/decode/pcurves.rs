@@ -2381,7 +2381,7 @@ fn boundary_curve_speed_bound_with_index(
         Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let speed = radius.abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }

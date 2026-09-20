@@ -506,7 +506,7 @@ fn compact_carrier_shapes_decode() {
             ..
         }) => {
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             assert_eq!(radius, 50.0); // 0.05 m ×1000
             assert_eq!(axis.z, 1.0);
         }

@@ -870,7 +870,7 @@ fn round_placed_cylinder_radius(ir: &CadIr, row: &crate::surface::SurfaceRow) ->
     exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
         match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 Some(radius)
             }
             _ => None,

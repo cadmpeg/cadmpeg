@@ -781,7 +781,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .iter()
         .filter_map(|s| match &s.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 Some(radius)
             }
             _ => None,

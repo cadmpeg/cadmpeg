@@ -2504,11 +2504,11 @@ fn fold_surface_frame(
                 return Ok(());
             }
             SolvedSurfaceGeometry::Cylinder(payload) => {
-                let origin = payload.origin();
+                let origin = payload.origin().get();
                 let axis = payload.axis();
-                let radius = payload.radius();
+                let radius = payload.radius().get();
                 *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    *origin,
+                    origin,
                     *axis,
                     u_reference,
                     radius,
@@ -2846,7 +2846,7 @@ fn derive_cylindrical_pcurves(
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let u_reference = cylinder_surface.ref_direction();
-        let radius = cylinder_surface.radius();
+        let radius = cylinder_surface.radius().get();
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
@@ -3959,7 +3959,7 @@ fn analytic_pcurve_chord_bound(
     let second_derivative_bound = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => 0.0,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             radius.abs() * du * du
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {

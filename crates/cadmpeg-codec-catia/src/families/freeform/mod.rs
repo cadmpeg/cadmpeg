@@ -2033,10 +2033,7 @@ fn append_resolved_consolidated_surface_curves(
                     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = carrier else {
                         continue;
                     };
- let radius = cylinder_surface.radius();
-                    if radius <= 0.0 || !radius.is_finite() {
-                        continue;
-                    }
+ let radius = cylinder_surface.radius().get();
                     (
                         (*pos, None),
                         carrier,
@@ -2054,10 +2051,7 @@ fn append_resolved_consolidated_surface_curves(
                 let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
                     continue;
                 };
-                let radius = cylinder.radius();
-                if radius <= 0.0 || !radius.is_finite() {
-                    continue;
-                }
+                let radius = cylinder.radius().get();
                 (
                     (*pos, None),
                     carrier,
@@ -4238,7 +4232,7 @@ mod tests {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
-                    (cylinder_surface.radius() == 4.0)
+                    (cylinder_surface.radius().get() == 4.0)
                         && (*origin == Point3::new(0.0, 0.0, 0.0)
                             && *axis == Vector3::new(0.0, 1.0, 0.0)
                             && *ref_direction == Vector3::new(0.0, 0.0, 1.0))

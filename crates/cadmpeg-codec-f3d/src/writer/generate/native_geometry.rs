@@ -5756,7 +5756,7 @@ fn native_embedded_surface(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             native_embedded_cone(bytes, *origin, *axis, *ref_direction, radius, 1.0, 0.0)?;
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
@@ -5863,7 +5863,7 @@ fn native_support_pcurve_for_range(
             })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             if radius <= f64::EPSILON {
                 return Err(CodecError::Malformed(
                     "intcurve support has an invalid cone parameter scale".into(),
@@ -6332,7 +6332,7 @@ fn native_embedded_cone_with_bounds(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {

@@ -929,7 +929,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     *origin,
@@ -2537,10 +2537,7 @@ pub(super) fn project(
             continue;
         };
         let regular = match &geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let radius = cylinder_surface.radius();
-                radius > 0.0
-            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => true,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let radius = sphere_surface.radius();
                 radius > 0.0

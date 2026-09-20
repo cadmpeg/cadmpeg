@@ -109,21 +109,18 @@ pub fn analytic_surface_parameters_solved(
     };
     let result = match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            let (u, v, _) = components(*origin, *normal, *u_axis);
+            let (u, v, _) = components(origin, *normal, *u_axis);
             Point2::new(u, v)
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
-            if radius == 0.0 {
-                return None;
-            }
-            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            let radius = cylinder_surface.radius().get();
+            let (x, y, v) = components(origin, *axis, *ref_direction);
             Point2::new((y / radius).atan2(x / radius), v)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
@@ -4205,22 +4202,22 @@ fn surface_point_with_budget_inner(
     }
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
-            Some(offset(*origin, &[(u, *u_axis), (v, v_axis)]))
+            Some(offset(origin, &[(u, *u_axis), (v, v_axis)]))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
             Some(offset(
-                *origin,
+                origin,
                 &[
                     (radius * cosine, *ref_direction),
                     (radius * sine, transverse),
@@ -4515,12 +4512,12 @@ fn surface_second_partials_inner(
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
             Some(SurfaceSecondPartials {
-                point: offset(*origin, &[(u, *u_axis), (v, v_axis)]),
+                point: offset(origin, &[(u, *u_axis), (v, v_axis)]),
                 du: *u_axis,
                 dv: v_axis,
                 duu: zero,
@@ -4529,16 +4526,16 @@ fn surface_second_partials_inner(
             })
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
             Some(SurfaceSecondPartials {
                 point: offset(
-                    *origin,
+                    origin,
                     &[
                         (radius * cosine, *ref_direction),
                         (radius * sine, transverse),

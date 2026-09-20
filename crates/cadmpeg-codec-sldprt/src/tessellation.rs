@@ -1894,9 +1894,9 @@ fn cylindrical_trim(
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     let axis = axis.unit()?;
-    if !radius.is_finite() || radius <= EPS_DISPLAY_QUANTIZATION {
+    if radius <= EPS_DISPLAY_QUANTIZATION {
         return None;
     }
     let face_loops = face.loops.to_vec();
@@ -2788,7 +2788,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let delta = subtract(point, *origin);
             let axis_length = axis.norm();
             let axial = delta.dot(*axis) / axis_length;

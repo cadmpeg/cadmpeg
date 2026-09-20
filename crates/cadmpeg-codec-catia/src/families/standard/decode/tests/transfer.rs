@@ -195,7 +195,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             assert!((radius - 5.0).abs() < 1.0e-6);
             assert!((axis.z - 1.0).abs() < 1.0e-6);
         }

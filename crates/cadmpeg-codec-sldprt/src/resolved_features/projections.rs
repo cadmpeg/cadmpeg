@@ -2196,7 +2196,7 @@ fn unique_cylindrical_face(radius: f64, faces: &[Face], surfaces: &[Surface]) ->
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
-                    let candidate = cylinder_surface.radius();
+                    let candidate = cylinder_surface.radius().get();
                     (candidate - radius).abs() <= tolerance
                 } =>
             {

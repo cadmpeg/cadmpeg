@@ -74,13 +74,11 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
         _ => return None,
     };
     let (origin, axis, ref_direction, radial) = match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder))
-            if cylinder.radius() > 0.0 =>
-        {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
             let origin = cylinder.origin();
             let axis = cylinder.axis();
             let ref_direction = cylinder.ref_direction();
-            let radius = cylinder.radius();
+            let radius = cylinder.radius().get();
             (
                 *origin,
                 *axis,
@@ -350,16 +348,11 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
     let line_direction = line_curve.direction();
     let (surface_origin, surface_axis, surface_x, reference_radius, radius_ratio, radius_slope) =
         match surface {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-                if {
-                    let radius = cylinder_surface.radius();
-                    radius.is_finite() && radius > 0.0
-                } =>
-            {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {

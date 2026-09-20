@@ -55,7 +55,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                         cylinder_surface,
                     )),
                 ) if {
-                    let radius = cylinder_surface.radius();
+                    let radius = cylinder_surface.radius().get();
                     radius == 2.0
                 } => {}
                 (

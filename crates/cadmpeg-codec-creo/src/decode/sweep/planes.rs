@@ -243,7 +243,7 @@ fn cylinder_frame_agrees_with_model(
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
         normalize(frame.axis()),
         normalize([axis.x, axis.y, axis.z]),
@@ -252,9 +252,6 @@ fn cylinder_frame_agrees_with_model(
     ) else {
         return false;
     };
-    if !radius.is_finite() || radius <= 0.0 {
-        return false;
-    }
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_CYLINDER_CARRIER * left.abs().max(right.abs()).max(1.0)
     };
