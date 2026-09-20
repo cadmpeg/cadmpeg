@@ -358,7 +358,18 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "sldprt");
-    assert_eq!(refusal.requested(), Some("sldprt:sw-version-12000-plus"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("sldprt:sw-version-12000-plus")
+    );
     assert!(
         refusal
             .available()
@@ -367,8 +378,9 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         "{:?}",
         refusal.available()
     );
-    let reason = refusal
-        .reason()
+    let reason = serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["reason"]
+        .as_str()
+        .map(str::to_owned)
         .expect("delivery refusal carries its reason");
     assert!(
         reason.contains("sldprt:unknown"),

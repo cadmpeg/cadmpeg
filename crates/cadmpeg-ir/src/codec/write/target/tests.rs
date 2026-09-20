@@ -4,7 +4,7 @@ use super::TargetRequest;
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::CadIr;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
-use cadmpeg_core::target::{DefaultSource, TargetCatalog, TargetRefusalKind, TargetToken};
+use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -17,10 +17,10 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an empty native catalog must refuse without inventing an identity request")
     };
-    let TargetRefusalKind::NoDefault { source, .. } = refusal.kind() else {
-        panic!("a source-free inherit request must report a missing default")
-    };
-    assert_eq!(source, &DefaultSource::NoSource);
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        serde_json::json!({"kind": "no_default", "source": {"kind": "no_source"}})
+    );
     assert!(refusal.available().is_empty());
 }
 const CATALOG_WRITE_CATALOG: TargetCatalog = TargetCatalog::new(CATALOG_WRITE_TARGETS, Some(1));
@@ -67,10 +67,10 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("expected an unsupported target");
     };
-    let TargetRefusalKind::UnknownExplicit { requested, .. } = refusal.kind() else {
-        panic!("the explicit token is outside the catalog")
-    };
-    assert_eq!(requested, &TargetToken::new("test:missing"));
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        serde_json::json!({"kind": "unknown_explicit", "requested": "test:missing"})
+    );
     assert_eq!(
         refusal
             .available()
@@ -102,10 +102,10 @@ fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an unrecorded same-format source must produce a target refusal")
     };
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::UnrecordedSource
-    ));
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "unrecorded_source"
+    );
     assert_eq!(refusal.format(), "test");
 }
 

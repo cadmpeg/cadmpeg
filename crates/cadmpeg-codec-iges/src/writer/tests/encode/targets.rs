@@ -125,7 +125,18 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "iges");
-    assert_eq!(refusal.requested(), Some("iges:1.0-fixed-ascii"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("iges:1.0-fixed-ascii")
+    );
     assert!(
         refusal
             .available()

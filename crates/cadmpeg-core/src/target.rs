@@ -359,12 +359,6 @@ impl TargetRefusal {
         )
     }
 
-    /// Returns the request-state reason.
-    #[must_use]
-    pub const fn kind(&self) -> &TargetRefusalKind {
-        &self.kind
-    }
-
     /// Returns the refusing encoder format.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -375,37 +369,6 @@ impl TargetRefusal {
     #[must_use]
     pub const fn available(&self) -> &'static [TargetDescriptor] {
         self.available.targets()
-    }
-
-    /// Returns the dialect spelling the refusal is about, when one exists.
-    ///
-    /// Explicit requests retain the caller's spelling. Inherited refusals
-    /// return the recorded source dialect. Missing-source and missing-default
-    /// states have no requested dialect.
-    #[must_use]
-    pub fn requested(&self) -> Option<&str> {
-        match &self.kind {
-            TargetRefusalKind::UnknownExplicit { requested, .. }
-            | TargetRefusalKind::ExplicitUnavailable { requested, .. } => Some(requested.as_str()),
-            TargetRefusalKind::InheritedUnavailable { source, .. } => Some(source.as_str()),
-            TargetRefusalKind::UnrecordedSource
-            | TargetRefusalKind::NoDefault { .. }
-            | TargetRefusalKind::DefaultUnavailable { .. } => None,
-        }
-    }
-
-    /// Returns the input-conditioned delivery reason, when this is a resolved
-    /// target rather than a target-selection failure.
-    #[must_use]
-    pub fn reason(&self) -> Option<&str> {
-        match &self.kind {
-            TargetRefusalKind::ExplicitUnavailable { reason, .. }
-            | TargetRefusalKind::InheritedUnavailable { reason, .. }
-            | TargetRefusalKind::DefaultUnavailable { reason, .. } => Some(reason),
-            TargetRefusalKind::UnknownExplicit { .. }
-            | TargetRefusalKind::UnrecordedSource
-            | TargetRefusalKind::NoDefault { .. } => None,
-        }
     }
 
     fn write_available(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -642,7 +605,18 @@ mod tests {
             TargetCatalog::new(TARGETS, None),
         );
 
-        assert_eq!(refusal.requested(), None);
+        assert_eq!(
+            ({
+                let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+                wire["refusal"]
+                    .get("requested")
+                    .or_else(|| wire["refusal"].get("source"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .as_deref(),
+            None
+        );
         assert_eq!(refusal.available(), TARGETS);
         assert_eq!(
             refusal.to_string(),

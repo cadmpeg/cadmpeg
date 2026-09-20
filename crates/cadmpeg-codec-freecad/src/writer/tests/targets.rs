@@ -5,7 +5,6 @@
 use crate::native::DocumentFacts;
 use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
 use crate::FcstdCodec;
-use cadmpeg_core::target::{DefaultSource, TargetRefusalKind};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
@@ -30,7 +29,18 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {unsupported}");
     };
     assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(refusal.requested(), Some("fcstd:schema-3"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("fcstd:schema-3")
+    );
 
     // A STEP document has no retained FCStd graph this writer can patch.
     // The catalog intentionally has no cross-format default, so `plan`
@@ -50,13 +60,10 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let CodecError::UnsupportedTarget(refusal) = &missing_graph else {
         panic!("expected a target refusal, got {missing_graph}");
     };
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::NoDefault {
-            source: DefaultSource::ForeignFormat(source_format),
-            ..
-        } if source_format == "step"
-    ));
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
+    );
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         missing_graph.to_string(),
@@ -252,11 +259,22 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(refusal.requested(), Some("fcstd:schema-2"));
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::InheritedUnavailable { .. }
-    ));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("fcstd:schema-2")
+    );
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "inherited_unavailable"
+    );
     assert!(
         refusal
             .available()
@@ -296,11 +314,22 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(refusal.requested(), Some("fcstd:schema-4"));
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::ExplicitUnavailable { .. }
-    ));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("fcstd:schema-4")
+    );
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "explicit_unavailable"
+    );
     assert!(
         refusal
             .available()
@@ -337,11 +366,22 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
-    assert_eq!(refusal.requested(), None);
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::UnrecordedSource
-    ));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        None
+    );
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "unrecorded_source"
+    );
     assert!(
         refusal
             .available()

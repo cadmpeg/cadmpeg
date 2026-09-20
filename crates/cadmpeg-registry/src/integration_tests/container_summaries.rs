@@ -35,7 +35,7 @@ fn native_summary_labels_distinguish_ranges_storages_and_streams() {
         panic!("a rhino table reports framing overhead beside its body");
     };
     assert_eq!(label, VerbatimLabel::None);
-    assert_eq!(span.framing().get(), body_offset - offset);
+    assert_eq!((span.stored() - span.payload()), body_offset - offset);
     assert_eq!(Some(span.payload()), table.expanded_size());
     assert_eq!(Some(span.stored()), table.stored_size());
     assert!(body_offset > offset);

@@ -258,11 +258,6 @@ impl ScopedReservation<'_> {
     pub fn commit(self) -> Result<(), CodecError> {
         self.budget.charge_retained(self.bytes, self.operation)
     }
-
-    /// Returns the currently reserved byte count.
-    pub fn bytes(&self) -> u64 {
-        self.bytes
-    }
 }
 
 impl Drop for ScopedReservation<'_> {
@@ -426,19 +421,6 @@ impl<'a> WorkBudget<'a> {
         } else {
             Err(BudgetExhausted)
         }
-    }
-
-    /// Classifies this local budget's refusal as a resource limit.
-    pub fn refuse(&self, operation: &'static str) -> CodecError {
-        if let Some(resource) = self.session.and_then(DecodeBudget::fused) {
-            return CodecError::ResourceLimit(resource);
-        }
-        local_limit_error(
-            "work_units",
-            self.limit as u64,
-            self.consumed().saturating_add(1) as u64,
-            operation,
-        )
     }
 }
 

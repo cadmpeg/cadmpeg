@@ -13,7 +13,6 @@ use crate::report::export::FidelityResolution;
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-use cadmpeg_core::target::TargetRefusalKind;
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -75,10 +74,10 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::UnknownExplicit { .. }
-    ));
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "unknown_explicit"
+    );
     assert!(refusal.available().is_empty());
 }
 

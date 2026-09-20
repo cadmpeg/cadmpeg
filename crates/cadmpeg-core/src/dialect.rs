@@ -458,12 +458,6 @@ impl DialectLayers {
     pub fn iter(&self) -> impl Iterator<Item = &DialectMatch> {
         std::iter::once(&self.primary).chain(&self.extra)
     }
-
-    /// Consumes the collection into its primary and extra layers.
-    #[must_use]
-    pub fn into_parts(self) -> (DialectMatch, Vec<DialectMatch>) {
-        (self.primary, self.extra)
-    }
 }
 
 mod format_identity_sealed {
@@ -903,7 +897,7 @@ mod tests {
             serde_json::from_value::<DialectLayers>(serialized).unwrap(),
             layers
         );
-        assert_eq!(layers.into_parts().1, [member]);
+        assert_eq!(layers.extra, [member]);
     }
 
     #[test]
@@ -916,7 +910,7 @@ mod tests {
             .expect("distinct dialect layer keys");
 
         assert_eq!(layers.insert(replacement.clone()), Err(replacement));
-        assert_eq!(layers.into_parts().1, [first]);
+        assert_eq!(layers.extra, [first]);
     }
 
     #[test]
@@ -928,7 +922,7 @@ mod tests {
 
         assert_eq!(layers.insert(replacement.clone()), Err(replacement));
         assert_eq!(layers.primary(), &layer("rhino"));
-        assert_eq!(layers.into_parts().1, [layer("acis")]);
+        assert_eq!(layers.extra, [layer("acis")]);
     }
 
     #[test]
@@ -950,7 +944,7 @@ mod tests {
 
         assert_eq!(layers.insert(anonymous.clone()), Ok(()));
         assert_eq!(layers.insert(named.clone()), Ok(()));
-        assert_eq!(layers.into_parts().1, [anonymous, named]);
+        assert_eq!(layers.extra, [anonymous, named]);
     }
 
     #[test]

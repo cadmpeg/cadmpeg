@@ -101,7 +101,18 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "rhino");
-    assert_eq!(refusal.requested(), None);
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        None
+    );
     assert!(
         refusal
             .available()
@@ -175,7 +186,18 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "rhino");
-    assert_eq!(refusal.requested(), Some("rhino:archive-3"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("rhino:archive-3")
+    );
     for target in Encoder::targets(&encoder) {
         assert!(
             refusal

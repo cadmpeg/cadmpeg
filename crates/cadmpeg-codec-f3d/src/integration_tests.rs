@@ -372,7 +372,18 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "f3d");
-    assert_eq!(refusal.requested(), Some("f3d:unknown"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("f3d:unknown")
+    );
     assert!(
         refusal
             .available()
