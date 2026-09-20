@@ -1476,8 +1476,7 @@ fn parse_legacy_major2(
                 vertex.point.0[1] - expected.0[1],
                 vertex.point.0[2] - expected.0[2],
             ];
-            tolerance = tolerance
-                .max((delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt());
+            tolerance = tolerance.max(delta[0].hypot(delta[1]).hypot(delta[2]));
         }
         vertex.tolerance = tolerance;
     }

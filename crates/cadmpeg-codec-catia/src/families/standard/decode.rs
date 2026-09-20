@@ -8050,7 +8050,7 @@ fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point
 }
 
 fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
-    let (center, first, second) = match geometry {
+    let (center, first, second, first_radius, second_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
             let axis = circle_curve.axis();
@@ -8058,8 +8058,10 @@ fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Opt
             let radius = circle_curve.radius();
             (
                 *center,
-                ref_direction.scale(radius),
-                axis.cross(*ref_direction).scale(radius),
+                *ref_direction,
+                axis.cross(*ref_direction),
+                radius,
+                radius,
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
@@ -8070,24 +8072,17 @@ fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Opt
             let minor_radius = ellipse_curve.minor_radius();
             (
                 *center,
-                major_direction.scale(major_radius),
-                axis.cross(*major_direction).scale(minor_radius),
+                *major_direction,
+                axis.cross(*major_direction),
+                major_radius,
+                minor_radius,
             )
         }
         _ => return None,
     };
     let offset = point.vector_from(center);
-    let first_length = first.norm();
-    let second_length = second.norm();
-    if !first_length.is_finite()
-        || !second_length.is_finite()
-        || first_length <= 0.0
-        || second_length <= 0.0
-    {
-        return None;
-    }
-    let first_component = offset.dot(first) / first_length.powi(2);
-    let second_component = offset.dot(second) / second_length.powi(2);
+    let first_component = offset.dot(first) / first_radius;
+    let second_component = offset.dot(second) / second_radius;
     let residual = first_component * first_component + second_component * second_component - 1.0;
     (residual.is_finite() && residual.abs() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
         .then(|| second_component.atan2(first_component))

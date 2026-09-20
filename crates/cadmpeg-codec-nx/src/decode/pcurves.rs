@@ -885,6 +885,23 @@ fn reverse_analytic_pcurve_over_range(
     pcurve: &PcurveGeometry,
     [start, end]: [f64; 2],
 ) -> Option<PcurveGeometry> {
+    if let PcurveGeometry::Line(line) = pcurve {
+        let origin = line.origin();
+        let direction = line.direction();
+        let reflected = cadmpeg_ir::transform::Transform::affine([
+            [direction.u, direction.u, 0.0, origin.u],
+            [direction.v, direction.v, 0.0, origin.v],
+            [0.0; 4],
+        ])?
+        .apply_point(Point3::new(start, end, 0.0))?;
+        return Some(PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(reflected.x, reflected.y),
+                Point2::new(-direction.u, -direction.v),
+            )
+            .ok()?,
+        ));
+    }
     let reflection = start + end;
     if !reflection.is_finite() {
         return None;
@@ -896,21 +913,18 @@ fn reverse_analytic_pcurve_over_range(
         );
         value.is_finite().then_some(value)
     };
+    let reverse_hyperbolic = |cosine: Point2, sine: Point2| {
+        let component = |cosine, sine| {
+            let (cosine_sinh, cosine_cosh) =
+                cadmpeg_ir::math::scaled_sinh_cosh(cosine, reflection)?;
+            let (sine_sinh, sine_cosh) = cadmpeg_ir::math::scaled_sinh_cosh(sine, reflection)?;
+            Some((cosine_cosh + sine_sinh, -cosine_sinh - sine_cosh))
+        };
+        let (cosine_u, sine_u) = component(cosine.u, sine.u)?;
+        let (cosine_v, sine_v) = component(cosine.v, sine.v)?;
+        Some((Point2::new(cosine_u, cosine_v), Point2::new(sine_u, sine_v)))
+    };
     match pcurve {
-        PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
-            Some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    Point2::new(
-                        origin.u + reflection * direction.u,
-                        origin.v + reflection * direction.v,
-                    ),
-                    Point2::new(-direction.u, -direction.v),
-                )
-                .ok()?,
-            ))
-        }
         PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve) => {
             let radial_center = polar_harmonic_pcurve.radial_center();
             let radial_cos = polar_harmonic_pcurve.radial_cos();
@@ -957,15 +971,10 @@ fn reverse_analytic_pcurve_over_range(
             let center = hyperbolic_pcurve.center();
             let source_cosine = hyperbolic_pcurve.cosine();
             let source_sine = hyperbolic_pcurve.sine();
-            let cosine = reflection.cosh();
-            let sine = reflection.sinh();
+            let (cosine, sine) = reverse_hyperbolic(*source_cosine, *source_sine)?;
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(
-                    *center,
-                    combine(*source_cosine, cosine, *source_sine, sine)?,
-                    combine(*source_cosine, -sine, *source_sine, -cosine)?,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(*center, cosine, sine)
+                    .ok()?,
             ))
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
@@ -1090,20 +1099,13 @@ fn reverse_analytic_pcurve_over_range(
             let y_axis = hyperbola_pcurve.y_axis();
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
-            let cosine = reflection.cosh();
-            let sine = reflection.sinh();
+            let (cosine, sine) = reverse_hyperbolic(
+                Point2::new(x_axis.u * major_radius, x_axis.v * major_radius),
+                Point2::new(y_axis.u * minor_radius, y_axis.v * minor_radius),
+            )?;
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(
-                    *center,
-                    combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
-                    combine(
-                        *x_axis,
-                        -major_radius * sine,
-                        *y_axis,
-                        -minor_radius * cosine,
-                    )?,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(*center, cosine, sine)
+                    .ok()?,
             ))
         }
         _ => None,

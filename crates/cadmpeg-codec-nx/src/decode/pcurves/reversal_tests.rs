@@ -325,3 +325,54 @@ fn numerical_ranges_parabola_reversal_reuses_scaled_evaluation() {
         assert!((point.v / expected.v - 1.).abs() < 64. * f64::EPSILON);
     }
 }
+
+#[test]
+fn analytic_reversal_preserves_finite_coefficients_at_extreme_parameters() {
+    use cadmpeg_ir::geometry::pcurve::{HyperbolaPcurve, HyperbolicPcurve, LinePcurve};
+    let line = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0)).unwrap(),
+    );
+    let reversed = super::reverse_analytic_pcurve_over_range(&line, [1e308, 1.4e308]).unwrap();
+    let PcurveGeometry::Line(reversed) = reversed else {
+        panic!("expected line")
+    };
+    assert_eq!(*reversed.origin(), Point2::new(1.2e308, 0.0));
+    assert_eq!(*reversed.direction(), Point2::new(-0.5, 0.0));
+    const RADIUS: f64 = 1e-10;
+    for curve in [
+        PcurveGeometry::Hyperbola(
+            HyperbolaPcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                RADIUS,
+                RADIUS,
+            )
+            .unwrap(),
+        ),
+        PcurveGeometry::Hyperbolic(
+            HyperbolicPcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(RADIUS, 0.0),
+                Point2::new(0.0, RADIUS),
+            )
+            .unwrap(),
+        ),
+    ] {
+        let reversed = super::reverse_analytic_pcurve_over_range(&curve, [359.0, 361.0]).unwrap();
+        let PcurveGeometry::Hyperbolic(reversed) = reversed else {
+            panic!("expected hyperbolic coefficients")
+        };
+        // exp(720)/2 * RADIUS, evaluated independently through logarithms.
+        let expected = (720.0 + RADIUS.ln() - std::f64::consts::LN_2).exp();
+        for component in [
+            reversed.cosine().u,
+            reversed.cosine().v,
+            -reversed.sine().u,
+            -reversed.sine().v,
+        ] {
+            assert!(component.is_finite());
+            assert!((component / expected - 1.0).abs() < 512.0 * f64::EPSILON);
+        }
+    }
+}

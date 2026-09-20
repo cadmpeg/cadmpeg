@@ -1966,18 +1966,23 @@ fn fitted_nurbs_offset_candidate(
         {
             return None;
         }
-        let parallel_error =
-            (source_tangent.u * result_tangent.v - source_tangent.v * result_tangent.u).abs()
-                / (source_length * result_length);
-        if parallel_error > EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 {
+        let source_unit = Vector3::new(source_tangent.u, source_tangent.v, 0.0).unit_nonzero()?;
+        let result_unit = Vector3::new(result_tangent.u, result_tangent.v, 0.0).unit_nonzero()?;
+        if source_unit.cross(result_unit).norm() > EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 {
             return None;
         }
-        let offset = Point2::new(
-            result_point.u - source_point.u,
-            result_point.v - source_point.v,
-        );
-        let tangential =
-            (offset.u * source_tangent.u + offset.v * source_tangent.v) / source_length;
+        let offset_projection = |x, y| {
+            crate::math::sum::finite_dot(
+                [
+                    result_point.u,
+                    -source_point.u,
+                    result_point.v,
+                    -source_point.v,
+                ],
+                [x, x, y, y],
+            )
+        };
+        let tangential = offset_projection(source_unit.x, source_unit.y)?;
         let coordinate_scale = 1.0
             + source_point
                 .u
@@ -1990,8 +1995,7 @@ fn fitted_nurbs_offset_candidate(
         {
             return None;
         }
-        distances[ordinal] =
-            (-source_tangent.v * offset.u + source_tangent.u * offset.v) / source_length;
+        distances[ordinal] = offset_projection(-source_unit.y, source_unit.x)?;
     }
     let scale = 1.0 + distances[0].abs().max(distances[1].abs());
     // Both thresholds are comparison thresholds of this predicate, not the
@@ -2001,7 +2005,8 @@ fn fitted_nurbs_offset_candidate(
     ((distances[0] - distances[1]).abs()
         <= linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 * scale)
         && distances[0].abs() > linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9))
-    .then_some((distances[0] + distances[1]) * 0.5)
+    .then(|| crate::math::interpolate(distances[0], distances[1], 0.5))
+    .flatten()
 }
 
 struct PcurveDifferential {

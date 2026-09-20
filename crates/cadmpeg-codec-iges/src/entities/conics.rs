@@ -374,20 +374,39 @@ pub(super) fn project(
                 -1.0
             };
             let major_direction = basis_y.scale(opening);
-            let focal_distance =
-                (coeff_e / (4.0 * coeff_a)).abs() * factor * scale_x * scale_x / scale_y;
-            let parameter = |point: Point3, axis: Vector3| {
-                point
-                    .vector_from(plane_origin)
-                    .dot(axis.cross(major_direction))
-                    / (2.0 * focal_distance)
+            let Some(focal_distance) = cadmpeg_ir::math::product_quotient(
+                [*coeff_e, factor, scale_x, scale_x],
+                [4.0, *coeff_a, scale_y],
+            )
+            .map(f64::abs) else {
+                losses.push(entity_loss(
+                    entry,
+                    "parabola focal distance is not representable",
+                ));
+                continue;
             };
-            let mut start_parameter = parameter(start, axis);
-            let mut end_parameter = parameter(end, axis);
+            let parameter = |point: Point3, axis: Vector3| {
+                cadmpeg_ir::math::multiply_divide(
+                    point
+                        .vector_from(plane_origin)
+                        .dot(axis.cross(major_direction)),
+                    0.5,
+                    focal_distance,
+                )
+            };
+            let (Some(mut start_parameter), Some(mut end_parameter)) =
+                (parameter(start, axis), parameter(end, axis))
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "parabola endpoint parameter is not representable",
+                ));
+                continue;
+            };
             if end_parameter < start_parameter {
                 axis = axis.scale(-1.0);
-                start_parameter = parameter(start, axis);
-                end_parameter = parameter(end, axis);
+                start_parameter = -start_parameter;
+                end_parameter = -end_parameter;
             }
             let Some(payload) = admit(
                 cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
@@ -412,20 +431,39 @@ pub(super) fn project(
                 -1.0
             };
             let major_direction = basis_x.scale(opening);
-            let focal_distance =
-                (coeff_d / (4.0 * coeff_c)).abs() * factor * scale_y * scale_y / scale_x;
-            let parameter = |point: Point3, axis: Vector3| {
-                point
-                    .vector_from(plane_origin)
-                    .dot(axis.cross(major_direction))
-                    / (2.0 * focal_distance)
+            let Some(focal_distance) = cadmpeg_ir::math::product_quotient(
+                [*coeff_d, factor, scale_y, scale_y],
+                [4.0, *coeff_c, scale_x],
+            )
+            .map(f64::abs) else {
+                losses.push(entity_loss(
+                    entry,
+                    "parabola focal distance is not representable",
+                ));
+                continue;
             };
-            let mut start_parameter = parameter(start, axis);
-            let mut end_parameter = parameter(end, axis);
+            let parameter = |point: Point3, axis: Vector3| {
+                cadmpeg_ir::math::multiply_divide(
+                    point
+                        .vector_from(plane_origin)
+                        .dot(axis.cross(major_direction)),
+                    0.5,
+                    focal_distance,
+                )
+            };
+            let (Some(mut start_parameter), Some(mut end_parameter)) =
+                (parameter(start, axis), parameter(end, axis))
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "parabola endpoint parameter is not representable",
+                ));
+                continue;
+            };
             if end_parameter < start_parameter {
                 axis = axis.scale(-1.0);
-                start_parameter = parameter(start, axis);
-                end_parameter = parameter(end, axis);
+                start_parameter = -start_parameter;
+                end_parameter = -end_parameter;
             }
             let Some(payload) = admit(
                 cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(

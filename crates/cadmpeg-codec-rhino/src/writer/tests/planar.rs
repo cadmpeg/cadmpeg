@@ -435,3 +435,26 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
     assert!(message.contains("face#polygon"), "{message}");
     assert_eq!(output, [0xaa]);
 }
+
+#[test]
+fn planar_solid_orientation_is_translation_and_scale_invariant() {
+    use crate::writer::{model::WritableModel, planar_solid_orientation};
+    let ir = planar_tetrahedron();
+    for (scale, translation) in [(1.0, 0.0), (1.0, 1e8), (1e200, 0.0), (1e-200, 0.0)] {
+        let mut model = WritableModel::try_new(&ir).unwrap();
+        // The sign owner consumes the oriented vertex rings; other writer fields
+        // do not enter this calculation.
+        for vertex in &mut model.vertices {
+            vertex.point = Point3::new(
+                2.0 * scale * vertex.point.x + translation,
+                scale * vertex.point.y + translation,
+                scale * vertex.point.z + translation,
+            );
+        }
+        assert_eq!(planar_solid_orientation(&model), 1);
+        for loop_ in &mut model.loops {
+            loop_.coedges.reverse();
+        }
+        assert_eq!(planar_solid_orientation(&model), 2);
+    }
+}
