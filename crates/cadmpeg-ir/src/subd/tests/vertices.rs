@@ -43,5 +43,5 @@ fn cage_edits_roll_back_when_a_vertex_rejects_its_position() {
     assert_eq!(cage, original);
     cage.edit_vertices(|vertices| vertices[0].set_point(Point3::new(2.0, 3.0, 4.0)))
         .unwrap();
-    assert_eq!(cage.vertices()[0].point(), Point3::new(2.0, 3.0, 4.0));
+    assert_eq!(cage.vertices[0].point(), Point3::new(2.0, 3.0, 4.0));
 }

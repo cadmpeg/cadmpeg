@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
 
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
 
@@ -273,7 +275,15 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         );
         let result = decode(&archive_version(version, &[object]));
         assert_eq!(result.ir().model.subds.len(), 1, "archive {version}");
-        assert_eq!(result.ir().model.subds[0].cage.faces()[0].edges().len(), 4);
+        assert_eq!(
+            wire::field::<Vec<subd::SubdEdgeUse>>(
+                &(wire::field::<Vec<subd::SubdFace>>(&(result.ir().model.subds[0].cage), "faces")
+                    [0]),
+                "edges"
+            )
+            .len(),
+            4
+        );
         assert!(!result
             .ir()
             .native_unknowns("rhino")

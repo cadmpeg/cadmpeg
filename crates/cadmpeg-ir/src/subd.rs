@@ -111,26 +111,6 @@ impl SubdCage {
         Ok(cage)
     }
 
-    /// Control vertices in cage order.
-    pub fn vertices(&self) -> &[SubdVertex] {
-        &self.vertices
-    }
-
-    /// Control edges in cage order.
-    pub fn edges(&self) -> &[SubdEdge] {
-        &self.edges
-    }
-
-    /// Control faces in cage order.
-    pub fn faces(&self) -> &[SubdFace] {
-        &self.faces
-    }
-
-    /// Editor symmetry blocks in cage order.
-    pub fn symmetries(&self) -> &[SubdSymmetry] {
-        &self.symmetries
-    }
-
     /// Atomically edit vertices and their grip layouts while preserving cage invariants.
     pub fn edit_vertices(
         &mut self,
@@ -317,21 +297,6 @@ impl SubdPlaneFrame {
             second_axis,
         })
     }
-
-    /// A point on the symmetry plane in document units.
-    pub const fn origin(&self) -> Point3 {
-        self.origin
-    }
-
-    /// First unit in-plane axis.
-    pub const fn first_axis(&self) -> Vector3 {
-        self.first_axis
-    }
-
-    /// Second unit in-plane axis.
-    pub const fn second_axis(&self) -> Vector3 {
-        self.second_axis
-    }
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
@@ -404,21 +369,6 @@ impl SubdRadialSymmetry {
             sweep,
             radial_maps,
         })
-    }
-
-    /// Number of radial segments.
-    pub const fn segments(&self) -> std::num::NonZeroU32 {
-        self.segments
-    }
-
-    /// Finite native radial sweep.
-    pub const fn sweep(&self) -> f64 {
-        self.sweep.get()
-    }
-
-    /// Native maps with distinct selectors and distinct sources within each map.
-    pub fn radial_maps(&self) -> &[SubdRadialSymmetryMap] {
-        &self.radial_maps
     }
 }
 
@@ -534,26 +484,6 @@ impl SubdSymmetry {
             vertex_pairs,
         })
     }
-
-    /// Symmetry mode and its radial controls.
-    pub fn kind(&self) -> &SubdSymmetryKind {
-        &self.kind
-    }
-
-    /// Forward face correspondences.
-    pub fn face_pairs(&self) -> &[[u32; 2]] {
-        &self.face_pairs
-    }
-
-    /// Forward edge correspondences.
-    pub fn edge_pairs(&self) -> &[[u32; 2]] {
-        &self.edge_pairs
-    }
-
-    /// Forward vertex correspondences.
-    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
-        &self.vertex_pairs
-    }
 }
 
 impl From<SubdSymmetry> for SubdSymmetryWire {
@@ -646,11 +576,6 @@ impl SubdVertex {
         })
     }
 
-    /// Optional admitted secondary-grip layout.
-    pub fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
-        self.secondary_grips.as_ref()
-    }
-
     /// Vertex position in document units.
     pub const fn point(&self) -> Point3 {
         self.point
@@ -737,16 +662,6 @@ impl SubdVertexGripLayout {
         }
         Ok(Self { direction, wedges })
     }
-
-    /// Direction of the native root edge.
-    pub const fn direction(&self) -> SubdGripDirection {
-        self.direction
-    }
-
-    /// Wedges in north-anchored cyclic order.
-    pub fn wedges(&self) -> &[SubdGripWedge] {
-        &self.wedges
-    }
 }
 
 /// One wedge in a secondary-grip layout.
@@ -819,21 +734,6 @@ impl SubdSecondaryGrip {
             point,
             weight,
         })
-    }
-
-    /// Index in the source cage's grip array.
-    pub const fn source_index(&self) -> u32 {
-        self.source_index
-    }
-
-    /// Grip position in document units.
-    pub const fn point(&self) -> Point3 {
-        self.point
-    }
-
-    /// Positive rational grip weight.
-    pub const fn weight(&self) -> f64 {
-        self.weight
     }
 }
 
@@ -946,26 +846,6 @@ impl SubdEdge {
             sector_coefficients,
         })
     }
-
-    /// Indices of the two distinct endpoint vertices.
-    pub const fn vertices(&self) -> [u32; 2] {
-        self.vertices
-    }
-
-    /// Sharpness at the two endpoints.
-    pub const fn sharpness(&self) -> [f64; 2] {
-        self.sharpness
-    }
-
-    /// Parametric knot interval, when present.
-    pub const fn knot_interval(&self) -> Option<f64> {
-        self.knot_interval
-    }
-
-    /// Sector coefficients at the two endpoints.
-    pub const fn sector_coefficients(&self) -> [f64; 2] {
-        self.sector_coefficients
-    }
 }
 
 /// A control-cage edge tag.
@@ -1015,11 +895,6 @@ impl SubdFace {
             ));
         }
         Ok(Self { edges })
-    }
-
-    /// Directed edge uses in boundary order.
-    pub fn edges(&self) -> &[SubdEdgeUse] {
-        &self.edges
     }
 }
 

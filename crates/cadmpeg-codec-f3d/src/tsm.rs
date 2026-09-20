@@ -1533,6 +1533,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::subd;
+    use cadmpeg_test_support::wire;
+
     use super::SubdGripWedge;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -1612,47 +1615,77 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
         assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
-        let layout = cage.surface.cage.vertices()[0]
-            .secondary_grips()
-            .expect("secondary grip layout");
-        assert_eq!(layout.direction(), cadmpeg_ir::SubdGripDirection::North);
-        assert_eq!(layout.wedges().len(), 4);
-        let SubdGripWedge::Slot { spokes, .. } = &layout.wedges()[0] else {
+        let layout = wire::field_or_default::<Option<subd::SubdVertexGripLayout>>(
+            &(wire::field::<Vec<subd::SubdVertex>>(&(cage.surface.cage), "vertices")[0]),
+            "secondary_grips",
+        )
+        .expect("secondary grip layout");
+        assert_eq!(
+            wire::field::<subd::SubdGripDirection>(&(layout), "direction"),
+            cadmpeg_ir::SubdGripDirection::North
+        );
+        assert_eq!(
+            wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges").len(),
+            4
+        );
+        let SubdGripWedge::Slot { spokes, .. } =
+            &wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges")[0]
+        else {
             panic!("first wedge is a fan slot");
         };
-        assert_eq!(spokes[0].as_ref().unwrap().source_index(), 4);
-        assert!(layout.wedges()[2..]
-            .iter()
-            .all(|wedge| matches!(wedge, SubdGripWedge::Phantom {})));
+        assert_eq!(
+            wire::field::<u32>(&(spokes[0].as_ref().unwrap()), "source_index"),
+            4
+        );
+        assert!(
+            wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges")[2..]
+                .iter()
+                .all(|wedge| matches!(wedge, SubdGripWedge::Phantom {}))
+        );
         assert!(matches!(
-            &layout.wedges()[1],
+            &wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges")[1],
             SubdGripWedge::Slot {
                 sector_face: None,
                 ..
             }
         ));
 
-        assert_eq!(cage.surface.cage.symmetries().len(), 1);
-        let symmetry = &cage.surface.cage.symmetries()[0];
         assert_eq!(
-            symmetry.kind(),
-            &cadmpeg_ir::SubdSymmetryKind::Correspondence {}
+            wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                .len(),
+            1
+        );
+        let symmetry =
+            &wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                [0];
+        assert_eq!(
+            wire::field::<subd::SubdSymmetryKind>(&(symmetry), "kind"),
+            cadmpeg_ir::SubdSymmetryKind::Correspondence {}
         );
         assert_eq!(
-            symmetry.plane.origin(),
+            wire::field::<cadmpeg_ir::math::Point3>(&(symmetry.plane), "origin"),
             cadmpeg_ir::math::Point3::new(0.0, 20.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis(),
+            wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "first_axis"),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis(),
+            wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "second_axis"),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert_eq!(symmetry.face_pairs(), vec![[0, 0]]);
-        assert_eq!(symmetry.edge_pairs(), vec![[0, 0], [1, 2]]);
-        assert_eq!(symmetry.vertex_pairs(), vec![[0, 1]]);
+        assert_eq!(
+            wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "face_pairs"),
+            vec![[0, 0]]
+        );
+        assert_eq!(
+            wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "edge_pairs"),
+            vec![[0, 0], [1, 2]]
+        );
+        assert_eq!(
+            wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "vertex_pairs"),
+            vec![[0, 1]]
+        );
     }
 
     #[test]
@@ -1685,14 +1718,16 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0.1 0 0 1\n0g 0.2 0 0 1\n0g 0.3 0 0 1\n0g 0.4 0 0 1\n0g 0.5 0 0 1\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("rectangular sector grid");
-        let layout = cage.surface.cage.vertices()[0]
-            .secondary_grips()
-            .expect("secondary grip layout");
+        let layout = wire::field_or_default::<Option<subd::SubdVertexGripLayout>>(
+            &(wire::field::<Vec<subd::SubdVertex>>(&(cage.surface.cage), "vertices")[0]),
+            "secondary_grips",
+        )
+        .expect("secondary grip layout");
         let SubdGripWedge::Slot {
             spokes: first_spokes,
             sectors: first_sectors,
             ..
-        } = &layout.wedges()[0]
+        } = &wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges")[0]
         else {
             panic!("first wedge is a fan slot");
         };
@@ -1700,7 +1735,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
             spokes: second_spokes,
             sectors: second_sectors,
             ..
-        } = &layout.wedges()[1]
+        } = &wire::field::<Vec<subd::SubdGripWedge>>(&(layout), "wedges")[1]
         else {
             panic!("second wedge is a fan slot");
         };
@@ -1713,7 +1748,7 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .iter()
                 .chain(first_sectors)
                 .chain(second_spokes)
-                .map(|grip| grip.as_ref().unwrap().source_index())
+                .map(|grip| wire::field::<u32>(&(grip.as_ref().unwrap()), "source_index"))
                 .collect::<Vec<_>>(),
             vec![4, 5, 6, 7, 8]
         );
@@ -1755,11 +1790,14 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         )
         .expect("knot intervals");
         let expected = [0.5, 0.25, 0.125, 0.0625];
-        for (edge, expected) in cage.surface.cage.edges().iter().zip(expected) {
-            let actual = edge.knot_interval().expect("knot interval");
+        for (edge, expected) in wire::field::<Vec<subd::SubdEdge>>(&(cage.surface.cage), "edges")
+            .iter()
+            .zip(expected)
+        {
+            let actual = wire::field_or_default::<Option<f64>>(&(edge), "knot_interval")
+                .expect("knot interval");
             assert!((actual - expected).abs() < EPS_KNOT_INTERVAL);
-            assert!(edge
-                .sharpness()
+            assert!(wire::field::<[f64; 2]>(&(edge), "sharpness")
                 .iter()
                 .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
         }
@@ -1773,7 +1811,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = parse_cage(source.as_bytes()).expect("edge-knot mirror");
         assert!(cage.unknown_record_kinds.is_empty());
-        assert_eq!(cage.surface.cage.edges().len(), 4);
+        assert_eq!(
+            wire::field::<Vec<subd::SubdEdge>>(&(cage.surface.cage), "edges").len(),
+            4
+        );
     }
 
     #[test]
@@ -1784,7 +1825,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
         let cage = parse_cage(source.as_bytes()).expect("deleted edge-knot slot");
         assert!(cage.unknown_record_kinds.is_empty());
-        assert_eq!(cage.surface.cage.edges().len(), 4);
+        assert_eq!(
+            wire::field::<Vec<subd::SubdEdge>>(&(cage.surface.cage), "edges").len(),
+            4
+        );
     }
 
     #[test]
@@ -1818,28 +1862,43 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
         assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
-        assert_eq!(cage.surface.cage.symmetries().len(), 1);
-        let symmetry = &cage.surface.cage.symmetries()[0];
-        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = symmetry.kind() else {
+        assert_eq!(
+            wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                .len(),
+            1
+        );
+        let symmetry =
+            &wire::field_or_default::<Vec<subd::SubdSymmetry>>(&(cage.surface.cage), "symmetries")
+                [0];
+        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) =
+            wire::field::<subd::SubdSymmetryKind>(&(symmetry), "kind")
+        else {
             panic!("radial symmetry kind");
         };
-        let radial_maps = radial.radial_maps();
-        assert_eq!((radial.segments().get(), radial.sweep()), (4, 1.0));
+        let radial_maps =
+            wire::field_or_default::<Vec<subd::SubdRadialSymmetryMap>>(&(radial), "radial_maps");
         assert_eq!(
-            symmetry.plane.origin(),
+            (
+                wire::field::<std::num::NonZeroU32>(&(radial), "segments").get(),
+                wire::field::<f64>(&(radial), "sweep")
+            ),
+            (4, 1.0)
+        );
+        assert_eq!(
+            wire::field::<cadmpeg_ir::math::Point3>(&(symmetry.plane), "origin"),
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.first_axis(),
+            wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "first_axis"),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
         );
         assert_eq!(
-            symmetry.plane.second_axis(),
+            wire::field::<cadmpeg_ir::math::Vector3>(&(symmetry.plane), "second_axis"),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert!(symmetry.face_pairs().is_empty());
-        assert!(symmetry.edge_pairs().is_empty());
-        assert!(symmetry.vertex_pairs().is_empty());
+        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "face_pairs").is_empty());
+        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "edge_pairs").is_empty());
+        assert!(wire::field_or_default::<Vec<[u32; 2]>>(&(symmetry), "vertex_pairs").is_empty());
         assert_eq!(
             *radial_maps,
             vec![
@@ -1885,15 +1944,20 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let replacement = format!("105r ef {native_id} {native_id}\n");
         let native = source.replace("105r ef 0 1\n", &replacement);
         let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
-        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = cage.surface.cage.symmetries()[0].kind()
-        else {
+        let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = wire::field::<subd::SubdSymmetryKind>(
+            &(wire::field_or_default::<Vec<subd::SubdSymmetry>>(
+                &(cage.surface.cage),
+                "symmetries",
+            )[0]),
+            "kind",
+        ) else {
             panic!("radial symmetry kind");
         };
-        let ef = radial
-            .radial_maps()
-            .iter()
-            .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
-            .expect("ef radial map");
+        let ef =
+            wire::field_or_default::<Vec<subd::SubdRadialSymmetryMap>>(&(radial), "radial_maps")
+                .into_iter()
+                .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+                .expect("ef radial map");
         assert_eq!(ef.pairs, vec![[native_id, native_id]]);
     }
 
@@ -1970,14 +2034,30 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         );
     }
 
-    fn assert_quad(cage: &cadmpeg_ir::subd::SubdSurface) {
-        assert_eq!(cage.cage.vertices().len(), 4);
-        assert_eq!(cage.cage.edges().len(), 4);
-        assert_eq!(cage.cage.faces().len(), 1);
-        assert_eq!(cage.cage.vertices()[1].point().x, 10.0);
-        assert!(cage.cage.faces()[0]
-            .edges()
-            .iter()
-            .all(|use_| !use_.reversed));
+    fn assert_quad(cage: &subd::SubdSurface) {
+        assert_eq!(
+            wire::field::<Vec<subd::SubdVertex>>(&(cage.cage), "vertices").len(),
+            4
+        );
+        assert_eq!(
+            wire::field::<Vec<subd::SubdEdge>>(&(cage.cage), "edges").len(),
+            4
+        );
+        assert_eq!(
+            wire::field::<Vec<subd::SubdFace>>(&(cage.cage), "faces").len(),
+            1
+        );
+        assert_eq!(
+            wire::field::<Vec<subd::SubdVertex>>(&(cage.cage), "vertices")[1]
+                .point()
+                .x,
+            10.0
+        );
+        assert!(wire::field::<Vec<subd::SubdEdgeUse>>(
+            &(wire::field::<Vec<subd::SubdFace>>(&(cage.cage), "faces")[0]),
+            "edges"
+        )
+        .iter()
+        .all(|use_| !use_.reversed));
     }
 }
