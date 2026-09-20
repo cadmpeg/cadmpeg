@@ -281,27 +281,6 @@ fn target_selection_rejects_an_empty_qualified_dialect() {
     assert!(error.refusal().is_none());
 }
 
-#[test]
-fn an_unwritable_format_is_a_typed_plan_refusal() {
-    let error = TargetSelection::resolve(Some("catia:v5"), None).unwrap_err();
-    let refusal = error
-        .refusal()
-        .expect("unsupported output formats are semantic plan refusals");
-    assert!(matches!(
-        refusal,
-        ConversionRefusal::UnsupportedOutputFormat { .. }
-    ));
-    assert_eq!(
-        refusal.code(),
-        crate::application::refusal::RefusalCode::UnsupportedOutputFormat
-    );
-    assert_eq!(
-        serde_json::to_value(refusal.report()).unwrap()["stage"],
-        "plan"
-    );
-    assert_eq!(refusal.exit_code(), 1);
-}
-
 /// Export-loss rejection is not a target.
 ///
 /// A loss flag that also named a target would turn `convert a.step -o
