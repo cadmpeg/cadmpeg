@@ -554,12 +554,19 @@ const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
 
 /// The Sylvester matrix of the two conics read as quadratics in v, with each
 /// entry taken from its coefficient by `entry`.
+///
+/// Four entries are the shape's own zeros rather than a polynomial that
+/// happens to vanish, so they are `None` and the permutations that select them
+/// contribute nothing. That is what bounds the determinant's degree: a
+/// permutation with no `None` takes column 3 from row 1 or row 3 and column 0
+/// from row 0 or row 2, which leaves eight permutations, each of total degree
+/// four. The permutations that do select a `None` reach total degree five.
 fn sylvester_matrix(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
     entry: impl Fn(Coefficient) -> f64,
-) -> [[Vec<f64>; 4]; 4] {
-    let zero = vec![0.0];
+) -> [[Option<Vec<f64>>; 4]; 4] {
+    let zero = None;
     let first_y2 = vec![entry(first.vv)];
     let first_y = vec![entry(first.v), entry(first.uv)];
     let first_constant = vec![entry(first.constant), entry(first.u), entry(first.uu)];
@@ -568,19 +575,24 @@ fn sylvester_matrix(
     let second_constant = vec![entry(second.constant), entry(second.u), entry(second.uu)];
     [
         [
-            first_y2.clone(),
-            first_y.clone(),
-            first_constant.clone(),
+            Some(first_y2.clone()),
+            Some(first_y.clone()),
+            Some(first_constant.clone()),
             zero.clone(),
         ],
-        [zero.clone(), first_y2, first_y, first_constant],
         [
-            second_y2.clone(),
-            second_y.clone(),
-            second_constant.clone(),
+            zero.clone(),
+            Some(first_y2),
+            Some(first_y),
+            Some(first_constant),
+        ],
+        [
+            Some(second_y2.clone()),
+            Some(second_y.clone()),
+            Some(second_constant.clone()),
             zero.clone(),
         ],
-        [zero, second_y2, second_y, second_constant],
+        [zero, Some(second_y2), Some(second_y), Some(second_constant)],
     ]
 }
 
@@ -589,14 +601,31 @@ fn sylvester_matrix(
 /// `sign` is the identity for the determinant itself and `f64::abs` for the
 /// sum of the magnitudes of the same products, which is what a matrix of term
 /// magnitudes folds to.
-fn sylvester_polynomial(matrix: &[[Vec<f64>; 4]; 4], sign: impl Fn(f64) -> f64) -> Vec<f64> {
-    let mut determinant = vec![0.0; 9];
+///
+/// The length of the returned vector is the degree the construction reaches
+/// plus one. It is stated by the fold rather than allocated ahead of it: each
+/// contributing permutation's product extends the determinant to its own
+/// length. For two plane conics that length is five, which
+/// `conic_resultant_is_a_quartic` pins.
+fn sylvester_polynomial(
+    matrix: &[[Option<Vec<f64>>; 4]; 4],
+    sign: impl Fn(f64) -> f64,
+) -> Vec<f64> {
+    let mut determinant = Vec::new();
     for (permutation, permutation_sign) in QUARTIC_RESULTANT_PERMUTATIONS {
-        let term = (0..4).fold(vec![1.0], |term, row| {
-            polynomial_product(&term, &matrix[row][permutation[row]])
-        });
-        for (power, coefficient) in term.into_iter().enumerate() {
-            determinant[power] += sign(permutation_sign) * coefficient;
+        let Some(term) = (0..4).try_fold(vec![1.0], |term, row| {
+            Some(polynomial_product(
+                &term,
+                matrix[row][permutation[row]].as_deref()?,
+            ))
+        }) else {
+            continue;
+        };
+        if determinant.len() < term.len() {
+            determinant.resize(term.len(), 0.0);
+        }
+        for (entry, coefficient) in determinant.iter_mut().zip(term) {
+            *entry += sign(permutation_sign) * coefficient;
         }
     }
     determinant
@@ -1155,7 +1184,8 @@ pub(in crate::decode) fn plane_cone_conic(
 
 #[cfg(test)]
 mod tests {
-    use super::ConeEquation;
+    use super::{ConeEquation, PlaneConicEquation};
+    use crate::decode::quadratic::Coefficient;
     use std::f64::consts::FRAC_PI_2;
 
     const ORIGIN: [f64; 3] = [1.0, 2.0, 3.0];
@@ -1164,6 +1194,35 @@ mod tests {
 
     fn cone(radius: f64, ratio: f64, half_angle: f64) -> Option<ConeEquation> {
         ConeEquation::new(ORIGIN, AXIS, REF_DIRECTION, radius, ratio, half_angle)
+    }
+
+    /// A conic whose six coefficients are all nonzero, so no permutation of the
+    /// Sylvester matrix drops out through a coefficient that happens to vanish.
+    fn dense_conic(coefficients: [f64; 6]) -> PlaneConicEquation {
+        let [uu, uv, vv, u, v, constant] = coefficients.map(Coefficient::single);
+        PlaneConicEquation {
+            uu,
+            uv,
+            vv,
+            u,
+            v,
+            constant,
+        }
+    }
+
+    #[test]
+    fn conic_resultant_is_a_quartic() {
+        // The Sylvester matrix of two plane conics read as quadratics in v
+        // carries four structural zeros. Every permutation that avoids them has
+        // total degree four, so the resultant has five coefficients however
+        // dense the conics are.
+        let resultant = super::conic_resultant(
+            dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]),
+            dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]),
+        );
+
+        assert_eq!(resultant.len(), 5);
+        assert!(resultant[4].value != 0.0);
     }
 
     #[test]
