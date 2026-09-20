@@ -6294,6 +6294,8 @@ impl<B> BodyMembers<B> {
 
     /// Number of paired selection rows.
     #[must_use]
+    // Construction and deserialization reject empty selections.
+    #[allow(clippy::len_without_is_empty)]
     pub const fn len(&self) -> usize {
         self.0.len()
     }
@@ -6309,6 +6311,8 @@ impl<B> BodyMembers<B> {
     }
 }
 
+// Callers use borrowed iteration; a separate `iter` accessor has no callers.
+#[allow(clippy::into_iter_without_iter)]
 impl<'a, B> IntoIterator for &'a BodyMembers<B> {
     type Item = &'a BodyMember<B>;
     type IntoIter = std::slice::Iter<'a, BodyMember<B>>;
