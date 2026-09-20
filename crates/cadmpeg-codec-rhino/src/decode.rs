@@ -342,7 +342,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Looks up a scanned object by deterministic source order.
     #[cfg(test)]
-    pub(crate) fn object(&self, source_order: usize) -> Option<&ObjectDescriptor> {
+    fn object(&self, source_order: usize) -> Option<&ObjectDescriptor> {
         self.scan
             .objects
             .get(source_order)
@@ -351,17 +351,17 @@ impl<'a> DecodeContext<'a> {
 
     /// Looks up the retained unknown record for a source-order object.
     #[cfg(test)]
-    pub(crate) fn unknown(&self, source_order: usize) -> Option<&UnknownRecord> {
+    fn unknown(&self, source_order: usize) -> Option<&UnknownRecord> {
         self.unknowns.get(source_order)
     }
 
     #[cfg(test)]
-    pub(crate) fn unknown_mut(&mut self, source_order: usize) -> Option<&mut UnknownRecord> {
+    fn unknown_mut(&mut self, source_order: usize) -> Option<&mut UnknownRecord> {
         self.unknowns.get_mut(source_order)
     }
 
     #[cfg(test)]
-    pub(crate) fn unknown_count(&self) -> usize {
+    fn unknown_count(&self) -> usize {
         self.unknowns.len()
     }
 
@@ -433,12 +433,12 @@ impl<'a> DecodeContext<'a> {
 
     /// Returns mutable IR for the current decode transaction.
     #[cfg(test)]
-    pub(crate) fn ir_mut(&mut self) -> &mut CadIr {
+    fn ir_mut(&mut self) -> &mut CadIr {
         &mut self.ir
     }
 
     #[cfg(test)]
-    pub(crate) fn reject_duplicate_entity_candidate(&mut self) -> String {
+    fn reject_duplicate_entity_candidate(&mut self) -> String {
         self.ir.model.points.push(
             Point::new(
                 "rhino:test:point#duplicate"

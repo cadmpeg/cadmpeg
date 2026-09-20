@@ -261,7 +261,7 @@ pub(crate) fn units_record(archive: ArchiveVersion, unit: i32) -> Vec<u8> {
     crc_chunk(archive, 0x2000_8031, &body)
 }
 
-pub(crate) fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
+fn content_hash(archive: ArchiveVersion) -> Vec<u8> {
     let mut body = 123_u64.to_le_bytes().to_vec();
     body.extend(456_u64.to_le_bytes());
     body.extend(789_u64.to_le_bytes());
@@ -356,7 +356,7 @@ pub(crate) fn model_component_attributes(
     crc_chunk(archive, 0x4000_8002, &payload)
 }
 
-pub(crate) fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
+fn reference_settings(archive: ArchiveVersion) -> Vec<u8> {
     let mut implementation_body = 0_i32.to_le_bytes().to_vec();
     implementation_body.extend(0_i32.to_le_bytes());
     implementation_body.push(0);
@@ -1157,7 +1157,7 @@ pub(crate) fn polyedge_scan_objects() -> Vec<Vec<u8>> {
     ]
 }
 
-pub(crate) fn polyedge_class_wire() -> [u8; 16] {
+fn polyedge_class_wire() -> [u8; 16] {
     crate::polyedge::CURVE_CLASS.to_wire()
 }
 

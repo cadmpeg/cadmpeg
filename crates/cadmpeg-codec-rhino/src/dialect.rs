@@ -73,7 +73,7 @@ const DECLARED_OPENNURBS_WRITER_VERSION: &str = "opennurbs_writer_version";
 impl ArchiveVersion {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 11] = [
+    const ALL: [Self; 11] = [
         Self::V1,
         Self::V2,
         Self::V3,

@@ -42,13 +42,13 @@ pub(crate) struct HatchLoop {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GradientColorStop {
-    pub(crate) color: [u8; 4],
-    pub(crate) position: f64,
+struct GradientColorStop {
+    color: [u8; 4],
+    position: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GradientKind {
+enum GradientKind {
     None,
     Linear,
     Radial,
@@ -91,11 +91,11 @@ impl GradientKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Gradient {
-    pub(crate) kind: GradientKind,
-    pub(crate) start: [f64; 3],
-    pub(crate) end: [f64; 3],
-    pub(crate) repeat: f64,
-    pub(crate) colors: Vec<GradientColorStop>,
+    kind: GradientKind,
+    start: [f64; 3],
+    end: [f64; 3],
+    repeat: f64,
+    colors: Vec<GradientColorStop>,
 }
 
 #[derive(Debug, Clone)]

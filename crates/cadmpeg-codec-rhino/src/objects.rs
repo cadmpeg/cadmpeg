@@ -151,7 +151,7 @@ pub(crate) enum ColorSource {
 }
 
 impl ColorSource {
-    pub(crate) fn parse(raw: u8) -> Self {
+    fn parse(raw: u8) -> Self {
         match raw {
             0 => Self::Layer,
             1 => Self::Object,
@@ -176,9 +176,9 @@ impl ColorSource {
 #[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ObjectAttributes {
     /// Complete source range.
-    pub(crate) source: SourceRange,
+    source: SourceRange,
     /// Packed attribute version.
-    pub(crate) version: (u8, u8),
+    version: (u8, u8),
     /// Raw object UUID.
     pub(crate) object_id: Uuid,
     /// Raw layer archive index.
@@ -188,13 +188,13 @@ pub(crate) struct ObjectAttributes {
     /// Raw object color.
     pub(crate) color: [u8; 4],
     /// Obsolete line style width.
-    pub(crate) obsolete_line_style: i16,
+    obsolete_line_style: i16,
     /// Obsolete line style index.
-    pub(crate) obsolete_line_style_index: i16,
+    obsolete_line_style_index: i16,
     /// Obsolete thickness.
-    pub(crate) obsolete_thickness: f64,
+    obsolete_thickness: f64,
     /// Obsolete scale.
-    pub(crate) obsolete_scale: f64,
+    obsolete_scale: f64,
     /// Raw visibility.
     pub(crate) visible: bool,
     /// Color source selector.
@@ -236,13 +236,13 @@ pub(crate) struct ObjectAttributes {
     /// Display order.
     pub(crate) display_order: i32,
     /// Clipping-plane participation selector.
-    pub(crate) clip_participation_source: u8,
+    clip_participation_source: u8,
     /// Clipping proof flag.
     pub(crate) clipping_proof: bool,
     /// Clipping-plane UUIDs.
     pub(crate) clipping_plane_ids: Vec<Uuid>,
     /// Section-attributes source selector.
-    pub(crate) section_attributes_source: u8,
+    section_attributes_source: u8,
     /// Hatch-pattern archive index.
     pub(crate) hatch_pattern_index: i32,
     /// Section-hatch scale.
@@ -258,25 +258,25 @@ pub(crate) struct ObjectAttributes {
     /// Whether a detail requests its display-mode background.
     pub(crate) detail_background_visible: bool,
     /// Object frame transform.
-    pub(crate) object_frame: Option<Xform>,
+    object_frame: Option<Xform>,
     /// Section-fill rule.
     pub(crate) section_fill_rule: u8,
     /// Obsolete line-cap source.
-    pub(crate) line_cap_source: u8,
+    line_cap_source: u8,
     /// Obsolete line-cap style.
-    pub(crate) line_cap_style: u8,
+    line_cap_style: u8,
     /// Obsolete line-join source.
-    pub(crate) line_join_source: u8,
+    line_join_source: u8,
     /// Obsolete line-join style.
-    pub(crate) line_join_style: u8,
+    line_join_style: u8,
     /// Clipping-plane label style.
     pub(crate) clipping_plane_label_style: u8,
     /// Obsolete selective-clipping-list flag.
-    pub(crate) selective_clipping_list: bool,
+    selective_clipping_list: bool,
     /// Direct embedded linetype.
-    pub(crate) embedded_linetype: Option<settings::EmbeddedDescriptor>,
+    embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
-    pub(crate) embedded_section_style: Option<settings::EmbeddedDescriptor>,
+    embedded_section_style: Option<settings::EmbeddedDescriptor>,
     /// Per-object custom render-mesh settings.
     pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
     /// Per-object mesh modifier userdata.
@@ -320,7 +320,7 @@ pub(crate) struct LayerRef {
 }
 
 /// Builds a stable source ID without minting a `CadIr` entity ID.
-pub(crate) fn stable_source_id(scope: &str, kind: &str, key: &str) -> String {
+fn stable_source_id(scope: &str, kind: &str, key: &str) -> String {
     format!("rhino:{scope}:{kind}#{key}")
 }
 
@@ -328,13 +328,13 @@ pub(crate) fn stable_source_id(scope: &str, kind: &str, key: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HistoryDescriptor {
     /// Complete history wrapper range.
-    pub(crate) range: Range<usize>,
+    range: Range<usize>,
     /// Packed history version.
-    pub(crate) version: (u8, u8),
+    version: (u8, u8),
     /// History header child range.
-    pub(crate) header_range: Option<Range<usize>>,
+    header_range: Option<Range<usize>>,
     /// History data child range.
-    pub(crate) data_range: Option<Range<usize>>,
+    data_range: Option<Range<usize>>,
 }
 
 /// Attribute payload admission state for a framed object.

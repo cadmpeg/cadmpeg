@@ -44,8 +44,8 @@ pub(crate) struct EdgeDomains {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PersistentReference {
     pub(crate) object_id: Uuid,
-    pub(crate) component: [i32; 2],
-    pub(crate) domains: EdgeDomains,
+    component: [i32; 2],
+    domains: EdgeDomains,
 }
 
 #[derive(Debug, Clone, PartialEq)]

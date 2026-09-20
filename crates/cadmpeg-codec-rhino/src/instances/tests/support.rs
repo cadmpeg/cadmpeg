@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::wire::Uuid;
 
-pub(crate) fn static_definition(
+pub(super) fn static_definition(
     id: [u8; 16],
     members: &[[u8; 16]],
 ) -> crate::instances::InstanceDefinition {
@@ -23,7 +23,7 @@ pub(crate) fn static_definition(
     }
 }
 
-pub(crate) fn install_definitions(
+pub(super) fn install_definitions(
     scan: &mut crate::container::Scan<'_>,
     definitions: Vec<crate::instances::InstanceDefinition>,
 ) {

@@ -467,15 +467,15 @@ impl UnitBinding {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct SubDDisplayParameters {
     /// Anonymous chunk minor version.
-    pub(crate) version: i32,
+    version: i32,
     /// Adaptive display density.
     pub(crate) display_density: u32,
     /// Component location enum.
     pub(crate) mesh_location: u32,
     /// Whether the display density is absolute, introduced at version 2.
-    pub(crate) display_density_is_absolute: Option<bool>,
+    display_density_is_absolute: Option<bool>,
     /// Whether curvature is computed, introduced at version 3.
-    pub(crate) compute_curvature: Option<bool>,
+    compute_curvature: Option<bool>,
 }
 
 /// Serialized mesh parameters used by settings records.
@@ -490,41 +490,41 @@ pub(crate) struct MeshParameters {
     /// Whether simple planes are used.
     pub(crate) simple_planes: bool,
     /// Whether refinement is enabled.
-    pub(crate) refine: bool,
+    refine: bool,
     /// Whether jagged seams are allowed.
-    pub(crate) jagged_seams: bool,
+    jagged_seams: bool,
     /// Obsolete weld field retained in the wire layout.
     pub(crate) obsolete_weld: i32,
     /// Meshing tolerance.
     pub(crate) tolerance: f64,
     /// Minimum edge length.
-    pub(crate) min_edge_length: f64,
+    min_edge_length: f64,
     /// Maximum edge length.
-    pub(crate) max_edge_length: f64,
+    max_edge_length: f64,
     /// Grid aspect ratio.
-    pub(crate) grid_aspect_ratio: f64,
+    grid_aspect_ratio: f64,
     /// Minimum grid count.
-    pub(crate) grid_min_count: i32,
+    grid_min_count: i32,
     /// Maximum grid count.
-    pub(crate) grid_max_count: i32,
+    grid_max_count: i32,
     /// Grid angle in radians.
-    pub(crate) grid_angle_radians: f64,
+    grid_angle_radians: f64,
     /// Grid amplification factor.
-    pub(crate) grid_amplification: f64,
+    grid_amplification: f64,
     /// Refinement angle in radians.
-    pub(crate) refine_angle_radians: f64,
+    refine_angle_radians: f64,
     /// Obsolete combine angle retained in the wire layout.
-    pub(crate) obsolete_combine_angle: f64,
+    obsolete_combine_angle: f64,
     /// Face-type enum: 0 mixed, 1 triangles, 2 quads.
-    pub(crate) face_type: i32,
+    face_type: i32,
     /// Texture-range mode, introduced at minor 1.
-    pub(crate) texture_range: Option<u32>,
+    texture_range: Option<u32>,
     /// Custom-settings flag, introduced at minor 2.
     pub(crate) custom_settings: Option<bool>,
     /// Relative tolerance, introduced at minor 2.
-    pub(crate) relative_tolerance: Option<f64>,
+    relative_tolerance: Option<f64>,
     /// Mesher selector, introduced at minor 3.
-    pub(crate) mesher: Option<u8>,
+    mesher: Option<u8>,
     /// Custom-settings-enabled flag, introduced at minor 4.
     pub(crate) custom_settings_enabled: Option<bool>,
     /// `SubD` display parameters, introduced at minor 5.
@@ -700,9 +700,9 @@ impl LayerPerViewportSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct EmbeddedDescriptor {
     /// Complete object chunk range.
-    pub(crate) source: SourceRange,
+    source: SourceRange,
     /// Direct object payload version.
-    pub(crate) version: (i32, i32),
+    version: (i32, i32),
 }
 
 /// All typed metadata produced by a scan.
@@ -794,7 +794,7 @@ pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingErro
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
 #[cfg(test)]
-pub(crate) fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
+fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
     let count_offset = reader.position();
     let count = usize::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "UTF-8 count overflow"))?;
@@ -1099,10 +1099,7 @@ pub(crate) fn standard_scale(value: i32) -> Option<f64> {
     StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }
 
-pub(crate) fn parse_units(
-    data: &[u8],
-    record: &Record,
-) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units(data: &[u8], record: &Record) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     parse_units_reader(&mut reader)
 }
@@ -1261,7 +1258,7 @@ fn parse_plugin_reference<'a>(
     Ok(())
 }
 
-pub(crate) fn parse_plugin_list(
+fn parse_plugin_list(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1443,7 +1440,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
     })
 }
 
-pub(crate) fn parse_settings_attributes(
+fn parse_settings_attributes(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -2460,7 +2457,7 @@ fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
     Ok(value)
 }
 
-pub(crate) fn parse_setting(
+fn parse_setting(
     data: &[u8],
     record: &Record,
     settings: &mut DocumentSettings,

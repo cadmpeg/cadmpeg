@@ -58,11 +58,7 @@ pub(crate) struct UnitDetail {
 }
 
 impl UnitDetail {
-    pub(crate) fn new(
-        unit: u32,
-        meters_per_unit: f64,
-        custom_name: String,
-    ) -> Result<Self, &'static str> {
+    fn new(unit: u32, meters_per_unit: f64, custom_name: String) -> Result<Self, &'static str> {
         if unit == 11 && !(meters_per_unit > 0.0 && meters_per_unit < UNSET_POSITIVE_VALUE) {
             return Err("custom meters-per-unit is invalid");
         }
@@ -190,14 +186,14 @@ impl InstanceDefinition {
 
 #[cfg(test)]
 impl InstanceDefinition {
-    pub(crate) fn file_reference(&self) -> Option<&FileReference> {
+    fn file_reference(&self) -> Option<&FileReference> {
         match &self.link {
             LinkSource::Structured(value) => Some(value),
             _ => None,
         }
     }
 
-    pub(crate) fn legacy_linked_path(&self) -> &str {
+    fn legacy_linked_path(&self) -> &str {
         match &self.link {
             LinkSource::LegacyFull(path) => path.as_str(),
             LinkSource::LegacyRelative {
@@ -208,14 +204,14 @@ impl InstanceDefinition {
         }
     }
 
-    pub(crate) fn legacy_relative_linked_path(&self) -> &str {
+    fn legacy_relative_linked_path(&self) -> &str {
         match &self.link {
             LinkSource::LegacyRelative { relative_path, .. } => relative_path.as_str(),
             _ => "",
         }
     }
 
-    pub(crate) fn legacy_relative_path(&self) -> bool {
+    fn legacy_relative_path(&self) -> bool {
         matches!(self.link, LinkSource::LegacyRelative { .. })
     }
 }
@@ -285,7 +281,7 @@ pub(crate) struct DefinitionDiagnostic {
     /// Diagnostic with the classification supplied by its producer.
     pub(crate) diagnostic: RhinoDiagnostic,
     /// Complete table-record range.
-    pub(crate) source_range: Range<usize>,
+    source_range: Range<usize>,
 }
 
 impl DefinitionDiagnostic {

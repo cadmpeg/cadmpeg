@@ -18,7 +18,7 @@ const EPS_CURVE_POSITION: f64 = 1.0e-8;
 const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
 
 /// Maximum embedded curve nesting depth.
-pub(crate) const MAX_CURVE_DEPTH: usize = 32;
+const MAX_CURVE_DEPTH: usize = 32;
 /// Maximum points or polycurve segments in one payload.
 const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
 
@@ -133,7 +133,7 @@ impl DecodedCurve {
         }
     }
 
-    pub(crate) fn warnings_mut(&mut self) -> &mut Diagnostics {
+    fn warnings_mut(&mut self) -> &mut Diagnostics {
         match self {
             Self::Leaf { warnings, .. } | Self::Compound { warnings, .. } => warnings,
         }

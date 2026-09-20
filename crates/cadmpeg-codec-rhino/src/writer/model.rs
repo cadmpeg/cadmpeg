@@ -73,7 +73,7 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) source: &'a Coedge,
     pub(super) edge: usize,
     pub(super) owner_loop: usize,
-    pub(super) radial_next: usize,
+    radial_next: usize,
     pub(super) c2: ([u8; 16], Vec<u8>),
     pub(super) fit_tolerance: f64,
 }
