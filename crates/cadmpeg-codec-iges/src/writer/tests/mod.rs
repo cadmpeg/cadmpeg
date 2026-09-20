@@ -990,13 +990,15 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
 #[test]
 fn conic_coefficients_preserve_extreme_finite_radii() {
     for radius in [1e-308, 1e-200, 1.0, 1e200, 1e308] {
-        let [a, c, f] = super::conic_coefficients(radius, radius).unwrap();
+        let [a, c, f] = super::conic_coefficients(radius, radius)
+            .expect("scaled circle coefficients remain representable");
         assert!(a.is_finite() && a > 0.0 && c == a && f.is_finite() && f < 0.0);
         let recovered = (-f).sqrt() / a.sqrt();
         assert!((recovered / radius - 1.0).abs() <= 16.0 * f64::EPSILON);
     }
     assert_eq!(
-        super::conic_coefficients(2.0, 1.0).unwrap(),
+        super::conic_coefficients(2.0, 1.0)
+            .expect("ordinary ellipse coefficients remain representable"),
         [0.25, 1.0, -1.0]
     );
     assert!(super::conic_coefficients(1e-200, 1e200).is_err());
