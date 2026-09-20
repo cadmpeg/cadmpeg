@@ -1,6 +1,6 @@
 # Follow-up numerical and duplicate-function audit
 
-Date: 2026-09-20. Branch: `feat/finish-illegal-states`. This is a new audit after the [previous 47-item repair](../2026-09-20-numerical-duplicates/resolutions.md). Production source was not changed by this audit.
+Date: 2026-09-20. Branch: `feat/finish-illegal-states`. This is a new audit after the [previous 47-item repair](../2026-09-20-numerical-duplicates/resolutions.md). The audit itself did not change production source. The subsequent [repair and verification](resolutions.md) closes all 30 findings.
 
 **30 ranked new findings: 21 numerical defects and 9 duplicate/forwarding implementations.** All 21 crate directories were included in the function census and candidate screening (20 workspace members plus the excluded fuzz crate). No crate has more than 8 ranked findings; the requested 30-per-crate cap did not remove any ranked item.
 
@@ -44,4 +44,4 @@ Zero means no additional confirmed ranked finding in this pass. It does not prov
 - Duplicate findings were reviewed in source; syntactic similarity alone was not treated as a behavior defect. Refactor benefit is qualified where the output types differ.
 - Concurrent visibility edits were present. Fingerprints and final checks distinguish source changes from numerical evidence. No other worker's changes were staged or reverted.
 
-Run from the repository root: `python3 docs/audits/2026-09-20-numerical-duplicates-followup/evidence/reproduce.py`. It writes artifacts to a temporary directory and requires `rustc` plus compatible cached `cadmpeg_ir`/`cadmpeg_core` rlibs. It does not run Cargo.
+Historical reproducer, for the audited source revision `4009fddf0b` and compatible cached libraries: `python3 docs/audits/2026-09-20-numerical-duplicates-followup/evidence/reproduce.py`. It writes artifacts to a temporary directory and requires `rustc` plus compatible cached `cadmpeg_ir`/`cadmpeg_core` rlibs. It does not run Cargo.

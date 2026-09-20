@@ -1,0 +1,54 @@
+crates/cadmpeg-codec-freecad/src/brep.rs:3730: formatted_malformed_error: Use a structured codec error instead of Malformed(format!(...)).
+crates/cadmpeg-codec-freecad/src/brep.rs:3735: formatted_malformed_error: Use a structured codec error instead of Malformed(format!(...)).
+crates/cadmpeg-codec-freecad/src/brep.rs:3738: formatted_malformed_error: Use a structured codec error instead of Malformed(format!(...)).
+crates/cadmpeg-codec-freecad/src/brep.rs:3746: formatted_malformed_error: Use a structured codec error instead of Malformed(format!(...)).
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:11: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:11: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:27: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:27: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:41: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:55: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:55: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:69: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:69: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:83: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:97: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:97: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:111: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:125: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:139: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:139: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:139: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:151: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:151: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:163: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:163: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:163: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:177: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:177: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:177: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:191: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:207: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:221: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:221: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:233: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:233: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:247: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:247: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:261: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:261: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:275: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:289: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:303: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:319: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:319: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:333: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:347: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:347: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:347: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:361: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:375: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:375: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:389: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:403: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.
+docs/audits/2026-09-20-numerical-duplicates-followup/ranked-findings.md:417: authoring_path: Checked-in absolute path '/home/pcurve/' names an authoring machine; elide or digest the value instead.

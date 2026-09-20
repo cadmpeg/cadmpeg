@@ -1,0 +1,11 @@
+error: unused import: `alloc_filled`
+  --> crates/cadmpeg-codec-iges/src/entities/surfaces.rs:13:28
+   |
+13 | use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
+   |                            ^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: could not compile `cadmpeg-codec-iges` (lib) due to 1 previous error
+error: could not compile `cadmpeg-codec-iges` (lib test) due to 1 previous error
