@@ -387,15 +387,6 @@ fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<us
     Ok(entry_count)
 }
 
-/// The closed structural role of one physical container range.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpanRole {
-    /// A ZIP structural range.
-    Zip(ZipSpanRole),
-    /// A CFB structural range.
-    Cfb(CfbSpanRole),
-}
-
 /// The structural role of a ZIP physical range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ZipSpanRole {
@@ -434,36 +425,6 @@ pub enum ZipSpanRole {
     EndRecord,
 }
 
-/// The structural role of a CFB physical range.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CfbSpanRole {
-    /// CFB file header.
-    Header,
-    /// CFB version-4 range-lock sector.
-    RangeLockSector,
-    /// CFB file-allocation-table sector.
-    Fat,
-    /// CFB double-indirect file-allocation-table sector.
-    Difat,
-    /// CFB directory sector.
-    Directory,
-    /// CFB mini-file-allocation-table sector.
-    MiniFat,
-    /// CFB regular-sector payload for the named stream.
-    RegularStreamPayload(String),
-    /// CFB allocation padding, optionally owned by a stream.
-    Padding {
-        /// Owning entry, when the padding belongs to one.
-        entry: Option<String>,
-    },
-    /// CFB mini-sector payload for the named stream.
-    MiniStreamPayload(String),
-    /// Unallocated bytes inside the CFB root mini stream.
-    MiniStreamPadding,
-    /// Unallocated CFB sector.
-    UnallocatedSector,
-}
-
 impl ZipSpanRole {
     const fn label(&self) -> &'static str {
         match self {
@@ -486,7 +447,7 @@ impl ZipSpanRole {
     }
 }
 
-/// One exact physical range in an archive or compound file.
+/// One exact physical range in a ZIP archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalSpan {
     /// Inclusive byte offset.
@@ -494,7 +455,7 @@ pub struct PhysicalSpan {
     /// Exclusive byte offset.
     pub end: u64,
     /// Structural role, including an owning entry where applicable.
-    pub role: SpanRole,
+    pub role: ZipSpanRole,
 }
 
 fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
@@ -533,11 +494,7 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
 
 fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: ZipSpanRole) {
     if start < end {
-        regions.push(PhysicalSpan {
-            start,
-            end,
-            role: SpanRole::Zip(role),
-        });
+        regions.push(PhysicalSpan { start, end, role });
     }
 }
 
