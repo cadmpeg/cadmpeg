@@ -1270,16 +1270,12 @@ fn model_geometry_sections<'a>(sections: &[ScannedSection<'a>]) -> Vec<ScannedSe
 }
 
 fn surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    let mut rows = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        rows.extend(surface::rows(section_bytes).into_iter().map(|mut row| {
-            row.offset += section.section.offset();
-            row
-        }));
-    }
-    rows.sort_by_key(|row| row.offset);
-    rows
+    collect_section_records(
+        sections.iter(),
+        surface::rows,
+        |row, base| row.offset += base,
+        |row| row.offset,
+    )
 }
 
 fn cross_section_surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
@@ -1304,24 +1300,18 @@ fn surface_prototype_records(
     sections: &[ScannedSection<'_>],
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Vec<SurfacePrototypeRecord> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            surface::named_prototype_records(section_bytes, refusals)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    for parameter in &mut record.parameters {
-                        parameter.offset += section.section.offset();
-                        parameter.value_offset += section.section.offset();
-                    }
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        |bytes| surface::named_prototype_records(bytes, refusals),
+        |record, base| {
+            record.offset += base;
+            for parameter in &mut record.parameters {
+                parameter.offset += base;
+                parameter.value_offset += base;
+            }
+        },
+        |record| record.offset,
+    )
 }
 
 fn surface_parameters(sections: &[ScannedSection<'_>]) -> Vec<SurfaceParameterRecord> {
@@ -1739,27 +1729,20 @@ fn feature_entity_tables(
 ) -> Vec<FeatureEntityTable> {
     let feature_ids = feature_ids.iter().copied().collect();
     let surface_ids = rows.iter().map(|row| row.id).collect();
-    let mut tables = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "AllFeatur")
-    {
-        let section_bytes = section.region;
-        tables.extend(
-            feature::entity::entity_tables(section_bytes, &feature_ids, &surface_ids)
-                .into_iter()
-                .map(|mut table| {
-                    table.offset += section.section.offset();
-                    for entry in &mut table.entries {
-                        entry.offset += section.section.offset();
-                        entry.end_offset += section.section.offset();
-                    }
-                    table
-                }),
-        );
-    }
-    tables.sort_by_key(|table| table.offset);
-    tables
+    collect_section_records(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "AllFeatur"),
+        |bytes| feature::entity::entity_tables(bytes, &feature_ids, &surface_ids),
+        |table, base| {
+            table.offset += base;
+            for entry in &mut table.entries {
+                entry.offset += base;
+                entry.end_offset += base;
+            }
+        },
+        |table| table.offset,
+    )
 }
 
 fn feature_rows(sections: &[ScannedSection<'_>], feature_ids: &[u32]) -> Vec<FeatureRow> {
@@ -1970,42 +1953,28 @@ fn section_owner_ranges(
 }
 
 fn positional_replay_definitions(sections: &[ScannedSection<'_>]) -> Vec<FeatureDefinition> {
-    let mut definitions = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "FeatDefs")
-    {
-        let section_bytes = section.region;
-        definitions.extend(
-            feature::definitions::positional_replay_definitions(section_bytes)
-                .into_iter()
-                .map(|mut definition| {
-                    offset_feature_definition(&mut definition, section.section.offset());
-                    definition
-                }),
-        );
-    }
-    definitions.sort_by_key(|definition| definition.offset);
-    definitions
+    collect_section_records(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "FeatDefs"),
+        feature::definitions::positional_replay_definitions,
+        offset_feature_definition,
+        |definition| definition.offset,
+    )
 }
 
 fn feature_operations(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperation> {
-    let mut records = Vec::new();
-    for section in sections.iter().filter(|section| {
-        section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
-    }) {
-        let section_bytes = section.region;
-        records.extend(
-            feature::operations::operations(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.state_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
+    let records = collect_section_records(
+        sections.iter().filter(|section| {
+            section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+        }),
+        feature::operations::operations,
+        |record, base| {
+            record.offset += base;
+            record.state_offset += base;
+        },
+        |record| record.offset,
+    );
     let mut current = records
         .into_iter()
         .map(|record| (record.feature_id, record))
@@ -2036,23 +2005,17 @@ fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureRefere
 }
 
 fn feature_operation_states(sections: &[ScannedSection<'_>]) -> Vec<FeatureOperationState> {
-    let mut records = Vec::new();
-    for section in sections.iter().filter(|section| {
-        section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
-    }) {
-        let section_bytes = section.region;
-        records.extend(
-            feature::operations::operation_states(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.state_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter().filter(|section| {
+            section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
+        }),
+        feature::operations::operation_states,
+        |record, base| {
+            record.offset += base;
+            record.state_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Vec<FeatureRow> {
@@ -2676,7 +2639,7 @@ fn cross_sections<'a, 'data>(
 
 fn collect_section_records<'a, 'data: 'a, T>(
     sections: impl Iterator<Item = &'a ScannedSection<'data>>,
-    decode: impl Fn(&[u8]) -> Vec<T>,
+    mut decode: impl FnMut(&[u8]) -> Vec<T>,
     relocate: impl Fn(&mut T, usize),
     offset: impl Fn(&T) -> usize,
 ) -> Vec<T> {
