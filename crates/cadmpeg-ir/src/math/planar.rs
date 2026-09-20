@@ -64,8 +64,6 @@ fn scaled_displacement(start: Point2, end: Point2, minimum_scale: f64) -> (Point
 
 /// Parameters on the infinite line `start + t * (end - start)` at a circle.
 /// A tangent returns the same parameter twice. Invalid, degenerate and disjoint inputs return `None`.
-// Scaled coordinates and quadratic coefficients use standard mathematical names.
-#[allow(clippy::many_single_char_names)]
 pub fn line_circle_parameters(
     start: Point2,
     end: Point2,
@@ -80,15 +78,24 @@ pub fn line_circle_parameters(
     {
         return None;
     }
-    let (d, direction_scale) = scaled_displacement(start, end, 0.0);
+    let (direction, direction_scale) = scaled_displacement(start, end, 0.0);
     if direction_scale == 0.0 {
         return None;
     }
-    let length = d.u.hypot(d.v);
-    let unit = Point2::new(d.u / length, d.v / length);
+    let length = direction.u.hypot(direction.v);
+    // `(end - start) . (end - start) / direction_scale`, the divisor that turns a
+    // projection on `direction` into a parameter on `end - start`. It is formed
+    // exactly, so a tangent, whose half chord contributes nothing, keeps every bit
+    // the projection carries. The rounded hypotenuse reaches the parameter only
+    // through the half chord.
     let mut denominator = ExactSignedSum::default();
-    denominator.add_product(length, direction_scale);
+    denominator.add_factors([direction.u, direction.u, direction_scale]);
+    denominator.add_factors([direction.v, direction.v, direction_scale]);
     let denominator = denominator.finish()?;
+    // `|end - start|`, the divisor that turns the determinant into a distance.
+    let mut segment = ExactSignedSum::default();
+    segment.add_product(length, direction_scale);
+    let segment = segment.finish()?;
     // Form the determinant from the original coordinates. Normalizing the
     // direction first can rotate a distant, exactly incident line off a small circle.
     let mut determinant = ExactSignedSum::default();
@@ -104,29 +111,43 @@ pub fn line_circle_parameters(
     }
     let perpendicular = determinant
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(denominator))?
+        .map_or(Some(0.0), |value| value.quotient(segment))?
         .abs();
-    let radial_scale = radius.max(perpendicular);
-    let r = radius / radial_scale;
-    let perpendicular = perpendicular / radial_scale;
     // Only radial quantities contribute to this comparison. A distant line origin
     // must not widen the circle into a false tangent.
-    let error = 32.0 * f64::EPSILON * r.max(perpendicular);
-    if perpendicular > r && perpendicular - r > error {
+    let radial_scale = radius.max(perpendicular);
+    let normalized_radius = radius / radial_scale;
+    let perpendicular = perpendicular / radial_scale;
+    // A tangent touches at one point, so the difference is read against the
+    // rounding error its own two sides carry. Round to nearest moves a value by at
+    // most `f64::EPSILON / 2` of itself. `perpendicular` passes through eight such
+    // steps: the two coordinate differences and the two divisions that form
+    // `direction`, one ulp for the hypotenuse, the final rounding of each of the
+    // two exact sums, the quotient, and the division by `radial_scale`.
+    // `normalized_radius` passes through one. Products of those relative errors
+    // are second order against the half ulp each step rounds up to, and the
+    // subtraction itself is exact while the two sides stay within a factor of two,
+    // which is every case the band decides.
+    let difference = normalized_radius - perpendicular;
+    let tangency_error = 0.5 * f64::EPSILON * (8.0 * perpendicular + normalized_radius);
+    let half_chord = if difference.abs() <= tangency_error {
+        0.0
+    } else if difference < 0.0 {
         return None;
-    }
-    let half_chord = (r - perpendicular).max(0.0).sqrt() * (r + perpendicular).sqrt();
-    let parameter = |sign| {
+    } else {
+        difference.sqrt() * (normalized_radius + perpendicular).sqrt()
+    };
+    let parameter = |sign: f64| {
         let mut numerator = ExactSignedSum::default();
-        for (coordinate, direction) in [
-            (center.u, unit.u),
-            (-start.u, unit.u),
-            (center.v, unit.v),
-            (-start.v, unit.v),
+        for (coordinate, component) in [
+            (center.u, direction.u),
+            (-start.u, direction.u),
+            (center.v, direction.v),
+            (-start.v, direction.v),
         ] {
-            numerator.add_product(coordinate, direction);
+            numerator.add_product(coordinate, component);
         }
-        numerator.add_product(sign * half_chord, radial_scale);
+        numerator.add_factors([sign * half_chord, radial_scale, length]);
         numerator
             .finish()
             .map_or(Some(0.0), |value| value.quotient(denominator))
@@ -294,6 +315,43 @@ mod tests {
             );
             assert_eq!(orientation(a, b, Point2::new(0., -r)), Some(Ordering::Less));
         }
+    }
+
+    #[test]
+    fn a_tangent_line_states_one_repeated_root_at_every_scale() {
+        let center = Point2::new(0.0, 0.0);
+        for radius in [1e-150, 1e-4, 1.0, 1e150] {
+            assert_eq!(
+                line_circle_parameters(
+                    Point2::new(-radius, radius),
+                    Point2::new(radius, radius),
+                    center,
+                    radius
+                )
+                .unwrap(),
+                [0.5; 2]
+            );
+            assert!(line_circle_parameters(
+                Point2::new(-radius, 2.0 * radius),
+                Point2::new(radius, 2.0 * radius),
+                center,
+                radius
+            )
+            .is_none());
+        }
+        // This diagonal's perpendicular distance is `sqrt(2) / 2`, which no f64
+        // holds, so the two sides of the tangency comparison differ in their last
+        // bit. The touch parameter stays exact: it is the projection alone.
+        assert_eq!(
+            line_circle_parameters(
+                Point2::new(1.0, 0.0),
+                Point2::new(2.0, 1.0),
+                center,
+                0.5 * 2.0_f64.sqrt()
+            )
+            .unwrap(),
+            [-0.5; 2]
+        );
     }
 
     #[test]
