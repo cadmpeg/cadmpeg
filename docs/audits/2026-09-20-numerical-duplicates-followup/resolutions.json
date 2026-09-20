@@ -1,0 +1,272 @@
+[
+  {
+    "id": "IR2-01",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Shared Bezier extraction inserts active endpoints and indexes each span from its actual knots, including full-multiplicity breaks.",
+    "source": "crates/cadmpeg-ir/src/geometry/nurbs/bezier.rs",
+    "test_selection": "numerical_followup_bezier_spans_preserve_unclamped_and_discontinuous_curves",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-02",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Surface projection uses the shared scaled least-squares solver and unsquared residual norms.",
+    "source": "crates/cadmpeg-ir/src/eval/tests/numerical_followup.rs",
+    "test_selection": "numerical_followup_surface_projection_is_independent_of_scale",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-03",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Curve and pcurve search share a speed bound that removes common weight scaling before products.",
+    "source": "crates/cadmpeg-ir/src/geometry/nurbs/bounds.rs",
+    "test_selection": "numerical_followup_speed_bound_ignores_common_weight_scale; numerical_followup_rational_search_retains_common_weight_scaling",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-04",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Periodic curve mapping delegates to the finite periodic arithmetic and preserves its half-open canonical result.",
+    "source": "crates/cadmpeg-ir/src/eval/tests/numerical_followup.rs",
+    "test_selection": "numerical_followup_periodic_mapping_stays_finite_and_canonical",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-05",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Curve search retains unsquared Euclidean distances, including nonzero subnormal-scale residuals.",
+    "source": "crates/cadmpeg-ir/src/eval/tests/numerical_followup.rs",
+    "test_selection": "numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-06",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Quotient-law derivatives use extended-range product sums for numerator and denominator.",
+    "source": "crates/cadmpeg-ir/src/eval/tests/numerical_followup.rs",
+    "test_selection": "numerical_followup_sweep_quotient_retains_finite_derivatives",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-07",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "TANH, ARCSINH, ARCCOSH and ARCOTH use stable value and chain-derivative formulas.",
+    "source": "crates/cadmpeg-ir/src/eval/tests/numerical_followup.rs",
+    "test_selection": "numerical_followup_hyperbolic_laws_preserve_values_and_chain_derivatives",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IR2-08",
+    "crate": "cadmpeg-ir",
+    "status": "fixed",
+    "change": "Helix circular-frame admission uses the shared hypot-based vector norm.",
+    "source": "crates/cadmpeg-ir/src/geometry/tests/helix_payloads.rs",
+    "test_selection": "numerical_followup",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IGES2-01",
+    "crate": "cadmpeg-codec-iges",
+    "status": "fixed",
+    "change": "IGES now uses the corrected IR Bezier extraction, so boundary checks include the correct complete control polygons.",
+    "source": "crates/cadmpeg-codec-iges/src/entities/surfaces/tests.rs",
+    "test_selection": "numerical_followup",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "IGES2-02",
+    "crate": "cadmpeg-codec-iges",
+    "status": "fixed",
+    "change": "Boundary cross-products and thresholds are compared in extended range; underflow cannot turn a nonzero difference into equality.",
+    "source": "crates/cadmpeg-codec-iges/src/entities/surfaces/tests.rs",
+    "test_selection": "numerical_followup",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "F3D2-01",
+    "crate": "cadmpeg-codec-f3d",
+    "status": "fixed",
+    "change": "Boolean line/arc intersection uses the point-producing owner; the duplicate quadratic implementation is removed.",
+    "source": "crates/cadmpeg-codec-f3d/src/design/geometry/tests.rs",
+    "test_selection": "numerical_followup_boolean_line_arc_matches_point_intersections",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "F3D2-02",
+    "crate": "cadmpeg-codec-f3d",
+    "status": "fixed",
+    "change": "Profile speed bounds delegate to the shared scale-safe IR bound.",
+    "source": "crates/cadmpeg-codec-f3d/src/design/geometry/tests.rs",
+    "test_selection": "numerical_followup",
+    "implementation_commit": "e1388405e3"
+  },
+  {
+    "id": "F3D2-03",
+    "crate": "cadmpeg-codec-f3d",
+    "status": "fixed",
+    "change": "Canvas and decal decoding share stream/scope traversal and ID ordering in decode/image.rs.",
+    "source": "crates/cadmpeg-codec-f3d/src/design/decode/image.rs",
+    "test_selection": "canvas; decal",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "FREECAD2-01",
+    "crate": "cadmpeg-codec-freecad",
+    "status": "fixed",
+    "change": "Similarity admission compares relative column lengths and dot products of unit directions.",
+    "source": "crates/cadmpeg-codec-freecad/src/topology_transfer/tests.rs",
+    "test_selection": "numerical_followup_similarity_and_normalization_are_scale_independent",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "FREECAD2-02",
+    "crate": "cadmpeg-codec-freecad",
+    "status": "fixed",
+    "change": "Placed normals use unit_nonzero and refuse zero vectors instead of returning unnormalized vectors.",
+    "source": "crates/cadmpeg-codec-freecad/src/topology_transfer/tests.rs",
+    "test_selection": "numerical_followup_similarity_and_normalization_are_scale_independent",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "FREECAD2-03",
+    "crate": "cadmpeg-codec-freecad",
+    "status": "fixed",
+    "change": "All four matching TechDraw list grammars share envelope, count and record-type validation; record parsers stay separate.",
+    "source": "crates/cadmpeg-codec-freecad/src/gui.rs",
+    "test_selection": "gui::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "FREECAD2-04",
+    "crate": "cadmpeg-codec-freecad",
+    "status": "fixed",
+    "change": "Line and point styles share appearance and binding construction with explicit primitive style variants.",
+    "source": "crates/cadmpeg-codec-freecad/src/gui.rs",
+    "test_selection": "gui::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "FREECAD2-05",
+    "crate": "cadmpeg-codec-freecad",
+    "status": "fixed",
+    "change": "Curve2ds, Curves and Surfaces share table framing, allocation bounds and trailing-token checks.",
+    "source": "crates/cadmpeg-codec-freecad/src/brep.rs",
+    "test_selection": "brep::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "CREO2-01",
+    "crate": "cadmpeg-codec-creo",
+    "status": "fixed",
+    "change": "Analytic and sketch equations use one normalized, cancellation-resistant real-root solver; sketch admission remains at its owner.",
+    "source": "crates/cadmpeg-codec-creo/src/decode/quadratic.rs",
+    "test_selection": "numerical_followup_quadratic_roots_ignore_common_coefficient_scale; quadratic; nurbs_boundaries::",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "CREO2-02",
+    "crate": "cadmpeg-codec-creo",
+    "status": "fixed",
+    "change": "Circle intersection normalizes geometry before the tangent test and checks both radial residuals.",
+    "source": "crates/cadmpeg-codec-creo/src/feature/definitions.rs",
+    "test_selection": "numerical_followup_circle_intersection_requires_a_unique_tangent",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "CREO2-03",
+    "crate": "cadmpeg-codec-creo",
+    "status": "fixed",
+    "change": "Curve and surface namespace lookup share one array-name-parameterized ownership check.",
+    "source": "crates/cadmpeg-codec-creo/src/legacy_geometry.rs",
+    "test_selection": "legacy_geometry::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "NX2-01",
+    "crate": "cadmpeg-codec-nx",
+    "status": "fixed",
+    "change": "JT f32 transform rows are measured in f64, preserving finite extreme scales without loosening the orthogonality threshold.",
+    "source": "crates/cadmpeg-codec-nx/src/native/display_jt.rs",
+    "test_selection": "numerical_followup_jt_transform_accepts_extreme_finite_scales",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "NX2-02",
+    "crate": "cadmpeg-codec-nx",
+    "status": "fixed",
+    "change": "Index, linked and target rows share section framing, source-location resolution and admitted row numbering.",
+    "source": "crates/cadmpeg-codec-nx/src/native/om/column_row.rs",
+    "test_selection": "column_row::; native::om::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "NX2-03",
+    "crate": "cadmpeg-codec-nx",
+    "status": "fixed",
+    "change": "Class and field registries share deduplication and framed-section precedence; native record types remain distinct.",
+    "source": "crates/cadmpeg-codec-nx/src/native/om.rs",
+    "test_selection": "native::om::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "RHINO2-01",
+    "crate": "cadmpeg-codec-rhino",
+    "status": "fixed",
+    "change": "Legacy vertex accumulation scales coordinates before summing and restores scale after division.",
+    "source": "crates/cadmpeg-codec-rhino/src/brep.rs",
+    "test_selection": "numerical_followup_legacy_vertex_mean_stays_finite",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "RHINO2-02",
+    "crate": "cadmpeg-codec-rhino",
+    "status": "fixed",
+    "change": "Optional localizer curve and surface values share anonymous-child framing and version/presence checks.",
+    "source": "crates/cadmpeg-codec-rhino/src/morph.rs",
+    "test_selection": "morph::tests::",
+    "implementation_commit": "57c3cc27a2"
+  },
+  {
+    "id": "SLDPRT2-01",
+    "crate": "cadmpeg-codec-sldprt",
+    "status": "fixed",
+    "change": "Arc subdivision uses an asin half-chord formula and reports sagitta through sine squared, including at the segment cap.",
+    "source": "crates/cadmpeg-codec-sldprt/src/tessellation/tests/mod.rs",
+    "test_selection": "numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "SLDPRT2-02",
+    "crate": "cadmpeg-codec-sldprt",
+    "status": "fixed",
+    "change": "Removed the forwarding projection helper; all callers import the IR projection owner directly.",
+    "source": "crates/cadmpeg-codec-sldprt/src/brep/graph.rs",
+    "test_selection": "cargo check --tests; numerical_audit",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "ASM2-01",
+    "crate": "cadmpeg-asm",
+    "status": "fixed",
+    "change": "Ellipse and both support-cone readers compute radii with hypot.",
+    "source": "crates/cadmpeg-asm/src/nurbs/proc_surface.rs",
+    "test_selection": "numerical_followup_ellipse_accepts_extreme_finite_radii",
+    "implementation_commit": "b3291d46c7"
+  },
+  {
+    "id": "STEP2-01",
+    "crate": "cadmpeg-codec-step",
+    "status": "fixed",
+    "change": "Mesh moments use a local reference point and a local extent for the volume significance test.",
+    "source": "crates/cadmpeg-codec-step/src/reader/validation/tests.rs",
+    "test_selection": "numerical_followup_mesh_volume_and_centroid_are_translation_invariant",
+    "implementation_commit": "b3291d46c7"
+  }
+]
