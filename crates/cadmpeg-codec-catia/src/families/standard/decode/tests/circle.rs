@@ -158,3 +158,21 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
     assert!(circle_axis_from_carrier(Point3::new(1e200, 0.0, 0.0), 1.0, &sphere).is_none());
     assert!(circle_axis_from_carrier(Point3::new(0.0, 0.0, 0.6), 0.8, &sphere).is_some());
 }
+
+#[test]
+fn sphere_section_axis_preserves_a_subnormal_center_offset() {
+    use crate::families::standard::decode::circle_axis_from_carrier;
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    ));
+    assert_eq!(
+        circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere),
+        Some(Vector3::new(0.0, 0.0, 1.0))
+    );
+}

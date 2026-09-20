@@ -121,10 +121,13 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
     ])
     .unwrap();
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(2.0, 2.0, 3.0),
+        basis: Box::new(SolvedCurveGeometry::Nurbs(
+            crate::geometry::nurbs::NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 2.0, 3.0)],
+                None,
+                false,
             )
             .unwrap(),
         )),

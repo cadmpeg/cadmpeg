@@ -4966,9 +4966,6 @@ fn scalar_unary_sweep_law_differential(
                     .map_or(Some(0.0), |value| value.quotient(denominator))?,
             );
         }
-        _ => {}
-    }
-    match operator {
         "ARCTAN" | "ARCOT" | "ARCSEC" | "ARCCSC" | "ARCCSCH" => {
             let mut denominator = ExactSignedSum::default();
             let (value, sign) = match operator {
@@ -5099,7 +5096,6 @@ fn scalar_unary_sweep_law_differential(
     let derivative = match operator {
         "SIN" => x.cos(),
         "COS" => -x.sin(),
-
         "COSH" => x.sinh(),
         "SINH" => x.cosh(),
         "ARCCOS" => {
@@ -5111,7 +5107,6 @@ fn scalar_unary_sweep_law_differential(
             (denominator > 0.0).then_some(1.0 / denominator)?
         }
         "ARCTANH" => (x.abs() < 1.0).then_some(1.0 / (1.0 - x * x))?,
-
         "ABS" => {
             if x > 0.0 {
                 1.0
@@ -5129,19 +5124,12 @@ fn scalar_unary_sweep_law_differential(
         match operator {
             "SIN" => x.sin(),
             "COS" => x.cos(),
-            "TAN" => x.tan(),
-            "COT" => 1.0 / x.tan(),
-            "SEC" => 1.0 / x.cos(),
-            "CSC" => 1.0 / x.sin(),
             "COSH" => x.cosh(),
             "SINH" => x.sinh(),
             "ARCCOS" => x.acos(),
             "ARCSIN" => x.asin(),
             "ARCTANH" => x.atanh(),
-            "ARCSECH" => (1.0 / x).acosh(),
             "ABS" => x.abs(),
-            "EXP" => x.exp(),
-            "LN" => x.ln(),
             "SIGN" => x.signum(),
             "SQRT" => x.sqrt(),
             _ => return None,
