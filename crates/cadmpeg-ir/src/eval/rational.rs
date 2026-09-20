@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
-use crate::math::sum::{product_sum, ExactSignedSum, ScaledValue};
+use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::math::Point3;
 
 #[derive(Clone, Copy)]
@@ -15,7 +15,7 @@ impl Homogeneous {
     ) -> Option<Self> {
         let mut values = [None; 4];
         for (axis, value) in values.iter_mut().enumerate() {
-            *value = product_sum(terms.clone().map(|term| {
+            let sum = product_sum(terms.clone().map(|term| {
                 let (basis, weight, point) = term?;
                 Some([
                     basis[0],
@@ -23,7 +23,14 @@ impl Homogeneous {
                     weight,
                     [point.x, point.y, point.z, 1.0][axis],
                 ])
-            }))?;
+            }));
+            // `values` carries the same exact zero that `ExactSignedSum::finish`
+            // and `add_scaled_product` state as `None`.
+            *value = match sum {
+                ProductSum::Undefined => return None,
+                ProductSum::Zero => None,
+                ProductSum::Value(value) => Some(value),
+            };
         }
         let mut constant = [None; 3];
         let mut first = true;
