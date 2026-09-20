@@ -6,7 +6,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
 use super::offset::{
-    coarse_model_surface_parameters, least_squares_step, parameter_derivative_step, point_distance,
+    coarse_model_surface_parameters, parameter_derivative_step, point_distance,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
@@ -27,6 +27,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::VecDeque;
 
