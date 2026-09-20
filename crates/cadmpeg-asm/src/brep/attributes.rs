@@ -118,12 +118,12 @@ fn attribute_base(record: &Record) -> Option<AttributeBase> {
 /// owner`; a legacy attribute omits `marker`. Source-less streams written by
 /// older cadmpeg versions used a compact record whose first field was `next`;
 /// retain read compatibility with all three forms.
-pub(crate) fn attribute_next(record: &Record) -> Option<i64> {
+fn attribute_next(record: &Record) -> Option<i64> {
     record.ref_at(attribute_base(record)?.next())
 }
 
 /// The topology or parent-attribute owner of a current or legacy attribute.
-pub(crate) fn attribute_owner(record: &Record) -> Option<i64> {
+pub(super) fn attribute_owner(record: &Record) -> Option<i64> {
     record.ref_at(attribute_base(record)?.owner()?)
 }
 
@@ -263,7 +263,7 @@ fn packed_rgb(packed: u32) -> Color {
 ///
 /// Palette, material-library, inherited truecolor, and malformed records do
 /// not define a neutral RGB color.
-pub(crate) fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
+fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
     let payload = attribute_base(record)?.payload();
     match record.name.as_str() {
         "rgb_color-st-attrib" => {

@@ -396,7 +396,7 @@ pub fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>
     }
 }
 
-pub(crate) fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
+fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
     *counts.entry(kind.to_owned()).or_default() += 1;
 }
 
@@ -427,11 +427,11 @@ struct CoedgeRecordIndex(i64);
 /// emit passes read decoded shapes from here and consume them (`remove`) as the
 /// owning surface or curve record is emitted.
 #[derive(Default)]
-pub(crate) struct Carriers {
+struct Carriers {
     /// Source record indices of synthetic procedural support surfaces.
-    pub(crate) procedural_support_sources: Vec<(i64, SurfaceId)>,
+    procedural_support_sources: Vec<(i64, SurfaceId)>,
     /// Source record indices of synthetic procedural surface curves.
-    pub(crate) procedural_curve_child_sources: Vec<(i64, CurveId)>,
+    procedural_curve_child_sources: Vec<(i64, CurveId)>,
     surface_geo: HashMap<i64, SurfaceGeometry>,
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
@@ -444,7 +444,7 @@ pub(crate) struct Carriers {
 /// grouped by entity kind. Every emit pass filters `records` against these
 /// sets so only reachable entities appear in the output.
 #[derive(Default)]
-pub(crate) struct Reachable {
+struct Reachable {
     faces: HashSet<i64>,
     loops: HashSet<i64>,
     coedges: HashSet<i64>,
@@ -462,7 +462,7 @@ pub(crate) struct Reachable {
 /// Wire-edge and free-vertex reachability collected per shell during the
 /// topology walk, consumed when emitting shell containers.
 #[derive(Default)]
-pub(crate) struct WireShellTopology {
+struct WireShellTopology {
     wire_edges_by_shell: HashMap<i64, Vec<i64>>,
     free_vertices_by_shell: HashMap<i64, Vec<i64>>,
     saved_free_edges: Vec<i64>,
@@ -625,7 +625,7 @@ pub fn decode_with_header(
     Ok(out)
 }
 
-pub(crate) fn inherited_attribute_target(
+fn inherited_attribute_target(
     mut owner: i64,
     by_index: &HashMap<i64, &Record>,
     targets: &HashMap<i64, AttributeTarget>,

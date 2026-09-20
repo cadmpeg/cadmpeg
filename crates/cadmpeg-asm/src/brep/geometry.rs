@@ -28,13 +28,13 @@ const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1.0e-9;
 
 /// Ordered typed values pulled from a carrier record's payload.
-pub(crate) struct Carrier {
-    pub(crate) positions: Vec<[f64; 3]>,
-    pub(crate) vectors: Vec<[f64; 3]>,
+pub(in crate::brep) struct Carrier {
+    pub(super) positions: Vec<[f64; 3]>,
+    pub(super) vectors: Vec<[f64; 3]>,
     doubles: Vec<f64>,
 }
 
-pub(crate) fn collect_carrier(rec: &Record) -> Carrier {
+pub(super) fn collect_carrier(rec: &Record) -> Carrier {
     let mut c = Carrier {
         positions: Vec::new(),
         vectors: Vec::new(),
@@ -51,27 +51,27 @@ pub(crate) fn collect_carrier(rec: &Record) -> Carrier {
     c
 }
 
-pub(crate) fn scale_point(p: [f64; 3]) -> Point3 {
+pub(super) fn scale_point(p: [f64; 3]) -> Point3 {
     Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)
 }
 
-pub(crate) fn norm3(v: [f64; 3]) -> f64 {
+pub(super) fn norm3(v: [f64; 3]) -> f64 {
     Vector3::from(v).norm()
 }
 
 /// Return `v` normalized to unit length, or `v` unchanged if it is degenerate
 /// (validation flags a degenerate direction rather than this hiding it).
-pub(crate) fn unit(v: [f64; 3]) -> Vector3 {
+fn unit(v: [f64; 3]) -> Vector3 {
     Vector3::from(v).unit().unwrap_or(Vector3::from(v))
 }
 
 /// Whether a record name heads an analytic surface carrier.
-pub(crate) fn is_analytic_surface(head: &str) -> bool {
+pub(super) fn is_analytic_surface(head: &str) -> bool {
     matches!(head, "plane" | "cone" | "sphere" | "torus")
 }
 
 /// Whether a record name heads an analytic curve carrier.
-pub(crate) fn is_analytic_curve(head: &str) -> bool {
+pub(super) fn is_analytic_curve(head: &str) -> bool {
     matches!(head, "straight" | "ellipse" | "degenerate_curve")
 }
 
@@ -200,7 +200,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
 /// save-format 700 layout stores no endpoint index and the point at chunk 4.
 /// A modern record always carries the integer, so the legacy branch is
 /// unreachable for it.
-pub(crate) fn vertex_point_ref(record: &Record) -> Option<i64> {
+pub(super) fn vertex_point_ref(record: &Record) -> Option<i64> {
     match record.chunk(4) {
         Some(Token::Long(_)) => record.ref_at(5),
         _ => record.ref_at(4),
@@ -210,26 +210,26 @@ pub(crate) fn vertex_point_ref(record: &Record) -> Option<i64> {
 /// The coedge record's pcurve reference: chunk 10 after the reserved integer
 /// in the modern layout, chunk 9 in the save-format 700 layout that stores
 /// no reserved integer.
-pub(crate) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
+pub(super) fn coedge_pcurve_ref(record: &Record) -> Option<i64> {
     match record.chunk(9) {
         Some(Token::Long(_)) => record.ref_at(10),
         _ => record.ref_at(9),
     }
 }
 
-pub(crate) fn is_vertex_record(record: &Record) -> bool {
+pub(super) fn is_vertex_record(record: &Record) -> bool {
     matches!(record.head(), "vertex" | "tvertex")
 }
 
-pub(crate) fn is_edge_record(record: &Record) -> bool {
+pub(super) fn is_edge_record(record: &Record) -> bool {
     matches!(record.head(), "edge" | "tedge")
 }
 
-pub(crate) fn is_coedge_record(record: &Record) -> bool {
+pub(super) fn is_coedge_record(record: &Record) -> bool {
     matches!(record.head(), "coedge" | "tcoedge")
 }
 
-pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
+pub(super) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
     let target = match record.chunk(13)? {
         Token::Ref(target) => (*target >= 0).then_some(*target),
         _ => return None,
@@ -313,7 +313,7 @@ pub(crate) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
 /// Carrier heads remain known even when no active topology references that
 /// particular record. Reachability determines transfer; it does not turn an
 /// unreferenced carrier into an application/refinement record.
-pub(crate) fn is_known_record_head(head: &str) -> bool {
+pub(super) fn is_known_record_head(head: &str) -> bool {
     matches!(
         head,
         "body"
@@ -334,11 +334,11 @@ pub(crate) fn is_known_record_head(head: &str) -> bool {
         || matches!(head, "spline" | "intcurve" | "pcurve")
 }
 
-pub(crate) fn is_asm_stream_delimiter(name: &str) -> bool {
+pub(super) fn is_asm_stream_delimiter(name: &str) -> bool {
     matches!(name, "Begin-of-ASM-History-Data" | "End-of-ASM-data")
 }
 
-pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
+pub(super) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2]> {
     let (Some(Token::Double(start)), Some(Token::Double(end))) = (edge.chunk(4), edge.chunk(6))
     else {
         return None;
@@ -355,7 +355,7 @@ pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 /// Candidate edge-use intervals whose endpoints lie on this pcurve carrier.
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
 /// carrier's knot domain. The full knot domain is the final fallback.
-pub(crate) fn pcurve_ranges_on_domain(
+pub(super) fn pcurve_ranges_on_domain(
     candidate: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
@@ -436,7 +436,7 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     }
 }
 
-pub(crate) fn sense_at(rec: &Record, i: usize) -> Sense {
+pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
     match rec.chunk(i) {
         Some(Token::True) => Sense::Reversed,
         _ => Sense::Forward,
@@ -448,7 +448,7 @@ pub(crate) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(crate) fn record_reversed(rec: &Record) -> bool {
+pub(super) fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.
@@ -476,7 +476,7 @@ pub(crate) fn record_reversed(rec: &Record) -> bool {
 /// Lines negate their direction, conics negate their plane normal (flipping
 /// the angular sweep while keeping the zero-angle direction), and B-splines
 /// reverse poles and knots. Carriers without an orientation pass through.
-pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
+pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             line_curve.reverse_parameterization();
@@ -494,7 +494,7 @@ pub(crate) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
     }
 }
 
-pub(crate) fn reverse_procedural_curve_definition(
+pub(super) fn reverse_procedural_curve_definition(
     definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) {
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
@@ -502,14 +502,14 @@ pub(crate) fn reverse_procedural_curve_definition(
     }
 }
 
-pub(crate) fn double_at(rec: &Record, i: usize) -> Option<f64> {
+pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {
     match rec.chunk(i) {
         Some(Token::Double(d)) => Some(*d),
         _ => None,
     }
 }
 
-pub(crate) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
+pub(super) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
     // The final two value tokens; a record may end with payload identifiers
     // (e.g. `null_curve` placeholders), which are not fields.
     let mut values = rec.chunks().rev();
@@ -519,7 +519,7 @@ pub(crate) fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
     }
 }
 
-pub(crate) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
+pub(super) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
     if !matches!(rec.chunk(3), Some(Token::Long(0))) {
         return None;
     }
@@ -540,7 +540,7 @@ pub(crate) fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
         .ok()
 }
 
-pub(crate) fn procedural_surface_definition_is_exact_carrier(
+pub(super) fn procedural_surface_definition_is_exact_carrier(
     definition: &DecodedProceduralSurfaceDefinition,
 ) -> bool {
     match definition {
@@ -583,7 +583,7 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
     }
 }
 
-pub(crate) fn analytic_procedural_surface(
+pub(super) fn analytic_procedural_surface(
     definition: &DecodedProceduralSurfaceDefinition,
 ) -> Option<SurfaceGeometry> {
     match definition {
@@ -805,7 +805,7 @@ fn linear_nurbs_spine(
     Some((origin, axis))
 }
 
-pub(crate) fn rational_four_arc_circle(
+pub(super) fn rational_four_arc_circle(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
     let weights = curve.weights()?;
@@ -983,7 +983,7 @@ fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<
     control.try_into().ok()
 }
 
-pub(crate) fn point_vector(origin: Point3, point: Point3) -> Vector3 {
+pub(super) fn point_vector(origin: Point3, point: Point3) -> Vector3 {
     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
 }
 
@@ -999,7 +999,7 @@ fn point_sum_difference(first: Point3, second: Point3, subtract: Point3) -> Poin
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
 /// their last few bits; a genuine domain violation is left for validation.
-pub(crate) fn clamp_edge_ranges_to_carrier_domains(
+pub(super) fn clamp_edge_ranges_to_carrier_domains(
     out: &mut AsmBrep,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let domains: HashMap<&str, [f64; 2]> = out
@@ -1038,7 +1038,7 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(
     Ok(())
 }
 
-pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
+pub(super) fn classify_body_kinds(out: &mut AsmBrep) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
         for shell in &region.shells {

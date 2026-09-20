@@ -7,7 +7,7 @@ use crate::stream_error::{StreamError, StreamFormat};
 use cadmpeg_core::decode::View;
 
 /// Modern and legacy spellings of the same intcurve construction.
-pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
+pub(super) const INTCURVE_ALIASES: &[(&str, &str)] = &[
     ("blend_int_cur", "bldcur"),
     ("spring_int_cur", "blndsprngcur"),
     ("exact_int_cur", "exactcur"),
@@ -30,7 +30,7 @@ pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
 /// construction, not to `bytes`.
 ///
 /// A `0x10` with no open scope is a malformed stream and is refused.
-pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Vec<(usize, &[u8])>> {
+pub(super) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Vec<(usize, &[u8])>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     let mut pos = 0usize;
@@ -68,7 +68,7 @@ pub(crate) fn owned_subtype_defs(bytes: &[u8], int_width: RefWidth) -> Option<Ve
 /// embeds a variable blend, a variable blend embeds an extrusion — so a decoder
 /// that accepted any matching marker anywhere in the record would claim records
 /// belonging to the construction that encloses it.
-pub(crate) fn find_owned_subtype_marker<'n>(
+pub(super) fn find_owned_subtype_marker<'n>(
     bytes: &[u8],
     names: &[&'n [u8]],
     int_width: RefWidth,
@@ -85,7 +85,7 @@ pub(crate) fn find_owned_subtype_marker<'n>(
 /// Byte offset and name length of the `intcurve` subtype definition `bytes`
 /// owns, given the subtype's modern name. The legacy spelling of the same
 /// construction is accepted as a second candidate.
-pub(crate) fn find_owned_intcurve_subtype(
+pub(super) fn find_owned_intcurve_subtype(
     bytes: &[u8],
     modern: &[u8],
     int_width: RefWidth,
@@ -111,7 +111,7 @@ pub(crate) fn find_owned_intcurve_subtype(
 /// [`subtype_span`], and each reference is resolved through the same function,
 /// so `decode_inline` reads a proven scope and needs no walk of its own to
 /// establish one.
-pub(crate) fn decode_cache_resolving_refs<T>(
+pub(super) fn decode_cache_resolving_refs<T>(
     scope: SubtypeScope<'_>,
     active_bytes: &[u8],
     tables: &SubtypeTables,
@@ -268,7 +268,7 @@ fn collect_defs_in_span(
 
 /// Subtype-table reference indices in `bytes`, in token order. References are
 /// recognized only at token boundaries, mirroring [`SubtypeTables`].
-pub(crate) fn subtype_refs(bytes: &[u8], int_width: RefWidth) -> Vec<usize> {
+fn subtype_refs(bytes: &[u8], int_width: RefWidth) -> Vec<usize> {
     let mut refs = Vec::new();
     let marker = b"\x0f\x0d\x03ref\x04";
     let mut pos = 0usize;
@@ -354,7 +354,7 @@ pub fn subtype_span(bytes: &[u8], start: usize, int_width: RefWidth) -> Option<S
 /// unrecognized or its payload runs past the end. `0x04`, `0x0c` and `0x15`
 /// carry an `int_width` payload; `0x09` and `0x12` carry an `int_width` string
 /// length prefix, unlike the one- and two-byte prefixes of `0x07` and `0x08`.
-pub(crate) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Option<usize> {
+pub(super) fn next_token(bytes: &[u8], pos: usize, int_width: RefWidth) -> Option<usize> {
     let tag = *bytes.get(pos)?;
     let fixed = match tag {
         0x02 => 2,

@@ -106,7 +106,7 @@ fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Opti
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
 
-pub(crate) fn decode_pcurve_block_with_end(
+pub(super) fn decode_pcurve_block_with_end(
     b: &[u8],
     marker_pos: usize,
     int_width: RefWidth,
@@ -188,7 +188,7 @@ pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
 /// Decode a 2D `nubs`/`nurbs` pcurve block at token `marker_pos`, returning
 /// the pcurve and the token index just past the block. Token-space counterpart
 /// of [`decode_pcurve_block_with_end`].
-pub(crate) fn pcurve_block_with_end(
+pub(super) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<(PcurveNurbs, usize)> {
