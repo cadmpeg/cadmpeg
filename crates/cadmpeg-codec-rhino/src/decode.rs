@@ -3760,12 +3760,7 @@ impl BrepDraft {
         annotations: &mut cadmpeg_ir::Annotations,
     ) -> Result<(), String> {
         self.draft
-            .commit(
-                ir,
-                annotations,
-                &mut Vec::new(),
-                &mut cadmpeg_ir::report::decode::TransferLedger::default(),
-            )
+            .commit(ir, annotations)
             .map_err(|error| error.to_string())
     }
 
