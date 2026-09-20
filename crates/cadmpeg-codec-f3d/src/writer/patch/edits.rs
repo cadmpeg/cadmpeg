@@ -23,7 +23,7 @@ use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use super::{
-    geometry::{orthonormal_pair, valid_edited_nurbs_direction},
+    geometry::{orthonormal_pair, unchanged_unique_knot_count, writable_nurbs_degree},
     records::native_stream,
 };
 use crate::native::F3dNative;
@@ -3089,9 +3089,10 @@ pub(super) fn validate_curve_edits(
             (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
                 // `NurbsCurve` admission states finite poles and finite
                 // nonzero weights, so this writer refuses only what the byte
-                // patcher cannot write: a carrier it does not address, a knot
-                // layout of another shape, a changed rational form or pole
-                // count, and a weight the native lane cannot carry.
+                // patcher cannot write: a carrier it does not address, a
+                // degree no spline record states, a knot layout of another
+                // shape, a changed rational form or pole count, and a weight
+                // the native lane cannot carry.
                 if !(id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
@@ -3101,7 +3102,12 @@ pub(super) fn validate_curve_edits(
                         "edited F3D curve {id} is not a patchable NURBS carrier"
                     )));
                 }
-                if !valid_edited_nurbs_direction(before.knots(), after.degree(), after.knots()) {
+                if !writable_nurbs_degree(after.degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} has a NURBS degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.knots(), after.knots()) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D curve {id} changes the NURBS knot layout"
                     )));
@@ -3183,11 +3189,8 @@ pub(super) fn validate_pcurve_edits(
         // require finite poles, so pole finiteness is not a condition this
         // chain can refuse.
         let valid = id.starts_with("f3d:brep:entity#")
-            && valid_edited_nurbs_direction(
-                before_nurbs.knots(),
-                after_nurbs.degree(),
-                after_nurbs.knots(),
-            )
+            && writable_nurbs_degree(after_nurbs.degree())
+            && unchanged_unique_knot_count(before_nurbs.knots(), after_nurbs.knots())
             && before_nurbs.control_points().len() == after_nurbs.control_points().len()
             && before_nurbs.weights().is_some() == after_nurbs.weights().is_some()
             && after_nurbs.weights().is_none_or(|weights| {
@@ -3313,9 +3316,10 @@ pub(super) fn validate_surface_edits(
             ) => {
                 // `NurbsSurface` admission states finite poles and finite
                 // nonzero weights, so this writer refuses only what the byte
-                // patcher cannot write: a carrier it does not address, a knot
-                // layout of another shape, a changed rational form or pole
-                // count, and a weight the native lane cannot carry.
+                // patcher cannot write: a carrier it does not address, a
+                // degree no spline record states, a knot layout of another
+                // shape, a changed rational form or pole count, and a weight
+                // the native lane cannot carry.
                 if !(id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
@@ -3324,20 +3328,22 @@ pub(super) fn validate_surface_edits(
                         "edited F3D surface {id} is not a patchable NURBS carrier"
                     )));
                 }
-                if !valid_edited_nurbs_direction(
-                    before.u_knots(),
-                    after.u_degree(),
-                    after.u_knots(),
-                ) {
+                if !writable_nurbs_degree(after.u_degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} has a NURBS u degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.u_knots(), after.u_knots()) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D surface {id} changes the NURBS u knot layout"
                     )));
                 }
-                if !valid_edited_nurbs_direction(
-                    before.v_knots(),
-                    after.v_degree(),
-                    after.v_knots(),
-                ) {
+                if !writable_nurbs_degree(after.v_degree()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} has a NURBS v degree outside [1, 20]"
+                    )));
+                }
+                if !unchanged_unique_knot_count(before.v_knots(), after.v_knots()) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D surface {id} changes the NURBS v knot layout"
                     )));
@@ -4004,6 +4010,28 @@ mod tests {
     }
 
     #[test]
+    fn a_same_kind_nurbs_curve_edit_that_leaves_the_writable_degree_range_is_malformed() {
+        let degree_zero = SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(0, vec![0.0, 0.0, 1.0], poles(2), None, false)
+                .expect("degree, knots and control points agree"),
+        );
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve("f3d:brep:entity#7", degree_zero),
+        )
+        .expect_err("a spline record states a degree in 1..=20");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 has a NURBS degree outside [1, 20]"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn a_nurbs_curve_edit_on_a_carrier_the_patcher_does_not_address_is_not_implemented() {
         let id = "f3d:brep:procedural_surface#7:profile";
         let error = validate_curve_edits(
@@ -4208,6 +4236,72 @@ mod tests {
             error
                 .to_string()
                 .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS v knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_u_degree_range_is_malformed() {
+        let u_degree_zero = SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
+                false,
+            )
+            .expect("degrees, knots and control grid agree"),
+        );
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface("f3d:brep:entity#9", u_degree_zero),
+        )
+        .expect_err("a spline record states a u degree in 1..=20");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 has a NURBS u degree outside [1, 20]"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_leaves_the_writable_v_degree_range_is_malformed() {
+        let v_degree_zero = SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(0, vec![0.0, 0.0, 1.0], false),
+                NurbsSurfaceLanes::new((0..2).map(|_| poles(2)).collect(), None),
+                false,
+            )
+            .expect("degrees, knots and control grid agree"),
+        );
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface("f3d:brep:entity#9", v_degree_zero),
+        )
+        .expect_err("a spline record states a v degree in 1..=20");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 has a NURBS v degree outside [1, 20]"
+            ),
             "{error}"
         );
     }

@@ -24,24 +24,30 @@ use cadmpeg_asm::sab;
 
 const EPS_ORTHONORMAL: f64 = 1.0e-9;
 
-/// Whether one parametric direction of an edited NURBS carrier keeps a knot
-/// layout the byte patcher can write.
+/// Whether an edited NURBS degree is one an ASM spline record states.
+///
+/// Every spline layout reader bounds the degree it reads to `1..=20`, so a
+/// record outside that range is one no f3d document holds.
+pub(super) const fn writable_nurbs_degree(after_degree: u32) -> bool {
+    matches!(after_degree, 1..=20)
+}
+
+/// Whether one parametric direction of an edited NURBS carrier keeps the
+/// distinct-knot count the record's knot table holds.
+///
+/// `AsmEditSet::patch_knot_structure` writes each distinct knot and its
+/// multiplicity into the slot the baseline record already holds, so a
+/// direction that states a different number of distinct knots has no slot to
+/// take.
 ///
 /// The carrier types state the rest of the knot contract on admission:
 /// `NurbsCurve::new` and `PcurveNurbs::new` call `require_curve_cardinality`
 /// and `require_nondecreasing_knots`, and `NurbsSurface::new` calls
 /// `require_length` and `require_nondecreasing_knots` per axis. A knot count
 /// that follows from the degree and the pole count, finite knots and
-/// non-decreasing knots therefore hold for every value this reads. What is
-/// left is the writer's own degree range and the distinct-knot count, which
-/// the native knot lane holds verbatim.
-pub(super) fn valid_edited_nurbs_direction(
-    before_knots: &[f64],
-    after_degree: u32,
-    after_knots: &[f64],
-) -> bool {
-    (1..=20).contains(&after_degree)
-        && unique_knot_count(after_knots) == unique_knot_count(before_knots)
+/// non-decreasing knots therefore hold for every value this reads.
+pub(super) fn unchanged_unique_knot_count(before_knots: &[f64], after_knots: &[f64]) -> bool {
+    unique_knot_count(after_knots) == unique_knot_count(before_knots)
 }
 
 pub(super) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
