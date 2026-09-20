@@ -6,23 +6,10 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 
-use crate::appearance::{Appearance, AppearanceBinding};
-use crate::attributes::SourceAttribute;
+use crate::appearance::Appearance;
 use crate::document::CadIr;
-use crate::drawings::Drawing;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-};
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
-use crate::presentation::{PresentationDocument, ViewPresentation};
-use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::schema::EntitySchema;
-use crate::semantic_annotations::SemanticAnnotation;
-use crate::sketches::{
-    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
-    SpatialSketchEntity,
-};
-use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -92,15 +79,38 @@ fn lookup_identity<'a, T: EntitySchema>(
 
 macro_rules! define_model_index {
     ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+        define_model_index! {
+            @generate [$($field),*];
+            [
+                bodies: Body;
+                regions: Region;
+                shells: Shell;
+                faces: Face;
+                loops: Loop;
+                coedges: Coedge;
+                edges: Edge;
+                vertices: Vertex;
+                points: Point;
+                surfaces: Surface;
+                curves: Curve;
+                subds: SubdSurface;
+                pcurves: Pcurve;
+                procedural_surfaces: ProceduralSurface;
+                procedural_curves: ProceduralCurve;
+                tessellations: Tessellation;
+                appearances: Appearance;
+            ]
+        }
+    };
+    (@generate [$($field:ident),*]; [$($lookup:ident: $element:ty;)*]) => {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
-            $($field: OnceLock<IdentityIndex>,)*
+            $($lookup: OnceLock<IdentityIndex>,)*
             procedural_surface_by_surface: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_surface_for_carrier: HashMap<&'a str, &'a ProceduralSurface>,
             procedural_curves_by_curve: HashMap<&'a str, Vec<&'a ProceduralCurve>>,
             identities: OnceLock<HashSet<String>>,
-            native_identities: OnceLock<HashSet<String>>,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
         }
@@ -191,57 +201,22 @@ macro_rules! define_model_index {
                 );
                 Self {
                     ir,
-                    $($field: OnceLock::new(),)*
+                    $($lookup: OnceLock::new(),)*
                     procedural_surface_by_surface,
                     procedural_surface_for_carrier,
                     procedural_curves_by_curve,
                     identities: OnceLock::new(),
-                    native_identities: OnceLock::new(),
                     include_native,
                     additional_native_identities: additional.into_iter().collect(),
                 }
             }
 
-            fn model_identity_set(&self) -> HashSet<String> {
-                let mut identities = HashSet::with_capacity(self.ir.model.entity_count());
-                $(identities.extend(self.ir.model.$field.iter().map(|entity| entity.identity().to_owned()));)*
-                identities
-            }
-
-            fn native_identity_set(&self) -> &HashSet<String> {
-                self.native_identities.get_or_init(|| {
-                    if !self.include_native {
-                        return HashSet::new();
-                    }
-                    let mut identities = self
-                        .ir
-                        .native
-                        .0
-                        .values()
-                        .flat_map(|namespace| {
-                            namespace
-                                .arenas()
-                                .values()
-                                .flatten()
-                                .map(|record| record.id().to_owned())
-                        })
-                        .collect::<HashSet<_>>();
-                    identities.extend(
-                        self.additional_native_identities
-                            .iter()
-                            .map(|identity| (*identity).to_owned()),
-                    );
-                    identities
-                })
-            }
-
             fn identity_set(&self) -> &HashSet<String> {
                 self.identities.get_or_init(|| {
-                    let mut identities = self.model_identity_set();
-                    if self.include_native {
-                        identities.extend(self.native_identity_set().iter().cloned());
-                    }
-                    identities
+                    self.borrowed_identity_set()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect()
                 })
             }
 
@@ -271,11 +246,6 @@ macro_rules! define_model_index {
             /// Returns whether any neutral or native entity owns `identity`.
             pub fn contains(&self, identity: &str) -> bool {
                 self.identity_set().contains(identity)
-            }
-
-            /// Returns whether a native entity owns `identity`.
-            pub fn contains_native(&self, identity: &str) -> bool {
-                self.native_identity_set().contains(identity)
             }
 
             /// Iterates every neutral and native identity.
@@ -312,9 +282,9 @@ macro_rules! define_model_index {
             }
 
             $(
-                #[doc = concat!("Looks up an entity in the `", stringify!($field), "` arena.")]
-                pub fn $field(&self, identity: &str) -> Option<&'a $element> {
-                    lookup_identity(&self.ir.model.$field, &self.$field, identity)
+                #[doc = concat!("Looks up an entity in the `", stringify!($lookup), "` arena.")]
+                pub fn $lookup(&self, identity: &str) -> Option<&'a $element> {
+                    lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity)
                 }
             )*
         }
@@ -378,9 +348,9 @@ mod tests {
         let full = ModelIndex::new(&ir);
         let model_only = ModelIndex::new_model_only(&ir);
 
-        assert!(full.contains_native(native_id));
+        assert!(full.contains(native_id));
         assert!(full.contains(model_id));
-        assert!(!model_only.contains_native(native_id));
+        assert!(!model_only.contains(native_id));
         assert!(model_only.contains(model_id));
         assert!(!model_only
             .identities()
@@ -409,15 +379,15 @@ mod tests {
         }
 
         let index = ModelIndex::new_model_only(&ir);
-        assert!(index.parameters.get().is_none());
+        let parameters = std::sync::OnceLock::new();
+        assert!(parameters.get().is_none());
         assert!(index.bodies.get().is_none());
         assert_eq!(
-            index
-                .parameters(parameter_id.as_str())
+            super::lookup_identity(&ir.model.parameters, &parameters, parameter_id.as_str())
                 .map(|parameter| parameter.expression.as_str()),
             Some("last")
         );
-        assert!(index.parameters.get().is_some());
+        assert!(parameters.get().is_some());
         assert!(index.bodies.get().is_none());
     }
 
