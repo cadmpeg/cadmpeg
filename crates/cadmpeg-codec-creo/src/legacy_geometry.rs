@@ -177,8 +177,13 @@ fn curve_namespace(
     integer_fields: &IntegerFieldIndex<'_>,
     real_fields: &RealFieldIndex<'_>,
 ) -> (Vec<CurveTopologyRow>, Vec<PcurveEndpoints>) {
-    let Some(elements) = curve_array_elements(objects, object_ids, "Sld_VisGeom", "active_geom")
-    else {
+    let Some(elements) = geometry_array_elements(
+        objects,
+        object_ids,
+        "Sld_VisGeom",
+        "active_geom",
+        "crv_array",
+    ) else {
         return (Vec::new(), Vec::new());
     };
     let mut topology_rows = Vec::new();
@@ -199,11 +204,12 @@ fn curve_namespace(
     (topology_rows, pcurves)
 }
 
-fn curve_array_elements<'a>(
+fn geometry_array_elements<'a>(
     objects: &'a [ObjectRecord],
     object_ids: &ObjectIdIndex<'a>,
     root_name: &str,
     branch_name: &str,
+    array_name: &str,
 ) -> Option<Vec<&'a ObjectRecord>> {
     let mut roots = objects
         .iter()
@@ -222,7 +228,7 @@ fn curve_array_elements<'a>(
             return None;
         };
         (object.parent == Some(branch.offset)
-            && object.name == "crv_array"
+            && object.name == array_name
             && object.payload.is_complete())
         .then_some((object, elements))
     });
@@ -233,7 +239,7 @@ fn curve_array_elements<'a>(
         .iter()
         .map(|element_id| {
             let element = object_ids.get(element_id.as_str()).copied()?;
-            (element.parent == Some(array.offset) && element.name == "crv_array").then_some(())?;
+            (element.parent == Some(array.offset) && element.name == array_name).then_some(())?;
             Some(element)
         })
         .collect()
@@ -354,7 +360,9 @@ fn namespace(
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
 ) -> (Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>) {
-    let Some(elements) = surface_array_elements(objects, object_ids, root_name, branch_name) else {
+    let Some(elements) =
+        geometry_array_elements(objects, object_ids, root_name, branch_name, "srf_array")
+    else {
         return (Vec::new(), Vec::new());
     };
 
@@ -372,46 +380,6 @@ fn namespace(
     rows.sort_by_key(|row| row.offset);
     carriers.sort_by_key(|carrier| carrier.offset);
     (rows, carriers)
-}
-
-fn surface_array_elements<'a>(
-    objects: &'a [ObjectRecord],
-    object_ids: &ObjectIdIndex<'a>,
-    root_name: &str,
-    branch_name: &str,
-) -> Option<Vec<&'a ObjectRecord>> {
-    let mut roots = objects
-        .iter()
-        .filter(|object| object.name == root_name && object.parent.is_none());
-    let root = roots.next()?;
-    roots.next().is_none().then_some(())?;
-
-    let mut branches = objects
-        .iter()
-        .filter(|object| object.parent == Some(root.offset) && object.name == branch_name);
-    let branch = branches.next()?;
-    branches.next().is_none().then_some(())?;
-
-    let mut arrays = objects.iter().filter_map(|object| {
-        let ObjectPayload::Array { elements, .. } = &object.payload else {
-            return None;
-        };
-        (object.parent == Some(branch.offset)
-            && object.name == "srf_array"
-            && object.payload.is_complete())
-        .then_some((object, elements))
-    });
-    let (array, elements) = arrays.next()?;
-    arrays.next().is_none().then_some(())?;
-
-    elements
-        .iter()
-        .map(|element_id| {
-            let element = object_ids.get(element_id.as_str()).copied()?;
-            (element.parent == Some(array.offset) && element.name == "srf_array").then_some(())?;
-            Some(element)
-        })
-        .collect()
 }
 
 fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> Option<SurfaceRow> {

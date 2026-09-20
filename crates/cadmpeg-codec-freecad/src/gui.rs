@@ -471,13 +471,13 @@ fn transfer_schema_one(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_edge_appearance(
+            transfer_primitive_appearance(
                 ir,
                 &mut plan,
                 name,
                 object_id,
                 color,
-                width,
+                PrimitiveStyle::Line(width),
                 &payload_prefixes,
             );
         }
@@ -512,13 +512,13 @@ fn transfer_schema_one(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"))
                 .and_then(|value| value.parse::<f64>().ok());
-            transfer_vertex_appearance(
+            transfer_primitive_appearance(
                 ir,
                 &mut plan,
                 name,
                 object_id,
                 color,
-                size,
+                PrimitiveStyle::Point(size),
                 &payload_prefixes,
             );
         }
@@ -906,106 +906,76 @@ fn camera_field<const N: usize>(
     })
 }
 
-fn transfer_edge_appearance(
-    ir: &CadIr,
-    plan: &mut AppearancePlan,
-    provider_name: &str,
-    object_id: &str,
-    packed_color: u32,
-    width: Option<f64>,
-    payload_prefixes: &[String],
-) {
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .filter(|edge| {
-            payload_prefixes
-                .iter()
-                .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
-        })
-        .map(|edge| edge.id.clone())
-        .collect::<Vec<_>>();
-    if edges.is_empty() {
-        return;
-    }
-    let provider_key = provider_identity_key(provider_name);
-    let appearance_id = edge_appearance_id(&provider_key);
-    plan.appearances.push(Appearance {
-        id: appearance_id.clone(),
-        name: Some(format!("{provider_name} line appearance")),
-        asset_guid: None,
-        library_id: None,
-        visual_guid: None,
-        physical_token: None,
-        schema: Some("FCStd ViewProvider line style".into()),
-        category: None,
-        base_color: Some(Color::from_rgba8(
-            (packed_color >> 24) as u8,
-            (packed_color >> 16) as u8,
-            (packed_color >> 8) as u8,
-            packed_color as u8,
-        )),
-        textures: Vec::new(),
-        properties: width
-            .filter(|width| width.is_finite() && *width >= 0.0)
-            .map(|width| [(cadmpeg_core::nonblank_literal!("line_width"), width)].into())
-            .unwrap_or_default(),
-    });
-    for (index, edge) in edges.into_iter().enumerate() {
-        plan.bindings.push(AppearanceBinding {
-            id: binding_id(
-                cadmpeg_ir::identity_key!("edge")
-                    .colon(provider_key.clone())
-                    .colon(index),
-            ),
-            target: AppearanceTarget::Edge(edge),
-            appearance: appearance_id.clone(),
-            source_entity_id: Some(object_id.to_owned()),
-            object_type: Some("ViewProvider Edge".into()),
-            visible: None,
-            channels: [(
-                cadmpeg_core::nonblank_literal!("precedence"),
-                "edge_over_object".into(),
-            )]
-            .into(),
-        });
-    }
+enum PrimitiveStyle {
+    Line(Option<f64>),
+    Point(Option<f64>),
 }
 
-fn transfer_vertex_appearance(
+fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,
     provider_name: &str,
     object_id: &str,
     packed_color: u32,
-    size: Option<f64>,
+    style: PrimitiveStyle,
     payload_prefixes: &[String],
 ) {
-    let vertices = ir
-        .model
-        .vertices
-        .iter()
-        .filter(|vertex| {
-            payload_prefixes
-                .iter()
-                .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
-        })
-        .map(|vertex| vertex.id.clone())
-        .collect::<Vec<_>>();
-    if vertices.is_empty() {
+    let targets = match style {
+        PrimitiveStyle::Line(_) => ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| {
+                payload_prefixes
+                    .iter()
+                    .any(|prefix| crate::native::id_key(edge.id.as_str()).starts_with(prefix))
+            })
+            .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
+            .collect::<Vec<_>>(),
+        PrimitiveStyle::Point(_) => ir
+            .model
+            .vertices
+            .iter()
+            .filter(|vertex| {
+                payload_prefixes
+                    .iter()
+                    .any(|prefix| crate::native::id_key(vertex.id.as_str()).starts_with(prefix))
+            })
+            .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))
+            .collect::<Vec<_>>(),
+    };
+    if targets.is_empty() {
         return;
     }
     let provider_key = provider_identity_key(provider_name);
-    let appearance_id = vertex_appearance_id(&provider_key);
+    let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
+        PrimitiveStyle::Line(width) => (
+            edge_appearance_id(&provider_key),
+            "line",
+            cadmpeg_core::nonblank_literal!("line_width"),
+            width,
+            cadmpeg_ir::identity_key!("edge"),
+            "ViewProvider Edge",
+            "edge_over_object",
+        ),
+        PrimitiveStyle::Point(size) => (
+            vertex_appearance_id(&provider_key),
+            "point",
+            cadmpeg_core::nonblank_literal!("point_size"),
+            size,
+            cadmpeg_ir::identity_key!("vertex"),
+            "ViewProvider Vertex",
+            "vertex_over_object",
+        ),
+    };
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
-        name: Some(format!("{provider_name} point appearance")),
+        name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
         library_id: None,
         visual_guid: None,
         physical_token: None,
-        schema: Some("FCStd ViewProvider point style".into()),
+        schema: Some(format!("FCStd ViewProvider {label} style")),
         category: None,
         base_color: Some(Color::from_rgba8(
             (packed_color >> 24) as u8,
@@ -1015,25 +985,21 @@ fn transfer_vertex_appearance(
         )),
         textures: Vec::new(),
         properties: size
-            .filter(|size| size.is_finite() && *size >= 0.0)
-            .map(|size| [(cadmpeg_core::nonblank_literal!("point_size"), size)].into())
+            .filter(|width| width.is_finite() && *width >= 0.0)
+            .map(|width| [(property, width)].into())
             .unwrap_or_default(),
     });
-    for (index, vertex) in vertices.into_iter().enumerate() {
+    for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
-            id: binding_id(
-                cadmpeg_ir::identity_key!("vertex")
-                    .colon(provider_key.clone())
-                    .colon(index),
-            ),
-            target: AppearanceTarget::Vertex(vertex),
+            id: binding_id(binding_key.clone().colon(provider_key.clone()).colon(index)),
+            target,
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
-            object_type: Some("ViewProvider Vertex".into()),
+            object_type: Some(object_type.into()),
             visible: None,
             channels: [(
                 cadmpeg_core::nonblank_literal!("precedence"),
-                "vertex_over_object".into(),
+                precedence.into(),
             )]
             .into(),
         });
@@ -1239,16 +1205,40 @@ fn validate_gui_property(
             return validate_gui_geometry_value(property, property_name, "Points");
         }
         "TechDraw::PropertyGeomFormatList" => {
-            return validate_gui_geom_format_list(property, property_name);
+            return validate_gui_techdraw_list(
+                property,
+                property_name,
+                "GeomFormatList",
+                "GeomFormat",
+                validate_gui_geom_format_record,
+            );
         }
         "TechDraw::PropertyCosmeticVertexList" => {
-            return validate_gui_cosmetic_vertex_list(property, property_name);
+            return validate_gui_techdraw_list(
+                property,
+                property_name,
+                "CosmeticVertexList",
+                "CosmeticVertex",
+                validate_gui_cosmetic_vertex_record,
+            );
         }
         "TechDraw::PropertyCosmeticEdgeList" => {
-            return validate_gui_cosmetic_edge_list(property, property_name);
+            return validate_gui_techdraw_list(
+                property,
+                property_name,
+                "CosmeticEdgeList",
+                "CosmeticEdge",
+                validate_gui_cosmetic_edge_record,
+            );
         }
         "TechDraw::PropertyCenterLineList" => {
-            return validate_gui_center_line_list(property, property_name);
+            return validate_gui_techdraw_list(
+                property,
+                property_name,
+                "CenterLineList",
+                "CenterLine",
+                validate_gui_center_line_record,
+            );
         }
         "App::PropertyExpressionEngine" => {
             return validate_gui_expression_engine(property, property_name);
@@ -2050,9 +2040,12 @@ fn validate_gui_points_transform(
     Ok(())
 }
 
-fn validate_gui_geom_format_list(
+fn validate_gui_techdraw_list(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
+    list_tag: &str,
+    record_tag: &str,
+    mut validate: impl FnMut(roxmltree::Node<'_, '_>, &str) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     let roots = property
         .children()
@@ -2061,20 +2054,22 @@ fn validate_gui_geom_format_list(
     let [root] = roots.as_slice() else {
         return Err(gui_techdraw_error(
             property_name,
-            "requires exactly one GeomFormatList value",
+            &format!("requires exactly one {list_tag} value"),
         ));
     };
-    if !root.has_tag_name("GeomFormatList") {
+    if !root.has_tag_name(list_tag) {
         return Err(gui_techdraw_error(
             property_name,
-            "requires a leading GeomFormatList value",
+            &format!("requires a leading {list_tag} value"),
         ));
     }
     let count = root
         .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormatList has no count"))?
+        .ok_or_else(|| gui_techdraw_error(property_name, &format!("{list_tag} has no count")))?
         .parse::<usize>()
-        .map_err(|_| gui_techdraw_error(property_name, "GeomFormatList has an invalid count"))?;
+        .map_err(|_| {
+            gui_techdraw_error(property_name, &format!("{list_tag} has an invalid count"))
+        })?;
     let records = root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -2082,19 +2077,19 @@ fn validate_gui_geom_format_list(
     if records.len() != count {
         return Err(gui_techdraw_error(
             property_name,
-            "GeomFormatList count does not match its records",
+            &format!("{list_tag} count does not match its records"),
         ));
     }
     for record in records {
-        if !record.has_tag_name("GeomFormat")
-            || record.attribute("type") != Some("TechDraw::GeomFormat")
+        if !record.has_tag_name(record_tag)
+            || record.attribute("type") != Some(format!("TechDraw::{record_tag}").as_str())
         {
             return Err(gui_techdraw_error(
                 property_name,
-                "GeomFormatList has an invalid record type",
+                &format!("{list_tag} has an invalid record type"),
             ));
         }
-        validate_gui_geom_format_record(record, property_name)?;
+        validate(record, property_name)?;
     }
     Ok(())
 }
@@ -2171,155 +2166,6 @@ fn validate_gui_geom_format_record(
             property_name,
             "GeomFormat has an invalid visibility",
         ));
-    }
-    Ok(())
-}
-
-fn validate_gui_cosmetic_vertex_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires exactly one CosmeticVertexList value",
-        ));
-    };
-    if !root.has_tag_name("CosmeticVertexList") {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires a leading CosmeticVertexList value",
-        ));
-    }
-    let count = root
-        .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertexList has no count"))?
-        .parse::<usize>()
-        .map_err(|_| {
-            gui_techdraw_error(property_name, "CosmeticVertexList has an invalid count")
-        })?;
-    let records = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if records.len() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticVertexList count does not match its records",
-        ));
-    }
-    for record in records {
-        if !record.has_tag_name("CosmeticVertex")
-            || record.attribute("type") != Some("TechDraw::CosmeticVertex")
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticVertexList has an invalid record type",
-            ));
-        }
-        validate_gui_cosmetic_vertex_record(record, property_name)?;
-    }
-    Ok(())
-}
-
-fn validate_gui_cosmetic_edge_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires exactly one CosmeticEdgeList value",
-        ));
-    };
-    if !root.has_tag_name("CosmeticEdgeList") {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires a leading CosmeticEdgeList value",
-        ));
-    }
-    let count = root
-        .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticEdgeList has no count"))?
-        .parse::<usize>()
-        .map_err(|_| gui_techdraw_error(property_name, "CosmeticEdgeList has an invalid count"))?;
-    let records = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if records.len() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CosmeticEdgeList count does not match its records",
-        ));
-    }
-    for record in records {
-        if !record.has_tag_name("CosmeticEdge")
-            || record.attribute("type") != Some("TechDraw::CosmeticEdge")
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CosmeticEdgeList has an invalid record type",
-            ));
-        }
-        validate_gui_cosmetic_edge_record(record, property_name)?;
-    }
-    Ok(())
-}
-
-fn validate_gui_center_line_list(
-    property: roxmltree::Node<'_, '_>,
-    property_name: &str,
-) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires exactly one CenterLineList value",
-        ));
-    };
-    if !root.has_tag_name("CenterLineList") {
-        return Err(gui_techdraw_error(
-            property_name,
-            "requires a leading CenterLineList value",
-        ));
-    }
-    let count = root
-        .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CenterLineList has no count"))?
-        .parse::<usize>()
-        .map_err(|_| gui_techdraw_error(property_name, "CenterLineList has an invalid count"))?;
-    let records = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if records.len() != count {
-        return Err(gui_techdraw_error(
-            property_name,
-            "CenterLineList count does not match its records",
-        ));
-    }
-    for record in records {
-        if !record.has_tag_name("CenterLine")
-            || record.attribute("type") != Some("TechDraw::CenterLine")
-        {
-            return Err(gui_techdraw_error(
-                property_name,
-                "CenterLineList has an invalid record type",
-            ));
-        }
-        validate_gui_center_line_record(record, property_name)?;
     }
     Ok(())
 }
