@@ -19,7 +19,7 @@ pub(super) enum ResolvedPath {
     Unknown,
 }
 
-pub(super) fn primitive_name(name: &str) -> bool {
+fn primitive_name(name: &str) -> bool {
     matches!(
         name,
         "bool"
@@ -42,14 +42,14 @@ pub(super) fn primitive_name(name: &str) -> bool {
     )
 }
 
-pub(super) fn external_root(name: &str) -> bool {
+fn external_root(name: &str) -> bool {
     matches!(
         name,
         "std" | "serde" | "serde_json" | "cadmpeg_core" | "core" | "alloc"
     )
 }
 
-pub(super) fn standard_prelude(name: &str) -> Option<Vec<String>> {
+fn standard_prelude(name: &str) -> Option<Vec<String>> {
     if primitive_name(name) {
         return Some(vec!["primitive".to_owned(), name.to_owned()]);
     }
@@ -76,7 +76,7 @@ pub(super) fn standard_prelude(name: &str) -> Option<Vec<String>> {
     Some(path.iter().map(|segment| (*segment).to_owned()).collect())
 }
 
-pub(super) fn dedup_symbols(symbols: impl IntoIterator<Item = SymbolKey>) -> Vec<SymbolKey> {
+fn dedup_symbols(symbols: impl IntoIterator<Item = SymbolKey>) -> Vec<SymbolKey> {
     let mut found = BTreeSet::new();
     symbols
         .into_iter()
@@ -84,17 +84,13 @@ pub(super) fn dedup_symbols(symbols: impl IntoIterator<Item = SymbolKey>) -> Vec
         .collect()
 }
 
-pub(super) fn module_scope_for(symbol: &SymbolKey) -> Vec<String> {
+fn module_scope_for(symbol: &SymbolKey) -> Vec<String> {
     let mut scope = symbol.scope.clone();
     scope.push(symbol.name.clone());
     scope
 }
 
-pub(super) fn module_source_path(
-    fallback: &str,
-    module_scope: &[String],
-    index: &SourceIndex,
-) -> String {
+fn module_source_path(fallback: &str, module_scope: &[String], index: &SourceIndex) -> String {
     let mut candidates: Vec<(&String, usize)> = index
         .symbols
         .iter()
@@ -123,11 +119,7 @@ pub(super) fn module_source_path(
         .map_or_else(|| fallback.to_owned(), |(path, _)| path.clone())
 }
 
-pub(super) fn module_context_path(
-    fallback: &str,
-    module_scope: &[String],
-    index: &SourceIndex,
-) -> String {
+fn module_context_path(fallback: &str, module_scope: &[String], index: &SourceIndex) -> String {
     if module_scope.is_empty() {
         let mut components: Vec<&str> = fallback.split('/').collect();
         if let Some(source_index) = components.iter().position(|component| *component == "src") {
@@ -182,7 +174,7 @@ pub(super) fn resolve_path_from_context(
     resolve_from_module(source_path, context_scope, &path.segments, index, seen)
 }
 
-pub(super) fn resolve_absolute_path(
+fn resolve_absolute_path(
     source_path: &str,
     segments: &[String],
     index: &SourceIndex,
@@ -223,7 +215,7 @@ pub(super) fn resolve_absolute_path(
     resolve_from_module(&nested_path, &nested_scope, &segments[1..], index, seen)
 }
 
-pub(super) fn resolve_from_module(
+fn resolve_from_module(
     source_path: &str,
     module_scope: &[String],
     segments: &[String],
@@ -362,7 +354,7 @@ pub(super) fn resolve_from_module(
     ResolvedPath::Unknown
 }
 
-pub(super) fn append_resolved(
+fn append_resolved(
     resolved: ResolvedPath,
     suffix: &[String],
     source_path: &str,
