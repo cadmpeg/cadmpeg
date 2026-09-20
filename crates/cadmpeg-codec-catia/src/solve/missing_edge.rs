@@ -992,7 +992,7 @@ impl FaceOptions {
     }
 }
 
-pub(crate) fn unique_duplicate_face_assignment<F>(
+pub(super) fn unique_duplicate_face_assignment<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     face_count: usize,
@@ -1094,7 +1094,7 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DuplicateFaceAssignmentVisit {
+pub(super) enum DuplicateFaceAssignmentVisit {
     Complete,
     Stopped,
     Exhausted,
@@ -1105,7 +1105,7 @@ pub(crate) enum DuplicateFaceAssignmentVisit {
 /// A repeated slot retains its serialized one-face incidence as one choice and
 /// adds each distinct admitted second face as another. The visitor returns
 /// `true` to continue and `false` to stop after a solved or terminal result.
-pub(crate) fn visit_duplicate_face_assignments<F>(
+pub(super) fn visit_duplicate_face_assignments<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     face_count: usize,
@@ -1218,7 +1218,7 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     })
 }
 
-pub(crate) fn resolve_edge_faces_from_runs(
+pub(super) fn resolve_edge_faces_from_runs(
     serialized: &[[usize; 2]],
     runs: &[MeshEdgeRun],
 ) -> Option<Vec<[usize; 2]>> {
@@ -1379,20 +1379,20 @@ pub(crate) struct MeshBoundaryEdgeCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MeshFaceBoundaryDomain {
+pub(super) enum MeshFaceBoundaryDomain {
     Ordered(Vec<MeshFaceBoundaryAssignment>),
     UnorderedFullCycle(Vec<usize>),
     DeferredValidation(MeshDeferredFaceBoundary),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MeshDeferredFaceBoundary {
+pub(super) struct MeshDeferredFaceBoundary {
     pub(crate) cycles: Vec<MeshDeferredBoundaryCycle>,
     pub(crate) missing_edges: Vec<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MeshDeferredBoundaryCycle {
+pub(super) struct MeshDeferredBoundaryCycle {
     pub(crate) length: usize,
     pub(crate) exact_uses: Vec<(MeshBoundaryEdgeCandidate, usize)>,
 }
@@ -3191,7 +3191,7 @@ fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usiz
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
 #[must_use]
-pub(crate) fn propagate_edge_port_points(
+pub(super) fn propagate_edge_port_points(
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {

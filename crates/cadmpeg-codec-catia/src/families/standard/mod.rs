@@ -7,4 +7,4 @@ pub(crate) mod topology;
 mod trim_packet;
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
