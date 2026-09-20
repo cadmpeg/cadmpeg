@@ -727,17 +727,20 @@ fn reverse_pcurve_over_range(
     [start, end]: [f64; 2],
 ) -> Result<Option<PcurveGeometry>, NurbsError> {
     let reflection = start + end;
-    if !reflection.is_finite() {
+    if !start.is_finite() || !end.is_finite() || start >= end {
         return Ok(None);
     }
     match pcurve {
         PcurveGeometry::PolarNurbs { nurbs } => {
-            let reversed_knots = nurbs
+            let Some(reversed_knots) = nurbs
                 .knots()
                 .iter()
                 .rev()
-                .map(|knot| reflection - knot)
-                .collect::<Vec<_>>();
+                .map(|knot| cadmpeg_ir::math::reflect_parameter(*knot, start, end))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Ok(None);
+            };
             let mut poles = nurbs.poles();
             poles.reverse();
             let mut weights = nurbs.weights();
@@ -765,12 +768,15 @@ fn reverse_pcurve_over_range(
             Ok(Some(PcurveGeometry::PolarNurbs { nurbs: reversed }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            let reversed_knots = nurbs
+            let Some(reversed_knots) = nurbs
                 .knots()
                 .iter()
                 .rev()
-                .map(|knot| reflection - knot)
-                .collect::<Vec<_>>();
+                .map(|knot| cadmpeg_ir::math::reflect_parameter(*knot, start, end))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Ok(None);
+            };
             let mut control_points = nurbs.control_points();
             control_points.reverse();
             let mut weights = nurbs.weights();
@@ -840,24 +846,15 @@ fn reverse_pcurve_over_range(
                     && focal_distance != 0.0
             } =>
         {
-            let vertex = parabola_pcurve.vertex();
-            let x_axis = parabola_pcurve.x_axis();
-            let y_axis = parabola_pcurve.y_axis();
-            let focal_distance = parabola_pcurve.focal_distance();
-            let point = |parameter: f64| {
-                let axial = parameter * parameter / (4.0 * focal_distance);
-                Point2::new(
-                    vertex.u + axial * x_axis.u + parameter * y_axis.u,
-                    vertex.v + axial * x_axis.v + parameter * y_axis.v,
-                )
+            let (Some(first), Some(last), Some(tangent)) = (
+                pcurve_uv(pcurve, end),
+                pcurve_uv(pcurve, start),
+                pcurve_tangent(pcurve, end),
+            ) else {
+                return Ok(None);
             };
-            let first = point(end);
-            let last = point(start);
-            let derivative = Point2::new(
-                -(end / (2.0 * focal_distance) * x_axis.u + y_axis.u),
-                -(end / (2.0 * focal_distance) * x_axis.v + y_axis.v),
-            );
-            let half_span = (end - start) * 0.5;
+            let derivative = Point2::new(-tangent.u, -tangent.v);
+            let half_span = end * 0.5 - start * 0.5;
             let middle = Point2::new(
                 first.u + half_span * derivative.u,
                 first.v + half_span * derivative.v,

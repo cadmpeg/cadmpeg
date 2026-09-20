@@ -665,3 +665,26 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
     )
     .is_empty());
 }
+
+#[test]
+fn numerical_ranges_fc05_circle_residual_scales_with_radius() {
+    const RADIUS: f64 = 1e-6;
+    for (perturbation, accepted) in [(0.0, true), (5e-10, false)] {
+        let mut payload = visibgeom_payload(0, 1);
+        payload.extend_from_slice(b"topol_ref_data\0\x07\x09\x04\x01\xf6\xfc\x05");
+        for [x, z, t] in [
+            [RADIUS, 0., 0.],
+            [0., RADIUS + perturbation, std::f64::consts::FRAC_PI_2],
+            [-RADIUS, 0., std::f64::consts::PI],
+            [0., -RADIUS, 3. * std::f64::consts::FRAC_PI_2],
+        ] {
+            for value in [x, z, t, 2.] {
+                world(&mut payload, value);
+            }
+        }
+        payload.push(0xff);
+        payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
+        let scan = container::scan_bytes_ok(build_prt("c", &[("VisibGeom", payload)]));
+        assert_eq!(!scan.curves.fc05_circles.is_empty(), accepted);
+    }
+}

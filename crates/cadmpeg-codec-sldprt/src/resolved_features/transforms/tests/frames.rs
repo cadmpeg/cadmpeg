@@ -1488,3 +1488,27 @@ fn out_of_range_grid_points_cannot_be_transformed_as_saturated_cells() {
         Some((2, 4))
     );
 }
+
+#[test]
+fn numerical_ranges_sketch_matrix_refuses_unrepresentable_axes() {
+    for (scale, accepted) in [(1.0, true), (1e8, false)] {
+        let sketch = Sketch {
+            id: SketchId::mint("synthetic:test:sketch#scaled-frame").unwrap(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::try_resolved(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(scale, 0., 0.),
+            )
+            .unwrap(),
+            profiles: Default::default(),
+            native_ref: None,
+        };
+        assert_eq!(
+            sketch_frame_marker_transform(&sketch, 1.0).is_some(),
+            accepted
+        );
+    }
+}

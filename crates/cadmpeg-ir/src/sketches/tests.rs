@@ -1896,3 +1896,18 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
 }
 
 mod spatial;
+
+#[test]
+fn numerical_ranges_sketch_axes_use_angular_orthogonality() {
+    for scale in [1e-200, 1.0, 1e200] {
+        let normal = Vector3::new(0.0, 0.0, scale);
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        assert!(super::SketchPlacement::try_resolved(origin, normal, normal).is_err());
+        assert!(super::SketchPlacement::try_resolved(
+            origin,
+            normal,
+            Vector3::new(scale, 0.0, 0.0)
+        )
+        .is_ok());
+    }
+}

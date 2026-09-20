@@ -141,3 +141,25 @@ fn small_segment_crossings_do_not_depend_on_cross_product_units() {
         DISTANCE_TOLERANCE
     ));
 }
+
+#[test]
+fn numerical_ranges_profile_arc_tolerance_is_a_length_at_both_ends() {
+    const RADIUS: f64 = 1e-6;
+    const TOLERANCE: f64 = 1e-9;
+    for sweep in [-1.0_f64, 1.0] {
+        for angle in [-0.0005 * sweep, 1.0005 * sweep] {
+            let point = [RADIUS * angle.cos(), RADIUS * angle.sin()];
+            assert!(super::point_on_profile_arc(
+                point,
+                ([0., 0.], RADIUS, 0., sweep),
+                TOLERANCE
+            ));
+        }
+        let angle = 1.01 * sweep;
+        assert!(!super::point_on_profile_arc(
+            [RADIUS * angle.cos(), RADIUS * angle.sin()],
+            ([0., 0.], RADIUS, 0., sweep),
+            TOLERANCE
+        ));
+    }
+}

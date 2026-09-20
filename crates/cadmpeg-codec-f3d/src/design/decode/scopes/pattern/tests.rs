@@ -1149,3 +1149,77 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     )
     .is_some_and(|alignment| alignment.operand_frames().is_some()));
 }
+
+#[test]
+fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
+    let scope = DesignParameterScope::try_new(
+        crate::records::feature::scope::DesignParameterScopeDraft {
+            id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("291".to_owned())
+                .unwrap(),
+            record_index: 0,
+            frame_length: 329,
+            kind_offset: 0,
+            feature_ordinal: std::num::NonZeroU32::MIN,
+            feature_ordinal_offset: 0,
+            history_state_id: Some(2),
+
+            previous_history_state_id: Some(1),
+            previous_history_state_id_offset: None,
+            reference_count_offset: 9,
+            reference_members: crate::records::identity::ReferenceRun::from_columns(
+                vec![100, 50, 51, 52, 53, 110, 120, 130, 140],
+                vec![0; 9],
+                "reference_members",
+            )
+            .unwrap(),
+            payload: crate::records::feature::scope::DesignFeatureKind::RPattern
+                .try_into()
+                .unwrap(),
+            unclosed_construction_operand_groups: Vec::new(),
+            paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                "258".to_owned(),
+            )
+            .unwrap(),
+            paired_byte_offset: 329,
+        }
+        .with_fixture_layout(),
+    )
+    .unwrap();
+
+    let mut bytes = Vec::new();
+    append_transform_record(&mut bytes, 100, [0., 0., 0.]);
+    for index in 50..=53 {
+        append_header(&mut bytes, index);
+    }
+    append_header(&mut bytes, 110);
+    append_transform_record(&mut bytes, 120, [0., 0., 5e199]);
+    append_transform_record(&mut bytes, 130, [0., 0., 1e200]);
+    append_header(&mut bytes, 140);
+    let construction =
+        crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                u_count: 3,
+                v_count: 1,
+                u_extent: 1e200,
+                v_extent: 0.,
+                owner_record_indices: [50, 51, 52, 53],
+                value_offsets: [501, 502, 503, 504],
+                instances: None,
+            },
+        )
+        .unwrap();
+    let instances = super::exact_rectangular_pattern_instances(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &construction,
+    )
+    .unwrap();
+    assert_eq!(instances.instance_count(), 3);
+    assert_eq!(
+        instances.frames().last().unwrap().transform.value[2][3],
+        1e200
+    );
+}

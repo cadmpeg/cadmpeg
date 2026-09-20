@@ -13,8 +13,6 @@ const EPS_CENTER_ALIGNMENT: f64 = 1.0e-9;
 const EPS_TANGENT_ROOT: f64 = 1.0e-9;
 const EPS_NONZERO_SLOPE: f64 = 1.0e-12;
 const EPS_POSITIVE_RADIUS: f64 = 1.0e-12;
-const EPS_COINCIDENT_CENTER: f64 = 1.0e-12;
-const EPS_MERIDIAN_ROOT: f64 = 1.0e-12;
 const EPS_AXIS_ORTHO: f64 = 1.0e-10;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
@@ -841,41 +839,18 @@ fn meridian_circle_intersections(
     first_radius: f64,
     second_center: [f64; 2],
     second_radius: f64,
-    scale: f64,
 ) -> Vec<[f64; 2]> {
-    let delta = [
-        second_center[0] - first_center[0],
-        second_center[1] - first_center[1],
-    ];
-    let distance = delta[0].hypot(delta[1]);
-    let scale = scale.max(1.0);
-    let distance_tolerance = EPS_CENTER_ALIGNMENT * scale;
-    if distance <= EPS_COINCIDENT_CENTER * scale
-        || distance > first_radius + second_radius + distance_tolerance
-        || distance < (first_radius - second_radius).abs() - distance_tolerance
-    {
-        return Vec::new();
-    }
-    let along = (distance * distance + first_radius * first_radius - second_radius * second_radius)
-        / (2.0 * distance);
-    let height_squared = first_radius.mul_add(first_radius, -(along * along));
-    let height_tolerance = EPS_MERIDIAN_ROOT * scale * scale;
-    if height_squared < -height_tolerance {
-        return Vec::new();
-    }
-    let unit = [delta[0] / distance, delta[1] / distance];
-    let base = [
-        first_center[0] + along * unit[0],
-        first_center[1] + along * unit[1],
-    ];
-    if height_squared.abs() <= height_tolerance {
-        return vec![base];
-    }
-    let height = height_squared.sqrt();
-    [-height, height]
-        .into_iter()
-        .map(|sense| [base[0] - sense * unit[1], base[1] + sense * unit[0]])
-        .collect()
+    use cadmpeg_ir::math::{planar::circle_intersections, Point2};
+    circle_intersections(
+        Point2::new(first_center[0], first_center[1]),
+        first_radius,
+        Point2::new(second_center[0], second_center[1]),
+        second_radius,
+    )
+    .unwrap_or_default()
+    .into_iter()
+    .map(|point| [point.u, point.v])
+    .collect()
 }
 
 pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
@@ -957,7 +932,6 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         sphere.radius,
         [torus.major_radius, axial],
         torus.minor_radius,
-        scale,
     );
     let tag = match intersections.len() {
         1 => "coaxial_sphere_torus_tangent_circle",
@@ -1025,7 +999,6 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         first.minor_radius,
         [second.major_radius, axial],
         second.minor_radius,
-        scale,
     );
     let tag = match intersections.len() {
         1 => "coaxial_tori_tangent_circle",
@@ -1056,3 +1029,6 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

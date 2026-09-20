@@ -2242,10 +2242,11 @@ pub(crate) fn normalize_occt_curve_range(
             if !focal_distance.is_finite() || focal_distance <= 0.0 {
                 return range;
             }
-            range.map(|[start, end]| {
-                let scale = 2.0 * focal_distance;
-                [start / scale, end / scale]
-            })
+            let [start, end] = range?;
+            Some([
+                cadmpeg_ir::math::multiply_divide(start, 0.5, focal_distance)?,
+                cadmpeg_ir::math::multiply_divide(end, 0.5, focal_distance)?,
+            ])
         }
         SolvedCurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
         _ => range,

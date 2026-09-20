@@ -5617,12 +5617,14 @@ fn line_angle_matches(
     let first_dv = first_end.v - first_start.v;
     let second_du = second_end.u - second_start.u;
     let second_dv = second_end.v - second_start.v;
-    let denominator = first_du.hypot(first_dv) * second_du.hypot(second_dv);
-    if denominator <= 1.0e-18 {
+    let Some(first) = cadmpeg_ir::math::Vector3::new(first_du, first_dv, 0.0).unit_nonzero() else {
         return false;
-    }
-    let cosine = ((first_du * second_du + first_dv * second_dv) / denominator).clamp(-1.0, 1.0);
-    let angle = cosine.acos();
+    };
+    let Some(second) = cadmpeg_ir::math::Vector3::new(second_du, second_dv, 0.0).unit_nonzero()
+    else {
+        return false;
+    };
+    let angle = first.cross(second).norm().atan2(first.dot(second));
     let supplementary = std::f64::consts::PI - angle;
     let scale = 1.0 + expected.abs();
     (angle - expected).abs() <= scale * EPS_DIMENSIONS_LINE_ANGLE_MATCHES_E9
@@ -5901,13 +5903,16 @@ fn parallel_line_offset(
     {
         return None;
     }
-    let parallel_error =
-        (source_du * result_dv - source_dv * result_du).abs() / (source_length * result_length);
+    let source_direction =
+        cadmpeg_ir::math::Vector3::new(source_du, source_dv, 0.0).unit_nonzero()?;
+    let result_direction =
+        cadmpeg_ir::math::Vector3::new(result_du, result_dv, 0.0).unit_nonzero()?;
+    let parallel_error = source_direction.cross(result_direction).norm();
     if parallel_error > EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E9 {
         return None;
     }
-    let normal_u = -source_dv / source_length;
-    let normal_v = source_du / source_length;
+    let normal_u = -source_direction.y;
+    let normal_v = source_direction.x;
     let distance_at = |point: &Point2| {
         (point.u - source_start.u) * normal_u + (point.v - source_start.v) * normal_v
     };
