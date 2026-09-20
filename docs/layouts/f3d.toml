@@ -2457,7 +2457,7 @@ anchor = "and a `u32 count`"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/design/body.rs"
-contains = "pub(crate) const BODY_MAP_ZERO_PREFIX_LENGTHS: [usize; 2] = [10, 11];"
+contains = "pub(super) const BODY_MAP_ZERO_PREFIX_LENGTHS: [usize; 2] = [10, 11];"
 note = "The body-map decoder accepts both reserved-zero variants."
 
 [[record]]
