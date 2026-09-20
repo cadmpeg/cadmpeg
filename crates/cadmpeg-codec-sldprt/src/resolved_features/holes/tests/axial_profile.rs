@@ -238,7 +238,7 @@ fn axial_profile_resolves_counterdrill_roles() {
                         end.v += 7.0;
                     }
                     _ => unreachable!(),
-                };
+                }
             };
             definition.try_into()
         })
@@ -544,7 +544,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
                         end.v -= 33.0;
                     }
                     _ => unreachable!(),
-                };
+                }
             };
             definition.try_into()
         })
