@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 
-use crate::features::NonEmptyMembers;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::transform::Transform;
@@ -272,89 +271,100 @@ pub enum LinkMember {
     },
 }
 
-/// The members of a link state, at least one, sorted by kind.
-///
-/// The wire carries one member list, so "all four members are absent" has no
-/// spelling: the only emptiness admission is over that one list, and the three
-/// members a link states at most once are refused only when repeated.
+/// `FreeCAD` `App::Link`-specific occurrence state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "NonEmptyMembers<LinkMember>", into = "Vec<LinkMember>")]
-struct LinkMembers {
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
+#[serde(try_from = "LinkStateWire", into = "LinkStateWire")]
+pub struct LinkState {
     linked_subelements: Vec<String>,
     element_component: Option<ProductDefinitionId>,
     claim_child: Option<bool>,
     copy_on_change: Option<CopyOnChange>,
 }
 
-impl TryFrom<NonEmptyMembers<LinkMember>> for LinkMembers {
+/// `FreeCAD` `App::Link`-specific occurrence state.
+///
+/// The wire carries one member list, so "all four members are absent" has no
+/// spelling: the only emptiness admission is over that one list, and the three
+/// members a link states at most once are refused only when repeated.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "LinkState"))]
+#[serde(deny_unknown_fields)]
+struct LinkStateWire {
+    /// The link members the source recorded.
+    members: Vec<LinkMember>,
+}
+
+impl TryFrom<LinkStateWire> for LinkState {
     type Error = &'static str;
 
-    fn try_from(members: NonEmptyMembers<LinkMember>) -> Result<Self, Self::Error> {
-        let mut sorted = Self {
+    fn try_from(wire: LinkStateWire) -> Result<Self, Self::Error> {
+        if wire.members.is_empty() {
+            return Err("link state states at least one member");
+        }
+        let mut state = Self {
             linked_subelements: Vec::new(),
             element_component: None,
             claim_child: None,
             copy_on_change: None,
         };
-        for member in members {
+        for member in wire.members {
             match member {
                 LinkMember::LinkedSubelement { subelement } => {
-                    sorted.linked_subelements.push(subelement);
+                    state.linked_subelements.push(subelement);
                 }
                 LinkMember::ElementComponent { component } => {
-                    if sorted.element_component.replace(component).is_some() {
+                    if state.element_component.replace(component).is_some() {
                         return Err("link state states element_component once");
                     }
                 }
                 LinkMember::ClaimChild { claim } => {
-                    if sorted.claim_child.replace(claim).is_some() {
+                    if state.claim_child.replace(claim).is_some() {
                         return Err("link state states claim_child once");
                     }
                 }
-                LinkMember::CopyOnChange { state } => {
-                    if sorted.copy_on_change.replace(state).is_some() {
+                LinkMember::CopyOnChange {
+                    state: copy_on_change,
+                } => {
+                    if state.copy_on_change.replace(copy_on_change).is_some() {
                         return Err("link state states copy_on_change once");
                     }
                 }
             }
         }
-        Ok(sorted)
+        Ok(state)
     }
 }
 
-impl From<LinkMembers> for Vec<LinkMember> {
-    fn from(members: LinkMembers) -> Self {
-        members
-            .linked_subelements
-            .into_iter()
-            .map(|subelement| LinkMember::LinkedSubelement { subelement })
-            .chain(
-                members
-                    .element_component
-                    .map(|component| LinkMember::ElementComponent { component }),
-            )
-            .chain(
-                members
-                    .claim_child
-                    .map(|claim| LinkMember::ClaimChild { claim }),
-            )
-            .chain(
-                members
-                    .copy_on_change
-                    .map(|state| LinkMember::CopyOnChange { state }),
-            )
-            .collect()
+impl From<LinkState> for LinkStateWire {
+    fn from(state: LinkState) -> Self {
+        Self {
+            members: state
+                .linked_subelements
+                .into_iter()
+                .map(|subelement| LinkMember::LinkedSubelement { subelement })
+                .chain(
+                    state
+                        .element_component
+                        .map(|component| LinkMember::ElementComponent { component }),
+                )
+                .chain(
+                    state
+                        .claim_child
+                        .map(|claim| LinkMember::ClaimChild { claim }),
+                )
+                .chain(
+                    state
+                        .copy_on_change
+                        .map(|copy_on_change| LinkMember::CopyOnChange {
+                            state: copy_on_change,
+                        }),
+                )
+                .collect(),
+        }
     }
-}
-
-/// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct LinkState {
-    /// The link members the source recorded.
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<LinkMember>"))]
-    members: LinkMembers,
 }
 
 impl LinkState {
@@ -365,36 +375,43 @@ impl LinkState {
         claim_child: Option<bool>,
         copy_on_change: Option<CopyOnChange>,
     ) -> Option<Self> {
-        let members = LinkMembers {
+        if linked_subelements.is_empty()
+            && element_component.is_none()
+            && claim_child.is_none()
+            && copy_on_change.is_none()
+        {
+            return None;
+        }
+        Some(Self {
             linked_subelements,
             element_component,
             claim_child,
             copy_on_change,
-        };
-        NonEmptyMembers::try_from(Vec::<LinkMember>::from(members))
-            .ok()
-            .and_then(|members| LinkMembers::try_from(members).ok())
-            .map(|members| Self { members })
+        })
     }
 
     /// Persisted prototype subelement selection.
     pub fn linked_subelements(&self) -> &[String] {
-        &self.members.linked_subelements
+        &self.linked_subelements
     }
 
     /// Explicit application object representing this array element.
     pub fn element_component(&self) -> Option<&ProductDefinitionId> {
-        self.members.element_component.as_ref()
+        self.element_component.as_ref()
     }
 
     /// Whether this link claims its prototype in the source tree.
-    pub fn claim_child(&self) -> Option<bool> {
-        self.members.claim_child
+    ///
+    /// `FreeCAD` states `LinkClaimChild` as an optional `App::PropertyBool`,
+    /// so an absent property and a stated `false` are separate source facts
+    /// and reach separate wire member lists.
+    pub const fn claim_child(&self) -> Option<bool> {
+        self.claim_child
     }
 
     /// Copy-on-change ownership state.
     pub fn copy_on_change(&self) -> Option<&CopyOnChange> {
-        self.members.copy_on_change.as_ref()
+        self.copy_on_change.as_ref()
     }
 }
 
