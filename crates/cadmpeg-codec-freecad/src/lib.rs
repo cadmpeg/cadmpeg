@@ -31,6 +31,7 @@ mod mutation;
 mod native;
 mod persistence;
 mod product;
+mod placement;
 mod topology_transfer;
 mod writer;
 

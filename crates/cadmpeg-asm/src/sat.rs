@@ -104,9 +104,10 @@ pub fn has_text_magic(bytes: &[u8]) -> bool {
 /// One whitespace-delimited field, before typing.
 #[derive(Debug, Clone, PartialEq)]
 enum Prim {
-    /// A field parsing as a number; the integral flag records its lexical
-    /// shape (no `.`, `e`, or `E`).
-    Num { value: f64, integral: bool },
+    /// An exact signed decimal integer field.
+    Integer(i64),
+    /// A real field whose lexical shape includes a decimal point or exponent.
+    Real(f64),
     /// `$N` entity reference.
     Ref(i64),
     /// `@N` length-prefixed raw-byte string.
@@ -182,12 +183,6 @@ impl FieldReader<'_> {
         self.pos = end;
         Ok(payload)
     }
-}
-
-fn parse_number(word: &str) -> Option<(f64, bool)> {
-    let value: f64 = word.parse().ok()?;
-    let integral = !word.contains(['.', 'e', 'E']);
-    Some((value, integral))
 }
 
 // ---------------------------------------------------------------------------
@@ -491,8 +486,16 @@ fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Pr
     if field == "}" {
         return Ok(Prim::Close);
     }
-    if let Some((value, integral)) = parse_number(&field) {
-        return Ok(Prim::Num { value, integral });
+    let digits = field.strip_prefix('+').or_else(|| field.strip_prefix('-')).unwrap_or(&field);
+    if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return field.parse::<i64>().map(Prim::Integer).map_err(|_| StreamError {
+            format: StreamFormat::Text,
+            offset: at,
+            reason: "integer field is outside the signed 64-bit range".to_string(),
+        });
+    }
+    if let Ok(value) = field.parse::<f64>() {
+        return Ok(Prim::Real(value));
     }
     Ok(Prim::Word(field))
 }
@@ -598,9 +601,13 @@ impl<'a> Cur<'a> {
 
     fn num(&mut self) -> Option<f64> {
         match self.peek()? {
-            Prim::Num { value, .. } => {
+            Prim::Real(value) => {
                 self.pos += 1;
                 Some(*value)
+            }
+            Prim::Integer(value) => {
+                self.pos += 1;
+                Some(*value as f64)
             }
             _ => None,
         }
@@ -608,10 +615,9 @@ impl<'a> Cur<'a> {
 
     fn long(&mut self) -> Option<i64> {
         match self.peek()? {
-            Prim::Num { value, integral } if *integral => {
+            Prim::Integer(value) => {
                 self.pos += 1;
-                #[allow(clippy::cast_possible_truncation)] // integral by lexical shape
-                Some(*value as i64)
+                Some(*value)
             }
             _ => None,
         }
@@ -1308,14 +1314,8 @@ fn fallback_scope(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// grammar the logical reading is used.
 fn lexical_token(prim: &Prim) -> Token {
     match prim {
-        Prim::Num { value, integral } => {
-            if *integral {
-                #[allow(clippy::cast_possible_truncation)] // integral by lexical shape
-                Token::Long(*value as i64)
-            } else {
-                Token::Double(*value)
-            }
-        }
+        Prim::Integer(value) => Token::Long(*value),
+        Prim::Real(value) => Token::Double(*value),
         Prim::Ref(index) => Token::Ref(*index),
         Prim::Str(value) => Token::Str(value.clone()),
         Prim::Open => Token::SubtypeOpen,
@@ -1434,6 +1434,18 @@ fn type_record(head: &str, prims: &[Prim], k: f64) -> Vec<Token> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_audit_sat_integer_fields_preserve_exact_values_and_reject_overflow() {
+        let stream = parse(&asm_stream("audit-integer 9007199254740993 -9223372036854775808 9223372036854775807 #\n")).unwrap();
+        let tokens = &stream.records[0].tokens;
+        assert!(tokens.contains(&Token::Long(9_007_199_254_740_993)));
+        assert!(tokens.contains(&Token::Long(i64::MIN)));
+        assert!(tokens.contains(&Token::Long(i64::MAX)));
+        for value in ["9223372036854775808", "-9223372036854775809"] {
+            assert!(parse(&asm_stream(&format!("audit-integer {value} #\n"))).is_err());
+        }
+    }
+
     use super::{parse, Terminator};
     use crate::sab::Token;
 
