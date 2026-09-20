@@ -963,7 +963,7 @@ impl ActRootLayout {
         Self::new(self.byte_offset, entity_id, display_name, self.padding)
     }
 
-    pub(super) fn byte_offset(&self) -> u64 {
+    fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
     pub(crate) fn entity_id(&self) -> &str {
