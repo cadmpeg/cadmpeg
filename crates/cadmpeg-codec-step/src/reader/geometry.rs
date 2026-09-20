@@ -2664,9 +2664,9 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
 }
 
 pub(super) struct OwnedCarriers {
-    pub(super) curves: HashSet<CurveIndex>,
-    pub(super) surfaces: HashSet<SurfaceIndex>,
-    pub(super) points: HashSet<PointIndex>,
+    curves: HashSet<CurveIndex>,
+    surfaces: HashSet<SurfaceIndex>,
+    points: HashSet<PointIndex>,
 }
 
 pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> OwnedCarriers {

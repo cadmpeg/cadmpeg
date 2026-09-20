@@ -221,7 +221,7 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 }
 
 #[test]
-pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
+fn decode_retains_signature_opaque_without_verification_result() {
     let bytes = include_bytes!("../signature/tests/data/sg04_openssl_detached.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -256,7 +256,7 @@ pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
 }
 
 #[test]
-pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
+fn decode_user_defined_entities_as_named_opaque_records() {
     let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

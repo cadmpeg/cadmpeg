@@ -284,7 +284,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 
 /// A minimal single-cylinder-surface document exercising analytic emission and
 /// interning of shared points/directions.
-pub(crate) fn cylinder_surface_doc() -> CadIr {
+pub(super) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),

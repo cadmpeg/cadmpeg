@@ -60,13 +60,13 @@ include!("dialect/registry_ids.rs");
 ///
 /// Verbatim as read, object-identifier braces included. Absent when the header
 /// declares no readable `FILE_SCHEMA` identifier at all.
-pub(crate) const DECLARED_FILE_SCHEMA_IDENTIFIER: &str = "file_schema_identifier";
+const DECLARED_FILE_SCHEMA_IDENTIFIER: &str = "file_schema_identifier";
 /// Key of the whole `FILE_SCHEMA` list, in [`DialectMatch::declared`], present
 /// only when the list declares more than one identifier.
 ///
 /// The identifiers verbatim as read, joined with `,`. See
 /// [`StepDialect::classify`] for why one entry of the list is the identity.
-pub(crate) const DECLARED_FILE_SCHEMA_IDENTIFIERS: &str = "file_schema_identifiers";
+const DECLARED_FILE_SCHEMA_IDENTIFIERS: &str = "file_schema_identifiers";
 /// Key of the object-identifier arcs of the classified identifier, in
 /// [`DialectMatch::declared`]. Absent when the identifier carries none.
 ///
@@ -74,13 +74,13 @@ pub(crate) const DECLARED_FILE_SCHEMA_IDENTIFIERS: &str = "file_schema_identifie
 /// `'… { 1 0 10303 442 3 1 4 }'` records `" 1 0 10303 442 3 1 4 "`. This is
 /// evidence, not a join key: `docs/dialects.toml` writes the same arcs trimmed
 /// under `long_form_arcs`, and the resolved id is what a consumer compares.
-pub(crate) const DECLARED_LONG_FORM_ARCS: &str = "long_form_arcs";
+const DECLARED_LONG_FORM_ARCS: &str = "long_form_arcs";
 /// Key of the `FILE_DESCRIPTION` implementation level, in
 /// [`DialectMatch::declared`]. Absent when the header declares no readable one.
 ///
 /// Verbatim as read: `"2;1"`, `"4;2"`. Evidence only. The parser branches on
 /// this value (`crate::parse::ImplementationLevel`) but no row here does.
-pub(crate) const DECLARED_IMPLEMENTATION_LEVEL: &str = "implementation_level";
+const DECLARED_IMPLEMENTATION_LEVEL: &str = "implementation_level";
 
 /// One row of `docs/dialects.toml` under the `step` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -92,7 +92,7 @@ pub(crate) enum StepDialect {
 
 /// A structurally identified STEP encoding this codec refuses before decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum AlternateEncoding {
+enum AlternateEncoding {
     Part28Xml,
     Ap242BoModelXml,
     Part26Hdf5,
@@ -136,7 +136,7 @@ pub(crate) enum Part21Dialect {
 
 impl Part21Dialect {
     /// The registry-generated id for this row.
-    pub(crate) const fn id(self) -> DialectId {
+    const fn id(self) -> DialectId {
         match self {
             Self::Schema(schema) => schema.id(),
             Self::Ap242 => STEP_AP242,
@@ -144,7 +144,7 @@ impl Part21Dialect {
     }
 
     /// The canonical `FILE_SCHEMA` identifier for this row.
-    pub(crate) const fn schema_identifier(self) -> &'static str {
+    const fn schema_identifier(self) -> &'static str {
         match self {
             Self::Schema(schema) => schema.file_schema(),
             Self::Ap242 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
@@ -165,7 +165,7 @@ const NEAREST_STRATEGY: Part21Dialect = Part21Dialect::Schema(StepSchema::Ap242E
 impl StepDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    const ALL: [Self; 8] = [
         Self::Part21(Part21Dialect::Schema(StepSchema::Ap203Edition1)),
         Self::Part21(Part21Dialect::Schema(StepSchema::Ap203Edition2)),
         Self::Part21(Part21Dialect::Schema(StepSchema::Ap214)),
@@ -177,7 +177,7 @@ impl StepDialect {
     ];
 
     /// The registry-generated id for this variant.
-    pub(crate) const fn id(self) -> DialectId {
+    const fn id(self) -> DialectId {
         match self {
             Self::Part21(row) => row.id(),
             Self::Unknown => STEP_UNKNOWN,
