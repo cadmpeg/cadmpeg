@@ -2546,10 +2546,10 @@ fn fold_surface_frame(
                 return Ok(());
             }
             SolvedSurfaceGeometry::Sphere(payload) => {
-                let center = payload.center();
-                let radius = payload.radius();
+                let center = payload.center().get();
+                let radius = payload.radius().get();
                 *payload = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    *center,
+                    center,
                     v_reference,
                     u_reference,
                     radius,
@@ -3652,7 +3652,7 @@ fn derive_spherical_pcurves(
         let sphere_center = sphere_surface.center();
         let v_reference = sphere_surface.axis();
         let u_reference = sphere_surface.ref_direction();
-        let radius = sphere_surface.radius();
+        let radius = sphere_surface.radius().get();
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
@@ -3974,7 +3974,7 @@ fn analytic_pcurve_chord_bound(
             radial_scale * (max_radius * du * du + 2.0 * slope * du * dv)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             radius.abs() * (du + dv).powi(2)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -5613,7 +5613,7 @@ fn synthesize_sphere_seams(
         };
         let center = sphere_surface.center();
         let axis = sphere_surface.axis();
-        let radius = sphere_surface.radius();
+        let radius = sphere_surface.radius().get();
         let face_loops = face.loops.to_vec();
         let [loop_id] = face_loops.as_slice() else {
             continue;
@@ -5727,7 +5727,7 @@ fn synthesize_sphere_seams(
             continue;
         };
         let center = *sphere_surface.center();
-        let radius = sphere_surface.radius();
+        let radius = sphere_surface.radius().get();
         if face.loops.len() != 1 {
             continue;
         }

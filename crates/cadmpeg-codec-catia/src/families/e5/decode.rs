@@ -2845,7 +2845,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             Some((
                 (*center).translated(*axis, radius * v.sin()),
                 radius * v.cos().abs(),
@@ -2873,7 +2873,7 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((*center, radius, (*axis).cross(radial)))

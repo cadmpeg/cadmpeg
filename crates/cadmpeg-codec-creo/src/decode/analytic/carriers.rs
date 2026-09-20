@@ -481,7 +481,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             Some(CarrierEquation::Sphere(SphereEquation {
                 center: [center.x, center.y, center.z],
                 ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],

@@ -105,11 +105,13 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
                 },
             )
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) if sphere.radius() > 0.0 => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere))
+            if sphere.radius().get() > 0.0 =>
+        {
             let center = sphere.center();
             let axis = sphere.axis();
             let ref_direction = sphere.ref_direction();
-            let radius = sphere.radius();
+            let radius = sphere.radius().get();
             (
                 *center,
                 *axis,
@@ -240,15 +242,12 @@ pub(in crate::decode) fn meridian_circle_pcurve(
 ) -> Option<PcurveGeometry> {
     let (surface_center, surface_axis, surface_x, major_radius, meridian_radius) = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-            if {
-                let radius = sphere_surface.radius();
-                radius.is_finite() && radius > 0.0
-            } =>
+            if sphere_surface.radius().get() > 0.0 =>
         {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             (*center, *axis, *ref_direction, None, radius)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))

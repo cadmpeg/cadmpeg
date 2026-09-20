@@ -513,7 +513,7 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
                             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
                             center.x == 0.0
                                 && center.y == 0.0
                                 && (center.z + 15.0).abs() < EPS_ANALYTIC_FRAME

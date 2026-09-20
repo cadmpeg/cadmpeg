@@ -505,7 +505,7 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-        let radius = sphere_surface.radius();
+        let radius = sphere_surface.radius().get();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)

@@ -16,7 +16,9 @@
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
-use crate::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveLength, PositiveReal};
+use crate::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
 use crate::units::{OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -446,7 +448,7 @@ impl TryFrom<ConeSurfaceWire> for ConeSurface {
 #[serde(try_from = "SphereSurfaceWire", into = "SphereSurfaceWire")]
 pub struct SphereSurface {
     center: FinitePoint3,
-    radius: FiniteReal,
+    radius: NonZeroLength,
     frame: OrthonormalFrame3,
 }
 
@@ -465,6 +467,21 @@ struct SphereSurfaceWire {
 }
 
 impl SphereSurface {
+    /// Build a sphere from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    #[must_use]
+    pub const fn new(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radius: NonZeroLength,
+    ) -> Self {
+        Self {
+            center,
+            radius,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,
@@ -474,22 +491,22 @@ impl SphereSurface {
     ) -> Result<Self, &'static str> {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
-        if radius == 0.0 {
-            return Err("SphereSurface.radius must be nonzero");
-        }
         let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
-        let radius = FiniteReal::new(radius).ok_or("SphereSurface.radius must be finite")?;
-        Ok(Self {
-            center,
-            radius,
-            frame,
-        })
+        let radius =
+            NonZeroLength::new(radius).ok_or("SphereSurface.radius must be finite and nonzero")?;
+        Ok(Self::new(center, frame, radius))
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -504,20 +521,21 @@ impl SphereSurface {
         self.frame.reference()
     }
 
-    /// Return the radius.
+    /// Return the radius. A sphere radius is signed and nonzero, so the type
+    /// admits both signs.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> NonZeroLength {
+        self.radius
     }
 }
 
 impl From<SphereSurface> for SphereSurfaceWire {
     fn from(value: SphereSurface) -> Self {
         Self {
-            center: *value.center(),
+            center: value.center().get(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
-            radius: value.radius(),
+            radius: value.radius().get(),
         }
     }
 }

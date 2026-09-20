@@ -138,14 +138,10 @@ pub fn analytic_surface_parameters_solved(
             Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
-            if radius == 0.0 {
-                return None;
-            }
-            let (x, y, z) = components(*center, *axis, *ref_direction);
+            let (x, y, z) = components(center, *axis, *ref_direction);
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -4247,17 +4243,17 @@ fn surface_point_with_budget_inner(
             ))
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
             let v_cosine = v.cos();
             let v_sine = v.sin();
             Some(offset(
-                *center,
+                center,
                 &[
                     (radius * v_cosine * u_cosine, *ref_direction),
                     (radius * v_cosine * u_sine, transverse),
@@ -4597,10 +4593,10 @@ fn surface_second_partials_inner(
             })
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let transverse = axis.cross(*ref_direction);
             let u_cosine = u.cos();
             let u_sine = u.sin();
@@ -4608,7 +4604,7 @@ fn surface_second_partials_inner(
             let v_sine = v.sin();
             Some(SurfaceSecondPartials {
                 point: offset(
-                    *center,
+                    center,
                     &[
                         (radius * v_cosine * u_cosine, *ref_direction),
                         (radius * v_cosine * u_sine, transverse),

@@ -213,7 +213,7 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-        let radius = sphere_surface.radius();
+        let radius = sphere_surface.radius().get();
                     *center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)

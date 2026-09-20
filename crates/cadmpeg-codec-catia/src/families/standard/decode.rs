@@ -670,7 +670,7 @@ fn refine_consolidated_analytic_surfaces(
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
                 let center = sphere_surface.center();
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 exactly_one(spheres.iter().filter(|sphere| {
                     same_point(*center, sphere.center)
                         && radius.to_bits() == quantized(sphere.radius.get()).to_bits()
@@ -7511,10 +7511,7 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
-            if !radius.is_finite() || radius == 0.0 {
-                return None;
-            }
+            let radius = sphere_surface.radius().get();
             let offset = point.vector_from(*center);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
@@ -7594,7 +7591,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             (point.distance(*center) - radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -7724,7 +7721,7 @@ fn standard_spline_circle(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
                 let center = sphere_surface.center();
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 (*center, radius, *origin, *normal)
@@ -7736,7 +7733,7 @@ fn standard_spline_circle(
                 let origin = plane_surface_2.origin();
                 let normal = plane_surface_2.normal();
                 let center = sphere_surface_2.center();
-                let radius = sphere_surface_2.radius();
+                let radius = sphere_surface_2.radius().get();
                 (*center, radius, *origin, *normal)
             }
             _ => return None,
@@ -9464,7 +9461,7 @@ fn standard_circle_axis_from_carrier(
 ) -> Option<Vector3> {
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface {
         let sphere_center = sphere_surface.center();
-        let sphere_radius = sphere_surface.radius();
+        let sphere_radius = sphere_surface.radius().get();
         let center_distance = center.distance(*sphere_center);
         if center_distance <= SPHERE_CENTER_COINCIDENCE_TOLERANCE
             && close_length(circle_radius, sphere_radius)
@@ -9510,7 +9507,7 @@ fn circle_axis_from_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let sphere_center = sphere_surface.center();
-            let sphere_radius = sphere_surface.radius();
+            let sphere_radius = sphere_surface.radius().get();
             let offset = center.vector_from(*sphere_center);
             let distance = offset.x.hypot(offset.y).hypot(offset.z);
             (distance.is_finite()

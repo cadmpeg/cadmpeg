@@ -1053,7 +1053,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             assert_eq!(radius, -10.0);
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(

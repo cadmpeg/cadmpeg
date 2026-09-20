@@ -68,7 +68,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
         .expect("large analytic carrier");
         let (radius,) = match surface {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 (radius,)
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {

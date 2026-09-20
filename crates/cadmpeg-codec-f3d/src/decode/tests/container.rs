@@ -184,7 +184,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
-    let radius = sphere_surface.radius();
+    let radius = sphere_surface.radius().get();
     // 25 stream units at scale 1 (millimetres per unit) are 25 mm.
     assert!((radius - 25.0).abs() < 1.0e-9);
 }

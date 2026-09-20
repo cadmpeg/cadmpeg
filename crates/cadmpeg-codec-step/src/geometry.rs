@@ -402,7 +402,7 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let pl = placement(e, *center, *axis, *ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",

@@ -1918,7 +1918,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &centered_arc, &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
         if {
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             radius == 2.0
         })
     );

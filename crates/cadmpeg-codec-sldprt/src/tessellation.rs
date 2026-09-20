@@ -2801,7 +2801,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             Some((subtract(point, *center).norm() - radius).abs())
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {

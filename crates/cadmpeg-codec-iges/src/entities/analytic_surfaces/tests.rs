@@ -74,7 +74,7 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                         sphere_surface,
                     )),
                 ) if {
-                    let radius = sphere_surface.radius();
+                    let radius = sphere_surface.radius().get();
                     radius == 2.0
                 } => {}
                 (

@@ -248,7 +248,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius().get() == -12.5 })
     );
 
     let mut edited = result.ir().clone();
@@ -320,7 +320,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
         .expect("round-trip third support surface");
     assert!(
-        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius() == -12.5 })
+        matches!(third_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) if { sphere_surface.radius().get() == -12.5 })
     );
 }
 

@@ -3163,19 +3163,19 @@ pub(super) fn analytic_surface_offset(
             let support_center = sphere_surface.center();
             let support_axis = sphere_surface.axis();
             let support_ref = sphere_surface.ref_direction();
-            let support_radius = sphere_surface.radius();
+            let support_radius = sphere_surface.radius().get();
             let offset_center = sphere_surface_2.center();
             let offset_axis = sphere_surface_2.axis();
             let offset_ref = sphere_surface_2.ref_direction();
-            let offset_radius = sphere_surface_2.radius();
+            let offset_radius = sphere_surface_2.radius().get();
             support_center == offset_center
                 && support_axis == offset_axis
                 && support_ref == offset_ref
                 && support_radius.signum().to_bits() == offset_radius.signum().to_bits()
         } =>
         {
-            let support_radius = sphere_surface.radius();
-            let offset_radius = sphere_surface_2.radius();
+            let support_radius = sphere_surface.radius().get();
+            let offset_radius = sphere_surface_2.radius().get();
             Some((offset_radius - support_radius) * support_radius.signum())
         }
         (
