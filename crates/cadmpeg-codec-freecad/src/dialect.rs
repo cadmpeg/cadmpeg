@@ -93,7 +93,7 @@ pub(crate) enum FcstdDialect {
 impl FcstdDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
+    const ALL: [Self; 4] = [Self::Schema2, Self::Schema3, Self::Schema4, Self::Unknown];
 
     /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {

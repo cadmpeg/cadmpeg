@@ -25,7 +25,7 @@ mod element_map;
 mod gui;
 mod joint;
 /// Byte-offset constants generated from `docs/layouts/freecad.toml`.
-pub(crate) mod layout;
+mod layout;
 mod loss;
 mod mutation;
 mod native;
@@ -82,7 +82,7 @@ impl FcstdCodec {
     }
 }
 
-pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
+fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Vec::new();
     };
@@ -1264,4 +1264,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

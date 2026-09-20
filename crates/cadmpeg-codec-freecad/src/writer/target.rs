@@ -28,7 +28,7 @@ use crate::native::DocumentFacts;
 /// [`write_seekable`] takes that proof instead of raw options, which is why it
 /// needs no target gate of its own.
 #[derive(Debug)]
-pub(crate) struct Resolution<'a> {
+pub(super) struct Resolution<'a> {
     ir: &'a CadIr,
     namespace: &'a cadmpeg_ir::native::NativeNamespace,
     document: DocumentFacts,
@@ -112,10 +112,7 @@ fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
 }
 
 /// Decide what to write, from the request and the source.
-pub(in crate::writer) fn resolve<'a>(
-    ir: &'a CadIr,
-    resolved: &ResolvedWrite<'_>,
-) -> Result<Resolution<'a>, CodecError> {
+fn resolve<'a>(ir: &'a CadIr, resolved: &ResolvedWrite<'_>) -> Result<Resolution<'a>, CodecError> {
     if !resolved.source_preservation_eligible() {
         return Err(resolved.unavailable(TRANSCODE_UNAVAILABLE));
     }
@@ -133,10 +130,7 @@ pub(in crate::writer) fn resolve<'a>(
 /// document record is present. `target` is the dialect witness resolved from
 /// the source declaration; this adapter does not derive a second identity from
 /// the retained graph.
-pub(in crate::writer) fn retained_baseline<'a>(
-    ir: &'a CadIr,
-    target: &DialectId,
-) -> Option<Resolution<'a>> {
+pub(super) fn retained_baseline<'a>(ir: &'a CadIr, target: &DialectId) -> Option<Resolution<'a>> {
     let namespace = ir.native.namespace("fcstd")?;
     let documents = namespace.arena_as::<DocumentFacts>("document").ok()?;
     let [document] = documents.as_slice() else {
