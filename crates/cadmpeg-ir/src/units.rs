@@ -407,4 +407,15 @@ mod tests {
             r#"{"linear":0.25,"angular":0.5}"#
         );
     }
+
+    #[test]
+    fn the_document_tolerance_defaults_are_values_their_own_admission_accepts() {
+        use crate::scalar::{PositiveAngle, PositiveLength};
+
+        let Tolerances { linear, angular } = Tolerances::default();
+        assert_eq!(linear.get(), 1.0e-6);
+        assert_eq!(angular.get(), 1.0e-10);
+        assert_eq!(PositiveLength::new(linear.get()), Some(linear));
+        assert_eq!(PositiveAngle::new(angular.get()), Some(angular));
+    }
 }
