@@ -1605,6 +1605,17 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&count_id));
+    for (real, expected) in [
+        (-(i64::MIN as f64), None),
+        (i64::MIN as f64, Some(i64::MIN)),
+        (f64::from_bits((i64::MAX as f64).to_bits() - 1), Some(i64::MAX - 1023)),
+    ] {
+        ir.model.configurations[0].parameter_values.insert(
+            count_id.clone(), ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(real).unwrap()));
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(ir.model.configurations[0].parameter_values.get(&count_id), expected.map(ParameterValue::Integer).as_ref());
+    }
+
 }
 
 #[test]

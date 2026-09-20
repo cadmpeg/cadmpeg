@@ -47,3 +47,18 @@ fn a_transformed_composite_curve_is_an_omitted_carrier() {
     assert!(curve(&mut emitter, transformed.solved().expect("solved carrier")).is_none());
     assert!(!curve_is_supported(&transformed));
 }
+
+#[test]
+fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+    let mut emitter = crate::writer::Emitter::new();
+    let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0e200, 0.0)).unwrap();
+    assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_some());
+    let lines = emitter.into_lines();
+    assert!(lines.iter().any(|line| line.contains("DIRECTION('',(1.,0.))")));
+    assert!(lines.iter().any(|line| line.contains(&format!("VECTOR('',#2,{})", crate::writer::real(1.0e200)))));
+    let mut emitter = crate::writer::Emitter::new();
+    let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, f64::MAX)).unwrap();
+    assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_none());
+}

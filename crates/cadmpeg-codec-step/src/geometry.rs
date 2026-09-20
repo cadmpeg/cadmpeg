@@ -125,14 +125,9 @@ fn point2(e: &mut Emitter, p: Point2) -> Ref {
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
-fn direction2(e: &mut Emitter, v: Point2) -> Ref {
-    let magnitude = (v.u * v.u + v.v * v.v).sqrt();
-    let (x, y) = if magnitude > 0.0 {
-        (v.u / magnitude, v.v / magnitude)
-    } else {
-        (1.0, 0.0)
-    };
-    e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
+fn direction2(e: &mut Emitter, v: Point2) -> Option<Ref> {
+    let unit = Vector3::new(v.u, v.v, 0.0).unit_nonzero()?;
+    Some(e.emit_interned("DIRECTION", &format!("'',({},{})", real(unit.x), real(unit.y))))
 }
 
 fn similarity_transform_2d(transform: &Transform2) -> bool {
@@ -145,13 +140,13 @@ fn similarity_transform_2d(transform: &Transform2) -> bool {
         && (first.u * second.u + first.v * second.v).abs() <= tolerance * scale
 }
 
-fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Ref {
+fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Option<Ref> {
     let location = point2(e, location);
-    let direction = direction2(e, x_axis);
-    e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}"))
+    let direction = direction2(e, x_axis)?;
+    Some(e.emit("AXIS2_PLACEMENT_2D", &format!("'',{location},{direction}")))
 }
 
-fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
+fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<Ref> {
     let origin = point2(
         e,
         Point2::new(transform.rows()[0][2], transform.rows()[1][2]),
@@ -159,12 +154,13 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Ref {
     let x = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
     let y = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = x.u.hypot(x.v);
-    let x = direction2(e, x);
-    let y = direction2(e, y);
-    e.emit(
+    let x = direction2(e, x)?;
+    let y = direction2(e, y)?;
+    if !scale.is_finite() { return None; }
+    Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
         &format!("'',{x},{y},{origin},{}", real(scale)),
-    )
+    ))
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
@@ -174,8 +170,9 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
             let point = point2(e, *origin);
-            let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
-            let direction = direction2(e, *direction);
+            let magnitude = direction.u.hypot(direction.v);
+            if !magnitude.is_finite() { return None; }
+            let direction = direction2(e, *direction)?;
             let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
             e.emit("LINE", &format!("'',{point},{vector}"))
         }
@@ -183,7 +180,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let center = circle_pcurve.center();
             let x_axis = circle_pcurve.x_axis();
             let radius = circle_pcurve.radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis);
+            let placement = axis2_placement_2d(e, *center, *x_axis)?;
             e.emit("CIRCLE", &format!("'',{placement},{}", real(radius)))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
@@ -191,7 +188,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let x_axis = ellipse_pcurve.x_axis();
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis);
+            let placement = axis2_placement_2d(e, *center, *x_axis)?;
             e.emit(
                 "ELLIPSE",
                 &format!(
@@ -205,7 +202,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let vertex = parabola_pcurve.vertex();
             let x_axis = parabola_pcurve.x_axis();
             let focal_distance = parabola_pcurve.focal_distance();
-            let placement = axis2_placement_2d(e, *vertex, *x_axis);
+            let placement = axis2_placement_2d(e, *vertex, *x_axis)?;
             e.emit(
                 "PARABOLA",
                 &format!("'',{placement},{}", real(focal_distance)),
@@ -216,7 +213,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let x_axis = hyperbola_pcurve.x_axis();
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis);
+            let placement = axis2_placement_2d(e, *center, *x_axis)?;
             e.emit(
                 "HYPERBOLA",
                 &format!(
@@ -264,7 +261,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 return None;
             }
             let basis = pcurve(e, basis)?;
-            let operator = transformation_operator_2d(e, *transform);
+            let operator = transformation_operator_2d(e, *transform)?;
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
