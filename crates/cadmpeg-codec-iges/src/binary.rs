@@ -1245,7 +1245,7 @@ mod tests {
             writer.push_bits(0, 51);
             let value = super::BitReader::new(&writer.bytes)
                 .read_real(12, 51)
-                .unwrap();
+                .expect("the written exponent and fraction are representable");
             assert_eq!(
                 value,
                 if negative == 0 {
@@ -1262,7 +1262,7 @@ mod tests {
         assert_eq!(
             super::BitReader::new(&writer.bytes)
                 .read_real(63, 0)
-                .unwrap(),
+                .expect("the written integer exponent is representable"),
             1.0
         );
     }
