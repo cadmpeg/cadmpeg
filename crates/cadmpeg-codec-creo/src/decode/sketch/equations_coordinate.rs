@@ -12,6 +12,7 @@ use super::equations_scalar::{
     reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
 };
 use super::skamp::SectionPointSource;
+use crate::decode::quadratic::cancelling_coefficient;
 use crate::decode::sketch_transfer::constraints::section_solver_equation_is_disabled;
 
 const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
@@ -965,10 +966,19 @@ pub(super) fn section_equal_length_coordinate_values(
         let first_v = square(first_v_coefficient, first_v_value);
         let second_u = square(second_u_coefficient, second_u_value);
         let second_v = square(second_v_coefficient, second_v_value);
+        // The squared coefficients are exactly 0.0 or 1.0 and the linear terms
+        // are exactly zero except on the one axis that carries the missing
+        // coordinate, so the first two sums are exact. The constant sum is the
+        // difference of two squared lengths: it cancels to a rounding residue
+        // where the two segments have the same length, and that residue turns a
+        // tangency into two roots or into none.
         let quadratic = (
             second_u.0 + second_v.0 - first_u.0 - first_v.0,
             second_u.1 + second_v.1 - first_u.1 - first_v.1,
-            second_u.2 + second_v.2 - first_u.2 - first_v.2,
+            cancelling_coefficient(
+                second_u.2 + second_v.2 - first_u.2 - first_v.2,
+                second_u.2 + second_v.2 + first_u.2 + first_v.2,
+            ),
         );
         let roots = quadratic_roots(quadratic);
         let [value] = roots.as_slice() else {
@@ -1207,4 +1217,40 @@ fn uniquely_solved_linear_variables(
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::axis::SectionAxis;
+    use super::{SectionCoordinateVariable, SectionEqualLengthConstraint};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn numerical_followup_equal_length_tangency_keeps_its_single_coordinate() {
+        // Segment 1-2 spans (0.3, 0.4). Segment 3-4 is vertical and spans 0.5,
+        // so the equal-length constraint has the single solution u3 = 0.0. The
+        // squared lengths cancel to -2.7755575615628914e-17 instead of zero,
+        // which without the cancellation rule splits the double root into
+        // -5.268356063861754e-09 and 5.2683560638617535e-09 and states no
+        // coordinate.
+        let coordinates = BTreeMap::from([
+            (1, [Some(0.0), Some(0.0)]),
+            (2, [Some(0.3), Some(0.4)]),
+            (3, [None, Some(0.0)]),
+            (4, [Some(0.0), Some(0.5)]),
+        ]);
+        let constraints = [SectionEqualLengthConstraint {
+            first: [1, 2],
+            second: [3, 4],
+            equation_id: 7,
+            offset: 0,
+            active: true,
+        }];
+        let expected: BTreeMap<SectionCoordinateVariable, Option<f64>> =
+            BTreeMap::from([((3, SectionAxis::U), Some(0.0))]);
+        assert_eq!(
+            super::section_equal_length_coordinate_values(&constraints, &coordinates),
+            expected
+        );
+    }
 }
