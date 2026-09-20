@@ -8,8 +8,9 @@ use super::endpoints::{
     marker_is_selected_construction_line, roster_curve_endpoint_markers,
     wide_indexed_curve_endpoint_indices,
 };
+use super::grid::quantize;
 use super::scalars::feature_object_name;
-use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
+use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;

@@ -3,6 +3,7 @@
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
 };
+use super::grid::quantize;
 use super::markers::{
     current_geometry_locus_arc_handle_point, inline_arc_coordinates, marker_native_code,
     sketch_marker_prefix_at,
@@ -17,7 +18,7 @@ use super::relation_geometry::{
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
     dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-    marker_transforms_with_frame_fallback, quantize,
+    marker_transforms_with_frame_fallback,
 };
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
@@ -1737,8 +1738,8 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .filter_map(|record| {
                         let native = quantize(
                             Point2::new(
-                                record.3 .0 as f64 * QUANTUM * NATIVE_TO_IR,
-                                record.3 .1 as f64 * QUANTUM * NATIVE_TO_IR,
+                                record.3.point(QUANTUM).u * NATIVE_TO_IR,
+                                record.3.point(QUANTUM).v * NATIVE_TO_IR,
                             ),
                             QUANTUM,
                         );

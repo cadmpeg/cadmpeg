@@ -1,5 +1,7 @@
 //! Marker-to-sketch transform selection.
 
+use super::grid::{quantize, GridPoint};
+
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchLocus};
@@ -43,7 +45,8 @@ pub(super) enum ProfileAxis {
 }
 
 impl MarkerTransform {
-    pub(super) fn apply_axes(self, point: (i64, i64)) -> Option<(i64, i64)> {
+    pub(super) fn apply_axes(self, point: impl Into<GridPoint>) -> Option<(i64, i64)> {
+        let point = point.into().cells()?;
         match self.axes {
             Axes::Affine([uu, uv, vu, vv]) => {
                 const SCALE: i128 = 1_000_000_000_000;
@@ -65,7 +68,7 @@ impl MarkerTransform {
         }
     }
 
-    pub(super) fn apply(self, point: (i64, i64)) -> Option<(i64, i64)> {
+    pub(super) fn apply(self, point: impl Into<GridPoint>) -> Option<(i64, i64)> {
         let point = self.apply_axes(point)?;
         Some((
             point.0.checked_add(self.translation.0)?,
@@ -280,7 +283,7 @@ pub(super) fn marker_transforms_with_frame_fallback(
 pub(super) fn dimensioned_circle_surface_transforms(
     sketch: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
-    circles: &[((i64, i64), i64)],
+    circles: &[(impl Copy + Into<GridPoint>, i64)],
     quantum: f64,
 ) -> Vec<MarkerTransform> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -296,7 +299,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
         normal.z * u_axis.x - normal.x * u_axis.z,
         normal.x * u_axis.y - normal.y * u_axis.x,
     );
-    let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
+    let mut targets_by_radius = HashMap::<i64, HashSet<GridPoint>>::new();
     for surface in surfaces {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
@@ -335,7 +338,9 @@ pub(super) fn dimensioned_circle_surface_transforms(
     }
     let compatible = circles
         .iter()
-        .filter_map(|(center, radius)| Some((*center, targets_by_radius.get(radius)?.clone())))
+        .filter_map(|(center, radius)| {
+            Some(((*center).into(), targets_by_radius.get(radius)?.clone()))
+        })
         .collect::<HashMap<_, _>>();
     if compatible.len() != circles.len() {
         return Vec::new();
@@ -349,7 +354,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
                 transform.apply(*center).is_some_and(|center| {
                     targets_by_radius
                         .get(radius)
-                        .is_some_and(|targets| targets.contains(&center))
+                        .is_some_and(|targets| targets.contains(&GridPoint::from(center)))
                         && used.insert((*radius, center))
                 })
             })
@@ -359,7 +364,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
 
 pub(super) fn dimensioned_circle_transform(
     candidates: &[MarkerTransform],
-    circles: &[((i64, i64), i64)],
+    circles: &[(impl Copy + Into<GridPoint>, i64)],
 ) -> Option<MarkerTransform> {
     let signature = |transform: MarkerTransform| {
         let mut transformed = circles
@@ -473,7 +478,17 @@ fn unique_marker_transform(
 fn unique_compatible_marker_transform(
     compatible_locus_points: &HashMap<(i64, i64), HashSet<(i64, i64)>>,
 ) -> Option<MarkerTransform> {
-    let candidates = compatible_marker_transform_candidates(compatible_locus_points);
+    let candidates = compatible_marker_transform_candidates(
+        &compatible_locus_points
+            .iter()
+            .map(|(point, loci)| {
+                (
+                    GridPoint::from(*point),
+                    loci.iter().copied().map(GridPoint::from).collect(),
+                )
+            })
+            .collect(),
+    );
     let [transform] = candidates.as_slice() else {
         return None;
     };
@@ -481,7 +496,7 @@ fn unique_compatible_marker_transform(
 }
 
 pub(super) fn compatible_marker_transform_candidates(
-    compatible_locus_points: &HashMap<(i64, i64), HashSet<(i64, i64)>>,
+    compatible_locus_points: &HashMap<GridPoint, HashSet<GridPoint>>,
 ) -> Vec<MarkerTransform> {
     let score = |axes: MarkerTransform| {
         let mut translations = HashMap::<(i64, i64), usize>::new();
@@ -490,6 +505,9 @@ pub(super) fn compatible_marker_transform_candidates(
                 continue;
             };
             for locus in loci {
+                let Some(locus) = locus.cells() else {
+                    continue;
+                };
                 let Some(translation) = locus
                     .0
                     .checked_sub(marker.0)
@@ -621,13 +639,6 @@ fn unique_transform_translation(
         translation,
         ..transform
     })
-}
-
-pub(super) fn quantize(point: Point2, quantum: f64) -> (i64, i64) {
-    (
-        (point.u / quantum).round() as i64,
-        (point.v / quantum).round() as i64,
-    )
 }
 
 /// A sketch entity's marker loci beside the marker kind they are written as.

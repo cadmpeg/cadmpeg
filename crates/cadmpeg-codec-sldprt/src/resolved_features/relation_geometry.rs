@@ -2,6 +2,7 @@
 
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{inferred_point_coordinates_by_index, legacy_undetailed_profile_line};
+use super::grid::{quantize, GridPoint};
 use super::markers::{
     marker_is_geometry_locus, marker_native_code, spatial_relation_marker_coordinates,
 };
@@ -21,7 +22,7 @@ use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, marker_transforms_with_frame_fallback, quantize, sketch_entity_loci,
+    marker_entities, marker_transforms_with_frame_fallback, sketch_entity_loci,
     sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
@@ -1317,7 +1318,7 @@ fn unique_dynamic_line_pair(
     if generated.len() != 2 {
         return None;
     }
-    let mut candidates = Vec::<([(i64, i64); 2], SketchEntity)>::new();
+    let mut candidates = Vec::<([GridPoint; 2], SketchEntity)>::new();
     for entity in generated.iter().chain(entities.iter()) {
         if entity.sketch != *sketch
             || !matches!(
@@ -1369,7 +1370,7 @@ fn unique_dynamic_line_pair(
     Some(pair.clone())
 }
 
-fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[(i64, i64); 2]> {
+fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[GridPoint; 2]> {
     let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
         return None;
     };
@@ -1578,7 +1579,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                 .collect::<Vec<_>>();
             candidates.sort_unstable();
             candidates.dedup();
-            let [(u, v)] = candidates.as_slice() else {
+            let [point] = candidates.as_slice() else {
                 continue;
             };
             let geometry_ref = relation_operand_geometry_ref(relation, missing_index);
@@ -1599,7 +1600,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                     },
                     sketch.clone(),
                     match SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                        position: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
+                        position: point.point(QUANTUM),
                     }) {
                         Ok(geometry) => geometry,
                         Err(_) => continue,

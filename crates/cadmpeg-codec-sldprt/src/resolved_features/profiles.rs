@@ -33,6 +33,7 @@ use super::endpoints::{
     packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
     terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
+use super::grid::quantize;
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
@@ -43,7 +44,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::transforms::{quantize, sketch_frame_marker_transform};
+use super::transforms::sketch_frame_marker_transform;
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };

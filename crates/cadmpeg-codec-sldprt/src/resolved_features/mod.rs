@@ -123,6 +123,7 @@ mod sketch_write;
 
 pub(crate) mod terminations;
 
+mod grid;
 mod transforms;
 
 pub(crate) mod typed_relations;
