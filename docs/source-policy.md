@@ -38,7 +38,14 @@ each violation by rule, file, line, and explanation.
   records stay outside the rule: they generate no schema and state their shape
   through `NativeRecord`. The target name is resolved in the file that names it
   and then across the crate, so a mirror held in a child module is reached and
-  a same-named type elsewhere is not.
+  a same-named type elsewhere is not. A member the mirror carries with
+  `#[serde(flatten)]` publishes no property of its own; the properties are the
+  members of the flattened type, so that type is a mirror as well and the rule
+  repeats through a chain of flattened types. The flattened type's name is
+  resolved the same way, in the mirror's file and then across its crate. A type
+  named from another crate is not resolved, and a type the flattened type
+  reaches through anything other than a further `#[serde(flatten)]` is not
+  either.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
