@@ -11,7 +11,7 @@ use crate::sab::Token;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::NonZeroReal;
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
@@ -149,7 +149,7 @@ pub(super) fn decode_pcurve_block_with_end(
             pos += 9;
             weighted.push(WeightedPole2 {
                 point,
-                weight: PositiveReal::new(weight)?,
+                weight: NonZeroReal::new(weight)?,
             });
         } else {
             points.push(point);
@@ -213,7 +213,7 @@ pub(super) fn pcurve_block_with_end(
         if rational {
             weighted.push(WeightedPole2 {
                 point,
-                weight: PositiveReal::new(cur.take_f64()?)?,
+                weight: NonZeroReal::new(cur.take_f64()?)?,
             });
         } else {
             points.push(point);

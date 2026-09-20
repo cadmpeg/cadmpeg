@@ -3183,8 +3183,8 @@ pub(super) fn validate_pcurve_edits(
         // `PcurveNurbs::new` and `PcurveNurbs::edit_control_points` both
         // require finite poles, so pole finiteness is not a condition this
         // chain can refuse. The `WeightedPole2::weight` field is a
-        // `PositiveReal`, which admits a finite positive value alone, so the
-        // weight value is not one either.
+        // `NonZeroReal`, and the patcher writes the weight as a plain
+        // little-endian `f64` payload, so the weight value is not one either.
         let valid = id.starts_with("f3d:brep:entity#")
             && writable_nurbs_degree(after_nurbs.degree())
             && unchanged_unique_knot_count(before_nurbs.knots(), after_nurbs.knots())

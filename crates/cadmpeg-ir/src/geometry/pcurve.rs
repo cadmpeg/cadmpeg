@@ -7,7 +7,7 @@ use super::nurbs::{
 use super::{CacheContractError, FitTolerance};
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3};
-use crate::scalar::{FiniteReal, PositiveReal};
+use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, NonzeroPoint2};
 #[cfg(feature = "schema")]
@@ -22,7 +22,7 @@ pub struct WeightedPole2 {
     /// Pole position in parameter space.
     pub point: Point2,
     /// Rational weight at this pole.
-    pub weight: PositiveReal,
+    pub weight: NonZeroReal,
 }
 
 /// The poles of a parameter-space NURBS curve.
@@ -49,7 +49,7 @@ impl PcurveNurbsPoles {
     /// # Errors
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
-    /// and a weight that is not positive and finite, naming its index.
+    /// and a weight that is zero or non-finite, naming its index.
     pub fn from_lanes(points: Vec<Point2>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
         let Some(weights) = weights else {
             return Ok(Self::Polynomial { points });
@@ -69,7 +69,7 @@ impl PcurveNurbsPoles {
                 .map(|(index, (point, weight))| {
                     Ok(WeightedPole2 {
                         point,
-                        weight: PositiveReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                        weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
                             field: "pcurve poles".to_owned(),
                             index,
                             weight,
@@ -1123,7 +1123,7 @@ pub struct WeightedPolarNurbsPole {
     /// Axial pole value.
     pub axial: f64,
     /// Rational weight at this pole.
-    pub weight: PositiveReal,
+    pub weight: NonZeroReal,
 }
 
 /// The poles of a polar parameter-space NURBS curve.
@@ -1150,7 +1150,7 @@ impl PolarNurbsPoles {
     /// # Errors
     ///
     /// Refuses a weight lane that does not cover the poles, naming both counts,
-    /// and a weight that is not positive and finite, naming its index.
+    /// and a weight that is zero or non-finite, naming its index.
     pub fn from_lanes(
         poles: Vec<PolarNurbsPole>,
         weights: Option<Vec<f64>>,
@@ -1174,7 +1174,7 @@ impl PolarNurbsPoles {
                     Ok(WeightedPolarNurbsPole {
                         radial: pole.radial,
                         axial: pole.axial,
-                        weight: PositiveReal::new(weight).ok_or(NurbsError::UnusableWeight {
+                        weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
                             field: "polar poles".to_owned(),
                             index,
                             weight,
