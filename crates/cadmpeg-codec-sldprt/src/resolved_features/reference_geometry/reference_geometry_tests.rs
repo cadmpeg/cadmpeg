@@ -1807,3 +1807,4 @@ fn compact_offset_plane_source_requires_the_reference_record() {
     assert_eq!(compact_offset_plane_source(&payload), None);
 }
 mod offset_planes;
+mod plane_frames;

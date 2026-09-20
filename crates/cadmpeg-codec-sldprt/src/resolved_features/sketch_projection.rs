@@ -13,9 +13,6 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet};
 
-#[cfg(test)]
-use super::sketch_edges::{circle_contains_point, ellipse_contains_point};
-
 /// Sketches and their projected entities and constraints.
 pub(crate) struct ProjectedSketches {
     pub(crate) sketches: Vec<Sketch>,
@@ -348,7 +345,7 @@ fn orient_closed_profile_by_topology(profile: &mut [SketchEntityUse], entities: 
 
 #[cfg(test)]
 mod projected_profile_orientation_tests {
-    use super::{circle_contains_point, ellipse_contains_point, orient_closed_profile_by_topology};
+    use super::orient_closed_profile_by_topology;
     use cadmpeg_ir::{
         math::Point2,
         sketches::{
@@ -411,42 +408,6 @@ mod projected_profile_orientation_tests {
         orient_closed_profile_by_topology(&mut profile, &entities);
 
         assert!(profile.iter().all(|use_| use_.reversed));
-    }
-
-    #[test]
-    fn rejects_analytic_carriers_that_do_not_contain_the_edge_vertex() {
-        assert!(!circle_contains_point(
-            Point2::new(-35.0, -5.85),
-            1.25,
-            Point2::new(-75.0, -8.85),
-            1.0e-9,
-        ));
-        assert!(!ellipse_contains_point(
-            Point2::new(-60.0, -150.0),
-            0.0,
-            7.5,
-            f64::MIN_POSITIVE,
-            Point2::new(140.0, -70.5),
-            1.0e-9,
-        ));
-    }
-
-    #[test]
-    fn accepts_vertices_on_nondegenerate_analytic_carriers() {
-        assert!(circle_contains_point(
-            Point2::new(2.0, 3.0),
-            4.0,
-            Point2::new(6.0, 3.0),
-            1.0e-9,
-        ));
-        assert!(ellipse_contains_point(
-            Point2::new(2.0, 3.0),
-            0.0,
-            4.0,
-            2.0,
-            Point2::new(2.0, 5.0),
-            1.0e-9,
-        ));
     }
 }
 

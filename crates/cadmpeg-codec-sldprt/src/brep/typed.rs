@@ -28,7 +28,7 @@ const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BodyNode {
+pub(super) struct BodyNode {
     /// Stream-local transmit index.
     pub(super) attr: u16,
     /// Persistent XT node id.
@@ -66,7 +66,7 @@ impl BodyNode {
 
 /// A typed SHELL node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ShellNode {
+pub(super) struct ShellNode {
     /// Stream-local transmit index.
     pub(super) attr: u16,
     /// Persistent XT node id.
@@ -81,7 +81,7 @@ pub(crate) struct ShellNode {
 
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RegionNode {
+pub(super) struct RegionNode {
     /// Stream-local transmit index.
     pub(super) attr: u16,
     /// Persistent XT node id.
@@ -97,7 +97,7 @@ pub(crate) struct RegionNode {
 /// A typed FACE node.  The compact bridge parser uses the same attribute and
 /// node-id prefix, so `attr` is the bridge key used by the graph decoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FaceNode {
+pub(super) struct FaceNode {
     /// Stream-local transmit index.
     pub(super) attr: u16,
     /// Persistent XT node id.
@@ -114,11 +114,11 @@ pub(crate) struct FaceNode {
 
 /// All typed ownership nodes recovered from one stream.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Facts {
-    pub(crate) bodies: Vec<BodyNode>,
-    pub(crate) shells: Vec<ShellNode>,
-    pub(crate) regions: Vec<RegionNode>,
-    pub(crate) faces: Vec<FaceNode>,
+pub(super) struct Facts {
+    pub(super) bodies: Vec<BodyNode>,
+    pub(super) shells: Vec<ShellNode>,
+    pub(super) regions: Vec<RegionNode>,
+    pub(super) faces: Vec<FaceNode>,
 }
 
 type OwnershipMaps = (
@@ -147,7 +147,7 @@ impl Facts {
     /// tests that assert closure without naming the attributes, and
     /// `valid_ownership_maps` is private to this module.
     #[cfg(test)]
-    pub(crate) fn has_valid_ownership(&self) -> bool {
+    fn has_valid_ownership(&self) -> bool {
         self.valid_ownership_maps().is_some()
     }
 
@@ -834,7 +834,7 @@ fn schema_faces(bytes: &[u8], offset: usize) -> Vec<FaceNode> {
 }
 
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
-pub(crate) fn scan(bytes: &[u8]) -> Facts {
+pub(super) fn scan(bytes: &[u8]) -> Facts {
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
@@ -905,10 +905,33 @@ mod tests {
         read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG,
         FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
+    use crate::test_support::container::sldprt_with_body;
+    use crate::test_support::parasolid::triangle_body;
+    use crate::SldprtCodec;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::topology::BodyKind;
     use cadmpeg_ir::topology::Sense;
     use std::collections::HashMap;
     use std::collections::HashSet;
+    use std::io::Cursor;
+
+    #[test]
+    fn semantic_writer_emits_typed_body_ownership_nodes() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_body(&triangle_body())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let facts = scan(&body);
+
+        assert!(facts.has_valid_ownership());
+        assert_eq!(facts.bodies.len(), 1);
+        assert!(!facts.shells.is_empty());
+        assert!(!facts.regions.is_empty());
+        assert!(!facts.faces.is_empty());
+    }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
         if value <= 0x7ffe {

@@ -894,24 +894,6 @@ fn semantic_writer_uses_schema_specific_face_families() {
 }
 
 #[test]
-fn semantic_writer_emits_typed_body_ownership_nodes() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let body = super::super::brep_body(decoded.ir(), 0.001, false).unwrap();
-    let facts = crate::brep::typed::scan(&body);
-
-    assert!(facts.has_valid_ownership());
-    assert_eq!(facts.bodies.len(), 1);
-    assert!(!facts.shells.is_empty());
-    assert!(!facts.regions.is_empty());
-    assert!(!facts.faces.is_empty());
-}
-
-#[test]
 fn semantic_writer_preserves_outer_header() {
     let mut source = sldprt_with_body(&triangle_body());
     source[..4].copy_from_slice(&0x1234_5678u32.to_le_bytes());

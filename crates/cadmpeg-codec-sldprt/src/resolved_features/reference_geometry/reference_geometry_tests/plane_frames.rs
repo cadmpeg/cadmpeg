@@ -1,8 +1,6 @@
-//! Tests for the `sketch_write` module.
+//! Tests for the `reference_geometry` module's plane-frame pairs.
 
-use super::super::reference_geometry::{
-    minimal_reference_plane_frame, offset_reference_plane_frame_pair,
-};
+use super::super::{minimal_reference_plane_frame, offset_reference_plane_frame_pair};
 use cadmpeg_ir::math::{Point3, Vector3};
 #[test]
 fn offset_plane_frame_pair_accepts_complete_matrix_frames() {
