@@ -670,7 +670,7 @@ fn geometric_membership_rejects_large_residuals_and_short_line_false_positives()
         &point(1e200),
         1e200
     ));
-    let short_length = 0.000001;
+    let short_length = 0.000_001;
     for definition in [
         SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 0.0),

@@ -140,7 +140,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        CylinderSurface::try_new(origin, axis, x_axis, 1.0).unwrap(),
+        CylinderSurface::try_new(origin, axis, x_axis, 1.0).expect("unit cylinder frame is valid"),
     ));
     for axial in [0.0, 1e8, 1e200] {
         assert_eq!(
@@ -153,7 +153,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
         );
     }
     let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        SphereSurface::try_new(origin, axis, x_axis, 1.0).unwrap(),
+        SphereSurface::try_new(origin, axis, x_axis, 1.0).expect("unit sphere frame is valid"),
     ));
     assert!(circle_axis_from_carrier(Point3::new(1e200, 0.0, 0.0), 1.0, &sphere).is_none());
     assert!(circle_axis_from_carrier(Point3::new(0.0, 0.0, 0.6), 0.8, &sphere).is_some());
@@ -169,7 +169,7 @@ fn sphere_section_axis_preserves_a_subnormal_center_offset() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("unit sphere frame is valid"),
     ));
     assert_eq!(
         circle_axis_from_carrier(Point3::new(0.0, 0.0, 1e-310), 1.0, &sphere),
