@@ -92,3 +92,27 @@ fn numerical_ranges_saved_section_arc_rejects_different_tiny_radii() {
         );
     }
 }
+
+#[test]
+fn numerical_ranges_saved_arc_entity_checks_endpoint_radii() {
+    use crate::feature::definitions::{FeatureSavedArc, FeatureSavedEntity};
+    const RADIUS: f64 = 1e-10;
+    for (factor, accepted) in [(1.0, true), (5.0, false)] {
+        let arc = FeatureSavedEntity::Arc(FeatureSavedArc {
+            entity_id: 30,
+            center: [Some(0.); 3],
+            radius: Some(RADIUS),
+            endpoints: [
+                [Some(RADIUS), Some(0.), Some(0.)],
+                [Some(0.), Some(RADIUS * factor), Some(0.)],
+            ],
+            parameters: [None; 2],
+            body: Vec::new(),
+            offset: 0,
+        });
+        assert_eq!(
+            super::saved_section_entity_geometry(&arc).is_some(),
+            accepted
+        );
+    }
+}

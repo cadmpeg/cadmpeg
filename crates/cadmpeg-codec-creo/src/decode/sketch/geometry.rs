@@ -551,9 +551,11 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             let second = [second_u - center_u, second_v - center_v];
             let scale = radius
                 .max(first[0].hypot(first[1]))
-                .max(second[0].hypot(second[1]))
-                .max(1.0);
-            if (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+                .max(second[0].hypot(second[1]));
+            if ![radius, first[0], first[1], second[0], second[1], scale]
+                .into_iter()
+                .all(f64::is_finite)
+                || (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
                 || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
             {
                 return None;

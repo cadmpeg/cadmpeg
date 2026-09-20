@@ -104,3 +104,20 @@ fn numerical_ranges_shallow_arc_point_and_partials_keep_curvature() {
     assert!((partials.du.x / (-0.5 * angle) - 1.).abs() < EPS_RELATIVE);
     assert_eq!(partials.dv, zero);
 }
+
+#[test]
+fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
+    let curve = PcurveGeometry::Hyperbolic(
+        crate::geometry::pcurve::HyperbolicPcurve::try_new(
+            Point2::new(-1e308, 0.),
+            Point2::new(1e308, 0.),
+            Point2::new(1e308, 0.),
+        )
+        .unwrap(),
+    );
+    let point = pcurve_uv(&curve, 1.).unwrap();
+    let expected = (1.0_f64.exp() - 1.) * 1e308;
+    assert!((point.u / expected - 1.).abs() < EPS_RELATIVE);
+    assert_eq!(point.v, 0.);
+    assert_eq!(pcurve_tangent(&curve, 1.), None);
+}
