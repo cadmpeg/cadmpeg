@@ -151,40 +151,21 @@ impl MeshAffineTransform {
     /// map. The determinant sign keeps the normal aligned with the unchanged
     /// triangle tuple under a reflection.
     fn transform_normal(self, normal: [f64; 3]) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
-        let cells = self.cells();
-        let [x, y, z] = normal;
-        let transformed = [
-            (cells[5] * cells[10] - cells[6] * cells[9]) * x
-                + (cells[6] * cells[8] - cells[4] * cells[10]) * y
-                + (cells[4] * cells[9] - cells[5] * cells[8]) * z,
-            (cells[2] * cells[9] - cells[1] * cells[10]) * x
-                + (cells[0] * cells[10] - cells[2] * cells[8]) * y
-                + (cells[1] * cells[8] - cells[0] * cells[9]) * z,
-            (cells[1] * cells[6] - cells[2] * cells[5]) * x
-                + (cells[2] * cells[4] - cells[0] * cells[6]) * y
-                + (cells[0] * cells[5] - cells[1] * cells[4]) * z,
-        ];
-        let scale = transformed
-            .iter()
-            .map(|component| component.abs())
-            .fold(0.0f64, f64::max);
-        if !scale.is_finite() || scale == 0.0 {
-            return Err(CodecError::Malformed(
-                "F3D mesh placement produces a degenerate normal".into(),
-            ));
-        }
-        let scaled = transformed.map(|component| component / scale);
-        let length = (scaled[0] * scaled[0] + scaled[1] * scaled[1] + scaled[2] * scaled[2]).sqrt();
-        if !length.is_finite() || length <= f64::EPSILON {
-            return Err(CodecError::Malformed(
-                "F3D mesh placement produces a degenerate normal".into(),
-            ));
-        }
-        Ok(cadmpeg_ir::math::Vector3::new(
-            scaled[0] / length,
-            scaled[1] / length,
-            scaled[2] / length,
-        ))
+        let c = self.cells();
+        let transform = cadmpeg_ir::transform::Transform::affine([
+            [c[0], c[1], c[2], c[3]],
+            [c[4], c[5], c[6], c[7]],
+            [c[8], c[9], c[10], c[11]],
+        ]);
+        transform
+            .and_then(|transform| {
+                Some(
+                    transform
+                        .apply_normal(cadmpeg_ir::math::Vector3::from(normal))?
+                        .scale(transform.orientation()?),
+                )
+            })
+            .ok_or_else(|| CodecError::malformed("F3D mesh placement produces a degenerate normal"))
     }
 }
 
@@ -1577,6 +1558,35 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn anisotropic_mesh_normal_preserves_orientation_without_cofactor_overflow() {
+        for sign in [-1.0, 1.0] {
+            let transform = crate::records::mesh::MeshAffineTransform::new([
+                sign * 1e200,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1e200,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1e-200,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            ])
+            .unwrap();
+            assert_eq!(
+                transform.transform_normal([0.0, 0.0, 1.0]).unwrap(),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, sign)
+            );
+        }
+    }
 
     fn matrix(cells: [f64; 16]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(MATRIX_BYTES);

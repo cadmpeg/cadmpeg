@@ -254,6 +254,25 @@ impl Transform {
         ))
     }
 
+    /// Sign of the linear determinant; absent for a singular map.
+    /// Products retain their exponent range until cancellation is complete.
+    pub fn orientation(self) -> Option<f64> {
+        let [a, b, c] = self.rows;
+        let mut determinant = ExactSignedSum::default();
+        for factors in [
+            [a[0], b[1], c[2]],
+            [a[1], b[2], c[0]],
+            [a[2], b[0], c[1]],
+            [-a[0], b[2], c[1]],
+            [-a[1], b[0], c[2]],
+            [-a[2], b[1], c[0]],
+        ] {
+            determinant.add_factors(factors);
+        }
+        let value = determinant.finish()?;
+        Some(value.rescale(value.exponent())?.signum())
+    }
+
     /// Applies the inverse-transpose linear transform and normalizes the result.
     pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
         if !normal.is_finite() {

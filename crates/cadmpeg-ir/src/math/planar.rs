@@ -35,6 +35,33 @@ pub fn orientation(a: Point2, b: Point2, p: Point2) -> Option<Ordering> {
     }
 }
 
+// Scale differences before subtraction only when their finite subtraction overflows.
+fn scaled_displacement(start: Point2, end: Point2, minimum_scale: f64) -> (Point2, f64) {
+    let delta = Point2::new(end.u - start.u, end.v - start.v);
+    if delta.is_finite() {
+        let scale = delta.u.abs().max(delta.v.abs()).max(minimum_scale);
+        if scale == 0.0 {
+            return (delta, scale);
+        }
+        (Point2::new(delta.u / scale, delta.v / scale), scale)
+    } else {
+        let scale = start
+            .u
+            .abs()
+            .max(start.v.abs())
+            .max(end.u.abs())
+            .max(end.v.abs())
+            .max(minimum_scale);
+        (
+            Point2::new(
+                end.u / scale - start.u / scale,
+                end.v / scale - start.v / scale,
+            ),
+            scale,
+        )
+    }
+}
+
 /// Parameters on the infinite line `start + t * (end - start)` at a circle.
 /// A tangent returns the same parameter twice. Invalid, degenerate and disjoint inputs return `None`.
 // Scaled coordinates and quadratic coefficients use standard mathematical names.
@@ -53,21 +80,12 @@ pub fn line_circle_parameters(
     {
         return None;
     }
-    let direction = Point2::new(end.u - start.u, end.v - start.v);
-    let relative = Point2::new(start.u - center.u, start.v - center.v);
-    let scale = direction
-        .u
-        .abs()
-        .max(direction.v.abs())
-        .max(relative.u.abs())
-        .max(relative.v.abs())
-        .max(radius);
-    if !scale.is_finite() {
+    let (d, direction_scale) = scaled_displacement(start, end, 0.0);
+    if direction_scale == 0.0 {
         return None;
     }
-    let d = Point2::new(direction.u / scale, direction.v / scale);
-    let o = Point2::new(relative.u / scale, relative.v / scale);
-    let r = radius / scale;
+    let (o, geometry_scale) = scaled_displacement(center, start, radius);
+    let r = radius / geometry_scale;
     let a = d.u.mul_add(d.u, d.v * d.v);
     if a == 0.0 {
         return None;
@@ -86,10 +104,10 @@ pub fn line_circle_parameters(
     } else {
         [q / a, c / q]
     };
-    parameters
-        .iter()
-        .all(|p| p.is_finite())
-        .then_some(parameters)
+    Some([
+        super::multiply_divide(parameters[0], geometry_scale, direction_scale)?,
+        super::multiply_divide(parameters[1], geometry_scale, direction_scale)?,
+    ])
 }
 
 /// The finite intersections of two positive-radius circles.
@@ -110,17 +128,7 @@ pub fn circle_intersections(
     {
         return None;
     }
-    let delta = Point2::new(second.u - first.u, second.v - first.v);
-    let scale = delta
-        .u
-        .abs()
-        .max(delta.v.abs())
-        .max(first_radius)
-        .max(second_radius);
-    if !scale.is_finite() {
-        return None;
-    }
-    let delta = Point2::new(delta.u / scale, delta.v / scale);
+    let (delta, scale) = scaled_displacement(first, second, first_radius.max(second_radius));
     let distance = delta.u.hypot(delta.v);
     if distance == 0.0 {
         return (first_radius != second_radius).then(Vec::new);
@@ -141,8 +149,8 @@ pub fn circle_intersections(
     let mut points = Vec::new();
     for height in [height, -height] {
         let point = Point2::new(
-            first.u + (along * unit.u - height * unit.v) * scale,
-            first.v + (along * unit.v + height * unit.u) * scale,
+            super::sum::finite_dot([1.0, scale], [first.u, along * unit.u - height * unit.v])?,
+            super::sum::finite_dot([1.0, scale], [first.v, along * unit.v + height * unit.u])?,
         );
         if !point.is_finite() {
             return None;
@@ -157,6 +165,27 @@ pub fn circle_intersections(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn intersections_preserve_independent_direction_and_position_scales() {
+        let mut roots = line_circle_parameters(
+            Point2::new(0.0, 0.0),
+            Point2::new(1e-200, 0.0),
+            Point2::new(0.0, 0.0),
+            1.0,
+        )
+        .unwrap();
+        roots.sort_by(f64::total_cmp);
+        assert_eq!(roots, [-1e200, 1e200]);
+        let points = circle_intersections(
+            Point2::new(-1e308, 0.0),
+            1e308,
+            Point2::new(1e308, 0.0),
+            1e308,
+        )
+        .unwrap();
+        assert_eq!(points, vec![Point2::new(0.0, 0.0)]);
+    }
+
     #[test]
     fn intersections_and_orientation_preserve_scale() {
         for r in [1e-200, 1., 1e200] {
