@@ -129,42 +129,42 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
     assert!(select_circular_pattern_axis(&duplicate_historical).is_none());
 }
 
+fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"999");
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+}
+
+fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
+    append_header(bytes, record_index);
+    for value in [
+        1.0,
+        0.0,
+        0.0,
+        translation[0],
+        0.0,
+        1.0,
+        0.0,
+        translation[1],
+        0.0,
+        0.0,
+        1.0,
+        translation[2],
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+}
+
 #[allow(
     clippy::large_stack_arrays,
     reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
 )]
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
-    fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(b"999");
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    }
-
-    fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: [f64; 3]) {
-        append_header(bytes, record_index);
-        for value in [
-            1.0,
-            0.0,
-            0.0,
-            translation[0],
-            0.0,
-            1.0,
-            0.0,
-            translation[1],
-            0.0,
-            0.0,
-            1.0,
-            translation[2],
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ] {
-            bytes.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-
     let scope_record_index = 10_u32;
     let count_record_index = 20_u32;
     let angle_record_index = 30_u32;
