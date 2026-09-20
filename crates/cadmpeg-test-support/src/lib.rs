@@ -17,6 +17,7 @@ pub mod golden;
 pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;
+pub mod wire;
 
 /// Editable parts of a consumed decode result for writer tests.
 ///
