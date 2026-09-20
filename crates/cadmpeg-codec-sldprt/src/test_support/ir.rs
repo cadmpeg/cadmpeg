@@ -142,14 +142,13 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     for surface in &mut ir.model.surfaces {
         match &mut surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let origin = plane_surface.origin();
-                let normal = plane_surface.normal();
-                let u_axis = plane_surface.u_axis();
-                let mut origin = *origin;
+                let frame = plane_surface.frame();
+                let mut origin = plane_surface.origin().get();
                 origin.x += dx;
-                *plane_surface =
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
-                        .unwrap();
+                *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    frame,
+                );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin();

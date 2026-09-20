@@ -51,7 +51,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             matches!(
                 (
-                    plane_surface.origin(),
+                    plane_surface.origin().get(),
                     plane_surface.normal(),
                     plane_surface.u_axis(),
                 ),
@@ -150,7 +150,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             matches!(
                 (
-                    plane_surface.origin(),
+                    plane_surface.origin().get(),
                     plane_surface.normal(),
                     plane_surface.u_axis(),
                 ),

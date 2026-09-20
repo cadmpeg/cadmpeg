@@ -247,6 +247,18 @@ impl OrthonormalFrame3 {
         let reference = UnitVector3::new(reference)?;
         (axis.0.dot(reference.0).abs() <= EPS_UNIT_FRAME).then_some(Self { axis, reference })
     }
+    /// Return the admitted first direction. A caller that moves it into
+    /// another model object keeps the unit-length guarantee and performs no
+    /// new admission.
+    pub const fn unit_axis(&self) -> UnitVector3 {
+        self.axis
+    }
+    /// Return the admitted second direction. A caller that moves it into
+    /// another model object keeps the unit-length guarantee and performs no
+    /// new admission.
+    pub const fn unit_reference(&self) -> UnitVector3 {
+        self.reference
+    }
     /// Borrow the first direction.
     pub const fn axis(&self) -> &Vector3 {
         self.axis.as_raw()
