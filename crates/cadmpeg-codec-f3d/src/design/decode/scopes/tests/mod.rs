@@ -14,7 +14,6 @@ mod derived_instance;
 mod fixed_kind_operations;
 mod fixed_kind_tail;
 mod flange;
-mod hem;
 mod history_admission;
 mod legacy_class_397;
 mod legacy_frames;
