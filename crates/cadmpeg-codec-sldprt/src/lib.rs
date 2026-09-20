@@ -65,11 +65,12 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.sldprt")?;
 //! let decoded = SldprtCodec.decode(&mut input, &DecodeOptions::default())?;
+//! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
 //!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: decoded.ir(),
-//!         fidelity: Some(decoded.source_fidelity()),
+//!         ir: &ir,
+//!         fidelity: Some(&fidelity),
 //!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
