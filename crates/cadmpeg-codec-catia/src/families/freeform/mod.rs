@@ -4327,7 +4327,7 @@ mod tests {
                 Vector3::new(0., 0., 1.),
                 Vector3::new(1., 0., 0.),
             )
-            .unwrap(),
+            .expect("orthonormal target plane"),
         ));
         for (a, origin) in [(1., 0.), (1e200, 0.), (1., 1e10)] {
             let sites = [
@@ -4337,7 +4337,8 @@ mod tests {
                 [origin, origin - a],
             ];
             let loci = sites.map(|p| Point3::new(p[0], p[1], 0.));
-            let chart = super::solve_planar_chart_rechart(&sites, &loci, &target).unwrap();
+            let chart = super::solve_planar_chart_rechart(&sites, &loci, &target)
+                .expect("planar chart for the four sites");
             for point in sites {
                 assert_eq!(chart.point(point), point);
             }
