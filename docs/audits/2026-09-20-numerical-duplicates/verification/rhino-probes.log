@@ -1,9 +1,0 @@
-
-running 4 tests
-test tests::join_elevates_degree_and_midpoints_a_gap ... ok
-test tests::numerical_audit_join_preserves_independently_scaled_rational_segments ... ok
-test tests::numerical_audit_remap_and_join_keep_large_finite_values ... ok
-test tests::numerical_audit_nurbs_elevation_preserves_active_spans_and_discontinuities ... ok
-
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-

@@ -1,9 +1,0 @@
-{
-  "findings": 19,
-  "numeric": 16,
-  "duplicates": 3,
-  "probes": 21,
-  "current_source_hash_changes": [],
-  "missing_probe_names": [],
-  "cargo_run": false
-}

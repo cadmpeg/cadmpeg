@@ -1,1 +1,0 @@
-cargo check -q --tests -p cadmpeg-ir -p cadmpeg-asm -p cadmpeg-protein -p cadmpeg-codec-catia -p cadmpeg-codec-creo -p cadmpeg-codec-f3d -p cadmpeg-codec-freecad -p cadmpeg-codec-iges -p cadmpeg-codec-inventor -p cadmpeg-codec-nx -p cadmpeg-codec-rhino -p cadmpeg-codec-sat -p cadmpeg-codec-sldprt -p cadmpeg-codec-step
