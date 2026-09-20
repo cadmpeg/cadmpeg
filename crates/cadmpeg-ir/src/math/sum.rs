@@ -378,6 +378,44 @@ pub(crate) fn scaled_finite(value: f64) -> Option<ScaledValue> {
     })
 }
 
+/// `value / denominator`, multiplied by each factor through one quotient that
+/// keeps the extended exponent range. A knot span below the normal range makes
+/// the plain quotient overflow although every product here is finite, and one
+/// quotient states the same rounding for every factor.
+///
+/// A zero value, and a zero denominator that a repeated knot states, make every
+/// product zero. `None` states a non-finite input, or a product that no finite
+/// `f64` holds.
+pub(crate) fn scaled_ratio_products<const N: usize>(
+    value: f64,
+    denominator: f64,
+    factors: [f64; N],
+) -> Option<[f64; N]> {
+    if value == 0.0 || denominator == 0.0 {
+        return Some([0.0; N]);
+    }
+    let value = scaled_finite(value)?;
+    let denominator = scaled_finite(denominator)?;
+    // Both significands are in `[0.5, 1)`, so the ratio is in `(0.5, 2)` and
+    // every product below stays normal until `scale_power_of_two` states it.
+    let ratio = value.sign * denominator.sign * (value.mantissa / denominator.mantissa);
+    // Plain `+`: the difference lies inside the `ScaledExponent` span and a
+    // factor's exponent inside the `f64` range.
+    let exponent = value.exponent.difference(denominator.exponent);
+    let mut products = [0.0; N];
+    for (product, factor) in products.iter_mut().zip(factors) {
+        if factor == 0.0 {
+            continue;
+        }
+        let factor = scaled_finite(factor)?;
+        *product = scale_power_of_two(
+            ratio * factor.sign * factor.mantissa,
+            exponent + factor.exponent.0,
+        )?;
+    }
+    Some(products)
+}
+
 pub(crate) fn fast_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],

@@ -24,6 +24,7 @@ use crate::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     SweepSurfaceLayout,
 };
+use crate::math::sum::scaled_ratio_products;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -1461,13 +1462,10 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
         let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
-            let (right_ratio, left_ratio) = if denominator == 0.0 {
-                (0.0, 0.0)
-            } else {
-                (right[r + 1] / denominator, left[j - r] / denominator)
-            };
-            next[r] = saved + right_ratio * value;
-            saved = left_ratio * value;
+            let [right_term, left_term] =
+                scaled_ratio_products(value, denominator, [right[r + 1], left[j - r]])?;
+            next[r] = saved + right_term;
+            saved = left_term;
         }
         next[j] = saved;
         values = next;
