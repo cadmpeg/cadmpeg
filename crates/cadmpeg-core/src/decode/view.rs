@@ -431,7 +431,7 @@ const fn decode_i16_be(bytes: [u8; 2]) -> i16 {
 }
 
 macro_rules! view_readers {
-    ($(($probe:ident, $req:ident, $at:ident, $ty:ty, $decode:ident, $size:literal)),* $(,)?) => {
+    ($(($probe:ident, [$($req:ident)?], $at:ident, $ty:ty, $decode:ident, $size:literal)),* $(,)?) => {
         impl View<'_> {
             $(
                 #[doc = concat!("Probe read of a `", stringify!($ty), "` in the serialized byte order.")]
@@ -439,6 +439,7 @@ macro_rules! view_readers {
                     self.array::<$size>().map($decode)
                 }
 
+                $(
                 #[doc = concat!("Required-read mirror of [`View::", stringify!($probe), "`].")]
                 pub fn $req(&mut self) -> Result<$ty, ParseError> {
                     match self.array::<$size>() {
@@ -446,6 +447,7 @@ macro_rules! view_readers {
                         None => Err(self.eof($size)),
                     }
                 }
+                )?
 
                 #[doc = concat!(
                     "Offset probe of a `",
@@ -465,20 +467,20 @@ macro_rules! view_readers {
 }
 
 view_readers!(
-    (u16_le, req_u16_le, u16_le_at, u16, assemble_u16_le, 2),
-    (i16_le, req_i16_le, i16_le_at, i16, decode_i16_le, 2),
-    (u32_le, req_u32_le, u32_le_at, u32, assemble_u32_le, 4),
-    (i32_le, req_i32_le, i32_le_at, i32, decode_i32_le, 4),
-    (u64_le, req_u64_le, u64_le_at, u64, assemble_u64_le, 8),
-    (i64_le, req_i64_le, i64_le_at, i64, decode_i64_le, 8),
-    (f32_le, req_f32_le, f32_le_at, f32, assemble_f32_le, 4),
-    (f64_le, req_f64_le, f64_le_at, f64, assemble_f64_le, 8),
-    (u16_be, req_u16_be, u16_be_at, u16, assemble_u16_be, 2),
-    (i16_be, req_i16_be, i16_be_at, i16, decode_i16_be, 2),
-    (u32_be, req_u32_be, u32_be_at, u32, assemble_u32_be, 4),
-    (u64_be, req_u64_be, u64_be_at, u64, assemble_u64_be, 8),
-    (f32_be, req_f32_be, f32_be_at, f32, assemble_f32_be, 4),
-    (f64_be, req_f64_be, f64_be_at, f64, assemble_f64_be, 8),
+    (u16_le, [req_u16_le], u16_le_at, u16, assemble_u16_le, 2),
+    (i16_le, [req_i16_le], i16_le_at, i16, decode_i16_le, 2),
+    (u32_le, [req_u32_le], u32_le_at, u32, assemble_u32_le, 4),
+    (i32_le, [req_i32_le], i32_le_at, i32, decode_i32_le, 4),
+    (u64_le, [req_u64_le], u64_le_at, u64, assemble_u64_le, 8),
+    (i64_le, [req_i64_le], i64_le_at, i64, decode_i64_le, 8),
+    (f32_le, [req_f32_le], f32_le_at, f32, assemble_f32_le, 4),
+    (f64_le, [req_f64_le], f64_le_at, f64, assemble_f64_le, 8),
+    (u16_be, [], u16_be_at, u16, assemble_u16_be, 2),
+    (i16_be, [], i16_be_at, i16, decode_i16_be, 2),
+    (u32_be, [req_u32_be], u32_be_at, u32, assemble_u32_be, 4),
+    (u64_be, [], u64_be_at, u64, assemble_u64_be, 8),
+    (f32_be, [req_f32_be], f32_be_at, f32, assemble_f32_be, 4),
+    (f64_be, [], f64_be_at, f64, assemble_f64_be, 8),
 );
 
 impl View<'_> {

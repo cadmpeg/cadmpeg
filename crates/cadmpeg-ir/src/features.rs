@@ -44,7 +44,7 @@ pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
 macro_rules! checked_feature_geometry {
-    ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal) => {
+    ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -57,11 +57,7 @@ macro_rules! checked_feature_geometry {
                 ($valid).then_some(Self($value))
             }
 
-            /// Return the geometric value.
-            pub const fn get(self) -> $raw { self.0 }
-
-            /// Borrow the geometric value.
-            pub const fn as_raw(&self) -> &$raw { &self.0 }
+            $(checked_feature_geometry!(@getter $getter, $raw);)*
         }
 
         impl PartialEq<$raw> for $name {
@@ -91,19 +87,27 @@ macro_rules! checked_feature_geometry {
             fn from(value: $name) -> Self { value.0 }
         }
     };
+    (@getter get, $raw:ident) => {
+        /// Return the geometric value.
+        pub const fn get(self) -> $raw { self.0 }
+    };
+    (@getter as_raw, $raw:ident) => {
+        /// Borrow the geometric value.
+        pub const fn as_raw(&self) -> &$raw { &self.0 }
+    };
 }
 
 checked_feature_geometry!(
     /// A model-space point with finite coordinates.
     FinitePoint3, Point3, value,
     value.is_finite(),
-    "FinitePoint3 coordinates must be finite"
+    "FinitePoint3 coordinates must be finite", get, as_raw
 );
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,
     value.is_finite(),
-    "FiniteVector3 components must be finite"
+    "FiniteVector3 components must be finite", get, as_raw
 );
 impl FiniteVector3 {
     /// Reverse all components.
@@ -118,7 +122,7 @@ checked_feature_geometry!(
     /// every product of two of its components are representable.
     FeatureDirection3, Vector3, value,
     value.dot(value).is_finite() && value.dot(value) > 0.0,
-    "FeatureDirection3 norm must be finite and nonzero"
+    "FeatureDirection3 norm must be finite and nonzero", get
 );
 
 checked_feature_geometry!(
@@ -2054,7 +2058,7 @@ impl<'de> Deserialize<'de> for SewBodySelection {
 }
 
 macro_rules! selection_operands {
-    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $valid:expr) => {
+    ($name:ident, $wire:ident, $selection:ty, $first:ident, $second:ident, $valid:expr $(, $edit:ident)?) => {
         /// Two admitted operand selections for one feature operation.
         #[derive(Debug, Clone, PartialEq, Serialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2094,8 +2098,9 @@ macro_rules! selection_operands {
                 &self.$second
             }
 
+            $(
             /// Admit both edited selections before replacing either operand.
-            pub fn try_edit(
+            pub fn $edit(
                 &mut self,
                 edit: impl FnOnce(&mut $selection, &mut $selection),
             ) -> Result<(), &'static str> {
@@ -2105,6 +2110,7 @@ macro_rules! selection_operands {
                 *self = Self::new(first, second)?;
                 Ok(())
             }
+            )?
         }
 
         impl<'de> Deserialize<'de> for $name {
@@ -2130,7 +2136,8 @@ selection_operands!(
     FaceSelection,
     targets,
     replacements,
-    |first, second| !face_selections_overlap(first, second)
+    |first, second| !face_selections_overlap(first, second),
+    try_edit
 );
 selection_operands!(
     SectionOperands,
@@ -2147,7 +2154,8 @@ selection_operands!(
     target,
     tools,
     |first, second| known_body_count(first).is_none_or(|count| count == 1)
-        && !body_selections_overlap(first, second)
+        && !body_selections_overlap(first, second),
+    try_edit
 );
 selection_operands!(
     TrimBodyOperands,
