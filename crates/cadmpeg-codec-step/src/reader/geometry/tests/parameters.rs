@@ -520,8 +520,8 @@ fn anisotropic_replica_scaling_conjugates_the_parent_map() {
 }
 
 #[test]
-fn unsupported_anisotropic_pcurve_forms_are_not_reshaped_by_scalar_scaling() {
-    let mut parabola = PcurveGeometry::Parabola(
+fn anisotropic_parabola_scaling_scales_both_axes_and_keeps_the_parameter() {
+    let original = PcurveGeometry::Parabola(
         cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
@@ -530,8 +530,24 @@ fn unsupported_anisotropic_pcurve_forms_are_not_reshaped_by_scalar_scaling() {
         )
         .unwrap(),
     );
-    assert!(parabola.try_scale_coordinates([2.0, 3.0]).is_err());
-    assert!(matches!(parabola, PcurveGeometry::Parabola(_)));
+    let mut scaled = original.clone();
+    assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
+    // A parabola evaluates as `vertex + x_axis * t * t / (4 * focal) + y_axis * t`,
+    // so a diagonal scale carries through the vertex and both axes and leaves
+    // the focal distance and the parameter alone.
+    assert!(
+        matches!(&scaled, PcurveGeometry::Parabola(parabola)
+            if *parabola.vertex() == Point2::new(0.0, 0.0)
+                && *parabola.x_axis() == Point2::new(2.0, 0.0)
+                && *parabola.y_axis() == Point2::new(0.0, 3.0)
+                && parabola.focal_distance() == 1.0),
+        "{scaled:?}"
+    );
+    for parameter in [0.0, 0.25, 1.0, 2.0] {
+        let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
+        let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+        assert_eq!(actual, Point2::new(expected.u * 2.0, expected.v * 3.0));
+    }
 }
 
 #[test]
