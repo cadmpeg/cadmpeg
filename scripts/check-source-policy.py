@@ -1068,8 +1068,11 @@ def scan_module_visibility(sources: dict[Path, str]) -> list[Finding]:
 # must not be checked in. A URL path segment is not one: it follows a host name,
 # so the character before the segment is alphanumeric.
 AUTHORING_PATH = re.compile(r"(?<![0-9A-Za-z])/(?:home|Users|root)/[0-9A-Za-z._-]+/")
+# Sources, documents and the recorded-evidence triple a check leaves behind: the
+# command line, its saved output and its exit status. A recorded command line and
+# a saved log carry an authoring path as readily as a source file does.
 AUTHORING_PATH_TEXT_SUFFIXES = frozenset(
-    {".rs", ".json", ".md", ".toml", ".txt", ".py", ".sh"}
+    {".rs", ".json", ".md", ".toml", ".txt", ".py", ".sh", ".command", ".log", ".exit"}
 )
 AUTHORING_PATH_ROOTS = ("crates", "docs")
 
