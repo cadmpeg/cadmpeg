@@ -344,11 +344,6 @@ impl SketchProfiles {
         *self = profiles.try_into()?;
         Ok(())
     }
-
-    /// Remove all profile chains.
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
 }
 
 impl Sketch {

@@ -5,7 +5,6 @@ use crate::eval::curve_point;
 use crate::eval::curve_second_derivative;
 use crate::eval::curve_tangent;
 use crate::eval::model_curve_differential_by_id;
-use crate::eval::model_curve_parameter_near_point;
 use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
@@ -15,7 +14,6 @@ use crate::eval::model_surface_second_partials_by_id;
 use crate::eval::nurbs_curve_parameter_near_point;
 use crate::eval::nurbs_curve_point;
 use crate::eval::nurbs_curve_speed_bound;
-use crate::eval::nurbs_surface_closest_parameter;
 use crate::eval::nurbs_surface_isocurve;
 use crate::eval::nurbs_surface_isoline;
 use crate::eval::nurbs_surface_parameter_near_point;
@@ -244,8 +242,13 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
 fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
-    let closest =
-        nurbs_surface_closest_parameter(&surface, point, None).expect("closest surface parameter");
+    let closest = crate::eval::nurbs_surface_closest_parameter_with_budget(
+        &surface,
+        point,
+        None,
+        &cadmpeg_core::decode::WorkBudget::new(crate::eval::DEFAULT_NURBS_SURFACE_INVERSION_WORK),
+    )
+    .expect("closest surface parameter");
     assert!((closest.u - 0.3).abs() < 1.0e-12);
     assert!((closest.v - 0.7).abs() < 1.0e-12);
     assert!(nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.19).is_none());
@@ -620,8 +623,13 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
         });
-        let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
-            .expect("direct analytic inverse");
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            parameter,
+        )
+        .expect("direct analytic inverse");
         assert!((inverse - parameter).abs() < 1.0e-12);
     }
 }
@@ -707,8 +715,13 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
-        let inverse = super::model_curve_parameter_near_point(&ir, &id, point, seed)
-            .expect("polyline inverse");
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            seed,
+        )
+        .expect("polyline inverse");
         assert!((inverse - expected).abs() < 1.0e-12);
     }
 }
@@ -769,8 +782,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
     });
-    let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
-        .expect("transformed inverse");
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        point,
+        parameter,
+    )
+    .expect("transformed inverse");
     assert!((inverse - parameter).abs() < 1.0e-10);
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
@@ -782,10 +800,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         ])
         .expect("affine transform"),
     });
-    assert!(
-        super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
-            .is_none()
-    );
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        Point3::new(0.0, 0.0, 0.0),
+        0.0
+    )
+    .is_none());
 }
 
 #[test]
@@ -802,13 +823,21 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     });
     let seed = 123.5;
     assert_eq!(
-        super::model_curve_parameter_near_point(&ir, &id, point, seed),
+        crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            seed
+        ),
         Some(seed)
     );
-    assert!(
-        super::model_curve_parameter_near_point(&ir, &id, Point3::new(2.0, 3.0, 5.0), seed,)
-            .is_none()
-    );
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        Point3::new(2.0, 3.0, 5.0),
+        seed
+    )
+    .is_none());
 }
 
 #[test]

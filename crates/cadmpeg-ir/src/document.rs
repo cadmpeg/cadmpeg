@@ -425,24 +425,6 @@ macro_rules! declare_model {
                     .extend(other.feature_regeneration_parents.0);
             }
 
-            /// Retains selected entities and removes predecessor entries owned by
-            /// discarded features. References from retained children still require
-            /// admission against the destination model.
-            pub(crate) fn retain_entities(
-                &mut self,
-                mut keep: impl FnMut(crate::schema::EntityKind, &str) -> bool,
-            ) {
-                $(self.$field.retain(|entity| {
-                    keep(<$ty as crate::schema::EntitySchema>::KIND,
-                        crate::schema::EntitySchema::identity(entity))
-                });)*
-                if !self.feature_regeneration_parents.0.is_empty() {
-                    let children = self.features.iter().map(|feature| &feature.id)
-                        .collect::<std::collections::HashSet<_>>();
-                    self.feature_regeneration_parents.0.retain(|child, _| children.contains(child));
-                }
-            }
-
             /// Visits every typed identity reference in canonical arena order.
             ///
             /// Returns the first [`crate::schema::ReferenceWalkError`] an

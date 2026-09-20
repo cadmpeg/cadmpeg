@@ -94,17 +94,18 @@ fn face_operand_and_full_round_owners_reject_each_overlap() {
         )
         .is_err());
     }
-    let mut group = FullRoundFilletGroup::new(
-        center,
+    assert!(FullRoundFilletGroup::new(
+        center.clone(),
         FullRoundSideSelection::Explicit(first),
-        FullRoundSideSelection::Explicit(second),
+        FullRoundSideSelection::Explicit(second.clone())
     )
-    .unwrap();
-    let before = group.clone();
-    assert!(group
-        .try_edit(|center, one, _| *one = FullRoundSideSelection::Explicit(center.clone()))
-        .is_err());
-    assert_eq!(group, before);
+    .is_ok());
+    assert!(FullRoundFilletGroup::new(
+        center.clone(),
+        FullRoundSideSelection::Explicit(center),
+        FullRoundSideSelection::Explicit(second)
+    )
+    .is_err());
     assert!(SewBodySelection::try_from(BodySelection::NativeSet(
         vec!["single".into()].try_into().unwrap()
     ))

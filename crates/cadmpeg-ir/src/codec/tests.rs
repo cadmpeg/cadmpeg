@@ -80,13 +80,7 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(ContainerSummary::unclassified(
-            "foreign",
-            crate::ContainerKind::Flat,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ))
+        Ok(serde_json::from_value(serde_json::json!({"identity": {"classification": "unclassified", "format": "foreign"}, "container_kind": "flat", "entries": []})).expect("foreign inspection fixture"))
     }
 
     fn decode_impl(

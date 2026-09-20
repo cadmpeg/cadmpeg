@@ -137,8 +137,13 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let target =
         super::model_curve_point_by_id(&index, &curve_id, target_parameter).expect("helix target");
 
-    let inverse = super::model_curve_parameter_near_point(&ir, &curve_id, target, 1.5)
-        .expect("helix inverse");
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &curve_id,
+        target,
+        1.5,
+    )
+    .expect("helix inverse");
     assert!((0.25..=2.0).contains(&inverse));
     let resolved = super::model_curve_point_by_id(&index, &curve_id, inverse)
         .expect("forward-validated helix inverse");
@@ -152,5 +157,11 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         residual <= ir.tolerances.linear.get(),
         "residual={residual}"
     );
-    assert!(super::model_curve_parameter_near_point(&ir, &curve_id, target, 0.24).is_none());
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &curve_id,
+        target,
+        0.24
+    )
+    .is_none());
 }

@@ -83,24 +83,35 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         color: None,
         visible: None,
     });
-    ir.model.features.push(Feature::new(
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::generated(
-                vec![GeneratedFaceRef::new(
-                    cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
-                        .expect("identity grammar"),
-                    "surface#7".to_string(),
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::generated(
+                    vec![GeneratedFaceRef::new(
+                        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+                            .expect("identity grammar"),
+                        "surface#7".to_string(),
+                    )
+                    .expect("valid test fixture")],
+                    "creo:generated-face#7".to_string(),
                 )
-                .expect("valid test fixture")],
-                "creo:generated-face#7".to_string(),
-            )
-            .expect("valid test fixture"),
-            thickness: None,
-            side: None,
-        }),
-    ));
+                .expect("valid test fixture"),
+                thickness: None,
+                side: None,
+            }),
+        ),
+        native_ref: None,
+    });
 
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),
@@ -173,24 +184,35 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         color: None,
         tolerance: None,
     });
-    ir.model.features.push(Feature::new(
-        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::generated(
-                vec![GeneratedFaceRef::new(
-                    cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
-                        .expect("identity grammar"),
-                    "surface#7".to_string(),
+    ir.model.features.push(Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::generated(
+                    vec![GeneratedFaceRef::new(
+                        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#50")
+                            .expect("identity grammar"),
+                        "surface#7".to_string(),
+                    )
+                    .expect("valid test fixture")],
+                    "creo:generated-face#7".to_string(),
                 )
-                .expect("valid test fixture")],
-                "creo:generated-face#7".to_string(),
-            )
-            .expect("valid test fixture"),
-            thickness: None,
-            side: None,
-        }),
-    ));
+                .expect("valid test fixture"),
+                thickness: None,
+                side: None,
+            }),
+        ),
+        native_ref: None,
+    });
 
     assert_eq!(
         feature_output_bodies(&scan, &ir, 10),

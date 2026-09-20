@@ -112,7 +112,14 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
-    let camera = presentation.camera().expect("camera state");
+    let camera = presentation
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
+        .expect("camera state");
     assert_eq!(
         camera.position.map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0, 2.0, 3.0])
@@ -332,7 +339,12 @@ fn ignores_non_authoritative_camera_descendant_values() {
         )
         .expect("non-authoritative camera descendants");
     let camera = result.ir().model.presentation_documents[0]
-        .camera()
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
         .expect("camera state");
     assert_eq!(camera.position, None);
     assert_eq!(camera.orientation, None);
