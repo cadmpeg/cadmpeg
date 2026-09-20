@@ -601,7 +601,7 @@ pub(super) fn patch_line_profiles(
                     let point = lift_point(*position, origin, u_axis, v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
-                        if distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
+                        if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
                             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                 "SLDPRT shared sketch point {reference} has conflicting positions"
                             )));
@@ -614,7 +614,7 @@ pub(super) fn patch_line_profiles(
                         let point = lift_point(*point, origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
-                            if distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
+                            if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
                                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                     "SLDPRT shared sketch point {reference} has conflicting positions"
                                 )));
@@ -639,7 +639,7 @@ pub(super) fn patch_line_profiles(
                             let point = lift_point(point, origin, u_axis, v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
-                                if distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
+                                if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
                                     return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                         "SLDPRT shared sketch point {reference} has conflicting positions"
                                     )));
@@ -824,12 +824,6 @@ fn lift_point(point: Point2, origin: Point3, u_axis: Vector3, v_axis: Vector3) -
         origin.y + point.u * u_axis.y + point.v * v_axis.y,
         origin.z + point.u * u_axis.z + point.v * v_axis.z,
     )
-}
-
-fn distance(left: Point3, right: Point3) -> f64 {
-    (left.x - right.x)
-        .hypot(left.y - right.y)
-        .hypot(left.z - right.z)
 }
 
 fn patch_direct_stream_point(

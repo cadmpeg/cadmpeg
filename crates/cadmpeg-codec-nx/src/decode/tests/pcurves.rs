@@ -4,6 +4,8 @@
 const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 
+const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
+
 use crate::decode::blend::{
     bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
     homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
@@ -16,7 +18,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 
 use crate::decode::emit::orient_edge_range;
 use crate::decode::offset::{
-    certified_offset_cache_fit, point_distance, subdivide_offset_rectangle, translation_net_normal,
+    certified_offset_cache_fit, subdivide_offset_rectangle, translation_net_normal,
 };
 use crate::decode::pcurves::{
     coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
@@ -289,7 +291,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 uv.v,
             )
             .unwrap();
-            assert!(point_distance(expected, actual) < 1.0e-12);
+            assert!(Point3::distance(expected, actual) < EPS_PCURVE_POINT_MATCH);
         }
     }
 
@@ -1039,7 +1041,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
-    assert!(point_distance(mapped, point) <= 0.01);
+    assert!(Point3::distance(mapped, point) <= 0.01);
 }
 
 #[test]
@@ -1672,7 +1674,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         &pcurve,
         Some(0.01),
     ));
-    let large_distance = point_distance(
+    let large_distance = Point3::distance(
         Point3::new(1.0e200, 1.0e200, 1.0e200),
         Point3::new(0.0, 0.0, 0.0),
     );

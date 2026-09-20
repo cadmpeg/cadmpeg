@@ -1283,8 +1283,8 @@ fn surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
 }
 
 fn cross_section_surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    collect_cross_section_records(
-        sections,
+    collect_section_records(
+        cross_sections(sections),
         surface::cross_section_rows,
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1325,47 +1325,29 @@ fn surface_prototype_records(
 }
 
 fn surface_parameters(sections: &[ScannedSection<'_>]) -> Vec<SurfaceParameterRecord> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            surface::parameter_records(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.body_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        surface::parameter_records,
+        |record, base| {
+            record.offset += base;
+            record.body_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn cross_section_surface_parameters(
     sections: &[ScannedSection<'_>],
 ) -> Vec<SurfaceParameterRecord> {
-    let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        records.extend(
-            surface::cross_section_parameter_records(payload)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.body_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        cross_sections(sections),
+        surface::cross_section_parameter_records,
+        |record, base| {
+            record.offset += base;
+            record.body_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord> {
@@ -1439,82 +1421,56 @@ fn loop_array_scan(sections: &[ScannedSection<'_>]) -> LoopArrayScan {
 fn tabulated_cylinder_curve_replays(
     sections: &[ScannedSection<'_>],
 ) -> Vec<TabulatedCylinderCurveReplay> {
-    let mut records = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        records.extend(
-            surface::tabulated_cylinder_curve_replays(section_bytes)
-                .into_iter()
-                .map(|mut record| {
-                    record.offset += section.section.offset();
-                    record.surface_row_offset += section.section.offset();
-                    record
-                }),
-        );
-    }
-    records.sort_by_key(|record| record.offset);
-    records
+    collect_section_records(
+        sections.iter(),
+        surface::tabulated_cylinder_curve_replays,
+        |record, base| {
+            record.offset += base;
+            record.surface_row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn plane_local_systems(sections: &[ScannedSection<'_>]) -> Vec<PlaneLocalSystem> {
-    let mut systems = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        systems.extend(surface::plane_local_systems(section_bytes).into_iter().map(
-            |mut system| {
-                system.row_offset += section.section.offset();
-                system.offset += section.section.offset();
-                system
-            },
-        ));
-    }
-    systems.sort_by_key(|system| system.offset);
-    systems
+    collect_section_records(
+        sections.iter(),
+        surface::plane_local_systems,
+        |record, base| {
+            record.offset += base;
+            record.row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn cross_section_plane_local_systems(sections: &[ScannedSection<'_>]) -> Vec<PlaneLocalSystem> {
-    let mut systems = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        systems.extend(
-            surface::cross_section_plane_local_systems(payload)
-                .into_iter()
-                .map(|mut system| {
-                    system.row_offset += section.section.offset();
-                    system.offset += section.section.offset();
-                    system
-                }),
-        );
-    }
-    systems.sort_by_key(|system| system.offset);
-    systems
+    collect_section_records(
+        cross_sections(sections),
+        surface::cross_section_plane_local_systems,
+        |record, base| {
+            record.offset += base;
+            record.row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    let mut envelopes = Vec::new();
-    for section in sections {
-        let section_bytes = section.region;
-        envelopes.extend(surface::plane_envelopes(section_bytes).into_iter().map(
-            |mut envelope| {
-                envelope.row_offset += section.section.offset();
-                envelope.offset += section.section.offset();
-                envelope
-            },
-        ));
-    }
-    envelopes.sort_by_key(|envelope| envelope.offset);
-    envelopes
+    collect_section_records(
+        sections.iter(),
+        surface::plane_envelopes,
+        |record, base| {
+            record.offset += base;
+            record.row_offset += base;
+        },
+        |record| record.offset,
+    )
 }
 
 fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    collect_cross_section_records(
-        sections,
+    collect_section_records(
+        cross_sections(sections),
         surface::cross_section_plane_envelopes,
         |record, base| record.offset += base,
         |record| record.offset,
@@ -1677,8 +1633,8 @@ fn curve_topology_rows(
 }
 
 fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRow> {
-    collect_cross_section_records(
-        sections,
+    collect_section_records(
+        cross_sections(sections),
         curve::depdb_cross_section_rows,
         |record, base| record.offset += base,
         |record| record.offset,
@@ -2802,20 +2758,23 @@ pub(crate) fn scan_bytes<'a>(
     })
 }
 
-fn collect_cross_section_records<T>(
-    sections: &[ScannedSection<'_>],
+fn cross_sections<'a, 'data>(
+    sections: &'a [ScannedSection<'data>],
+) -> impl Iterator<Item = &'a ScannedSection<'data>> {
+    sections.iter().filter(|section| {
+        section.section.name() == "Xsections"
+            && find(section.region, b"Sld_Xsections\0", 0).is_some()
+    })
+}
+
+fn collect_section_records<'a, 'data: 'a, T>(
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
     decode: impl Fn(&[u8]) -> Vec<T>,
     relocate: impl Fn(&mut T, usize),
     offset: impl Fn(&T) -> usize,
 ) -> Vec<T> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        if find(section.region, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
+    for section in sections {
         records.extend(decode(section.region).into_iter().map(|mut record| {
             relocate(&mut record, section.section.offset());
             record

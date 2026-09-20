@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support-UV admission and invalidation tests.
 
-use crate::decode::offset::point_distance;
 use crate::decode::support_uv::SerializedSupportUv;
 use crate::test_support::test_streams::prt_with_ext11_intersection;
 use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
@@ -280,8 +279,8 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         parameter_range,
     )
     .expect("complete validation endpoint witness");
-    assert!(point_distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
-    assert!(point_distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
+    assert!(Point3::distance(witness[0], points[0]) <= EPS_SUPPORT_WITNESS);
+    assert!(Point3::distance(witness[1], points[1]) <= EPS_SUPPORT_WITNESS);
 }
 
 #[test]

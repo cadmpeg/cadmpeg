@@ -218,7 +218,7 @@ fn certified_offset_cache_fit_with_budget(
                         support.y + translation.y,
                         support.z + translation.z,
                     );
-                    point_distance(expected, *candidate)
+                    Point3::distance(expected, *candidate)
                 })
                 .try_fold(0.0_f64, |maximum, error| {
                     error.is_finite().then(|| maximum.max(error))
@@ -293,7 +293,7 @@ fn offset_candidate_sample_error(
         support_partials.point.y + distance * normal.y,
         support_partials.point.z + distance * normal.z,
     );
-    Some(point_distance(expected, candidate_point))
+    Some(Point3::distance(expected, candidate_point))
 }
 
 fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
@@ -636,7 +636,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             support_point.y + distance * normal.y,
             support_point.z + distance * normal.z,
         );
-        let midpoint_error = point_distance(expected, candidate_point);
+        let midpoint_error = Point3::distance(expected, candidate_point);
         let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
         if !bound.is_finite() {
             return None;
@@ -1071,7 +1071,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             parameters.v,
             geometry_budget,
         )?;
-        let residual = point_distance(position, point);
+        let residual = Point3::distance(position, point);
         if !residual.is_finite() {
             return None;
         }
@@ -1674,7 +1674,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         current[1],
         geometry_budget,
     )?;
-    if point_distance(first_point, chart[0]) > fit_tolerance {
+    if Point3::distance(first_point, chart[0]) > fit_tolerance {
         return None;
     }
     let mut lanes = [
@@ -1748,7 +1748,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
             corrected[1],
             geometry_budget,
         )?;
-        if point_distance(point, chart_pair[1]) > fit_tolerance {
+        if Point3::distance(point, chart_pair[1]) > fit_tolerance {
             return None;
         }
         current = corrected;
@@ -2207,12 +2207,6 @@ pub(super) fn solve_damped_least_squares_4x4(
     None
 }
 
-pub(super) fn point_distance(first: Point3, second: Point3) -> f64 {
-    (first.x - second.x)
-        .hypot(first.y - second.y)
-        .hypot(first.z - second.z)
-}
-
 pub(super) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
@@ -2335,7 +2329,7 @@ mod tests {
     use super::{
         certified_offset_cache_fit_with_budget, coarse_surface_sample_counts,
         offset_support_control_hull_excludes_point, offset_surface_parameters_with_tolerance,
-        point_distance, refine_offset_surface_parameters_with_index_and_budget,
+        refine_offset_surface_parameters_with_index_and_budget,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
@@ -2565,7 +2559,7 @@ mod tests {
         let target = Point3::new(3.0, 0.25, 1.0);
         let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, 3.0, 0.25)
             .expect("linear offset evaluation");
-        assert!(point_distance(evaluated, target) <= fit_tolerance);
+        assert!(Point3::distance(evaluated, target) <= fit_tolerance);
         assert!(!offset_support_control_hull_excludes_point(
             &index,
             &offset,
