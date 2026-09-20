@@ -38,7 +38,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
-pub(crate) fn cyl_spl_sur(
+pub(super) fn cyl_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
@@ -139,7 +139,7 @@ pub(crate) fn cyl_spl_sur(
     }
 }
 
-pub(crate) fn decode_rolling_ball_side(
+pub(super) fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -205,7 +205,7 @@ pub(crate) fn decode_rolling_ball_side(
 
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
 /// its parameter bounds.
-pub(crate) fn decode_optional_rolling_ball_surface(
+pub(super) fn decode_optional_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -226,7 +226,7 @@ pub(crate) fn decode_optional_rolling_ball_surface(
     )
 }
 
-pub(crate) fn decode_rolling_ball_surface(
+pub(super) fn decode_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -262,7 +262,7 @@ pub(crate) fn decode_rolling_ball_surface(
     decode_embedded_surface_with_ranges(bytes, position, int_width)
 }
 
-pub(crate) fn decode_surface_ranges(
+pub(super) fn decode_surface_ranges(
     bytes: &[u8],
     position: &mut usize,
 ) -> Option<[[Option<f64>; 2]; 2]> {
@@ -278,7 +278,7 @@ pub(crate) fn decode_surface_ranges(
     ])
 }
 
-pub(crate) fn decode_rolling_ball_curve(
+pub(super) fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -395,7 +395,7 @@ pub(crate) fn decode_rolling_ball_curve(
 
 /// Decode one rolling-ball support side. Token-space counterpart of
 /// [`decode_rolling_ball_side`].
-pub(crate) fn rolling_ball_side(
+pub(super) fn rolling_ball_side(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
@@ -453,7 +453,7 @@ pub(crate) fn rolling_ball_side(
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
 /// its parameter bounds. Token-space counterpart of
 /// [`decode_optional_rolling_ball_surface`].
-pub(crate) fn optional_rolling_ball_surface(
+pub(super) fn optional_rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
@@ -472,7 +472,7 @@ pub(crate) fn optional_rolling_ball_surface(
 
 /// Decode one rolling-ball support surface. Token-space counterpart of
 /// [`decode_rolling_ball_surface`].
-pub(crate) fn rolling_ball_surface(
+fn rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
@@ -507,7 +507,7 @@ pub(crate) fn rolling_ball_surface(
 
 /// Four optional U/V range bounds. Token-space counterpart of
 /// [`decode_surface_ranges`].
-pub(crate) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]> {
+pub(super) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]> {
     Some([
         [
             cur.take_optional_range_value()?.value(),
@@ -522,7 +522,7 @@ pub(crate) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]>
 
 /// Decode one rolling-ball curve slot. Token-space counterpart of
 /// [`decode_rolling_ball_curve`].
-pub(crate) fn rolling_ball_curve(
+fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<RollingBallSupportCurve<CurveGeometry>> {
@@ -1033,7 +1033,7 @@ mod variable_blend_value_tests {
     }
 }
 
-pub(crate) fn var_blend_spl_sur(
+pub(super) fn var_blend_spl_sur(
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
@@ -1427,7 +1427,7 @@ fn revision_vertex_blend_boundary(
     })
 }
 
-pub(crate) fn vertex_blend_spl_sur(
+pub(super) fn vertex_blend_spl_sur(
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<DecodedProceduralSurface> {
@@ -1491,7 +1491,7 @@ fn blend_radius_law(offsets: [f64; 2]) -> BlendRadiusLaw {
     }
 }
 
-pub(crate) fn full_rb_blend_spl_sur(
+pub(super) fn full_rb_blend_spl_sur(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
@@ -1582,7 +1582,7 @@ pub(crate) fn full_rb_blend_spl_sur(
 /// Decode the compact rolling-ball carrier emitted without the native side
 /// graph. Every field is positional; nested construction members are not
 /// searched by token kind.
-pub(crate) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();

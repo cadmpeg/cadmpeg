@@ -608,7 +608,7 @@ pub struct EmbeddedG2Blend {
     pub discontinuities: [Vec<f64>; 3],
 }
 
-pub(crate) fn decode_nullable_embedded_pcurve(
+pub(super) fn decode_nullable_embedded_pcurve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -625,7 +625,7 @@ pub(crate) fn decode_nullable_embedded_pcurve(
 
 /// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
 /// [`decode_nullable_embedded_pcurve`].
-pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
+pub(super) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
         return Some(Nullable::Null);
@@ -1234,7 +1234,7 @@ pub enum EmbeddedLawFormula {
 impl EmbeddedLawFormula {
     /// Native formula name.
     #[cfg(test)]
-    pub(crate) fn name(&self) -> &str {
+    pub(super) fn name(&self) -> &str {
         match self {
             Self::Null => "null_law",
             Self::Named { name, .. } => name.as_str(),
@@ -1243,7 +1243,7 @@ impl EmbeddedLawFormula {
 
     /// Formula operands, empty for the null form.
     #[cfg(test)]
-    pub(crate) fn variables(&self) -> &[EmbeddedLawExpression] {
+    fn variables(&self) -> &[EmbeddedLawExpression] {
         match self {
             Self::Null => &[],
             Self::Named { variables, .. } => variables,
@@ -1620,7 +1620,7 @@ fn compound_loft_scale(cur: &mut Cur<'_>) -> Option<Nullable<EmbeddedCompoundLof
 }
 
 /// Exact rational quadratic NURBS of a full native ellipse.
-pub(crate) fn ellipse_to_nurbs(
+pub(super) fn ellipse_to_nurbs(
     center: [f64; 3],
     normal: [f64; 3],
     major: [f64; 3],
@@ -2421,7 +2421,7 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
 }
 
 /// Decode one recursive law expression.
-pub(crate) fn law_expression(cur: &mut Cur<'_>, depth: usize) -> Option<EmbeddedLawExpression> {
+pub(super) fn law_expression(cur: &mut Cur<'_>, depth: usize) -> Option<EmbeddedLawExpression> {
     law_expression_resolving(cur, depth, None)
 }
 
@@ -2557,7 +2557,7 @@ fn law_expression_resolving(
 }
 
 /// Decode one named law formula and its counted variables.
-pub(crate) fn law_formula(cur: &mut Cur<'_>) -> Option<EmbeddedLawFormula> {
+pub(super) fn law_formula(cur: &mut Cur<'_>) -> Option<EmbeddedLawFormula> {
     law_formula_resolving(cur, None)
 }
 
@@ -2667,7 +2667,7 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     ))
 }
 
-pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["law_spl_sur", "lawsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -2763,7 +2763,7 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     ))
 }
 
-pub(crate) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn sub_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let names = ["sub_spl_sur", "subsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?.tokens();
@@ -3390,7 +3390,7 @@ pub enum RevisionSurfaceCache {
 
 impl RevisionSurfaceCache {
     /// Convert cache metadata to its neutral representation.
-    pub(crate) fn into_form(self) -> Option<RevisionCacheForm> {
+    pub(super) fn into_form(self) -> Option<RevisionCacheForm> {
         Some(match self {
             Self::Solved { fit_tolerance, .. } => RevisionCacheForm::SolvedCache {
                 fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(fit_tolerance).ok()?,
@@ -4226,7 +4226,7 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     }
 }
 
-pub(crate) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn helix_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::HelixSurfaceProfile;
 
     let names = ["helix_spl_circ", "helix_spl_line"];

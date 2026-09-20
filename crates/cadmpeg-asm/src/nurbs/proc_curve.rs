@@ -1536,7 +1536,7 @@ pub fn rolling_ball_patch_layout(
 
 /// Embedded cache-first base curve: a direct NURBS block, an analytic
 /// `straight`, or a referenced `intcurve` resolved to its solved cache.
-pub(crate) fn embedded_base_curve_resolving_refs(
+pub(super) fn embedded_base_curve_resolving_refs(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<NurbsCurve> {
@@ -1961,7 +1961,7 @@ pub fn decode_par_int_cur_isoline(
 
 /// Decode a form-2 `par_int_cur` scope into the curve it denotes. Token-space
 /// counterpart of [`decode_par_int_cur_isoline`].
-pub(crate) fn par_int_cur_isoline(
+pub(super) fn par_int_cur_isoline(
     scope: &[Token],
     reference_context: Option<&SubtypeTable>,
 ) -> Option<NurbsCurve> {
@@ -2059,10 +2059,10 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 /// fit tolerance, two bounded supports, two nullable pcurves, two optional
 /// solved-interval endpoints, three discontinuity arrays, and one extension.
 pub struct CacheFirstCurveContext {
-    pub(crate) form: cadmpeg_ir::geometry::CacheFirstCurveForm,
-    pub(crate) surfaces: [SupportSlot; 2],
-    pub(crate) pcurves: [Option<PcurveNurbs>; 2],
-    pub(crate) discontinuities: [Vec<f64>; 3],
+    pub(super) form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    pub(super) surfaces: [SupportSlot; 2],
+    pub(super) pcurves: [Option<PcurveNurbs>; 2],
+    discontinuities: [Vec<f64>; 3],
 }
 
 impl CacheFirstCurveContext {
@@ -2809,7 +2809,7 @@ fn skip_offset_support_pcurve(
     Some(())
 }
 
-pub(crate) fn decode_embedded_surface(
+fn decode_embedded_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -2819,13 +2819,13 @@ pub(crate) fn decode_embedded_surface(
 
 /// Decode one embedded analytic or spline support surface. Token-space
 /// counterpart of [`decode_embedded_surface`].
-pub(crate) fn embedded_surface(cur: &mut Cur<'_>) -> Option<SurfaceGeometry> {
+pub(super) fn embedded_surface(cur: &mut Cur<'_>) -> Option<SurfaceGeometry> {
     embedded_surface_fields(cur, false).map(|(surface, _)| surface)
 }
 
 /// [`embedded_surface`], preserving the four trailing U/V range fields.
 /// Token-space counterpart of [`decode_embedded_surface_with_ranges`].
-pub(crate) fn embedded_surface_with_ranges(
+pub(super) fn embedded_surface_with_ranges(
     cur: &mut Cur<'_>,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     embedded_surface_fields(cur, true)
@@ -2983,7 +2983,7 @@ fn embedded_surface_fields(
     }
 }
 
-pub(crate) fn decode_embedded_surface_with_ranges(
+pub(super) fn decode_embedded_surface_with_ranges(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -3147,7 +3147,7 @@ fn decode_embedded_surface_fields(
 
 /// Optional embedded support surface plus its four optional U/V bound fields.
 #[allow(clippy::type_complexity)]
-pub(crate) fn optional_embedded_surface_with_bounds(
+pub(super) fn optional_embedded_surface_with_bounds(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<(Option<SurfaceGeometry>, [Option<f64>; 4])> {
@@ -3311,7 +3311,7 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
 
 /// Decode the `helix_int_cur` construction fields. Token-space counterpart of
 /// the byte helix walk retained by [`helix_patch_layout`].
-pub(crate) fn helix_definition(toks: &[Token]) -> Option<HelixDefinition> {
+pub(super) fn helix_definition(toks: &[Token]) -> Option<HelixDefinition> {
     let marker = crate::nurbs::toks::find_owned_subtype_marker(toks, &["helix_int_cur"])
         .map(|(marker, _)| marker)?;
     let mut cur = Cur::at(toks, marker + 2);
@@ -3360,7 +3360,7 @@ pub(crate) fn helix_definition(toks: &[Token]) -> Option<HelixDefinition> {
 
 /// Consume the current helix subtype's ASM release word when present. The
 /// earlier form begins directly with an optional range-bound flag or double.
-pub(crate) fn take_optional_helix_revision(
+fn take_optional_helix_revision(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -3375,7 +3375,7 @@ pub(crate) fn take_optional_helix_revision(
 /// Consume the current helix subtype's ASM release word when present. The
 /// earlier form begins directly with an optional range-bound flag or double.
 /// Token-space counterpart of [`take_optional_helix_revision`].
-pub(crate) fn optional_helix_revision(cur: &mut Cur<'_>) -> Option<bool> {
+pub(super) fn optional_helix_revision(cur: &mut Cur<'_>) -> Option<bool> {
     if !matches!(cur.peek(), Some(Token::Long(_))) {
         return Some(false);
     }

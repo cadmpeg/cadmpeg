@@ -34,40 +34,40 @@ impl<'a> Cur<'a> {
     }
 
     /// Move the cursor to token index `pos`.
-    pub(crate) fn set_pos(&mut self, pos: usize) {
+    pub(super) fn set_pos(&mut self, pos: usize) {
         self.pos = pos;
     }
 
     /// The full token slice the cursor walks.
-    pub(crate) fn toks(&self) -> &'a [Token] {
+    pub(super) fn toks(&self) -> &'a [Token] {
         self.toks
     }
 
     /// The token at the cursor, without consuming it.
-    pub(crate) fn peek(&self) -> Option<&'a Token> {
+    pub(super) fn peek(&self) -> Option<&'a Token> {
         self.toks.get(self.pos)
     }
 
     /// Whether the cursor is at the closing token of this complete subtype
     /// span, with no unconsumed field before or token after it.
-    pub(crate) fn at_scope_end(&self) -> bool {
+    pub(super) fn at_scope_end(&self) -> bool {
         self.pos + 1 == self.toks.len()
             && matches!(self.toks.get(self.pos), Some(Token::SubtypeClose))
     }
 
     /// Consume one token of any kind.
-    pub(crate) fn bump(&mut self) -> Option<&'a Token> {
+    pub(super) fn bump(&mut self) -> Option<&'a Token> {
         let token = self.toks.get(self.pos)?;
         self.pos += 1;
         Some(token)
     }
 
     /// The remaining tokens from the cursor onward.
-    pub(crate) fn rest(&self) -> &'a [Token] {
+    pub(super) fn rest(&self) -> &'a [Token] {
         self.toks.get(self.pos..).unwrap_or(&[])
     }
 
-    pub(crate) fn take_f64(&mut self) -> Option<f64> {
+    pub(super) fn take_f64(&mut self) -> Option<f64> {
         match self.peek()? {
             Token::Double(value) => {
                 self.pos += 1;
@@ -77,7 +77,7 @@ impl<'a> Cur<'a> {
         }
     }
 
-    pub(crate) fn take_long(&mut self) -> Option<i64> {
+    pub(super) fn take_long(&mut self) -> Option<i64> {
         match self.peek()? {
             Token::Long(value) => {
                 self.pos += 1;
@@ -87,7 +87,7 @@ impl<'a> Cur<'a> {
         }
     }
 
-    pub(crate) fn take_enum(&mut self) -> Option<i64> {
+    pub(super) fn take_enum(&mut self) -> Option<i64> {
         match self.peek()? {
             Token::Enum(value) => {
                 self.pos += 1;
@@ -97,7 +97,7 @@ impl<'a> Cur<'a> {
         }
     }
 
-    pub(crate) fn take_bool(&mut self) -> Option<bool> {
+    pub(super) fn take_bool(&mut self) -> Option<bool> {
         match self.peek()? {
             Token::True => {
                 self.pos += 1;
@@ -111,7 +111,7 @@ impl<'a> Cur<'a> {
         }
     }
 
-    pub(crate) fn take_str(&mut self) -> Option<&'a str> {
+    pub(super) fn take_str(&mut self) -> Option<&'a str> {
         match self.peek()? {
             Token::Str(value) => {
                 self.pos += 1;
@@ -122,7 +122,7 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume one payload identifier (`Ident` or `SubIdent`).
-    pub(crate) fn take_ident(&mut self) -> Option<&'a str> {
+    pub(super) fn take_ident(&mut self) -> Option<&'a str> {
         match self.peek()? {
             Token::Ident(value) | Token::SubIdent(value) => {
                 self.pos += 1;
@@ -133,7 +133,7 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume one `0x13` position triple.
-    pub(crate) fn take_position(&mut self) -> Option<[f64; 3]> {
+    pub(super) fn take_position(&mut self) -> Option<[f64; 3]> {
         match self.peek()? {
             Token::Position(value) => {
                 self.pos += 1;
@@ -144,7 +144,7 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume one `0x14` vector triple.
-    pub(crate) fn take_vector3(&mut self) -> Option<[f64; 3]> {
+    pub(super) fn take_vector3(&mut self) -> Option<[f64; 3]> {
         match self.peek()? {
             Token::Vector3(value) => {
                 self.pos += 1;
@@ -155,7 +155,7 @@ impl<'a> Cur<'a> {
     }
 
     /// Consume a `Long` count followed by that many `Double`s.
-    pub(crate) fn take_float_array(&mut self) -> Option<Vec<f64>> {
+    pub(super) fn take_float_array(&mut self) -> Option<Vec<f64>> {
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
@@ -174,7 +174,7 @@ impl<'a> Cur<'a> {
 
     /// Consume an optional leading boolean, then one `Double`: the range-bound
     /// form whose presence flag some releases serialize and some omit.
-    pub(crate) fn take_range_value(&mut self) -> Option<f64> {
+    pub(super) fn take_range_value(&mut self) -> Option<f64> {
         let mark = self.pos;
         if matches!(self.peek(), Some(Token::True | Token::False)) {
             self.pos += 1;
@@ -189,7 +189,7 @@ impl<'a> Cur<'a> {
     /// Consume one optional range bound: `True` + `Double` or a bare `Double`
     /// is a present bound, `False` is an absent bound. The outer `None` is a
     /// parse failure.
-    pub(crate) fn take_optional_range_value(&mut self) -> Option<Nullable<f64>> {
+    pub(super) fn take_optional_range_value(&mut self) -> Option<Nullable<f64>> {
         let mark = self.pos;
         match self.peek()? {
             Token::True => {
@@ -214,7 +214,7 @@ impl<'a> Cur<'a> {
 ///
 /// Expansion adds one to each endpoint multiplicity. The pole count is
 /// `sum(mult) - (degree - 1)`.
-pub(crate) fn take_knot_table(
+pub(super) fn take_knot_table(
     cur: &mut Cur<'_>,
     n: usize,
     degree: i64,
@@ -236,7 +236,7 @@ pub(crate) fn take_knot_table(
 }
 
 /// The B-spline marker at token `pos`, if any.
-pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
+pub(super) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
     match toks.get(pos)? {
         Token::Ident(name) if name == "nubs" => Some(BsplineMarker::Nubs),
         Token::Ident(name) if name == "nurbs" => Some(BsplineMarker::Nurbs),
@@ -251,7 +251,7 @@ pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
 /// A `SubtypeClose` with no open scope is a malformed token stream and is
 /// refused: pinning the depth at zero would make every later marker read as one
 /// this span owns.
-pub(crate) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
+pub(super) fn owned_marker_positions(toks: &[Token]) -> Option<Vec<usize>> {
     let (out, balanced) = walk_owned_markers(toks);
     balanced.then_some(out)
 }
@@ -294,7 +294,7 @@ fn walk_owned_markers(toks: &[Token]) -> (Vec<usize>, bool) {
 ///
 /// A `SubtypeClose` with no open scope is a malformed token stream and is
 /// refused.
-pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
+pub(super) fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
     let mut owned = Vec::new();
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate() {
@@ -321,7 +321,7 @@ pub(crate) fn owned_subtype_defs(toks: &[Token]) -> Option<Vec<(usize, &str)>> {
 /// A construction owns a record through its own definition. Nested definitions
 /// belong to their enclosing construction, so this function ignores matching
 /// markers in nested scopes.
-pub(crate) fn find_owned_subtype_marker<'n>(
+pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<(usize, &'n str)> {
@@ -390,7 +390,7 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
 ///
 /// A malformed token stream is refused, not worked around: `owned_subtype_defs`
 /// answers `None` rather than passing over the scope that stated it.
-pub(crate) fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
+pub(super) fn cache_scope(toks: &[Token]) -> Option<&[Token]> {
     let mut constructions = 0usize;
     let mut cache_bearing = Vec::new();
     for (start, _) in owned_subtype_defs(toks)?
@@ -422,7 +422,7 @@ fn canonical_intcurve_kind(name: &str) -> &str {
 /// Token index of the `intcurve` subtype definition `toks` owns, given the
 /// subtype's modern name. The legacy spelling of the same construction is
 /// accepted as a second candidate.
-pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Option<usize> {
+pub(super) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Option<usize> {
     if modern.is_empty() {
         return None;
     }
@@ -508,7 +508,7 @@ impl<'a> SubtypeScope<'a> {
 /// `None` unless the token at `start` is a `SubtypeOpen`. A scope opens at its
 /// own opening delimiter, so a `start` that names another token names no
 /// scope, and the span is then at least two tokens.
-pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<'_>> {
+pub(super) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<'_>> {
     matches!(toks.get(start), Some(Token::SubtypeOpen)).then_some(())?;
     let mut depth = 0usize;
     for (pos, token) in toks.iter().enumerate().skip(start) {
@@ -535,7 +535,7 @@ pub(crate) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
 /// Subtype-table reference indices in `toks`, in token order: the
 /// `{ref N}` form (`SubtypeOpen`, `Ident("ref")`, `Long(N)`) and the bare
 /// index form (`SubtypeOpen`, `Long(N)`, `SubtypeClose`).
-pub(crate) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
+pub(super) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
     let mut refs = Vec::new();
     for (pos, token) in toks.iter().enumerate() {
         if !matches!(token, Token::SubtypeOpen) {
@@ -638,12 +638,12 @@ impl SubtypeTable {
     }
 
     /// The stream's ASM save format version, when known.
-    pub(crate) fn save_format_version(&self) -> Option<u32> {
+    pub(super) fn save_format_version(&self) -> Option<u32> {
         self.save_format_version
     }
 
     /// The balanced scope of definition `index`, sliced from its owning record.
-    pub(crate) fn span(&self, index: usize) -> Option<SubtypeScope<'_>> {
+    pub(super) fn span(&self, index: usize) -> Option<SubtypeScope<'_>> {
         let (tokens, token_pos) = self.defs.get(index)?;
         subtype_span(tokens, *token_pos)
     }

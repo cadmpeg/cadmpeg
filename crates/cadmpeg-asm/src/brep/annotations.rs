@@ -54,7 +54,7 @@ pub struct AnnotationRecord {
 
 /// Emit annotation records mapping every emitted entity, attribute, unknown,
 /// and synthetic procedural id back to its source record offset.
-pub(crate) fn emit_annotation_records(
+pub(super) fn emit_annotation_records(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,

@@ -14,7 +14,7 @@ use cadmpeg_ir::scalar::NonZeroReal;
 /// The record states a pole and its weight together, so the reader states rows
 /// and no reader downstream pairs a pole lane with a weight lane.
 #[derive(Debug, Clone)]
-pub(crate) enum ReadPoles3 {
+pub(super) enum ReadPoles3 {
     /// A polynomial record: its poles carry no weight.
     Polynomial(Vec<Point3>),
     /// A rational record: every pole carries its weight.
@@ -23,7 +23,7 @@ pub(crate) enum ReadPoles3 {
 
 impl ReadPoles3 {
     /// Start a read of `count` poles in the marker-selected form.
-    pub(crate) fn with_capacity(count: usize, rational: bool) -> Self {
+    pub(super) fn with_capacity(count: usize, rational: bool) -> Self {
         if rational {
             Self::Rational(Vec::with_capacity(count))
         } else {
@@ -32,7 +32,7 @@ impl ReadPoles3 {
     }
 
     /// Add one pole with the weight its own slot states.
-    pub(crate) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
+    pub(super) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
         match self {
             Self::Polynomial(points) => points.push(point),
             Self::Rational(points) => points.push(WeightedPole3 {
@@ -44,7 +44,7 @@ impl ReadPoles3 {
     }
 
     /// The poles as one lane, in the order they were read.
-    pub(crate) fn into_lane(self) -> NurbsPoles3 {
+    pub(super) fn into_lane(self) -> NurbsPoles3 {
         match self {
             Self::Polynomial(points) => NurbsPoles3::Polynomial { points },
             Self::Rational(points) => NurbsPoles3::Rational { points },
@@ -52,7 +52,7 @@ impl ReadPoles3 {
     }
 
     /// The poles as a `u`-major grid, read in the stream's `v`-major order.
-    pub(crate) fn into_transposed_grid(
+    pub(super) fn into_transposed_grid(
         self,
         u_count: usize,
         v_count: usize,
@@ -87,7 +87,7 @@ const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 
 /// B-spline marker selecting whether each pole carries a weight component.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum BsplineMarker {
+pub(super) enum BsplineMarker {
     /// Non-rational block.
     Nubs,
     /// Rational block with a homogeneous weight after each pole's coordinates.
@@ -96,7 +96,7 @@ pub(crate) enum BsplineMarker {
 
 impl BsplineMarker {
     /// Encoded identifier length, including its tag and length byte.
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         match self {
             Self::Nubs => NUBS_MARKER.len(),
             Self::Nurbs => NURBS_MARKER.len(),
@@ -104,7 +104,7 @@ impl BsplineMarker {
     }
 
     /// Doubles per model-space control point.
-    pub(crate) fn cp_dims(self) -> usize {
+    pub(super) fn cp_dims(self) -> usize {
         match self {
             Self::Nubs => 3,
             Self::Nurbs => 4,
@@ -112,7 +112,7 @@ impl BsplineMarker {
     }
 
     /// Whether poles carry homogeneous weights.
-    pub(crate) fn rational(self) -> bool {
+    pub(super) fn rational(self) -> bool {
         self == Self::Nurbs
     }
 }
@@ -123,11 +123,11 @@ impl BsplineMarker {
 /// swallows the next tag byte into the value and fails the range check, while
 /// a 4-byte read on an 8-byte stream leaves a zero byte where the next tag
 /// must be and fails tag dispatch.
-pub(crate) const INT_WIDTHS: [RefWidth; 2] = [RefWidth::Eight, RefWidth::Four];
+pub(super) const INT_WIDTHS: [RefWidth; 2] = [RefWidth::Eight, RefWidth::Four];
 
 /// Consume a `tag`-prefixed integer of `int_width` bytes at `*pos`, advancing
 /// past it.
-pub(crate) fn take_tagged_int(
+pub(super) fn take_tagged_int(
     b: &[u8],
     pos: &mut usize,
     tag: u8,
@@ -142,7 +142,7 @@ pub(crate) fn take_tagged_int(
 }
 
 /// The B-spline marker at byte `pos`, if any.
-pub(crate) fn marker_at(b: &[u8], pos: usize) -> Option<BsplineMarker> {
+pub(super) fn marker_at(b: &[u8], pos: usize) -> Option<BsplineMarker> {
     if b[pos..].starts_with(NUBS_MARKER) {
         Some(BsplineMarker::Nubs)
     } else if b[pos..].starts_with(NURBS_MARKER) {
@@ -153,7 +153,7 @@ pub(crate) fn marker_at(b: &[u8], pos: usize) -> Option<BsplineMarker> {
 }
 
 /// Positions of every `nubs`/`nurbs` marker in `b`, in order.
-pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
+pub(super) fn marker_positions(b: &[u8]) -> Vec<usize> {
     let mut out = Vec::new();
     if b.len() < NUBS_MARKER.len() {
         return out;
@@ -176,7 +176,7 @@ pub(crate) fn marker_positions(b: &[u8]) -> Vec<usize> {
 ///
 /// A `0x10` with no open scope is a malformed stream and is refused: pinning
 /// the depth at zero would make every later marker read as one `b` owns.
-pub(crate) fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
+fn owned_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
     let (out, balanced) = walk_owned_markers(b, int_width);
     balanced.then_some(out)
 }
@@ -187,7 +187,7 @@ impl crate::nurbs::subtypes::SubtypeScope<'_> {
     ///
     /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
     /// a state this type cannot hold.
-    pub(crate) fn owned_marker_positions(&self, int_width: RefWidth) -> Vec<usize> {
+    pub(super) fn owned_marker_positions(&self, int_width: RefWidth) -> Vec<usize> {
         walk_owned_markers(self.bytes(), int_width).0
     }
 }
@@ -234,7 +234,7 @@ fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
 /// construction. Enter every non-reference outer scope and admit its markers
 /// only when exactly one such scope owns markers. Multiple cache-bearing outer
 /// scopes are ambiguous and therefore not writable.
-pub(crate) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
+pub(super) fn construction_marker_positions(b: &[u8], int_width: RefWidth) -> Option<Vec<usize>> {
     let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)?
         .into_iter()
         .filter(|(_, name)| *name != b"ref")
@@ -263,18 +263,18 @@ const MAX_NURBS_DEGREE: usize = 20;
 const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
 
 /// Checked expansion metadata for one unique-knot multiplicity table.
-pub(crate) struct KnotExpansionLayout {
-    pub(crate) n_poles: usize,
-    pub(crate) expanded_run_lengths: Vec<usize>,
+pub(in crate::nurbs) struct KnotExpansionLayout {
+    pub(super) n_poles: usize,
+    pub(super) expanded_run_lengths: Vec<usize>,
 }
 
 impl KnotExpansionLayout {
-    pub(crate) fn expanded_len(&self) -> usize {
+    pub(super) fn expanded_len(&self) -> usize {
         self.expanded_run_lengths.iter().sum()
     }
 }
 
-pub(crate) fn checked_knot_layout(
+pub(super) fn checked_knot_layout(
     multiplicities: &[i64],
     degree: i64,
 ) -> Option<KnotExpansionLayout> {
@@ -314,7 +314,7 @@ pub struct KnotLayout {
 
 /// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
 /// clamped knot vector and pole count `sum(mult) - (degree - 1)`.
-pub(crate) fn read_knots(
+pub(super) fn read_knots(
     b: &[u8],
     pos: &mut usize,
     n: usize,
@@ -345,7 +345,7 @@ pub(crate) fn read_knots(
 
 /// Read `count` control points in the marker-selected form at `*pos`. Returns the
 /// scaled `(x, y, z)` positions and, for rational blocks, the weights.
-pub(crate) fn read_control_points(
+pub(super) fn read_control_points(
     b: &[u8],
     pos: &mut usize,
     count: usize,
@@ -374,17 +374,17 @@ pub(crate) fn read_control_points(
 }
 
 /// CLOSURE enum value `2` denotes a periodic parametric direction.
-pub(crate) fn is_periodic(enum_val: i64) -> bool {
+pub(super) fn is_periodic(enum_val: i64) -> bool {
     enum_val == 2
 }
 
-pub(crate) enum Nullable<T> {
+pub(super) enum Nullable<T> {
     Null,
     Value(T),
 }
 
 impl<T> Nullable<T> {
-    pub(crate) fn value(self) -> Option<T> {
+    pub(super) fn value(self) -> Option<T> {
         match self {
             Self::Null => None,
             Self::Value(value) => Some(value),
@@ -392,7 +392,7 @@ impl<T> Nullable<T> {
     }
 }
 
-pub(crate) fn take_double_payload(bytes: &[u8], position: &mut usize) -> Option<usize> {
+pub(super) fn take_double_payload(bytes: &[u8], position: &mut usize) -> Option<usize> {
     (*bytes.get(*position)? == 0x06).then_some(())?;
     let payload = *position + 1;
     bytes.get(payload..payload + 8)?;
@@ -400,7 +400,7 @@ pub(crate) fn take_double_payload(bytes: &[u8], position: &mut usize) -> Option<
     Some(payload)
 }
 
-pub(crate) fn take_float_array_payloads(
+pub(super) fn take_float_array_payloads(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -413,7 +413,7 @@ pub(crate) fn take_float_array_payloads(
         .collect()
 }
 
-pub(crate) fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
+pub(super) fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
     if bytes.get(*position) != Some(&0x06) {
         return None;
     }
@@ -422,7 +422,7 @@ pub(crate) fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
     Some(value)
 }
 
-pub(crate) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
+pub(super) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
     let value = match bytes.get(*position)? {
         0x0a => true,
         0x0b => false,
@@ -432,11 +432,11 @@ pub(crate) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
     Some(value)
 }
 
-pub(crate) fn normalized(value: [f64; 3]) -> Option<Vector3> {
+pub(super) fn normalized(value: [f64; 3]) -> Option<Vector3> {
     Vector3::unit_nonzero(Vector3::from(value))
 }
 
-pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {
+pub(super) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {
     if !matches!(bytes.get(*position), Some(0x0d | 0x0e)) {
         return None;
     }
@@ -448,7 +448,7 @@ pub(crate) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<St
     Some(value)
 }
 
-pub(crate) fn take_native_string(
+pub(super) fn take_native_string(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
@@ -471,7 +471,7 @@ pub(crate) fn take_native_string(
     Some(value)
 }
 
-pub(crate) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
+pub(super) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
     if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
         *position += 1;
     }
@@ -483,7 +483,7 @@ pub(crate) fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64
     Some(value)
 }
 
-pub(crate) fn take_optional_range_value(
+pub(super) fn take_optional_range_value(
     bytes: &[u8],
     position: &mut usize,
 ) -> Option<Nullable<f64>> {
@@ -501,7 +501,7 @@ pub(crate) fn take_optional_range_value(
     }
 }
 
-pub(crate) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> Option<[f64; 3]> {
+pub(super) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> Option<[f64; 3]> {
     if bytes.get(*position) != Some(&tag) {
         return None;
     }
