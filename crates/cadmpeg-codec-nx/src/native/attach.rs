@@ -7465,7 +7465,7 @@ fn cylindrical_face_witnesses(
         .model
         .edges
         .iter()
-        .map(|edge| (&edge.id, edge.curve().as_ref()))
+        .map(|edge| (&edge.id, edge.curve()))
         .collect::<BTreeMap<_, _>>();
     let curves = ir
         .model
@@ -7587,7 +7587,7 @@ fn plane_annulus_witness(
         .model
         .edges
         .iter()
-        .map(|edge| (&edge.id, edge.curve().as_ref()))
+        .map(|edge| (&edge.id, edge.curve()))
         .collect::<BTreeMap<_, _>>();
     let curves = ir
         .model
@@ -7818,7 +7818,7 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
         .model
         .edges
         .iter()
-        .map(|edge| (&edge.id, edge.curve().as_ref()))
+        .map(|edge| (&edge.id, edge.curve()))
         .collect::<BTreeMap<_, _>>();
     let curves = ir
         .model
@@ -8018,7 +8018,7 @@ fn simple_hole_chamfers(
         .model
         .edges
         .iter()
-        .map(|edge| (&edge.id, edge.curve().as_ref()))
+        .map(|edge| (&edge.id, edge.curve()))
         .collect::<BTreeMap<_, _>>();
     let curves = ir
         .model

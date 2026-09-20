@@ -68,7 +68,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
             .model
             .curves
             .iter()
-            .find(|curve| shared.curve().as_ref() == Some(&curve.id))
+            .find(|curve| shared.curve() == Some(&curve.id))
             .expect("NURBS C3");
         assert_eq!(curve.geometry, expected, "{version:?}");
         let uses = decoded

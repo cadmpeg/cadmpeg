@@ -307,7 +307,6 @@ fn subedge_inherits_parent_edge_geometry_without_losing_topology() {
         edge.id.as_str() == "step:data:edge#19"
             && edge
                 .curve()
-                .as_ref()
                 .is_some_and(|curve| curve.as_str() == "step:data:curve#18")
     }));
     assert!(decoded

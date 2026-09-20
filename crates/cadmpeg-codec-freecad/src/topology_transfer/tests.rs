@@ -1179,7 +1179,6 @@ Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir().model.curves.len(), 2);
     assert!(result.ir().model.edges[0]
         .curve()
-        .as_ref()
         .is_some_and(|curve| curve.as_str().ends_with(":1")));
 }
 
@@ -1374,7 +1373,7 @@ Co 1001000 +2 1 +2 3 *
             .model
             .curves
             .iter()
-            .find(|curve| Some(&curve.id) == edge.curve().as_ref())
+            .find(|curve| Some(&curve.id) == edge.curve())
             .expect("required invariant");
         let range = edge.param_range().expect("located edge parameter range");
         let start =

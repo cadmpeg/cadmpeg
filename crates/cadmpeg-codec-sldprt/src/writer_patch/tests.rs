@@ -702,7 +702,6 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
 
     let curve_id = decoded.ir().model.edges[0]
         .curve()
-        .as_ref()
         .expect("opaque edge curve");
     let curve = decoded
         .ir()

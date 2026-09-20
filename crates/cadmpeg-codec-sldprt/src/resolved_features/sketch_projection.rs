@@ -202,7 +202,6 @@ fn project_brep(
                             .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.as_str())))
                             .with_geometry_ref(
                                 edge.curve()
-                                    .as_ref()
                                     .map(|id| format!("{stream_ordinal}:{}", id.as_str())),
                             )
                             .with_endpoint_refs(vec![

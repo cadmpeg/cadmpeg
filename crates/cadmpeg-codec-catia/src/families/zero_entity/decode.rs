@@ -1301,7 +1301,7 @@ mod tests {
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[1].param_range(), Some([0.0, 1.0]));
         assert_eq!(
-            ir.model.edges[1].curve().clone(),
+            ir.model.edges[1].curve().cloned(),
             Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
         );
         assert!(matches!(ir
@@ -1317,14 +1317,14 @@ mod tests {
                         *origin == corner && *direction == Vector3::new(-1.0, 0.0, 0.0)
                     }));
         assert_eq!(
-            ir.model.edges[2].curve().clone(),
+            ir.model.edges[2].curve().cloned(),
             Some(
                 CurveId::mint("catia:zero-entity:wire-curve#1-2-6-0".to_string())
                     .expect("identity grammar")
             )
         );
         assert_eq!(
-            ir.model.edges[3].curve().clone(),
+            ir.model.edges[3].curve().cloned(),
             Some(
                 CurveId::mint("catia:zero-entity:wire-curve#1-2-6-1".to_string())
                     .expect("identity grammar")
@@ -1537,11 +1537,11 @@ mod tests {
         assert_eq!(counts.edges, 2);
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
         assert_eq!(ir.model.edges[1].param_range(), Some([0.0, 1.0]));
-        assert_eq!(ir.model.edges[0].curve().clone(), Some(curve_id.clone()));
+        assert_eq!(ir.model.edges[0].curve().cloned(), Some(curve_id.clone()));
         let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
             .expect("identity grammar");
         assert_eq!(
-            ir.model.edges[1].curve().clone(),
+            ir.model.edges[1].curve().cloned(),
             Some(derived_curve_id.clone())
         );
         let source_definition = ir

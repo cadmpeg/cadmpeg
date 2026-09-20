@@ -90,7 +90,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .model
         .curves
         .iter()
-        .find(|curve| Some(&curve.id) == edge.curve().as_ref())
+        .find(|curve| Some(&curve.id) == edge.curve())
         .expect("procedural carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
     let procedural = ir
@@ -165,7 +165,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         &stream,
         &mut annotations,
     );
-    assert_eq!(off_support_ir.model.edges[0].curve().as_ref(), None);
+    assert_eq!(off_support_ir.model.edges[0].curve(), None);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         .iter()
         .find(|edge| edge.id == edge_id)
         .expect("tolerant edge");
-    assert_eq!(edge.curve().as_ref(), None);
+    assert_eq!(edge.curve(), None);
     assert_eq!(edge.param_range(), None);
     assert!(ir.model.procedural_curves.is_empty());
 }
@@ -381,7 +381,7 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         .model
         .edges
         .iter()
-        .find(|edge| edge.curve().as_ref() == Some(original_owner))
+        .find(|edge| edge.curve() == Some(original_owner))
         .unwrap()
         .clone();
     edge.id = cadmpeg_ir::ids::EdgeId::mint("test:model:edge#later-intersection").unwrap();

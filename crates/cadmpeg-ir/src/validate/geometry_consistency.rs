@@ -333,7 +333,6 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         };
         let Some((curve_id, geometry)) = edge
             .curve()
-            .as_ref()
             .and_then(|id| curves.get(id.as_str()).map(|geometry| (id, geometry)))
         else {
             continue;
@@ -534,7 +533,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // extreme to the last image's end extreme.
         let curve_geometry = edge
             .curve()
-            .as_ref()
             .and_then(|curve| curves.get(curve.as_str()).copied());
         let bound = allowance(
             ir.tolerances.linear,

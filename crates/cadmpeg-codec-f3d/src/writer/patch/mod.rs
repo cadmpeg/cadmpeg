@@ -236,7 +236,7 @@ pub(crate) fn write_semantic(
             .edges
             .iter()
             .find(|edge| edge.id.as_str() == edge_id)
-            .and_then(|edge| edge.curve().as_ref())
+            .and_then(|edge| edge.curve())
             .is_some_and(|curve_id| {
                 target.model.curves.iter().any(|curve| {
                     curve.id == *curve_id

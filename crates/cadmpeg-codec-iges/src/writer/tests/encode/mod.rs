@@ -109,7 +109,6 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
         .iter()
         .find(|edge| {
             edge.curve()
-                .as_ref()
                 .is_some_and(|curve| curve.as_str() == "iges:model:curve#D3")
         })
         .expect("second Type 102 child edge")
@@ -134,7 +133,6 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             .iter_mut()
             .find(|edge| {
                 edge.curve()
-                    .as_ref()
                     .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
             })
             .expect("Type 102 composite edge")

@@ -792,7 +792,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    let curve = ir.model.edges[0].curve().clone().expect("cube edge curve");
+    let curve = ir.model.edges[0].curve().cloned().expect("cube edge curve");
     let procedural = procedural_curve! {
         id: ProceduralCurveId::mint("synthetic:cube:curve-cache#0").expect("valid identity"),
         definition: ProceduralCurveDefinition::Intersection {

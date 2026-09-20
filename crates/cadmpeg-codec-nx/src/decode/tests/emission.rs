@@ -559,7 +559,6 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
 
     let curve = result.ir().model.edges[0]
         .curve()
-        .as_ref()
         .and_then(|id| {
             result
                 .ir()
@@ -617,7 +616,7 @@ fn decode_retains_native_carrierless_edge() {
         .unwrap();
 
     let edge = &result.ir().model.edges[0];
-    assert_eq!(edge.curve().as_ref(), None);
+    assert_eq!(edge.curve(), None);
     assert_eq!(edge.param_range(), None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -883,7 +882,7 @@ fn decode_emits_connected_primitive_brep() {
         vec![result.ir().model.loops[0].id.clone()]
     );
     assert_eq!(
-        result.ir().model.edges[0].curve().as_ref(),
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
     assert_eq!(

@@ -93,9 +93,7 @@ pub(super) fn normalize_model_lengths(
         scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
         if let (Some(mut range), Some(scale)) = (
             edge.param_range(),
-            edge.curve()
-                .as_ref()
-                .and_then(|id| curve_parameter_scales.get(id)),
+            edge.curve().and_then(|id| curve_parameter_scales.get(id)),
         ) {
             scale_pair(&mut range, *scale);
             edge.set_param_range(Some(range))

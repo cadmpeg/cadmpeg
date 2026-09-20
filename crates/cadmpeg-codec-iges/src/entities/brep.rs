@@ -988,7 +988,7 @@ pub(super) fn project(
                             let curve_edges = edges_by_curve.get_or_insert_with(|| {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
-                                    if let Some(curve) = &edge.curve() {
+                                    if let Some(curve) = edge.curve() {
                                         positions.entry(curve.as_str()).or_default().push(position);
                                     }
                                 }

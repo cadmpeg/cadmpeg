@@ -1829,7 +1829,7 @@ fn append_resolved_consolidated_surface_curves(
         .iter()
         .enumerate()
         .filter_map(|(edge_index, edge)| {
-            let curve_id = edge.curve().as_ref()?;
+            let curve_id = edge.curve()?;
             let curve_index = *curve_indices.get(curve_id)?;
             let CurveGeometry::Procedural {
                 construction,
@@ -3711,7 +3711,7 @@ mod tests {
         assert_eq!(ir.model.coedges[0].pcurves.len(), 0);
         assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
-        assert_eq!(ir.model.edges[0].curve().as_ref(), Some(&curve_id));
+        assert_eq!(ir.model.edges[0].curve(), Some(&curve_id));
         let ProceduralCurveDefinition::SurfaceCurve { family } =
             ir.model.procedural_curves[0].definition()
         else {

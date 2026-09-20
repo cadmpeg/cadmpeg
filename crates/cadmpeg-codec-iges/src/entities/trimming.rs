@@ -1440,7 +1440,7 @@ fn edge_range_matches_curve(
     end: Point3,
     tolerance: f64,
 ) -> bool {
-    let Some(curve_id) = edge.curve().as_ref() else {
+    let Some(curve_id) = edge.curve() else {
         return false;
     };
     let Some(curve) = carrier_index.curves(curve_id.as_str()) else {
@@ -1558,7 +1558,7 @@ pub(super) fn project(
     let mut composite_index: Option<CompositeIndex> = None;
     let mut edges_by_curve = BTreeMap::<CurveId, Vec<Edge>>::new();
     for edge in &ir.model.edges {
-        if let Some(curve) = &edge.curve() {
+        if let Some(curve) = edge.curve() {
             edges_by_curve
                 .entry(curve.clone())
                 .or_default()

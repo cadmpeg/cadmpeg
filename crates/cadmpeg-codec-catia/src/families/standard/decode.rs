@@ -269,7 +269,6 @@ fn bind_consolidated_revolution_faces_and_seams(
             );
             let Some(curve) = edge
                 .curve()
-                .as_ref()
                 .and_then(|id| curve_indices.get(id))
                 .map(|index| &ir.model.curves[*index].geometry)
             else {
@@ -354,18 +353,16 @@ fn bind_consolidated_revolution_faces_and_seams(
             .and_modify(|stored| *stored = None)
             .or_insert(Some(binding));
     }
-    let curve_edge_counts = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().as_ref())
-        .fold(HashMap::<CurveId, usize>::new(), |mut counts, curve| {
+    let curve_edge_counts = ir.model.edges.iter().filter_map(|edge| edge.curve()).fold(
+        HashMap::<CurveId, usize>::new(),
+        |mut counts, curve| {
             *counts.entry(curve.clone()).or_default() += 1;
             counts
-        });
+        },
+    );
     let mut seam_count = 0usize;
     for edge in &mut ir.model.edges {
-        let Some(curve_id) = edge.curve().as_ref() else {
+        let Some(curve_id) = edge.curve() else {
             continue;
         };
         let Some(&curve_index) = curve_indices.get(curve_id) else {
@@ -5378,7 +5375,6 @@ fn emit_standard_topology(
                 let end = ir.model.points[point_assignment[logical_vertices[1]]].position();
                 let edge_curve = ir.model.edges[edge_use.edge_row]
                     .curve()
-                    .as_ref()
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.model.curves[*index].geometry);
                 let pcurve_id = standard_pcurve_geometry(
@@ -7095,7 +7091,6 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                 );
                 let Some((curve, [start, end])) = edge
                     .curve()
-                    .as_ref()
                     .and_then(|id| curves.get(id))
                     .zip(edge.param_range())
                 else {

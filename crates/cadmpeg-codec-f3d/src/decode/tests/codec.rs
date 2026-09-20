@@ -265,7 +265,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 
-    let curve_id = arc.curve().as_ref().expect("curve link");
+    let curve_id = arc.curve().expect("curve link");
     let carrier = result
         .ir()
         .model
