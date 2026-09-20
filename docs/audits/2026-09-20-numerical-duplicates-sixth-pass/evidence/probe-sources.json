@@ -52,7 +52,7 @@
     "sha256": "e9587b3e6e2f9d3903229e7b462b8d20b0b05faba81e1fa69a1b9f405618c1a4"
   },
   {
-    "cached_library": "/home/pcurve/side2/cadmpeg/target/debug/deps/libcadmpeg_ir-1ac11851fee9bc28.rlib",
+    "cached_library": "target/debug/deps/libcadmpeg_ir-1ac11851fee9bc28.rlib",
     "sha256": "8641abec3d0d6b3876dc6db6252a6b7af4dbd1532533c4056a3c4ed0036a22b2"
   }
 ]
