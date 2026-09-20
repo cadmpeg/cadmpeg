@@ -428,8 +428,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
         let Some(SolvedCurveGeometry::Line(line_curve)) = curve.geometry.solved() else {
             panic!("edge line: {curve:#?}");
         };
-        let origin = *line_curve.origin();
-        let direction = *line_curve.direction();
+        let origin = line_curve.origin().get();
+        let direction = *line_curve.direction().as_raw();
         let start = model
             .vertices
             .iter()

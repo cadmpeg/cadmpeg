@@ -370,8 +370,8 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
     else {
         panic!("expected an exact placed line offset carrier");
     };
-    let origin = *line_curve.origin();
-    let direction = *line_curve.direction();
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
     let end = result

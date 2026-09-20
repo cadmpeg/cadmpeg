@@ -2628,10 +2628,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
         return None;
     }
     match geometry {
-        SolvedCurveGeometry::Line(line_curve) => {
-            let direction = line_curve.direction();
-            Some(*direction)
-        }
+        SolvedCurveGeometry::Line(line_curve) => Some(*line_curve.direction().as_raw()),
         SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
@@ -3914,12 +3911,10 @@ fn direct_curve_parameter_near_point(
     };
     let parameter = match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
-            let denominator = direction.dot(*direction);
-            (denominator.is_finite() && denominator > 0.0)
-                .then(|| delta.dot(*direction) / denominator)?
+            delta.dot(direction) / direction.dot(direction)
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
@@ -4072,9 +4067,9 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
     }
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            Some(offset(*origin, &[(t, *direction)]))
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            Some(offset(origin, &[(t, direction)]))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();
@@ -5294,8 +5289,7 @@ fn straight_sweep_path_origin(
     let curve = index.curves(spine.as_str())?;
     match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            Some(*origin)
+            Some(line_curve.origin().get())
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>

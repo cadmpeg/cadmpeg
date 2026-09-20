@@ -226,8 +226,8 @@ fn carrier_intersection_uses_nurbs_boundary_endpoints_to_select_a_generator() {
             == CurveId::mint("creo:visibgeom:curve#20".to_string()).expect("identity grammar"))
         .map(|curve| &curve.geometry), Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)))
             if {
-                let origin = line_curve.origin();
-    let direction = line_curve.direction();
+                let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
                 (origin.x - 2.0).abs() <= EPS_POSITION
                     && (origin.y - 5.0_f64.sqrt()).abs() <= EPS_POSITION
                     && direction.z == 1.0

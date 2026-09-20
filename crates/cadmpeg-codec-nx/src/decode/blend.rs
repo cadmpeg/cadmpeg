@@ -3540,8 +3540,8 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
     let carrier = index.curves(curve.as_str())?;
     match carrier.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             Some(
                 (point.x - origin.x) * direction.x
                     + (point.y - origin.y) * direction.y

@@ -3805,9 +3805,9 @@ fn curve_parameter_at_point(
         |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            Some(offset(*origin).dot(*direction))
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            Some(offset(origin).dot(direction))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center();

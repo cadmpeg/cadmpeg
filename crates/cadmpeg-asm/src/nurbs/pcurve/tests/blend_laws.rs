@@ -369,16 +369,16 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(
             matches!(decode_rolling_ball_curve(&straight, &mut position, int_width),
-                            Some(RollingBallSupportCurve {
-                                curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
-                                parameter_range: [Some(-2.0), Some(3.0)],
-                            }) if {
-                                let origin = line_curve.origin();
-            let direction = line_curve.direction();
-                                *origin == Point3::new(10.0, 20.0, 30.0)
-                                    && *direction == Vector3::new(0.0, 1.0, 0.0)
-                            }
-                        )
+                Some(RollingBallSupportCurve {
+                    curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
+                    parameter_range: [Some(-2.0), Some(3.0)],
+                }) if {
+                    let origin = line_curve.origin().get();
+                    let direction = *line_curve.direction().as_raw();
+                    origin == Point3::new(10.0, 20.0, 30.0)
+                        && direction == Vector3::new(0.0, 1.0, 0.0)
+                }
+            )
         );
         assert_eq!(position, straight.len());
 

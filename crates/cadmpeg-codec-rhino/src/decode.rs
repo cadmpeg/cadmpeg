@@ -5384,8 +5384,8 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = *line_curve.origin();
-            let direction = *line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let transformed_origin = placed_point(transform, origin)?;
             let endpoint = placed_point(
                 transform,

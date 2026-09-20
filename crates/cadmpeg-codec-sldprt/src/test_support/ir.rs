@@ -19,12 +19,11 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     fn translate_curve_x(curve: &mut CurveGeometry, dx: f64) {
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-                let origin = line_curve.origin();
                 let direction = line_curve.direction();
-                let mut origin = *origin;
+                let mut origin = line_curve.origin().get();
                 origin.x += dx;
-                *line_curve =
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
+                let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+                *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
@@ -257,12 +256,10 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     }
     for curve in &mut ir.model.curves {
         if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {
-            let origin = line_curve.origin();
             let direction = line_curve.direction();
-            let mut origin = *origin;
-            origin = shift(&origin);
-            *line_curve =
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
+            let origin = shift(&line_curve.origin().get());
+            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
     }
     for surface in &mut ir.model.surfaces {

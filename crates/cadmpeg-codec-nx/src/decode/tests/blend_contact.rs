@@ -1520,13 +1520,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let SolvedCurveGeometry::Line(line_curve) = &mut geometry else {
         panic!("line spine cache");
     };
-    let origin = line_curve.origin();
     let direction = line_curve.direction();
-    let mut origin = *origin;
+    let mut origin = line_curve.origin().get();
     origin.x += 1.0e12;
     origin.y += 1.0e12;
     origin.z += 1.0e12;
-    *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
+    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+    *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     *cache = geometry;
     let translated_point =
         blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();

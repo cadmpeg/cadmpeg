@@ -1758,8 +1758,8 @@ pub(super) fn project(
             ));
             continue;
         };
-        let axis_origin = *line_curve.origin();
-        let axis_direction = *line_curve.direction();
+        let axis_origin = line_curve.origin().get();
+        let axis_direction = *line_curve.direction().as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
             losses.push(entity_loss(
                 entry,

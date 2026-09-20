@@ -3538,8 +3538,8 @@ pub(super) fn curve_values(
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             (
                 0x1e,
                 vec![

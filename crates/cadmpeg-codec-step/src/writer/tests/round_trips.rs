@@ -123,8 +123,8 @@ fn curve_geometry_for_sheet_pcurve(
             else {
                 return Ok(None);
             };
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let transform = Transform::affine([
                 [
                     transform.rows()[0][0],
@@ -142,8 +142,8 @@ fn curve_geometry_for_sheet_pcurve(
             ])
             .expect("affine transform");
             let (Some(direction), Some(placed_origin)) = (
-                transform.apply_vector(*direction),
-                transform.apply_point(*origin),
+                transform.apply_vector(direction),
+                transform.apply_point(origin),
             ) else {
                 return Ok(None);
             };

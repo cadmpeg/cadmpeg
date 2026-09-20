@@ -148,8 +148,8 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
     assert!(round_trip.ir().model.curves.iter().any(|curve| {
         matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(line_curve))
         if {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
         })
     }));

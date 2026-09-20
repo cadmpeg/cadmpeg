@@ -45,12 +45,12 @@ fn placed_offset_source(
     let orientation = transform_orientation(transform)?;
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    transform.apply_point(*origin)?,
-                    unit_vector(transform.apply_vector(*direction)?)?,
+                    transform.apply_point(origin)?,
+                    unit_vector(transform.apply_vector(direction)?)?,
                 )
                 .ok()?,
             )))
@@ -422,16 +422,16 @@ pub(super) fn project(
                 let geometry = match &offset_source_geometry {
                     SolvedCurveGeometry::Line(line_curve)
                         if {
-                            let direction = line_curve.direction();
-                            normal.dot(*direction).abs() <= EPS_OFFSET_FRAME
+                            let direction = *line_curve.direction().as_raw();
+                            normal.dot(direction).abs() <= EPS_OFFSET_FRAME
                         } =>
                     {
-                        let origin = line_curve.origin();
-                        let direction = line_curve.direction();
+                        let origin = line_curve.origin().get();
+                        let direction = *line_curve.direction().as_raw();
                         let Some(payload) = admit(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                                origin.translated(normal.cross(*direction), distance),
-                                *direction,
+                                origin.translated(normal.cross(direction), distance),
+                                direction,
                             ),
                             entry,
                             &mut losses,
@@ -542,8 +542,8 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let direction = line_curve.direction();
-                if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
+                let direction = *line_curve.direction().as_raw();
+                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -559,7 +559,7 @@ pub(super) fn project(
                         / (control_range[1] - control_range[0]);
                     distances[0] + alpha * (distances[1] - distances[0])
                 };
-                let offset_direction = normal.cross(*direction);
+                let offset_direction = normal.cross(direction);
                 let Some(source_start) = cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     start,
@@ -676,8 +676,8 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let direction = line_curve.direction();
-                if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
+                let direction = *line_curve.direction().as_raw();
+                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -722,7 +722,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::ArcLength => start + independent,
                     CurveOffsetLawBasis::Parameter => independent,
                 };
-                let offset_direction = normal.cross(*direction);
+                let offset_direction = normal.cross(direction);
                 let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
                 for (index, function_control) in
                     function_nurbs.control_points().iter().copied().enumerate()

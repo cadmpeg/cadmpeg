@@ -416,9 +416,9 @@ fn validate_zero_entity_model_curve(
             Some([0x28, 0x8a] | [0x29, 0xb8]),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))),
         ) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            finite_point(origin) && finite_vector(direction)
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
+            finite_point(&origin) && finite_vector(&direction)
         }
         (
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),

@@ -477,12 +477,11 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
         else {
             unreachable!()
         };
-        let origin = line_curve.origin();
         let direction = line_curve.direction();
-        let mut origin = *origin;
+        let mut origin = line_curve.origin().get();
         origin.y = 12.0;
-        *line_curve =
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
+        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
+        *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     }
 
     let mut encoded = Vec::new();
@@ -515,7 +514,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     assert!(regenerated.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
         if {
-            let origin = line_curve.origin();
+            let origin = line_curve.origin().get();
             origin.y == 12.0
         })
     ));

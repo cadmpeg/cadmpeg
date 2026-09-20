@@ -237,8 +237,8 @@ fn decode_replaces_partition_line_from_status_framed_deltas() {
     else {
         panic!("line");
     };
-    let origin = *line_curve.origin();
-    let direction = *line_curve.direction();
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0));
     assert_eq!(direction, Vector3::new(0.0, 1.0, 0.0));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());

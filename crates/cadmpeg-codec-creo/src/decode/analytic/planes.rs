@@ -1809,8 +1809,8 @@ pub(in crate::decode::analytic) struct BoundaryLine {
 pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             (
                 [origin.x, origin.y, origin.z],
                 normalize([direction.x, direction.y, direction.z])?,

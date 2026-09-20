@@ -106,14 +106,11 @@ pub(super) fn oriented_line_plan(
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
-    let origin = line_curve.origin();
-    let direction = line_curve.direction();
+    let origin = line_curve.origin().get();
+    let direction = *line_curve.direction().as_raw();
     let origin = [origin.x, origin.y, origin.z];
     let mut direction = [direction.x, direction.y, direction.z];
     let direction_length = direction[0].hypot(direction[1]).hypot(direction[2]);
-    if !direction_length.is_finite() || direction_length == 0.0 {
-        return None;
-    }
     direction = scale(direction, 1.0 / direction_length);
     let parameter = |point| dot(subtract(point, origin), direction);
     let mut range = [parameter(edge_start), parameter(edge_end)];

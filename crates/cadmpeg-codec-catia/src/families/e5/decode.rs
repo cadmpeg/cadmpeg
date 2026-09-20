@@ -2791,12 +2791,12 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
         ) => {
-            let left_origin = line_curve.origin();
-            let left_direction = line_curve.direction();
-            let right_origin = line_curve_2.origin();
-            let right_direction = line_curve_2.direction();
-            (*left_origin).distance(*right_origin) <= 2e-3
-                && (*left_direction).dot(*right_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
+            let left_origin = line_curve.origin().get();
+            let left_direction = *line_curve.direction().as_raw();
+            let right_origin = line_curve_2.origin().get();
+            let right_direction = *line_curve_2.direction().as_raw();
+            left_origin.distance(right_origin) <= 2e-3
+                && left_direction.dot(right_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
         }
         (
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
@@ -3332,8 +3332,8 @@ mod route_tests {
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
             if {
-                let direction = line_curve.direction();
-                *direction == Vector3::new(-1.0, 0.0, 0.0)
+                let direction = *line_curve.direction().as_raw();
+                direction == Vector3::new(-1.0, 0.0, 0.0)
             })
         );
     }
@@ -4227,8 +4227,8 @@ mod route_tests {
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
             if {
-                let direction = line_curve.direction();
-                *direction == Vector3::new(1.0, 0.0, 0.0)
+                let direction = *line_curve.direction().as_raw();
+                direction == Vector3::new(1.0, 0.0, 0.0)
             })
         );
     }

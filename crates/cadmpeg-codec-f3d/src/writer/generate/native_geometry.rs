@@ -4450,13 +4450,8 @@ fn native_interval_curve(
     match geometry {
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
         SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin();
-            let direction = line_curve.direction();
-            if !origin.is_finite() || !direction.is_finite() || direction.norm() == 0.0 {
-                return Err(CodecError::Malformed(
-                    "source-less F3D interval line requires finite nonzero geometry".into(),
-                ));
-            }
+            let origin = line_curve.origin().get();
+            let direction = *line_curve.direction().as_raw();
             let point = |parameter: f64| {
                 Point3::new(
                     origin.x + parameter * direction.x,

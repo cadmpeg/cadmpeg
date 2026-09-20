@@ -336,8 +336,8 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = geometry else {
         return None;
     };
-    let line_origin = line_curve.origin();
-    let line_direction = line_curve.direction();
+    let line_origin = line_curve.origin().get();
+    let line_direction = *line_curve.direction().as_raw();
     let (surface_origin, surface_axis, surface_x, reference_radius, radius_ratio, radius_slope) =
         match surface {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -399,11 +399,7 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
     let line_direction = [line_direction.x, line_direction.y, line_direction.z];
     let direction_length = dot(line_direction, line_direction).sqrt();
     let derivative_norm = dot(surface_derivative, surface_derivative);
-    (direction_length.is_finite()
-        && direction_length > 0.0
-        && derivative_norm.is_finite()
-        && derivative_norm > 0.0)
-        .then_some(())?;
+    (derivative_norm.is_finite() && derivative_norm > 0.0).then_some(())?;
     let parameter_scale = dot(line_direction, surface_derivative) / derivative_norm;
     let residual = std::array::from_fn::<_, 3, _>(|index| {
         line_direction[index] - parameter_scale * surface_derivative[index]

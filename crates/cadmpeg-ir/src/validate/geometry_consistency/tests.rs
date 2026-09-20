@@ -364,11 +364,11 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     else {
         unreachable!();
     };
-    let origin = line_curve.origin();
     let direction = line_curve.direction();
-    let mut origin = *origin;
+    let mut origin = line_curve.origin().get();
     origin.y = 2.0;
-    *line_curve = crate::geometry::analytic::LineCurve::try_new(origin, *direction).unwrap();
+    let origin = crate::features::FinitePoint3::new(origin).unwrap();
+    *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
     check_procedural_support_consistency(&ir, &mut findings);
     assert_eq!(findings.len(), 2);
     assert!(findings
