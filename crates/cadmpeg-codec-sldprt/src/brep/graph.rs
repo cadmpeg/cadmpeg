@@ -2518,9 +2518,9 @@ fn fold_surface_frame(
             SolvedSurfaceGeometry::Cone(payload) => {
                 let origin = payload.origin();
                 let axis = payload.axis();
-                let radius = payload.radius();
-                let ratio = payload.ratio();
-                let half_angle = payload.half_angle();
+                let radius = payload.radius().get();
+                let ratio = payload.ratio().get();
+                let half_angle = payload.half_angle().get();
                 *payload = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     *origin,
                     *axis,
@@ -3470,15 +3470,15 @@ fn derive_revolved_circle_pcurves(
         let (surface_axis, surface_reference, v) = match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
-                    let ratio = cone_surface.ratio();
+                    let ratio = cone_surface.ratio().get();
                     (ratio - 1.0).abs() < EPS_NORMAL_NONZERO
                 } =>
             {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
-                let radius = cone_surface.radius();
-                let half_angle = cone_surface.half_angle();
+                let radius = cone_surface.radius().get();
+                let half_angle = cone_surface.half_angle().get();
                 let d = [
                     circle_center.x - origin.x,
                     circle_center.y - origin.y,
@@ -3963,9 +3963,9 @@ fn analytic_pcurve_chord_bound(
             radius.abs() * du * du
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let slope = half_angle.tan().abs();
             let radial_scale = 1.0f64.max(ratio.abs());
             let max_radius = (radius + start.v * half_angle.tan())

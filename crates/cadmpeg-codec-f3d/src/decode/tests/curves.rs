@@ -1540,9 +1540,9 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
         matches!(supports[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
                 let axis = cone_surface.axis();
-        let half_angle = cone_surface.half_angle();
-                (cone_surface.radius() == 10.0)
-                    && (cone_surface.ratio() == 0.4)
+        let half_angle = cone_surface.half_angle().get();
+                (cone_surface.radius().get() == 10.0)
+                    && (cone_surface.ratio().get() == 0.4)
                     && ((half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
                         && *axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0))
             })
@@ -1620,7 +1620,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
     assert!(
         matches!(expected_geometries[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
-            let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle().get();
             (half_angle - std::f64::consts::FRAC_PI_6).abs() < EPS_CONE_ANGLE
         })
     );

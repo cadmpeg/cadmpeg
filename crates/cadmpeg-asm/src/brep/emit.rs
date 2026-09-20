@@ -522,10 +522,10 @@ fn emit_carrier_surface(
         let surface = ProceduralSurface::new(
             brep_id!(format, ProceduralSurfaceId, "procedural_surface", i),
             definition,
-            cadmpeg_ir::geometry::RecordBounds::try_option(
-                nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            nurbs::proc_curve::record_trailing_surface_bounds(&r.tokens)
+                .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                .transpose()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         out.procedural_surfaces
             .push((SurfaceId::from(id(format, i)), surface));

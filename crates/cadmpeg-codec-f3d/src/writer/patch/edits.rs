@@ -3335,16 +3335,11 @@ pub(super) fn validate_surface_edits(
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
-                let radius = cone_surface.radius();
-                let ratio = cone_surface.ratio();
-                let half_angle = cone_surface.half_angle();
+                let radius = cone_surface.radius().get();
+                let half_angle = cone_surface.half_angle().get();
                 origin.is_finite()
                     && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
                     && radius != 0.0
-                    && ratio.is_finite()
-                    && ratio > 0.0
-                    && half_angle.is_finite()
                     && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
             Some(SolvedSurfaceGeometry::Nurbs(after)) => {

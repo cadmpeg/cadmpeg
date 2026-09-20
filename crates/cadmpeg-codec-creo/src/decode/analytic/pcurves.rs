@@ -489,17 +489,15 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = cone_surface.radius();
-    let ratio = cone_surface.ratio();
-    let half_angle = cone_surface.half_angle();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio().get();
+    let half_angle = cone_surface.half_angle().get();
     let axis_values = [axis.x, axis.y, axis.z];
     let ref_values = [ref_direction.x, ref_direction.y, ref_direction.z];
     let axis_length = dot(axis_values, axis_values).sqrt();
     let ref_length = dot(ref_values, ref_values).sqrt();
     if radius != 0.0
-        || !ratio.is_finite()
         || (ratio - 1.0).abs() > EPS_NEAR_ZERO
-        || !half_angle.is_finite()
         || !(0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
         || !axis_length.is_finite()
         || (axis_length - 1.0).abs() > EPS_ORTHO
@@ -1120,18 +1118,13 @@ fn linear_pcurve_carrier(
                 .ok()?,
             )))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if { start[0] == end[0] } =>
-        {
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
-            (ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()).then_some(())?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::new(first[0], first[1], first[2]),
@@ -1141,17 +1134,14 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if {
-                let ratio = cone_surface.ratio();
-                start[1] == end[1] && ratio.is_finite() && ratio > 0.0
-            } =>
+            if { start[1] == end[1] } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let local_radius = radius + start[1] * half_angle.tan();
             let first_radius = local_radius.abs();
             let second_radius = (local_radius * ratio).abs();

@@ -130,12 +130,12 @@ pub fn analytic_surface_parameters_solved(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let (x, y, v) = components(*origin, *axis, *ref_direction);
             let local_radius = radius + v * half_angle.tan();
-            if local_radius == 0.0 || ratio == 0.0 {
+            if local_radius == 0.0 {
                 return None;
             }
             Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
@@ -3147,8 +3147,8 @@ fn model_axis_revolution_partials(
 /// parameterization. A line used by more than one edge is only unambiguous
 /// when every retained edge range agrees, unless the construction stores its
 /// neutral carrier interval explicitly.
-fn record_u_interval(record_bounds: Option<[Option<f64>; 4]>) -> Option<[f64; 2]> {
-    let [Some(start), Some(end), _, _] = record_bounds? else {
+fn record_u_interval(record_bounds: Option<crate::geometry::RecordBounds>) -> Option<[f64; 2]> {
+    let [Some(start), Some(end), _, _] = record_bounds?.get() else {
         return None;
     };
     Some([start, end])
@@ -4227,9 +4227,9 @@ fn surface_point_with_budget_inner(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
@@ -4557,9 +4557,9 @@ fn surface_second_partials_inner(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();

@@ -607,9 +607,9 @@ mod tests {
         let origin = *cone_surface.origin();
         let axis = *cone_surface.axis();
         let ref_direction = *cone_surface.ref_direction();
-        let radius = cone_surface.radius();
-        let ratio = cone_surface.ratio();
-        let half_angle = cone_surface.half_angle();
+        let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
         assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
@@ -805,7 +805,7 @@ mod tests {
             panic!("expected cone");
         };
 
-        assert_eq!(cone_surface.half_angle(), 0.6_f64.asin());
+        assert_eq!(cone_surface.half_angle().get(), 0.6_f64.asin());
     }
 
     /// A stored cone sine just above one is a unit sine the file serialised
@@ -828,7 +828,7 @@ mod tests {
             panic!("expected cone");
         };
 
-        assert_eq!(cone_surface.half_angle(), std::f64::consts::FRAC_PI_2);
+        assert_eq!(cone_surface.half_angle().get(), std::f64::consts::FRAC_PI_2);
     }
 
     #[test]

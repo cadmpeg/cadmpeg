@@ -1892,8 +1892,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
-                    let radius = cone_surface.radius();
-        let half_angle = cone_surface.half_angle();
+                    let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
                     radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE
                 })
     );
@@ -1901,8 +1901,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
                     let axis = cone_surface.axis();
-        let radius = cone_surface.radius();
-        let half_angle = cone_surface.half_angle();
+        let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
                     axis.y == -1.0
                         && radius == 4.0
                         && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_REVOLUTION_CONE_ANGLE

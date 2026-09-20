@@ -419,13 +419,13 @@ fn procedural_pcurve_parameter_map(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
-    let Some([Some(carrier_start), Some(carrier_end), _, _]) = procedural.record_bounds() else {
+    let Some([Some(carrier_start), Some(carrier_end), _, _]) =
+        procedural.record_bounds().map(RecordBounds::get)
+    else {
         return None;
     };
     let carrier_interval = [carrier_start, carrier_end];
-    if !carrier_interval.iter().all(|value| value.is_finite())
-        || carrier_interval[0] >= carrier_interval[1]
-    {
+    if carrier_interval[0] >= carrier_interval[1] {
         return None;
     }
     let mut u_map = (1.0, 0.0);
@@ -1361,22 +1361,27 @@ fn surface_parameter_bounds(
         let bounds = match procedural.definition() {
             ProceduralSurfaceDefinition::Ruled { .. } => procedural
                 .record_bounds()
+                .map(RecordBounds::get)
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
             ProceduralSurfaceDefinition::Extrusion(_) => procedural
                 .record_bounds()
+                .map(RecordBounds::get)
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
                 let angular_interval = definition_payload.angular_interval();
-                procedural.record_bounds().map(|bounds| {
-                    [
-                        bounds[0],
-                        bounds[1],
-                        Some(angular_interval[0]),
-                        Some(angular_interval[1]),
-                    ]
-                })
+                procedural
+                    .record_bounds()
+                    .map(RecordBounds::get)
+                    .map(|bounds| {
+                        [
+                            bounds[0],
+                            bounds[1],
+                            Some(angular_interval[0]),
+                            Some(angular_interval[1]),
+                        ]
+                    })
             }
-            _ => procedural.record_bounds(),
+            _ => procedural.record_bounds().map(RecordBounds::get),
         };
         if let Some(bounds) = bounds {
             return Some(bounds);

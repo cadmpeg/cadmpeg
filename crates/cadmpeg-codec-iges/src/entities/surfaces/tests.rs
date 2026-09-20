@@ -89,12 +89,15 @@ fn tabulated_directrix_types_follow_the_declared_dialect() {
 
 #[test]
 fn type_140_indicator_parameters_use_bounded_midpoint_or_unbounded_origin() {
+    fn bounds(raw: [Option<f64>; 4]) -> Option<cadmpeg_ir::geometry::RecordBounds> {
+        cadmpeg_ir::geometry::RecordBounds::try_new(raw).ok()
+    }
     assert_eq!(
-        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), Some(4.0), Some(8.0),])),
+        offset_indicator_parameters(bounds([Some(-2.0), Some(6.0), Some(4.0), Some(8.0)])),
         [2.0, 6.0]
     );
     assert_eq!(
-        offset_indicator_parameters(Some([Some(-2.0), Some(6.0), None, Some(8.0)])),
+        offset_indicator_parameters(bounds([Some(-2.0), Some(6.0), None, Some(8.0)])),
         [0.0, 0.0]
     );
     assert_eq!(offset_indicator_parameters(None), [0.0, 0.0]);
@@ -577,7 +580,9 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
     ));
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert_eq!(
-        procedural.record_bounds(),
+        procedural
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.0), Some(6.606_051_667_958_6), None, None])
     );
     assert!(
@@ -761,7 +766,9 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
         })
         .expect("trimmed revolution construction");
     assert_eq!(
-        procedural.record_bounds(),
+        procedural
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.0), Some(2.0), None, None])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload_0) =
@@ -1272,7 +1279,9 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         })
         .expect("Type 128 parameter-domain record");
     assert_eq!(
-        procedural.record_bounds(),
+        procedural
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.2), Some(0.8), Some(-1.0), Some(1.0)])
     );
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Exact(definition_payload) =

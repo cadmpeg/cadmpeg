@@ -1649,7 +1649,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         panic!("expected a bounded procedural revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);
-    let carrier_interval = procedural.record_bounds().unwrap();
+    let carrier_interval = procedural.record_bounds().unwrap().get();
     assert!(carrier_interval[1].is_some_and(|value| value > 3.0));
 
     let loop_ = result

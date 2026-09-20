@@ -3,7 +3,7 @@
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
-use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use crate::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveReal};
 use crate::units::{OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -168,9 +168,9 @@ impl TryFrom<CylinderSurfaceWire> for CylinderSurface {
 #[serde(try_from = "ConeSurfaceWire", into = "ConeSurfaceWire")]
 pub struct ConeSurface {
     origin: FinitePoint3,
-    radius: NonNegativeReal,
+    radius: NonNegativeLength,
     ratio: PositiveReal,
-    half_angle: FiniteReal,
+    half_angle: Angle,
     frame: OrthonormalFrame3,
 }
 
@@ -205,12 +205,11 @@ impl ConeSurface {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("ConeSurface.origin must be finite")?;
-        let radius = NonNegativeReal::new(radius)
+        let radius = NonNegativeLength::new(radius)
             .ok_or("ConeSurface.radius must be nonnegative and finite")?;
         let ratio =
             PositiveReal::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
-        let half_angle =
-            FiniteReal::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
+        let half_angle = Angle::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
         Ok(Self {
             origin,
             radius,
@@ -238,22 +237,24 @@ impl ConeSurface {
         self.frame.reference()
     }
 
-    /// Return the radius.
+    /// Return the cross-section radius at the origin. Zero is a valid cone
+    /// radius, so the type admits it.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> NonNegativeLength {
+        self.radius
     }
 
-    /// Return the ratio.
+    /// Return the ratio of the minor to the major cross-section radius.
     #[must_use]
-    pub const fn ratio(&self) -> f64 {
-        self.ratio.get()
+    pub const fn ratio(&self) -> PositiveReal {
+        self.ratio
     }
 
-    /// Return the half angle.
+    /// Return the half angle. Any finite signed angle is a valid cone half
+    /// angle, so the type admits it.
     #[must_use]
-    pub const fn half_angle(&self) -> f64 {
-        self.half_angle.get()
+    pub const fn half_angle(&self) -> Angle {
+        self.half_angle
     }
 }
 
@@ -263,9 +264,9 @@ impl From<ConeSurface> for ConeSurfaceWire {
             origin: *value.origin(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
-            radius: value.radius(),
-            ratio: value.ratio(),
-            half_angle: value.half_angle(),
+            radius: value.radius().get(),
+            ratio: value.ratio().get(),
+            half_angle: value.half_angle().get(),
         }
     }
 }

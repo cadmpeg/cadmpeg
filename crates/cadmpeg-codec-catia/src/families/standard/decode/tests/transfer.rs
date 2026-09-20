@@ -839,7 +839,7 @@ fn decode_standard_transfers_exact_offset_construction() {
     let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
-    for (actual, expected) in bounds.into_iter().zip(domain) {
+    for (actual, expected) in bounds.get().into_iter().zip(domain) {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };
@@ -884,7 +884,7 @@ fn decode_standard_transfers_construction_use_offset() {
     let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };
-    for (actual, expected) in bounds.into_iter().zip(domain) {
+    for (actual, expected) in bounds.get().into_iter().zip(domain) {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };

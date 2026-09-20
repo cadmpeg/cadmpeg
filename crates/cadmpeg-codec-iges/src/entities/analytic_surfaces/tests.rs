@@ -64,8 +64,8 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                         cone_surface,
                     )),
                 ) if {
-                    let radius = cone_surface.radius();
-                    let half_angle = cone_surface.half_angle();
+                    let radius = cone_surface.radius().get();
+                    let half_angle = cone_surface.half_angle().get();
                     radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-15
                 } => {}
                 (

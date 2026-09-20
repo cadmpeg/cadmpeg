@@ -477,9 +477,9 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
                     let origin = cone_surface.origin();
         let axis = cone_surface.axis();
         let ref_direction = cone_surface.ref_direction();
-        let radius = cone_surface.radius();
-        let ratio = cone_surface.ratio();
-        let half_angle = cone_surface.half_angle();
+        let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)

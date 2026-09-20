@@ -1999,17 +1999,12 @@ fn conical_trim(
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
-    let radius = cone_surface.radius();
-    let ratio = cone_surface.ratio();
-    let half_angle = cone_surface.half_angle();
+    let radius = cone_surface.radius().get();
+    let ratio = cone_surface.ratio().get();
+    let half_angle = cone_surface.half_angle().get();
     let axis = axis.unit()?;
     let slope = half_angle.tan();
-    if !radius.is_finite()
-        || !ratio.is_finite()
-        || radius <= EPS_DISPLAY_QUANTIZATION
-        || ratio <= 0.0
-        || !slope.is_finite()
-    {
+    if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
         return None;
     }
     let face_loops = face.loops.to_vec();
@@ -2741,14 +2736,14 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let axis = axis.unit()?;
             let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
             let transverse = axis.cross(reference).unit()?;
             let slope = half_angle.tan();
-            if !radius.is_finite() || !ratio.is_finite() || ratio <= 0.0 || !slope.is_finite() {
+            if !slope.is_finite() {
                 return None;
             }
             let delta = point.vector_from(*origin);
@@ -2831,9 +2826,9 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             let unit = |vector: Vector3| {
                 let length = vector.norm();
                 (length.is_finite() && length > f64::EPSILON).then(|| vector.scale(1.0 / length))
@@ -2842,7 +2837,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             let reference = unit(*ref_direction - axis.scale((*ref_direction).dot(axis)))?;
             let transverse = unit(axis.cross(reference))?;
             let slope = half_angle.tan();
-            if !radius.is_finite() || !ratio.is_finite() || ratio <= 0.0 || !slope.is_finite() {
+            if !slope.is_finite() {
                 return None;
             }
             let delta = subtract(point, *origin);

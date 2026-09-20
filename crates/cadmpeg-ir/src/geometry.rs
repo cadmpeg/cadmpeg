@@ -445,8 +445,8 @@ pub struct Curve {
 /// position means that field was absent in the source record.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct RecordBounds([Option<FiniteReal>; 4]);
+#[serde(try_from = "[Option<f64>; 4]", into = "[Option<f64>; 4]")]
+pub struct RecordBounds([Option<f64>; 4]);
 
 /// A record-bound quartet contained a non-finite value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -456,30 +456,31 @@ pub struct RecordBoundsError;
 impl RecordBounds {
     /// Admit a native quartet after checking every present value.
     pub fn try_new(raw: [Option<f64>; 4]) -> Result<Self, RecordBoundsError> {
-        let mut valid = true;
-        let checked = raw.map(|value| match value {
-            Some(value) => match FiniteReal::new(value) {
-                Some(value) => Some(value),
-                None => {
-                    valid = false;
-                    None
-                }
-            },
-            None => None,
-        });
-        valid.then_some(Self(checked)).ok_or(RecordBoundsError)
+        if raw.iter().flatten().all(|value| value.is_finite()) {
+            Ok(Self(raw))
+        } else {
+            Err(RecordBoundsError)
+        }
     }
 
-    /// Admit an optional native quartet, preserving an outer `Some` whose
-    /// fields are all absent.
-    pub fn try_option(raw: Option<[Option<f64>; 4]>) -> Result<Option<Self>, RecordBoundsError> {
-        raw.map(Self::try_new).transpose()
-    }
-
-    /// Return the native scalar representation.
+    /// Return the admitted quartet. Every present position is finite.
     #[must_use]
-    pub fn get(self) -> [Option<f64>; 4] {
-        self.0.map(|value| value.map(FiniteReal::get))
+    pub const fn get(self) -> [Option<f64>; 4] {
+        self.0
+    }
+}
+
+impl TryFrom<[Option<f64>; 4]> for RecordBounds {
+    type Error = RecordBoundsError;
+
+    fn try_from(raw: [Option<f64>; 4]) -> Result<Self, Self::Error> {
+        Self::try_new(raw)
+    }
+}
+
+impl From<RecordBounds> for [Option<f64>; 4] {
+    fn from(bounds: RecordBounds) -> Self {
+        bounds.get()
     }
 }
 
@@ -1605,10 +1606,12 @@ impl ProceduralSurface {
         }
     }
 
-    /// Return the retained native record bounds, when present.
+    /// Return the retained native record bounds, when present. The aggregate
+    /// moves whole, so a reader that keeps it holds the finiteness the
+    /// constructor established; `RecordBounds::get` opens it for computation.
     #[must_use]
-    pub fn record_bounds(&self) -> Option<[Option<f64>; 4]> {
-        self.record_bounds.map(RecordBounds::get)
+    pub const fn record_bounds(&self) -> Option<RecordBounds> {
+        self.record_bounds
     }
 
     /// Borrow the neutral construction definition.

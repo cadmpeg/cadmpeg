@@ -112,7 +112,7 @@ fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_i
         .find(|procedural| target.model.procedural_surface_owner(&procedural.id) == Some(surface))
         .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
-        for bound in bounds {
+        for bound in bounds.get() {
             native_optional_f64(bytes, bound);
         }
     }
@@ -5763,9 +5763,9 @@ fn native_embedded_surface(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             native_embedded_cone(
                 bytes,
                 *origin,
@@ -5877,8 +5877,8 @@ fn native_support_pcurve_for_range(
             })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let sine = half_angle.sin();
             let cosine = half_angle.cos();
             let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
@@ -6339,9 +6339,9 @@ fn native_embedded_cone_with_bounds(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             (*origin, *axis, *ref_direction, radius, ratio, half_angle)
         }
         _ => {
