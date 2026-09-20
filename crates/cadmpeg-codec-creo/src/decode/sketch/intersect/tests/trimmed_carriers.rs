@@ -210,6 +210,7 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
 
 #[test]
 fn arc_carriers_use_trim_vertices() {
+    const SMALL_RADIUS: f64 = 1.0e-10;
     let segment = crate::feature::definitions::FeatureSegment {
         kind: crate::feature::definitions::FeatureSegmentKind::Arc([7, 9]),
         directions: [None; 3],
@@ -296,7 +297,6 @@ fn arc_carriers_use_trim_vertices() {
         )
     );
 
-    const SMALL_RADIUS: f64 = 1.0e-10;
     for radius in [SMALL_RADIUS, 1.0, 1e100] {
         let mut scaled = definition.clone();
         scaled.segments = Some(crate::feature::definitions::FeatureSegmentTable {
