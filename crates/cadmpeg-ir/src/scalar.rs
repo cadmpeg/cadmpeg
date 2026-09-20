@@ -167,27 +167,6 @@ checked_scalar!(
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
 
-/// The millimetre distance the document tolerance owner states as its linear
-/// default.
-const EPS_DOCUMENT_LINEAR_DEFAULT: f64 = 1.0e-6;
-/// The radian angle the document tolerance owner states as its angular
-/// default.
-const EPS_DOCUMENT_ANGULAR_DEFAULT: f64 = 1.0e-10;
-
-impl PositiveLength {
-    /// The document tolerance owner's linear default. The private field is
-    /// reachable only here, so the constant is admitted by construction
-    /// rather than by a fallible call a constant cannot make.
-    pub(crate) const UNIT_LINEAR_DEFAULT: Self = Self(EPS_DOCUMENT_LINEAR_DEFAULT);
-}
-
-impl PositiveAngle {
-    /// The document tolerance owner's angular default. The private field is
-    /// reachable only here, so the constant is admitted by construction
-    /// rather than by a fallible call a constant cannot make.
-    pub(crate) const UNIT_ANGULAR_DEFAULT: Self = Self(EPS_DOCUMENT_ANGULAR_DEFAULT);
-}
-
 impl Length {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
