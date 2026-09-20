@@ -22,7 +22,7 @@ fn unknown_definition() -> ProceduralSurfaceDefinition {
 // Supply actual optional numbers, including values JSON cannot represent.
 struct BoundSlot(Option<f64>);
 
-impl<'de> IntoDeserializer<'de, Error> for BoundSlot {
+impl IntoDeserializer<'_, Error> for BoundSlot {
     type Deserializer = Self;
 
     fn into_deserializer(self) -> Self {

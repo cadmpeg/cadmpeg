@@ -168,7 +168,7 @@ fn project_brep(
                         &points,
                         &curves,
                         super::sketch_edges::SketchPlaneFrame {
-                            origin: origin,
+                            origin,
                             u_axis: *u_axis,
                             v_axis,
                         },
