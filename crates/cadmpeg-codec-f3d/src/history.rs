@@ -8929,7 +8929,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                         (center, axis)
                     }
                     CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                        let center = *ellipse_curve.center();
+                        let center = ellipse_curve.center().get();
                         let axis = *ellipse_curve.axis();
                         (center, axis)
                     }

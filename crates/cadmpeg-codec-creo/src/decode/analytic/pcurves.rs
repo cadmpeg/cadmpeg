@@ -1764,21 +1764,12 @@ pub(in crate::decode) fn planar_curve_pcurve(
                     .ok()?,
             ))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
-            if {
-                let major_radius = ellipse_curve.major_radius();
-                let minor_radius = ellipse_curve.minor_radius();
-                major_radius.is_finite()
-                    && minor_radius.is_finite()
-                    && major_radius > 0.0
-                    && minor_radius > 0.0
-            } =>
-        {
-            let center = ellipse_curve.center();
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],

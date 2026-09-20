@@ -458,12 +458,12 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             e.emit("CIRCLE", &format!("'',{pl},{}", real(radius)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            let pl = placement(e, *center, *axis, *major_direction);
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let pl = placement(e, center, *axis, *major_direction);
             e.emit(
                 "ELLIPSE",
                 &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),

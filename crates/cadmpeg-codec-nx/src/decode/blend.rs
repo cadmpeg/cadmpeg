@@ -3585,10 +3585,10 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             (center, *axis, *ref_direction, None)
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            (*center, *axis, *major_direction, Some(ellipse_curve))
+            (center, *axis, *major_direction, Some(ellipse_curve))
         }
         _ => return None,
     };
@@ -3603,8 +3603,8 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         return Some(circle_parameter);
     };
     let anchor = seed.unwrap_or(phase);
-    let major_radius = ellipse_curve.major_radius();
-    let minor_radius = ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius().get();
+    let minor_radius = ellipse_curve.minor_radius().get();
     let x = dot_vector(delta, reference);
     let y = dot_vector(delta, transverse);
     let difference = minor_radius * minor_radius - major_radius * major_radius;

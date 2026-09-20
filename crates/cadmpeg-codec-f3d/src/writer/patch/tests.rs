@@ -503,12 +503,12 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
     assert!(
         matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
-                    let center = ellipse_curve.center();
+                    let center = ellipse_curve.center().get();
         let axis = ellipse_curve.axis();
         let major_direction = ellipse_curve.major_direction();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
-                    *center == Point3::new(10.0, 20.0, 30.0)
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *major_direction == Vector3::new(1.0, 0.0, 0.0)
                         && major_radius == 40.0

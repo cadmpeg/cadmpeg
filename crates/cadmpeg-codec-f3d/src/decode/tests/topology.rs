@@ -1116,8 +1116,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", ell)).unwrap() {
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             assert_eq!(major_radius, 40.0);
             assert_eq!(minor_radius, 20.0);
         }

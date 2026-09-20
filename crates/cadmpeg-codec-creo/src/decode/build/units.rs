@@ -1488,11 +1488,11 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,

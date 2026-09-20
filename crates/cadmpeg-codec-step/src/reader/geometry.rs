@@ -3818,12 +3818,12 @@ fn curve_parameter_at_point(
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            let radial = offset(*center);
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let radial = offset(center);
             let minor_direction = axis.cross(*major_direction);
             Some(
                 (radial.dot(minor_direction) / minor_radius)

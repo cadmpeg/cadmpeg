@@ -125,9 +125,9 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(
         matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
                 if {
-                    let center = ellipse_curve.center();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let center = ellipse_curve.center().get();
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     (center.z - 4.0).abs() < EPS_CONIC_INTERSECTION
                         && (major_radius - 6.0).abs() < EPS_CONIC_INTERSECTION
                         && (minor_radius - 3.0).abs() < EPS_CONIC_INTERSECTION
@@ -169,9 +169,9 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(
         matches!(&selected, (CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "coaxial_cones_ellipse")
                 if {
-                    let center = ellipse_curve.center();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let center = ellipse_curve.center().get();
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     (center.z - 12.0).abs() < EPS_CONIC_INTERSECTION
                         && (major_radius - 14.0).abs() < EPS_CONIC_INTERSECTION
                         && (minor_radius - 7.0).abs() < EPS_CONIC_INTERSECTION

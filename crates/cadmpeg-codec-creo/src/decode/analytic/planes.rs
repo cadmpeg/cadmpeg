@@ -1778,7 +1778,7 @@ pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEqua
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             (
                 [center.x, center.y, center.z],

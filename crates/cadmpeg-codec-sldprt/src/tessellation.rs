@@ -1523,11 +1523,11 @@ fn planar_boundary_samples(
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             let axis = axis.unit()?;
             if major_direction.dot(axis).abs() > EPS_AXIS_ALIGNMENT {
                 return None;
@@ -1535,19 +1535,16 @@ fn planar_boundary_samples(
             let major_direction = major_direction.unit()?;
             let minor_direction = axis.cross(major_direction).unit()?;
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                || !major_radius.is_finite()
-                || !minor_radius.is_finite()
                 || major_radius <= tolerance
                 || minor_radius <= tolerance
-                || major_radius < minor_radius
-                || analytic_surface_residual(surface.solved()?, *center)? > tolerance
+                || analytic_surface_residual(surface.solved()?, center)? > tolerance
             {
                 return None;
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
                 start,
-                *center,
+                center,
                 major_direction,
                 minor_direction,
                 major_radius,
@@ -1556,7 +1553,7 @@ fn planar_boundary_samples(
             )?;
             let end_parameter = ellipse_parameter(
                 end,
-                *center,
+                center,
                 major_direction,
                 minor_direction,
                 major_radius,
@@ -1565,7 +1562,7 @@ fn planar_boundary_samples(
             )?;
             let span = shortest_arc_span(start_parameter, end_parameter)?;
             PlanarArc {
-                center: *center,
+                center: center,
                 first_direction: major_direction,
                 second_direction: minor_direction,
                 first_radius: major_radius,
@@ -2044,11 +2041,11 @@ fn conical_trim(
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                let center = ellipse_curve.center();
+                let center = ellipse_curve.center().get();
                 let curve_axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
-                let major_radius = ellipse_curve.major_radius();
-                let minor_radius = ellipse_curve.minor_radius();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
                 let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
                 let transverse = axis.cross(reference).unit()?;
                 let major_direction = major_direction.unit()?;
@@ -2068,8 +2065,6 @@ fn conical_trim(
                     false
                 };
                 if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !major_radius.is_finite()
-                    || !minor_radius.is_finite()
                     || major_radius <= tolerance
                     || minor_radius <= tolerance
                     || center_radial.norm() > tolerance

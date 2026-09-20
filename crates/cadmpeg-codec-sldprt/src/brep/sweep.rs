@@ -155,23 +155,18 @@ pub(super) fn profile_nurbs(
             (center, *axis, *ref_direction, radius, radius)
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            (*center, *axis, *major_direction, major_radius, minor_radius)
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            (center, *axis, *major_direction, major_radius, minor_radius)
         }
         _ => return None,
     };
     let axis = axis.unit()?;
     let major = major.unit()?;
-    if !(major_radius.is_finite()
-        && minor_radius.is_finite()
-        && major_radius > 0.0
-        && minor_radius > 0.0
-        && axis.dot(major).abs() <= EPS_SWEEP_PROFILE_NURBS_E9)
-    {
+    if axis.dot(major).abs() > EPS_SWEEP_PROFILE_NURBS_E9 {
         return None;
     }
     let minor = axis.cross(major).unit()?;

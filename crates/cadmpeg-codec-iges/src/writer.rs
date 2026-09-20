@@ -3197,13 +3197,13 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
-                *center,
+                center,
                 *axis,
                 *major_direction,
                 major_radius,
@@ -5840,21 +5840,12 @@ fn curve_entity(
             })
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
-            if !major_radius.is_finite()
-                || !minor_radius.is_finite()
-                || major_radius <= 0.0
-                || minor_radius <= 0.0
-            {
-                return Err(CodecError::Malformed(
-                    "IGES ellipse basis or radii are invalid".into(),
-                ));
-            }
             let y_axis = axis.cross(major);
             validate_arc_sweep(range)?;
             let start_xy = [major_radius * range[0].cos(), minor_radius * range[0].sin()];
@@ -5888,7 +5879,7 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(*center, major, y_axis, axis)?),
+                transform: Some(placement(center, major, y_axis, axis)?),
             })
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -6230,11 +6221,11 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = *ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = *ellipse_curve.axis();
             let major_direction = *ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     point(center)?,

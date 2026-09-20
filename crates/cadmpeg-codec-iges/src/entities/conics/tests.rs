@@ -347,8 +347,8 @@ fn conic_classification_preserves_common_coefficient_scale() {
         else {
             panic!("ellipse");
         };
-        assert!((ellipse.major_radius() - 1.0).abs() <= 8.0 * f64::EPSILON);
-        assert!((ellipse.minor_radius() - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!((ellipse.major_radius().get() - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!((ellipse.minor_radius().get() - 1.0).abs() <= 8.0 * f64::EPSILON);
     }
 }
 

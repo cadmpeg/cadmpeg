@@ -201,8 +201,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
-                    let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     major_radius == 6.0 && minor_radius == 2.0
                 })
     ));

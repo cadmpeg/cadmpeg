@@ -41,17 +41,15 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                let center = ellipse_curve.center();
-                let axis = ellipse_curve.axis();
-                let major_direction = ellipse_curve.major_direction();
+                let frame = ellipse_curve.frame();
                 let major_radius = ellipse_curve.major_radius();
                 let minor_radius = ellipse_curve.minor_radius();
-                let mut center = *center;
+                let mut center = ellipse_curve.center().get();
                 center.x += dx;
-                *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+                let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
+                *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                     center,
-                    *axis,
-                    *major_direction,
+                    frame,
                     major_radius,
                     minor_radius,
                 )
