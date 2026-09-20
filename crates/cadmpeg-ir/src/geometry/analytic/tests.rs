@@ -73,3 +73,159 @@ fn analytic_surface_admission_preserves_signed_and_zero_radius_contracts() {
     assert!(CylinderSurface::try_new(center, axis, reference, 0.0).is_err());
     assert!(PlaneSurface::try_new(center, Vector3::new(0.0, 0.0, 0.0), reference).is_err());
 }
+
+#[test]
+fn analytic_surfaces_rebuild_from_their_checked_getters() {
+    let point = Point3::new(1.0, 2.0, 3.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+
+    let plane = PlaneSurface::try_new(point, axis, reference).unwrap();
+    assert_eq!(PlaneSurface::new(plane.origin(), plane.frame()), plane);
+
+    let cylinder = CylinderSurface::try_new(point, axis, reference, 2.0).unwrap();
+    assert_eq!(
+        CylinderSurface::new(cylinder.origin(), cylinder.frame(), cylinder.radius()),
+        cylinder
+    );
+
+    let cone = ConeSurface::try_new(point, axis, reference, 3.0, 0.5, -0.25).unwrap();
+    assert_eq!(
+        ConeSurface::new(
+            cone.origin(),
+            cone.frame(),
+            cone.radius(),
+            cone.ratio(),
+            cone.half_angle(),
+        ),
+        cone
+    );
+
+    let sphere = SphereSurface::try_new(point, axis, reference, -4.0).unwrap();
+    assert_eq!(
+        SphereSurface::new(sphere.center(), sphere.frame(), sphere.radius()),
+        sphere
+    );
+
+    let torus = TorusSurface::try_new(point, axis, reference, 5.0, -1.0).unwrap();
+    assert_eq!(
+        TorusSurface::new(
+            torus.center(),
+            torus.frame(),
+            torus.major_radius(),
+            torus.minor_radius(),
+        ),
+        torus
+    );
+
+    for (rebuilt, original) in [
+        (
+            serde_json::to_value(PlaneSurface::new(plane.origin(), plane.frame())).unwrap(),
+            serde_json::to_value(plane).unwrap(),
+        ),
+        (
+            serde_json::to_value(TorusSurface::new(
+                torus.center(),
+                torus.frame(),
+                torus.major_radius(),
+                torus.minor_radius(),
+            ))
+            .unwrap(),
+            serde_json::to_value(torus).unwrap(),
+        ),
+    ] {
+        assert_eq!(rebuilt, original);
+    }
+}
+
+#[test]
+fn a_surface_frame_hands_back_its_admitted_directions() {
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let plane = PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), axis, reference).unwrap();
+    let frame = plane.frame();
+    assert_eq!(frame.unit_axis().as_raw(), plane.normal());
+    assert_eq!(frame.unit_reference().as_raw(), plane.u_axis());
+    assert_eq!(
+        frame.unit_axis(),
+        crate::units::UnitVector3::new(axis).unwrap()
+    );
+    assert_eq!(
+        frame.unit_reference(),
+        crate::units::UnitVector3::new(reference).unwrap()
+    );
+}
+
+#[test]
+fn surface_radius_admission_refuses_both_signed_zeros_and_keeps_a_negative_cone_zero() {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    for zero in [0.0, -0.0] {
+        assert!(SphereSurface::try_new(center, axis, reference, zero).is_err());
+        assert!(TorusSurface::try_new(center, axis, reference, 1.0, zero).is_err());
+        assert!(CylinderSurface::try_new(center, axis, reference, zero).is_err());
+    }
+    let cone = ConeSurface::try_new(center, axis, reference, -0.0, 1.0, 0.0).unwrap();
+    assert_eq!(cone.radius().get().to_bits(), (-0.0_f64).to_bits());
+    let wire = serde_json::to_value(cone).unwrap();
+    assert_eq!(
+        serde_json::from_value::<ConeSurface>(wire)
+            .unwrap()
+            .radius()
+            .get()
+            .to_bits(),
+        (-0.0_f64).to_bits()
+    );
+}
+
+#[test]
+fn surface_admission_names_the_refused_component() {
+    let finite = Point3::new(0.0, 0.0, 0.0);
+    let nonfinite = Point3::new(f64::NAN, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+
+    assert_eq!(
+        SphereSurface::try_new(finite, axis, reference, 0.0).unwrap_err(),
+        "SphereSurface.radius must be finite and nonzero"
+    );
+    assert_eq!(
+        SphereSurface::try_new(finite, axis, reference, f64::INFINITY).unwrap_err(),
+        "SphereSurface.radius must be finite and nonzero"
+    );
+    assert_eq!(
+        SphereSurface::try_new(nonfinite, axis, reference, 0.0).unwrap_err(),
+        "SphereSurface.center must be finite"
+    );
+    assert_eq!(
+        SphereSurface::try_new(finite, axis, axis, 0.0).unwrap_err(),
+        "SphereSurface.axis/ref_direction must form an orthonormal frame"
+    );
+
+    assert_eq!(
+        TorusSurface::try_new(finite, axis, reference, 1.0, 0.0).unwrap_err(),
+        "TorusSurface.minor_radius must be finite and nonzero"
+    );
+    assert_eq!(
+        TorusSurface::try_new(finite, axis, reference, 0.0, 0.0).unwrap_err(),
+        "TorusSurface.major_radius must be positive and finite"
+    );
+    assert_eq!(
+        TorusSurface::try_new(nonfinite, axis, reference, 1.0, 0.0).unwrap_err(),
+        "TorusSurface.center must be finite"
+    );
+
+    assert_eq!(
+        CylinderSurface::try_new(finite, axis, reference, 0.0).unwrap_err(),
+        "CylinderSurface.radius must be positive and finite"
+    );
+    assert_eq!(
+        ConeSurface::try_new(finite, axis, reference, -1.0, 1.0, 0.0).unwrap_err(),
+        "ConeSurface.radius must be nonnegative and finite"
+    );
+    assert_eq!(
+        PlaneSurface::try_new(nonfinite, axis, reference).unwrap_err(),
+        "PlaneSurface.origin must be finite"
+    );
+}

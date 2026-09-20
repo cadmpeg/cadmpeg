@@ -467,6 +467,25 @@ struct SphereSurfaceWire {
 impl SphereSurface {
     /// Build a sphere from checked parts. The argument types state the whole
     /// invariant, so nothing is checked again.
+    ///
+    /// A sphere rebuilds from its own parts, and a negative radius stays
+    /// negative:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::SphereSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let sphere = SphereSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     -2.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and nonzero radius");
+    /// let moved = SphereSurface::new(sphere.center(), sphere.frame(), sphere.radius());
+    /// assert_eq!(moved, sphere);
+    /// assert_eq!(moved.radius().get(), -2.0);
+    /// ```
     #[must_use]
     pub const fn new(
         center: FinitePoint3,
@@ -575,6 +594,52 @@ struct TorusSurfaceWire {
 impl TorusSurface {
     /// Build a torus from checked parts. The argument types state the whole
     /// invariant, so nothing is checked again.
+    ///
+    /// The two radii carry different restrictions, so exchanging them does not
+    /// compile:
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::geometry::analytic::TorusSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let torus = TorusSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     5.0,
+    ///     1.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and admitted radii");
+    /// let swapped = TorusSurface::new(
+    ///     torus.center(),
+    ///     torus.frame(),
+    ///     torus.minor_radius(),
+    ///     torus.major_radius(),
+    /// );
+    /// ```
+    ///
+    /// Each radius in its own place does:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::TorusSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let torus = TorusSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     5.0,
+    ///     1.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and admitted radii");
+    /// let moved = TorusSurface::new(
+    ///     torus.center(),
+    ///     torus.frame(),
+    ///     torus.major_radius(),
+    ///     torus.minor_radius(),
+    /// );
+    /// assert_eq!(moved, torus);
+    /// ```
     #[must_use]
     pub const fn new(
         center: FinitePoint3,
