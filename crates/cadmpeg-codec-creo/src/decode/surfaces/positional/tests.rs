@@ -1,3 +1,5 @@
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 // SPDX-License-Identifier: Apache-2.0
 use std::io::Cursor;
@@ -157,9 +159,10 @@ fn paired_envelope_spheres_do_not_join_rows_from_neighboring_surface_frames() {
         .expect("decode neighboring surface frames");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -206,9 +209,10 @@ fn paired_envelope_spheres_do_not_join_rows_from_two_prototypes_in_one_frame() {
         .expect("decode two prototypes in one surface frame");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT.as_str()
+        ),
         0
     );
 }

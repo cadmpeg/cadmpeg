@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -441,9 +443,11 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     assert_eq!(scan.references.circles[0].center, [0.0; 3]);
     assert_eq!(scan.references.circles[0].radius, 1.0);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if { circle_curve.radius() == 1.0 })
@@ -551,9 +555,11 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(scan.references.conics.len(), 1);
     assert_eq!(scan.references.ellipses.len(), 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if { (ellipse_curve.major_radius() == 1.0) && (ellipse_curve.minor_radius() == 1.0) })
@@ -563,9 +569,10 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(record.fields()["major_radius"], 1.0);
     assert_eq!(record.fields()["minor_radius"], 1.0);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT.as_str()
+        ),
         1
     );
     let ellipse = result

@@ -653,18 +653,6 @@ impl OffsetSurfaceConstruction {
     pub fn set_support(&mut self, support: SurfaceId) {
         self.support = support;
     }
-    /// Replace the linear support extension flag.
-    pub fn set_linear_support_extension(&mut self, linear_support_extension: bool) {
-        self.linear_support_extension = linear_support_extension;
-    }
-    /// Replace the finite offset distance.
-    pub fn try_set_distance(&mut self, distance: f64) -> Result<(), ProceduralGeometryError> {
-        self.distance = FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
-            "offset spline surface distance is invalid",
-        ))?;
-        Ok(())
-    }
-
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
         value: super::FitTolerance,

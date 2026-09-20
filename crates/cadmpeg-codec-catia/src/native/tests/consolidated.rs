@@ -2,6 +2,8 @@
 //! Native-namespace tests for consolidated family layouts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use std::io::Cursor;
@@ -287,9 +289,10 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode CATIA plane carrier coverage");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT.as_str()
+        ),
         3
     );
 }
@@ -564,15 +567,17 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode CATIA cone-face chart");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_CONE_FACE_PARAMETER_POINT_COUNT.as_str()
+        ),
         4
     );
 }
@@ -704,9 +709,10 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         _ => false,
     });
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT.as_str()
+        ),
         1
     );
     assert!(!decoded.report().losses.iter().any(|loss| loss
@@ -1276,45 +1282,52 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated edge-run coverage");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_CONSOLIDATED_EDGE_RUN_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::PARTIALLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::FULLY_RESOLVED_CONSOLIDATED_EDGE_RUN_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_EDGE_RUN_ENDPOINT_LOCUS_COUNT.as_str()
+        ),
         0
     );
 

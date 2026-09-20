@@ -145,7 +145,6 @@ fn scoped_reservations_release_and_commit_without_double_counting() {
     {
         let mut reservation = ctx.reserve_scoped(3, "temporary").unwrap();
         reservation.grow(2).unwrap();
-        assert_eq!(reservation.bytes(), 5);
     }
     ctx.reserve_scoped(5, "released").unwrap();
     let reservation = ctx.reserve_scoped(2, "retained").unwrap();
@@ -272,7 +271,7 @@ fn depth_is_scoped_and_work_budget_is_sticky() {
     assert!(budget.exhausted());
     assert!(!budget.charge_by(0));
     assert!(
-        matches!(budget.refuse("solver"), CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits)
     );
 }
 

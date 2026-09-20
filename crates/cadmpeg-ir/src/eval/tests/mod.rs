@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_test_support::edit;
+
 use crate::eval::curve_point;
 use crate::eval::curve_second_derivative;
 use crate::eval::curve_tangent;
 use crate::eval::model_curve_differential_by_id;
-use crate::eval::model_curve_parameter_near_point;
 use crate::eval::model_curve_point_by_id;
 use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
@@ -15,7 +17,6 @@ use crate::eval::model_surface_second_partials_by_id;
 use crate::eval::nurbs_curve_parameter_near_point;
 use crate::eval::nurbs_curve_point;
 use crate::eval::nurbs_curve_speed_bound;
-use crate::eval::nurbs_surface_closest_parameter;
 use crate::eval::nurbs_surface_isocurve;
 use crate::eval::nurbs_surface_isoline;
 use crate::eval::nurbs_surface_parameter_near_point;
@@ -99,9 +100,9 @@ const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
@@ -116,12 +117,50 @@ fn bilinear_surface() -> NurbsSurface {
 #[test]
 fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     let mut surface = bilinear_surface();
-    surface.set_u_periodic(true);
+    {
+        let replacement = true;
+        edit::replace(&mut surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap();
+    };
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
     assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
     assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
 
-    surface.set_u_periodic(false);
+    {
+        let replacement = false;
+        edit::replace(&mut surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap();
+    };
     assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
@@ -241,84 +280,6 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
 }
 
 #[test]
-fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
-    let surface = bilinear_surface();
-    let point = Point3::new(0.3, 0.7, 0.2);
-    let closest =
-        nurbs_surface_closest_parameter(&surface, point, None).expect("closest surface parameter");
-    assert!((closest.u - 0.3).abs() < 1.0e-12);
-    assert!((closest.v - 0.7).abs() < 1.0e-12);
-    assert!(nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.19).is_none());
-    assert!(
-        nurbs_surface_parameter_within_tolerance(&surface, point, None, 0.2 + 1.0e-12).is_some()
-    );
-}
-
-#[test]
-fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
-    let surface = bilinear_surface();
-    let point = Point3::new(0.3, 0.7, 0.0);
-    let budget = WorkBudget::new(0);
-
-    assert!(nurbs_surface_parameter_within_tolerance_with_budget(
-        &surface, point, None, 1.0e-10, &budget,
-    )
-    .is_none());
-    assert!(budget.exhausted());
-
-    let budget = WorkBudget::new(10_000);
-    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &surface, point, None, 1.0e-10, &budget,
-    )
-    .expect("a valid surface fits within a larger caller-owned budget");
-    assert!((parameters.u - 0.3).abs() < 1.0e-12);
-    assert!((parameters.v - 0.7).abs() < 1.0e-12);
-    assert!(budget.consumed() > 0);
-}
-
-#[test]
-fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
-    const FIT_TOLERANCE: f64 = 1.0e-12;
-
-    let surface = bilinear_surface();
-    let point = Point3::new(0.3, 0.7, 0.0);
-    let budget = WorkBudget::new(12);
-    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &surface,
-        point,
-        Some(Point2::new(0.3, 0.7)),
-        FIT_TOLERANCE,
-        &budget,
-    )
-    .expect("a fit-qualified continuation seed does not need global search");
-
-    assert_eq!(parameters, Point2::new(0.3, 0.7));
-    assert_eq!(budget.consumed(), 12);
-}
-
-#[test]
-fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_search() {
-    const FIT_TOLERANCE: f64 = 1.0e-10;
-    const PARAMETER_TOLERANCE: f64 = 1.0e-12;
-
-    let surface = bilinear_surface();
-    let point = Point3::new(0.3, 0.7, 0.0);
-    let budget = WorkBudget::new(256);
-    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &surface,
-        point,
-        Some(Point2::new(0.29, 0.69)),
-        FIT_TOLERANCE,
-        &budget,
-    )
-    .expect("a nearby seed should be refined before global patch search");
-
-    assert!((parameters.u - 0.3).abs() <= PARAMETER_TOLERANCE);
-    assert!((parameters.v - 0.7).abs() <= PARAMETER_TOLERANCE);
-    assert!(budget.consumed() > 0);
-}
-
-#[test]
 fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     let surface = bilinear_surface();
     let budget = WorkBudget::new(3);
@@ -426,50 +387,11 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
 }
 
 #[test]
-fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
-    let surface = bilinear_surface();
-    let point = Point3::new(0.3, 0.7, 0.2);
-    let parameters = nurbs_surface_parameter_near_point(&surface, point, None)
-        .expect("bounded local surface candidate");
-    let mapped = nurbs_surface_point(&surface, parameters.u, parameters.v).expect("surface point");
-    assert!(mapped.distance(point) <= 0.2 + f64::EPSILON * 1024.0);
-    assert!((parameters.u - 0.3).abs() < f64::EPSILON * 1024.0);
-    assert!((parameters.v - 0.7).abs() < f64::EPSILON * 1024.0);
-}
-
-#[test]
-fn nurbs_surface_inverse_handles_rational_internal_spans() {
-    let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
-            vec![
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                vec![Point3::new(0.5, 0.0, 0.2), Point3::new(0.5, 1.0, 0.2)],
-                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-            ],
-            Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0])
-                .map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
-    )
-    .unwrap();
-    let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
-    let parameters = nurbs_surface_parameter_within_tolerance(&surface, point, None, 1.0e-10)
-        .expect("rational multi-span inverse");
-    assert!((parameters.u - 0.75).abs() < 1.0e-9);
-    assert!((parameters.v - 0.4).abs() < 1.0e-9);
-}
-
-#[test]
 fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
-            vec![vec![Point3::new(1.0, 2.0, 3.0)]],
-            None,
-        ),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceLanes::new(vec![vec![Point3::new(1.0, 2.0, 3.0)]], None),
         false,
     )
     .unwrap();
@@ -487,9 +409,9 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
 #[test]
 fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0, 2.0], false),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(1.0, 2.0, 3.0)],
                 vec![Point3::new(4.0, 5.0, 6.0)],
@@ -514,9 +436,9 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
 #[test]
 fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(0.5, 0.0, 0.25), Point3::new(0.5, 1.0, 0.25)],
@@ -620,8 +542,13 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             geometry: CurveGeometry::Solved(geometry.clone()),
             source_object: None,
         });
-        let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
-            .expect("direct analytic inverse");
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            parameter,
+        )
+        .expect("direct analytic inverse");
         assert!((inverse - parameter).abs() < 1.0e-12);
     }
 }
@@ -707,8 +634,13 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         });
-        let inverse = super::model_curve_parameter_near_point(&ir, &id, point, seed)
-            .expect("polyline inverse");
+        let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            seed,
+        )
+        .expect("polyline inverse");
         assert!((inverse - expected).abs() < 1.0e-12);
     }
 }
@@ -769,8 +701,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         geometry: CurveGeometry::Solved(geometry.clone()),
         source_object: None,
     });
-    let inverse = super::model_curve_parameter_near_point(&ir, &id, point, parameter)
-        .expect("transformed inverse");
+    let inverse = crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        point,
+        parameter,
+    )
+    .expect("transformed inverse");
     assert!((inverse - parameter).abs() < 1.0e-10);
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
@@ -782,10 +719,13 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         ])
         .expect("affine transform"),
     });
-    assert!(
-        super::model_curve_parameter_near_point(&ir, &id, Point3::new(0.0, 0.0, 0.0), 0.0,)
-            .is_none()
-    );
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        Point3::new(0.0, 0.0, 0.0),
+        0.0
+    )
+    .is_none());
 }
 
 #[test]
@@ -802,13 +742,21 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     });
     let seed = 123.5;
     assert_eq!(
-        super::model_curve_parameter_near_point(&ir, &id, point, seed),
+        crate::eval::model_curve_parameter_near_point_in_index(
+            &crate::index::ModelIndex::new(&ir),
+            &id,
+            point,
+            seed
+        ),
         Some(seed)
     );
-    assert!(
-        super::model_curve_parameter_near_point(&ir, &id, Point3::new(2.0, 3.0, 5.0), seed,)
-            .is_none()
-    );
+    assert!(crate::eval::model_curve_parameter_near_point_in_index(
+        &crate::index::ModelIndex::new(&ir),
+        &id,
+        Point3::new(2.0, 3.0, 5.0),
+        seed
+    )
+    .is_none());
 }
 
 #[test]
@@ -816,9 +764,9 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
     // Rational, quadratic in u and linear in v, so the blend across the
     // fixed direction has to carry weights to stay exact.
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![-2.0, -2.0, 3.0, 3.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 4.0)],
                 vec![Point3::new(1.0, 2.0, 0.5), Point3::new(1.0, 2.0, 4.5)],
@@ -866,9 +814,9 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
 #[test]
 fn bilinear_surface_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
@@ -887,9 +835,9 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
 #[test]
 fn quadratic_surface_second_partials_follow_stored_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             (0..3)
                 .map(|i| {
                     (0..3)
@@ -1008,17 +956,9 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
             id: support_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
-                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        false,
-                    ),
-                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                        2,
-                        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                        false,
-                    ),
-                    crate::geometry::nurbs::NurbsSurfaceLanes::new(
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(
                         [0.0, 1.0]
                             .into_iter()
                             .map(|u| {
@@ -1069,7 +1009,26 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     let construction =
         ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let mut support = bilinear_surface();
-    support.set_normal_reversed(true);
+    {
+        let replacement = true;
+        edit::replace(&mut support, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                replacement,
+            )
+        })
+        .unwrap();
+    };
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -1833,9 +1792,9 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
 #[test]
 fn rational_surface_partials_apply_the_weight_quotient_rule() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 3.0, 0.0)],
@@ -1862,9 +1821,9 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
 #[test]
 fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
     let surface = NurbsSurface::from_lanes(
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        crate::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 3.0, 0.0)],
                 vec![Point3::new(2.0, 0.0, 1.0), Point3::new(2.0, 3.0, 1.0)],
@@ -1970,3 +1929,5 @@ mod numerical_audit;
 mod numerical_followup;
 
 mod analytic_ranges;
+
+mod surface_inversion;

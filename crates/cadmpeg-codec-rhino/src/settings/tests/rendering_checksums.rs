@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::chunks::ArchiveVersion;
 use crate::chunks::BoundedReader;
 use crate::loss::Diagnostics;
@@ -170,9 +172,11 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
                     table(archive, 0x1000_0013, std::slice::from_ref(&record)),
                 ],
             );
-            let decoded = crate::RhinoCodec
-                .decode(&mut Cursor::new(source), &DecodeOptions::default())
-                .unwrap();
+            let decoded = EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(&mut Cursor::new(source), &DecodeOptions::default())
+                    .unwrap(),
+            );
             let losses: Vec<_> = decoded
                 .report()
                 .losses

@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
 use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
@@ -287,7 +289,18 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut periodic)) = geometry else {
         unreachable!("test geometry is NURBS");
     };
-    periodic.set_periodic(true);
+    {
+        let replacement = true;
+        edit::replace(&mut periodic, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+        })
+        .expect("admitted periodic fixture");
+    };
     assert!(
         nonperiodic_nurbs_endpoint_points(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             periodic

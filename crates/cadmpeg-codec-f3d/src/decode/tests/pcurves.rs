@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -46,12 +48,14 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn generated_surface_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("surface-offset decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("surface-offset decode"),
+    );
     let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -100,16 +104,23 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         let shift = &mut shift_value;
         let mut scale_value = *definition_payload.scale();
         let scale = &mut scale_value;
-        context
-            .edit(|_, context_parameter_range, _| {
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
+            let mut range = previous.parameter_range();
+            let discontinuities = previous.discontinuities().clone();
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+
                 (*context_parameter_range) = [-1.5, 2.5];
                 *discontinuity_flag = false;
                 *base_u_range = [-2.0, 5.0];
                 *base_v_range = [-6.0, 7.0];
                 *base_range = [-0.75, 1.75];
                 (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
-            })
-            .unwrap();
+            };
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+        })
+        .unwrap();
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             cadmpeg_ir::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
@@ -183,12 +194,14 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 fn generated_spring_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("spring decode");
+    let result = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("spring decode"),
+    );
     let ProceduralCurveDefinition::Spring(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -1073,7 +1086,18 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     };
     inline.wrapper_reversed = true;
     inline.native_tail_flags = [false, true, false, true];
-    inline.set_parameter_range([-2.0, 3.0]).unwrap();
+    {
+        let replacement = [-2.0, 3.0];
+        edit::replace(inline, |previous| {
+            cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
+                previous.wrapper_reversed,
+                previous.native_tail_flags,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
     inline.set_fit_tolerance(0.0025).unwrap();
     let expected = pcurve.clone();
 
@@ -1153,7 +1177,18 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     }
     let poles =
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
-    nurbs.set_poles(poles.unwrap()).unwrap();
+    {
+        let replacement = poles.unwrap();
+        edit::replace(nurbs, |previous| {
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                replacement,
+                previous.periodic(),
+            )
+        })
+    }
+    .unwrap();
     let expected = edited.model.pcurves[0].clone();
 
     let mut regenerated = Vec::new();
@@ -1192,15 +1227,36 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             Ok(())
         })
         .unwrap();
-    nurbs
-        .edit_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
-        .unwrap();
+    edit::replace(nurbs, |previous| {
+        let mut knots = previous.knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+            previous.degree(),
+            knots,
+            previous.pole_rows().clone(),
+            previous.periodic(),
+        )
+    })
+    .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
         &mut pcurve.metadata
     else {
         panic!("decoded fixture uses general pcurve metadata")
     };
-    metadata.set_parameter_range(Some([-3.0, 5.0])).unwrap();
+    {
+        let replacement = Some([-3.0, 5.0]);
+        edit::replace(metadata, |previous| {
+            cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
+                previous.wrapper_reversed,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::curve_entity;
 use super::ensure_version_support;
 use super::face_loop_order;
@@ -82,7 +84,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
             &DecodeOptions::default(),
         )
         .expect("synthetic mixed-loop fixture decodes");
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().model.faces[0]
         .loops
         .iter()

@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -373,9 +375,10 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode container-bound legacy parameter");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(decoded.ir().model.parameters.len(), 1);

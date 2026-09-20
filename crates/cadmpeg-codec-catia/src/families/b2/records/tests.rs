@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::test_a5a8::a5_surface_stream;
@@ -1252,24 +1254,60 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         &mut crate::nurbs::LaneRefusals::new(),
     );
     let surface = &mut carriers[0].geometry;
-    surface
-        .edit_u_knots(|knots| {
+    edit::replace(surface, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
             let lower = knots[0];
             let span = knots.last().copied().expect("nonempty knots") - lower;
             for knot in knots {
                 *knot = (*knot - lower) / span * tiny;
             }
-        })
-        .unwrap();
-    surface
-        .edit_v_knots(|knots| {
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    edit::replace(surface, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
             let lower = knots[0];
             let span = knots.last().copied().expect("nonempty knots") - lower;
             for knot in knots {
                 *knot = (*knot - lower) / span * tiny;
             }
-        })
-        .unwrap();
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
     let exact = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,

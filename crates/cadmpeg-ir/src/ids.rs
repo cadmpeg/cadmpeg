@@ -7,8 +7,8 @@
 //! only be unique within their owning state.
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
-//! components before `#`). Use [`is_valid_identity`] / [`format_identity`] at
-//! mint time.
+//! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
+//! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
 use serde::Deserialize;
 
@@ -849,23 +849,6 @@ impl Identity {
         value.push_str(key.as_str());
         Self(value)
     }
-}
-
-/// Format a three-component identity and reject grammar violations.
-///
-/// # Errors
-///
-/// Returns [`IdentityError`] when any component is empty, contains `:`, `#`, or
-/// whitespace, or when the key is empty or contains `#` or whitespace.
-pub fn format_identity(
-    format: &str,
-    scope: &str,
-    kind: &str,
-    key: impl Display,
-) -> Result<Identity, IdentityError> {
-    let namespace = IdentityNamespace::new(format, scope, kind)?;
-    let key = key.to_string();
-    Ok(Identity::compose(&namespace, IdentityKey::try_new(key)?))
 }
 
 /// Failure to mint an entity identity.

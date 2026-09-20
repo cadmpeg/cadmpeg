@@ -4,6 +4,8 @@
 //! Inputs come from [`crate::test_support`] builders. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -53,11 +55,14 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match SatCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
-        Ok(result) => serde_json::json!({
-            "ir": result.ir(),
-            "report": result.report(),
-            "source_fidelity": result.source_fidelity(),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": result.ir(),
+                "report": result.report(),
+                "source_fidelity": result.source_fidelity(),
+            })
+        }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)

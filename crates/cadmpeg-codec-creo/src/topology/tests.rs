@@ -476,7 +476,13 @@ fn decode_transfers_closed_plane_intersection_brep() {
     );
     assert_eq!(model.loops.len(), 4);
     assert!(model.loops.iter().all(|lp| {
-        lp.boundary_role_in(&model.faces) == cadmpeg_ir::topology::LoopBoundaryRole::Outer
+        model
+            .faces
+            .iter()
+            .find(|face| face.id == lp.face)
+            .map(|face| face.loop_role(&lp.id))
+            .unwrap_or_default()
+            == cadmpeg_ir::topology::LoopBoundaryRole::Outer
     }));
     assert_eq!(model.coedges.len(), 12);
     assert_eq!(model.pcurves.len(), 12);

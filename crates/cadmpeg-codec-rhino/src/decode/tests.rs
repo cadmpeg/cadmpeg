@@ -1170,7 +1170,12 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
             })
             .expect("distinct point admitted");
         assert_eq!(
-            checkpoint.added::<Point>(&context.ir.model).unwrap()[0]
+            context
+                .ir
+                .model
+                .points
+                .get(checkpoint.arena_len::<Point>()..)
+                .unwrap()[0]
                 .id
                 .as_str(),
             "rhino:test:point#a"

@@ -820,15 +820,6 @@ impl DraftAnchor {
             Self::PartingLine { pull, .. } => Some(pull),
         }
     }
-
-    /// Mutable pull frame retained by this anchor, when available.
-    #[must_use]
-    pub fn pull_mut(&mut self) -> Option<&mut DraftPull> {
-        match self {
-            Self::NeutralPlane { pull, .. } => pull.as_mut(),
-            Self::PartingLine { pull, .. } => Some(pull),
-        }
-    }
 }
 
 crate::ids::id_type!(
@@ -1164,11 +1155,6 @@ impl PolygonSideCount {
     pub fn new(value: u32) -> Option<Self> {
         (value >= 3).then_some(Self(value))
     }
-
-    /// Returns the number of sides.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
 }
 
 impl<'de> Deserialize<'de> for PolygonSideCount {
@@ -1232,8 +1218,8 @@ impl FeatureEvaluation {
 
 /// An ordered neutral construction feature and its resulting bodies.
 ///
-/// Prefer [`Feature::new`] for invariant-bearing construction. There is no
-/// public [`Default`]: an empty id with an arbitrary definition is illegal.
+/// Construction requires an admitted identity and feature evaluation. There is
+/// no public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
     /// Globally unique feature id.
@@ -1258,25 +1244,6 @@ pub struct Feature {
     pub evaluation: FeatureEvaluation,
     /// Identifier of the full-fidelity record in a native namespace.
     pub native_ref: Option<String>,
-}
-
-impl Feature {
-    /// Construct a feature from its identity, construction order, and definition.
-    pub fn new(id: FeatureId, ordinal: u64, definition: FeatureDefinition) -> Self {
-        Self {
-            id,
-            ordinal,
-            name: None,
-            suppressed: None,
-            dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: FeatureContent::default(),
-            evaluation: FeatureEvaluation::from_definition(definition),
-            native_ref: None,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -1740,11 +1707,6 @@ impl FeatureContent {
     /// Whether the sequence has no content.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    /// The source content in order.
-    pub fn as_slice(&self) -> &[FeatureSourceContent] {
-        &self.0
     }
 }
 
@@ -2333,21 +2295,6 @@ impl TreeChildren {
     /// Add a child unless it is already a member.
     pub fn insert(&mut self, child: FeatureId) {
         self.children.insert(child);
-    }
-
-    /// Select an active child from the current members.
-    pub fn set_active_child(
-        &mut self,
-        active_child: Option<FeatureId>,
-    ) -> Result<(), &'static str> {
-        if active_child
-            .as_ref()
-            .is_some_and(|active| !self.children.contains(active))
-        {
-            return Err("active_child must belong to children");
-        }
-        self.active_child = active_child;
-        Ok(())
     }
 }
 
@@ -4510,56 +4457,6 @@ impl RevolveConstruction {
         }
     }
 
-    /// Replaces the angular extent, naming the resolution state the new operand
-    /// set produces.
-    pub fn set_extent(&mut self, extent: Option<RevolveExtent>) {
-        let profile = self.profile().cloned();
-        let axis = self.axis().cloned();
-        let RevolveSelections {
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = self.selections();
-        *self = match (profile, axis, extent) {
-            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), Some(axis), None) => {
-                Self::Unresolved(PartialRevolveConstruction::Extent {
-                    profile,
-                    axis,
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                })
-            }
-            (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
-                profile,
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            },
-        };
-    }
-
     /// Returns the standalone solid selection, when carried.
     pub const fn solid(&self) -> Option<bool> {
         match self {
@@ -4570,19 +4467,6 @@ impl RevolveConstruction {
                 | PartialRevolveConstruction::Extent { solid, .. },
             ) => *solid,
         }
-    }
-
-    /// Replaces the standalone solid selection.
-    pub const fn set_solid(&mut self, solid: Option<bool>) {
-        let slot = match self {
-            Self::Resolved { solid, .. }
-            | Self::Unresolved(
-                PartialRevolveConstruction::Profile { solid, .. }
-                | PartialRevolveConstruction::Axis { solid, .. }
-                | PartialRevolveConstruction::Extent { solid, .. },
-            ) => solid,
-        };
-        *slot = solid;
     }
 
     /// Returns the standalone face-maker selection, when carried.
@@ -4980,12 +4864,6 @@ pub struct FilledSurfaceContinuity {
 }
 
 impl FilledSurfaceContinuity {
-    /// Creates a component-specific condition sequence.
-    #[must_use]
-    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
-        Self { conditions }
-    }
-
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
     pub fn uniform(&self) -> Option<SurfaceContinuity> {
@@ -5104,18 +4982,6 @@ impl TrimCellSelection {
                 .all(|ordinal| *ordinal > 0 && *ordinal <= total)
             && removed.iter().all(|ordinal| seen.insert(*ordinal)))
         .then_some(Self { removed, total })
-    }
-
-    /// Returns the one-based removed-cell ordinals.
-    #[must_use]
-    pub fn removed(&self) -> &[u64] {
-        &self.removed
-    }
-
-    /// Returns the number of cells in the source partition.
-    #[must_use]
-    pub const fn total(&self) -> u64 {
-        self.total
     }
 }
 
@@ -6229,12 +6095,6 @@ impl<B> BodyMember<B> {
         &self.body
     }
 
-    /// Native selection member in this row.
-    #[must_use]
-    pub fn native(&self) -> &str {
-        self.native.as_str()
-    }
-
     /// Consume the row and return its body identity and native member.
     #[must_use]
     pub fn into_parts(self) -> (B, String) {
@@ -6303,11 +6163,6 @@ impl<B> BodyMembers<B> {
     /// Borrow the body identities in source order.
     pub fn bodies(&self) -> impl Iterator<Item = &B> {
         self.0.iter().map(BodyMember::body)
-    }
-
-    /// Borrow the native members in source order.
-    pub fn native(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(BodyMember::native)
     }
 }
 
@@ -7394,16 +7249,6 @@ impl SweepShape {
         }
     }
 
-    /// The native carrier named by an unresolved primary cross-section.
-    pub fn unresolved_native_section(&self) -> Option<&str> {
-        match self {
-            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
-                section.unresolved_native()
-            }
-            Self::Solid { section, .. } => section.unresolved_native(),
-        }
-    }
-
     /// Whether any cross-section is unresolved.
     pub fn any_section_is_unresolved(&self) -> bool {
         match self {
@@ -8392,17 +8237,6 @@ impl PathRef {
         Ok(Self::SpatialSketchCurves {
             sketch,
             curves: curves.try_into()?,
-        })
-    }
-
-    /// Admits native path selections in one spatial sketch.
-    pub fn spatial_sketch_selection(
-        sketch: crate::sketches::SpatialSketchId,
-        selections: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::SpatialSketchSelection {
-            sketch,
-            selections: selections.try_into()?,
         })
     }
 

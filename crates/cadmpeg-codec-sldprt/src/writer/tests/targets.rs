@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -87,7 +89,12 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .to_owned()
         .try_into()
         .expect("source image identity");
-    let record = RetainedSourceRecord::retained("sldprt", 0, data).expect("source image extent");
+    let record = RetainedSourceRecord::from_bytes(
+        "sldprt",
+        0,
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data },
+    )
+    .expect("source image extent");
     fidelity
         .insert_retained_record(source_image_id, record)
         .expect("source image identity is unique");
@@ -99,7 +106,10 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     .expect("explicit transcode plans");
 
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     assert!(matches!(
@@ -141,7 +151,10 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     // No fidelity was provided, so the sealed wrapper resolves the report to
     // `NotProvided`; the image-missing reason survives as the typed loss below.
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotProvided {}
     );
     let unavailable = plan

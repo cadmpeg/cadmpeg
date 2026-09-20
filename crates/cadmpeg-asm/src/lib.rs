@@ -28,3 +28,6 @@ pub mod sab;
 pub mod sat;
 
 pub mod stream_error;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;

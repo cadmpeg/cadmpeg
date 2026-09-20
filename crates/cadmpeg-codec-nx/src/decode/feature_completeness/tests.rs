@@ -510,11 +510,17 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
     .is_err());
     assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
     assert!(path_ref_is_incomplete(
-        &PathRef::spatial_sketch_selection(
-            cadmpeg_ir::sketches::SpatialSketchId::mint("test:test:spatial-sketch#0").unwrap(),
-            vec!["nx:path-selection#0".into()]
-        )
-        .unwrap()
+        &cadmpeg_ir::features::NativeSelections::try_from(vec!["nx:path-selection#0".into()])
+            .map(
+                |selections| cadmpeg_ir::features::PathRef::SpatialSketchSelection {
+                    sketch: cadmpeg_ir::sketches::SpatialSketchId::mint(
+                        "test:test:spatial-sketch#0"
+                    )
+                    .unwrap(),
+                    selections
+                }
+            )
+            .unwrap()
     ));
     let edge =
         cadmpeg_ir::ids::EdgeId::mint("test:model:entity#edge%230").expect("identity grammar");
@@ -894,7 +900,27 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.set_extent(None);
+    let RevolveConstruction::Resolved {
+        profile,
+        axis,
+        solid,
+        face_maker,
+        fuse_order,
+        allow_multi_profile_faces,
+        ..
+    } = incomplete
+    else {
+        panic!("resolved fixture")
+    };
+    incomplete =
+        RevolveConstruction::Unresolved(cadmpeg_ir::features::PartialRevolveConstruction::Extent {
+            profile,
+            axis,
+            solid,
+            face_maker,
+            fuse_order,
+            allow_multi_profile_faces,
+        });
     assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
@@ -908,7 +934,10 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         &[],
     ));
     incomplete = complete.clone();
-    incomplete.set_solid(None);
+    let RevolveConstruction::Resolved { solid, .. } = &mut incomplete else {
+        panic!("resolved fixture")
+    };
+    *solid = None;
     assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
@@ -916,7 +945,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
     let source = FeatureId::mint("test:test:feature#vertex-source").expect("identity grammar");
     incomplete = complete.clone();
-    incomplete.set_extent(Some(RevolveExtent::OneSided {
+    *incomplete.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
         termination: AngularTermination::ToVertex {
             vertex: VertexSelection::generated(
                 GeneratedVertexRef::new(source.clone(), "vertex-0".into()).unwrap(),
@@ -924,7 +953,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
             )
             .unwrap(),
         },
-    }));
+    };
     assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,

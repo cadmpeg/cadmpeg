@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
@@ -30,16 +32,18 @@ const EPS_CONE_ANGLE: f64 = 1.0e-12;
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
     let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_configuration(
-                &synthetic_geometry_smbh(),
-                name,
-                payload,
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated configuration decode");
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_configuration(
+                    &synthetic_geometry_smbh(),
+                    name,
+                    payload,
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated configuration decode"),
+    );
     let native = f3d_native(decoded.ir());
     assert_eq!(native.design_configurations.len(), 1);
     assert_eq!(native.design_configurations[0].entry_name(), name);
@@ -264,9 +268,11 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 #[test]
 fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .unwrap(),
+    );
 
     let mut replayed = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1385,7 +1391,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
-    let mut round_trip = cadmpeg_test_support::EditableDecodeResult::from(round_trip);
+    let mut round_trip = EditableDecodeResult::from(round_trip);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
         round_trip.ir().model.edges[0].param_range(),
@@ -1831,12 +1837,14 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 fn generated_f3d_rewrites_plane_frame() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated planar triangle decode");
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated planar triangle decode"),
+    );
     let mut edited = decoded.ir().clone();
     let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1861,12 +1869,14 @@ fn generated_f3d_rewrites_plane_frame() {
 fn generated_f3d_rejects_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated planar triangle decode");
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated planar triangle decode"),
+    );
     let mut edited = decoded.ir().clone();
     edited.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(

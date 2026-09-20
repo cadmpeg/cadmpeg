@@ -116,7 +116,14 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
             "curves",
         ),
         (
-            PathRef::spatial_sketch_selection(spatial.clone(), vec!["group".into()]).unwrap(),
+            crate::features::NativeSelections::try_from(vec!["group".into()])
+                .map(
+                    |selections| crate::features::PathRef::SpatialSketchSelection {
+                        sketch: spatial.clone(),
+                        selections,
+                    },
+                )
+                .unwrap(),
             "selections",
         ),
         (
@@ -152,7 +159,14 @@ fn path_selection_members_are_checked_at_construction_and_on_wire() {
         vec![" \t".into()],
         vec!["group".into(), "group".into()],
     ] {
-        assert!(PathRef::spatial_sketch_selection(spatial.clone(), names).is_err());
+        assert!(crate::features::NativeSelections::try_from(names)
+            .map(
+                |selections| crate::features::PathRef::SpatialSketchSelection {
+                    sketch: spatial.clone(),
+                    selections
+                }
+            )
+            .is_err());
     }
     assert!(PathRef::historical_edges(state.clone(), vec![], "group".into()).is_err());
     assert!(PathRef::historical_edges(

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
 
 #[test]
@@ -672,9 +674,11 @@ fn distinct_external_resources_keep_reused_numeric_targets_separate() {
         assert!(summary.notes.iter().any(|candidate| candidate == note));
     }
 
-    let result = codec
-        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("decode root without composing subsidiaries");
+    let result = EditableDecodeResult::from(
+        codec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("decode root without composing subsidiaries"),
+    );
     let source = result.ir().source.as_ref().expect("STEP source metadata");
     assert_eq!(source.attributes["entity_instances"], "1");
     let unknown = result
@@ -896,9 +900,11 @@ pub(crate) fn codec_inspects_edition3_sections_and_external_references() {
     assert!(bytes[signature.clone()]
         .windows(b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=".len())
         .any(|bytes| bytes == b"MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA="));
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode signature fixture");
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode signature fixture"),
+    );
     let unknowns = decoded
         .ir()
         .native_unknowns("step")

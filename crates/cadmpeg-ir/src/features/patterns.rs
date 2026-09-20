@@ -418,18 +418,6 @@ impl CompositePattern {
         }
         Ok(Self(stages))
     }
-
-    /// The rule that combines the stage at `index` with the stages before it.
-    ///
-    /// The rule is the stage's position and its transform: the first stage
-    /// establishes the sequence, a progressive scale slices the sequence it
-    /// follows, and every other transform multiplies it.
-    #[must_use]
-    pub fn combination(&self, index: usize) -> Option<PatternStageCombination> {
-        self.0
-            .get(index)
-            .map(|stage| stage_combination(index, stage))
-    }
 }
 
 /// The rule that combines the stage at `index` with the stages before it.

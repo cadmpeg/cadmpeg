@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -39,21 +41,24 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
     );
     assert!(input.dependencies.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         1
     );
     assert!(
@@ -84,15 +89,17 @@ fn formula_input_with_additional_object_payload_remains_unresolved() {
 
     assert_eq!(decoded.ir().model.parameters.len(), 1);
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT.as_str()
+        ),
         4
     );
 }
@@ -120,9 +127,11 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             .and_then(|record| record.class_name().map(str::to_owned))
     );
 
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode closed length formula");
+    let decoded = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode closed length formula"),
+    );
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("closed formula parameters")
     };
@@ -150,33 +159,38 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         std::slice::from_ref(&input.id)
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
+        ),
         4
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
+        ),
         usize::from(output_entity.class_name().is_some())
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
+        ),
         usize::from(output_entity.class_name().is_none())
     );
     let expression_classified = native.entity_records[0]
@@ -187,15 +201,17 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .class_name()
         .is_some();
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT.as_str()
+        ),
         usize::from(expression_classified)
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_FORMULA_EXPRESSION_ENTITY_COUNT.as_str()
+        ),
         usize::from(!expression_classified)
     );
     let dependency_candidate = &native.entity_records[0]
@@ -204,57 +220,67 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         .parameter_dependencies[0]
         .candidates[0];
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_CLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT)
+                .as_str()
         ),
         usize::from(dependency_candidate.class_name().is_some())
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_FORMULA_PARAMETER_DEPENDENCY_CANDIDATE_COUNT.as_str()
         ),
         usize::from(dependency_candidate.class_name().is_none())
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT.as_str()
+        ),
         0
     );
     assert!(decoded.report().losses.iter().all(|loss| {
@@ -303,34 +329,38 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
     assert_eq!(input.name, "Width");
     assert!(input.dependencies.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT.as_str()
+        ),
         3
     );
 }
 
 #[test]
 fn decode_transfers_a_closed_constant_formula() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
-                3,
-                false,
-                &[],
-                "LENGTH",
-                Some(12.0),
-                "10mm+2mm",
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode constant formula");
+    let decoded = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                    3,
+                    false,
+                    &[],
+                    "LENGTH",
+                    Some(12.0),
+                    "10mm+2mm",
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode constant formula"),
+    );
 
     let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("constant formula output")
@@ -554,14 +584,16 @@ fn decode_transfers_typed_integer_to_angle_formula() {
 fn decode_transfers_dimensionless_real_formula() {
     use cadmpeg_ir::features::ParameterValue;
 
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
-                4, false, "Real", "R", 2.5, 1.25, "#1_ /2/2",
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode real formula");
+    let decoded = EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                    4, false, "Real", "R", 2.5, 1.25, "#1_ /2/2",
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode real formula"),
+    );
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("real formula parameters")
     };
@@ -649,9 +681,10 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
     assert_eq!(output.expression, "(#1_ /2>#2_ /2) and (#1_ /2>=0)");
     assert_eq!(output.dependencies.as_slice(), [x.id.clone(), y.id.clone()]);
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
+        ),
         5
     );
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
@@ -966,15 +999,17 @@ fn decode_transfers_each_supported_formula_input_independently() {
     );
     assert!(depth.dependencies.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT.as_str()
+        ),
         4
     );
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -1187,27 +1222,31 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_PARAMETER_DEPENDENCY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_FORMULA_PARAMETER_DEPENDENCY_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::AMBIGUOUS_FORMULA_PARAMETER_DEPENDENCY_COUNT.as_str()
+        ),
         1
     );
 }

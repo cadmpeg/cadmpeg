@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use super::{
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
     SpatialSketchEntityId, SpatialSketchEntityPair,
@@ -649,7 +651,7 @@ fn a_rectangular_pattern_states_its_grid_as_rows() {
     assert!(serde_json::from_value::<SketchConstraintDefinitionInput>(ragged).is_err());
 }
 
-/// `count()` derives the figure from the instance population, which carries
+/// The seeded count follows from the instance population, which carries
 /// the bound and states the count. The figure survives the wire, which
 /// carries no count key of its own.
 #[test]
@@ -674,7 +676,7 @@ fn a_circular_pattern_count_survives_a_wire_that_states_no_count() {
     )
     .unwrap();
     assert_eq!(pattern.instances().len(), 2);
-    assert_eq!(pattern.count(), 3);
+    assert_eq!((pattern.instances().len() + 1), 3);
 
     let definition = SketchConstraintDefinitionInput::CircularPattern { pattern };
     let wire = serde_json::to_value(&definition).unwrap();
@@ -684,7 +686,7 @@ fn a_circular_pattern_count_survives_a_wire_that_states_no_count() {
     else {
         panic!("circular pattern");
     };
-    assert_eq!(pattern.count(), 3);
+    assert_eq!((pattern.instances().len() + 1), 3);
 }
 
 /// The bound is on the population's type. `SeededMembers` is the only way to
@@ -697,16 +699,16 @@ fn a_seeded_population_refuses_a_count_the_ir_width_cannot_state() {
 
     assert!(SeededMembers::<()>::try_from(Vec::new()).is_err());
     assert_eq!(
-        SeededMembers::try_from(vec![(); 1]).map(|members| members.count()),
+        SeededMembers::try_from(vec![(); 1]).map(|members| members.len() + 1),
         Ok(2)
     );
     let widest = usize::try_from(u32::MAX).unwrap();
     assert_eq!(
-        SeededMembers::try_from(vec![(); widest - 1]).map(|members| members.count()),
-        Ok(u32::MAX)
+        SeededMembers::try_from(vec![(); widest - 1]).map(|members| members.len() + 1),
+        Ok(widest)
     );
     assert_eq!(
-        SeededMembers::try_from(vec![(); widest]).map(|members| members.count()),
+        SeededMembers::try_from(vec![(); widest]).map(|members| members.len() + 1),
         Err("population holds more members than the seeded count can state")
     );
 }
@@ -773,7 +775,7 @@ fn a_circular_pattern_count_cannot_disagree_with_its_instances() {
         let pattern = build(instances);
         assert_eq!(pattern.instances().len(), instance_count);
         assert_eq!(
-            usize::try_from(pattern.count()).unwrap(),
+            pattern.instances().len() + 1,
             instance_count + 1,
             "the stored count is the instances and the seed"
         );
@@ -787,9 +789,11 @@ fn a_circular_pattern_count_cannot_disagree_with_its_instances() {
     stated["count"] = serde_json::json!(9);
     assert!(serde_json::from_value::<SketchCircularPattern>(stated).is_err());
     assert_eq!(
-        serde_json::from_value::<SketchCircularPattern>(wire)
+        (serde_json::from_value::<SketchCircularPattern>(wire)
             .unwrap()
-            .count(),
+            .instances()
+            .len()
+            + 1),
         3
     );
 }
@@ -1303,23 +1307,33 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     let mut geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     let original = geometry.clone();
-    assert!(geometry
-        .edit(|definition| {
+    assert!(edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
             *radius = Length::new(-1.0).unwrap();
-        })
-        .is_err());
+        };
+        definition.try_into()
+    })
+    .is_err());
     assert_eq!(geometry, original);
-    geometry
-        .edit(|definition| {
+    edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
             *radius = Length::new(2.0).unwrap();
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["radius"], 2.0);
 }
 
@@ -1518,7 +1532,7 @@ fn circular_pattern_admission_checks_angles_and_entity_ownership() {
         )
     };
     let pattern = admit(-1.0, instances.clone()).unwrap();
-    assert_eq!(pattern.count(), 2);
+    assert_eq!((pattern.instances().len() + 1), 2);
     assert!(admit(-1.0, Vec::new()).is_none());
     for entity in [center.clone(), seed.clone()] {
         let mut invalid = instances.clone();
@@ -1847,7 +1861,7 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
             definition
         );
     }
-    assert_eq!(SketchLabelValue::try_from(-1.0).unwrap().get(), -1.0);
+    assert_eq!(SketchLabelValue::try_from(-1.0).unwrap().0, -1.0);
 }
 
 #[test]

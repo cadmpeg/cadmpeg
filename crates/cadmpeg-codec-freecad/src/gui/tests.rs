@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -112,7 +114,14 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     let presentation = &result.ir().model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
     assert_eq!(presentation.active_view, None);
-    let camera = presentation.camera().expect("camera state");
+    let camera = presentation
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
+        .expect("camera state");
     assert_eq!(
         camera.position.map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0, 2.0, 3.0])
@@ -120,7 +129,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     assert_eq!(
         camera
             .orientation
-            .map(cadmpeg_ir::units::NonzeroVector::get),
+            .map(|value| wire::value::<[f64; 4]>(&value)),
         Some([0.0, 0.0, 1.0, 0.25])
     );
     assert_eq!(
@@ -332,7 +341,12 @@ fn ignores_non_authoritative_camera_descendant_values() {
         )
         .expect("non-authoritative camera descendants");
     let camera = result.ir().model.presentation_documents[0]
-        .camera()
+        .states()
+        .iter()
+        .find_map(|state| match &state.kind {
+            cadmpeg_ir::presentation::PresentationStateKind::Camera(camera) => Some(camera),
+            cadmpeg_ir::presentation::PresentationStateKind::Native(_) => None,
+        })
         .expect("camera state");
     assert_eq!(camera.position, None);
     assert_eq!(camera.orientation, None);
@@ -632,7 +646,9 @@ Co 1001000 +2 0 *
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {
-            source.stream() == Some("GuiDocument.xml") && source.offset > 0
+            wire::field_or_default::<Option<String>>(&source, "stream").as_deref()
+                == Some("GuiDocument.xml")
+                && source.offset > 0
         }));
         assert_eq!(
             result

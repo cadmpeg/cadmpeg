@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::geometry::{CurveOffsetRange, OffsetSide, ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::Vector3;
@@ -176,7 +178,17 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
     let context = curve.intersection_context_mut().unwrap();
     context.set_surface(0, Some(support.clone()));
-    assert!(context.edit(|_, range, _| *range = [1.0, 0.0]).is_err());
+    assert!(edit::replace(context, |previous| {
+        let sides = previous.sides().clone();
+        let mut range = previous.parameter_range();
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let range: &mut [f64; 2] = &mut range;
+            *range = [1.0, 0.0];
+        };
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+    })
+    .is_err());
     assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert_eq!(context.sides()[0].surface.as_ref(), Some(&support));
     assert_eq!(curve.cache_fit_tolerance(), Some(0.5));

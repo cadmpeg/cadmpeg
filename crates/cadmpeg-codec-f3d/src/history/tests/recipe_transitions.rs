@@ -809,37 +809,47 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             }),
         });
     }
-    let mut feature = Feature::new(
-        feature_id.clone(),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Hole {
-            profile: None,
-            profile_filter: None,
-            face: Some(FaceSelection::Native(scope_id.into())),
-            direction: None,
-            placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+    let mut feature = Feature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Hole {
+                profile: None,
+                profile_filter: None,
+                face: Some(FaceSelection::Native(scope_id.into())),
+                direction: None,
+                placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
                     .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0,
-                ))
+                }]),
+                shape: cadmpeg_ir::features::holes::HoleShape::new(
+                    cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
+                    None,
+                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                )
                 .unwrap(),
-            }]),
-            shape: cadmpeg_ir::features::holes::HoleShape::new(
-                cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
-                None,
-                Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
-            )
-            .unwrap(),
 
-            extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                extent: Some(LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                }),
+                bottom: None,
+                taper_angle: None,
+                allow_multi_profile_faces: None,
             }),
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        }),
-    );
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(scope_id.into());
     let mut input_topologies = vec![FeatureInputTopology {
         id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),

@@ -150,32 +150,6 @@ impl ExternalDocument {
             None => Self::Missing {},
         }
     }
-
-    /// Returns the explicit missing-reference state.
-    pub fn missing() -> Self {
-        Self::Missing {}
-    }
-
-    /// Returns the persisted file path, when the reference uses one.
-    pub fn as_path(&self) -> Option<&str> {
-        match self {
-            Self::Path { path } => Some(path.as_str()),
-            Self::DocumentId { .. } | Self::Missing {} => None,
-        }
-    }
-
-    /// Returns the persisted document id, when the reference uses one.
-    pub fn as_document_id(&self) -> Option<&str> {
-        match self {
-            Self::DocumentId { document_id } => Some(document_id.as_str()),
-            Self::Path { .. } | Self::Missing {} => None,
-        }
-    }
-
-    /// Returns whether the source carried no usable external document identity.
-    pub fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing {})
-    }
 }
 
 /// Copy-on-change ownership behavior of a link.
@@ -516,10 +490,9 @@ impl std::error::Error for AssemblyGraphError {
     }
 }
 
-/// Validated, memoized view over a canonical occurrence tree.
+/// Validated lookup view over a canonical occurrence tree.
 pub struct AssemblyGraph<'a> {
     occurrences: HashMap<&'a str, &'a Occurrence>,
-    resolved: HashMap<&'a str, Transform>,
 }
 
 #[cfg(test)]
@@ -587,7 +560,7 @@ mod tests {
             document_id
         );
 
-        let missing = ExternalDocument::missing();
+        let missing = ExternalDocument::Missing {};
         assert_eq!(ExternalDocument::path(""), missing);
         assert_eq!(ExternalDocument::document_id(""), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();
@@ -722,12 +695,18 @@ mod tests {
         let occurrences = [child, root];
         let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
-            graph
-                .resolved_transform(
-                    &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
-                )
-                .expect("resolved child")
-                .rows()[0][3],
+            super::resolve_occurrence(
+                graph
+                    .occurrence(
+                        &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
+                    )
+                    .unwrap(),
+                &graph.occurrences,
+                &mut std::collections::HashMap::new(),
+                &mut std::collections::HashSet::new()
+            )
+            .expect("resolved child")
+            .rows()[0][3],
             13.0
         );
     }
@@ -920,7 +899,7 @@ mod tests {
 }
 
 impl<'a> AssemblyGraph<'a> {
-    /// Validates parent links and precomputes every resolved occurrence transform.
+    /// Validates parent links and every composed occurrence transform.
     pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
         let mut by_id = HashMap::with_capacity(occurrences.len());
         for occurrence in occurrences {
@@ -934,20 +913,12 @@ impl<'a> AssemblyGraph<'a> {
         for occurrence in occurrences {
             resolve_occurrence(occurrence, &by_id, &mut resolved, &mut HashSet::new())?;
         }
-        Ok(Self {
-            occurrences: by_id,
-            resolved,
-        })
+        Ok(Self { occurrences: by_id })
     }
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
         self.occurrences.get(id.as_str()).copied()
-    }
-
-    /// Returns the transform composed from the root through this occurrence.
-    pub fn resolved_transform(&self, id: &OccurrenceId) -> Option<Transform> {
-        self.resolved.get(id.as_str()).copied()
     }
 }
 
@@ -1105,22 +1076,6 @@ impl JointLimits {
             (Some(minimum), Some(maximum)) => {
                 (minimum.get() <= maximum.get()).then_some(Self::Range { minimum, maximum })
             }
-        }
-    }
-
-    /// Returns the lower bound, when enabled.
-    pub fn minimum(&self) -> Option<f64> {
-        match self {
-            Self::Maximum { .. } => None,
-            Self::Minimum { minimum } | Self::Range { minimum, .. } => Some(minimum.get()),
-        }
-    }
-
-    /// Returns the upper bound, when enabled.
-    pub fn maximum(&self) -> Option<f64> {
-        match self {
-            Self::Minimum { .. } => None,
-            Self::Maximum { maximum } | Self::Range { maximum, .. } => Some(maximum.get()),
         }
     }
 }
@@ -1546,21 +1501,6 @@ impl AssemblyJoint {
         }
     }
 
-    /// Paired family when this joint is not grounded.
-    #[must_use]
-    pub fn paired_kind(&self) -> Option<&PairedJointKind> {
-        match &self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
-    /// Whether this joint grounds a single connector.
-    #[must_use]
-    pub fn is_grounded(&self) -> bool {
-        matches!(self.operands, JointOperands::Grounded { .. })
-    }
-
     /// Visits every connector in operand order.
     pub fn connectors(&self) -> impl Iterator<Item = &JointConnector> {
         let slice: &[JointConnector] = match &self.operands {
@@ -1568,60 +1508,6 @@ impl AssemblyJoint {
             JointOperands::Pair { connectors, .. } => connectors,
         };
         slice.iter()
-    }
-
-    /// Visits every attachment offset in operand order.
-    pub fn offset_frames(&self) -> impl Iterator<Item = &Transform> {
-        let slice: &[Transform] = match &self.operands {
-            JointOperands::Grounded {
-                offset_frame: Some(offset),
-                ..
-            } => std::slice::from_ref(offset),
-            JointOperands::Pair {
-                offset_frames: Some(offsets),
-                ..
-            } => offsets,
-            _ => &[],
-        };
-        slice.iter()
-    }
-
-    /// Per-connector detach flags in operand order. Grounded joints emit a false second flag.
-    #[must_use]
-    pub fn detached(&self) -> [bool; 2] {
-        match &self.operands {
-            JointOperands::Grounded { connector, .. } => [connector.detached, false],
-            JointOperands::Pair { connectors, .. } => {
-                [connectors[0].detached, connectors[1].detached]
-            }
-        }
-    }
-
-    /// Angular offset in radians.
-    #[must_use]
-    pub fn angle(&self) -> Option<f64> {
-        match self.paired_kind()? {
-            PairedJointKind::Fixed { angle, .. }
-            | PairedJointKind::Revolute { angle, .. }
-            | PairedJointKind::Cylindrical { angle, .. }
-            | PairedJointKind::Angle { angle }
-            | PairedJointKind::Native { angle, .. } => angle.map(FiniteReal::get),
-            _ => None,
-        }
-    }
-
-    /// Enabled angular interval in radians.
-    #[must_use]
-    pub fn angular_limits(&self) -> Option<&JointLimits> {
-        match self.paired_kind() {
-            Some(
-                PairedJointKind::Fixed { angular_limits, .. }
-                | PairedJointKind::Revolute { angular_limits, .. }
-                | PairedJointKind::Cylindrical { angular_limits, .. }
-                | PairedJointKind::Native { angular_limits, .. },
-            ) => angular_limits.as_ref(),
-            _ => None,
-        }
     }
 }
 

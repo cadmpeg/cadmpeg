@@ -1,3 +1,5 @@
+use cadmpeg_test_support::wire;
+
 mod association;
 mod local_frame;
 
@@ -333,11 +335,11 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
     assert_eq!(radius, 50.8);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["untransferred_visible_surface_row_count"],
+        wire::coverage(result.report())["untransferred_visible_surface_row_count"],
         0
     );
 
@@ -436,7 +438,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     assert_eq!(ratio, 1.0);
     assert_eq!(half_angle, std::f64::consts::FRAC_PI_4);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -499,7 +501,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
 }
@@ -591,11 +593,11 @@ ${}
     assert_eq!(surface.u_count(), 4);
     assert_eq!(surface.v_count(), 4);
     assert_eq!(
-        result.report().coverage()["transferred_legacy_ascii_surface_carrier_count"],
+        wire::coverage(result.report())["transferred_legacy_ascii_surface_carrier_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["transferred_visible_spline_surface_row_count"],
+        wire::coverage(result.report())["transferred_visible_spline_surface_row_count"],
         1
     );
 }

@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::examples::unit_cube;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
@@ -62,7 +64,18 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     else {
         unreachable!()
     };
-    nurbs.set_periodic(false);
+    {
+        let replacement = false;
+        edit::replace(nurbs, |previous| {
+            crate::geometry::nurbs::NurbsCurve::new(
+                previous.degree(),
+                previous.knots().to_vec(),
+                previous.pole_rows().clone(),
+                replacement,
+            )
+        })
+        .unwrap();
+    };
     ir.model.edges[0].set_param_range(Some([0.5, 2.5])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .findings

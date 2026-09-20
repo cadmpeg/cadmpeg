@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::design::dimensions::bind_dimension_loci;
 use crate::design::dimensions::counted_role_relation;
 use crate::design::dimensions::exact_counted_offset;
@@ -203,13 +205,15 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     ));
 
     let mut skewed = result;
-    skewed
-        .geometry
-        .edit(|definition| {
+    edit::replace(&mut skewed.geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Nurbs { curve } = definition else {
                 unreachable!("test result is a NURBS")
             };
-            let last = curve.pole_count().checked_sub(1);
+            let last = curve.pole_rows().len().checked_sub(1);
             let mut pole_index = 0usize;
             curve
                 .edit_control_points(|point| {
@@ -220,8 +224,10 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                     Ok(())
                 })
                 .unwrap();
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
     assert!(exact_counted_offset(
         &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
@@ -767,14 +773,18 @@ fn counted_roles_require_matching_solved_geometry() {
         Some(SketchConstraintDefinitionInput::Equal { first, second })
             if &first == arc.id() && &second == equal_arc.id()
     ));
-    equal_arc
-        .geometry
-        .edit(|definition| {
+    edit::replace(&mut equal_arc.geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Arc { radius, .. } = definition {
                 *radius = Length::new(2.0).unwrap();
             }
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     assert!(counted_role_relation(&[&arc, &equal_arc], 0x800).is_none());
 }
 

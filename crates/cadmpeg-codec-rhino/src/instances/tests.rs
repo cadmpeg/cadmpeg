@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
 
 mod recovery;
 mod support;
@@ -411,7 +415,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert!(parsed.legacy_relative_path());
     assert!(scan.definitions.diagnostics.is_empty());
     set_test_units(&mut scan, 1.0);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let external = &result
         .ir()
         .native
@@ -538,7 +542,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         &malformed_source_bytes[malformed_range.clone()]
     );
     set_test_units(&mut scan, 1.0);
-    let malformed_result = crate::decode::decode_for_test(&scan);
+    let malformed_result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let malformed_retained = malformed_result
         .source_fidelity()
         .retained_records()
@@ -600,7 +604,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         future_record.as_slice()
     );
     set_test_units(&mut future_scan, 1.0);
-    let future_result = crate::decode::decode_for_test(&future_scan);
+    let future_result = EditableDecodeResult::from(crate::decode::decode_for_test(&future_scan));
     let future_external = &future_result
         .ir()
         .native
@@ -1198,9 +1202,26 @@ pub(crate) fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadat
         cadmpeg_ir::math::Vector3::new(0.242_535_625_036_332_97, 0.0, 0.970_142_500_145_331_9)
     );
     let subd = &result.ir().model.subds[0];
-    assert_eq!(subd.cage.vertices()[2].point().x, 7.0);
-    assert_eq!(subd.cage.edges()[0].sharpness(), [0.25, 0.25]);
-    assert_eq!(subd.cage.edges()[0].sector_coefficients(), [0.125, 0.875]);
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
+            .point()
+            .x,
+        7.0
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(subd.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(subd.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
+        [0.125, 0.875]
+    );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
 

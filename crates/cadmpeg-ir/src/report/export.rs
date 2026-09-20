@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::document::CensusKey;
-use crate::report::{loss::LossNote, Severity};
+use crate::report::loss::LossNote;
 
 /// Entity census and fidelity details from a successful export.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -215,16 +215,6 @@ impl EntityCensus {
 }
 
 impl ExportReport {
-    /// How decode-time source fidelity was handled.
-    #[must_use]
-    pub fn fidelity(&self) -> FidelityResolution {
-        match &self.write_path {
-            WritePath::VerbatimReplay { fidelity } => fidelity.clone().into(),
-            WritePath::Patched { fidelity } => fidelity.clone(),
-            WritePath::Synthesized { fidelity } => fidelity.clone().into(),
-        }
-    }
-
     /// Which write path produced the exported bytes, and how that path resolved
     /// source fidelity.
     #[must_use]
@@ -238,17 +228,6 @@ impl ExportReport {
         match &self.identity {
             ExportIdentity::Cadir {} => "cadir",
             ExportIdentity::Native { target } => target.namespace(),
-        }
-    }
-
-    /// The concrete native dialect written.
-    ///
-    /// `None` identifies neutral CADIR. Native reports always name a target.
-    #[must_use]
-    pub fn target(&self) -> Option<&DialectId> {
-        match &self.identity {
-            ExportIdentity::Native { target } => Some(target),
-            ExportIdentity::Cadir {} => None,
         }
     }
 
@@ -287,14 +266,6 @@ impl ExportReport {
             losses,
             notes,
         }
-    }
-
-    /// Count loss notes at or above [`Severity::Error`].
-    pub fn error_count(&self) -> usize {
-        self.losses
-            .iter()
-            .filter(|loss| loss.severity >= Severity::Error)
-            .count()
     }
 }
 

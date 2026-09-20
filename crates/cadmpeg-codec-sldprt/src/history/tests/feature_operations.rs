@@ -2,6 +2,8 @@
 //! Combine, revolution, sweep, operand, and XML-family projection tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -62,7 +64,7 @@ fn decode_resolves_feature_topology_selections() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let edge_id = decoded.ir().model.edges[0].id.clone();
     let face_id = decoded.ir().model.faces[0].id.clone();
     let body_id = decoded.ir().model.bodies[0].id.clone();
@@ -243,7 +245,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
@@ -325,7 +327,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
+    let mut regenerated = EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
@@ -376,7 +378,7 @@ fn decode_retains_compact_combine_with_unresolved_semantics_as_native() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -768,7 +770,7 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let helix = decoded
         .ir()
         .model
@@ -985,9 +987,11 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
         &resolved_features_payload_with_names(&[0, 0, 2], &["Sketch1", "D1"]),
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let feature_ref = decoded
         .ir()
         .model

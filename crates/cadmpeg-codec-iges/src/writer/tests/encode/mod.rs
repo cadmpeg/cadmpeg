@@ -1,21 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use super::{accepts_non_manifold_write_loss, accepts_procedural_reduction_loss};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
-use cadmpeg_ir::geometry::pcurve::Pcurve;
-use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
-use cadmpeg_ir::geometry::Curve;
-use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::geometry::Surface;
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{
+    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -105,7 +101,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let second_start = decoded
         .ir()
         .model
@@ -196,12 +192,14 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
 #[test]
 fn encode_replays_an_unchanged_iges_source_image() {
     let bytes = point_file();
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
     let plan = plan_at(
         IgesVersion::V5_3,
         decoded.ir(),
@@ -377,9 +375,11 @@ fn encode_rejects_open_shells_before_iges_5_3() {
 
 #[test]
 fn encode_does_not_replay_a_source_with_the_wrong_version() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = plan_at(
         IgesVersion::V5_2,
         decoded.ir(),
@@ -855,7 +855,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
@@ -1308,7 +1308,7 @@ fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let pcurve = ir.model.pcurves.first_mut().unwrap();
@@ -1386,7 +1386,7 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let coedge = ir.model.coedges.first_mut().unwrap();
@@ -1411,7 +1411,18 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             reversed_points.reverse();
             let reversed_poles =
                 PcurveNurbsPoles::from_lanes(reversed_points, nurbs.weights()).unwrap();
-            nurbs.set_poles(reversed_poles).unwrap();
+            {
+                let replacement = reversed_poles;
+                edit::replace(nurbs, |previous| {
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                        previous.degree(),
+                        previous.knots().to_vec(),
+                        replacement,
+                        previous.periodic(),
+                    )
+                })
+            }
+            .unwrap();
         }
     }
 
@@ -1502,7 +1513,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let coedge_index = decoded
         .ir()
         .model
@@ -1666,7 +1677,7 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         let ids = ir.model.faces[0].loops.to_vec();
@@ -1681,7 +1692,14 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.loops[0].boundary_role_in(&round_trip.ir().model.faces),
+        round_trip
+            .ir()
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == round_trip.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&round_trip.ir().model.loops[0].id))
+            .unwrap_or_default(),
         LoopBoundaryRole::Unspecified
     );
     assert!(
@@ -1699,7 +1717,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive finite tolerance"));
 
@@ -1824,7 +1842,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let body = decoded
         .ir()
         .model

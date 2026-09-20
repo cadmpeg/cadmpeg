@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use super::{OffsetSurfaceConstruction, SubSurfaceConstruction, SubsetSurfaceConstruction};
 use crate::geometry::{LegacyExtensionFlags, OffsetExtension, ProceduralSurfaceDefinition};
 use crate::ids::SurfaceId;
@@ -54,10 +56,36 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
     .unwrap();
     let before = payload.clone();
     for distance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(payload.try_set_distance(distance).is_err());
+        assert!({
+            let replacement = distance;
+            edit::replace(&mut payload, |previous| {
+                crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    previous.support().clone(),
+                    replacement,
+                    *previous.u_sense(),
+                    *previous.v_sense(),
+                    previous.linear_support_extension(),
+                    previous.extension().clone(),
+                )
+            })
+        }
+        .is_err());
         assert_eq!(payload, before);
     }
-    payload.try_set_distance(0.0).unwrap();
+    {
+        let replacement = 0.0;
+        edit::replace(&mut payload, |previous| {
+            crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                previous.support().clone(),
+                replacement,
+                *previous.u_sense(),
+                *previous.v_sense(),
+                previous.linear_support_extension(),
+                previous.extension().clone(),
+            )
+        })
+    }
+    .unwrap();
     assert_eq!(*payload.distance(), 0.0);
 }
 

@@ -2,7 +2,7 @@
 //! Format-independent container entries.
 
 use std::collections::BTreeMap;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -254,12 +254,6 @@ impl FramedSpan {
     #[must_use]
     pub const fn stored(self) -> u64 {
         self.payload.get() + self.framing.get() as u64
-    }
-
-    /// Container framing counted in the stored span but not in the payload.
-    #[must_use]
-    pub fn framing(self) -> NonZeroU64 {
-        NonZeroU64::from(self.framing)
     }
 }
 
@@ -893,7 +887,10 @@ mod tests {
         let empty: &[u8] = &[];
         let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MAX);
         assert_eq!(span.payload(), 0);
-        assert_eq!(span.framing(), nonzero(u64::from(u32::MAX)));
+        assert_eq!(
+            nonzero(span.stored() - span.payload()),
+            nonzero(u64::from(u32::MAX))
+        );
         assert_eq!(span.stored(), u64::from(u32::MAX));
         assert!(span.stored() > span.payload());
         let span = super::FramedSpan::from_parts(empty.into(), NonZeroU32::MIN);
@@ -902,7 +899,7 @@ mod tests {
         let span = super::FramedSpan::from_parts(body.as_slice().into(), NonZeroU32::MIN);
         assert_eq!(span.payload(), body.len() as u64);
         assert_eq!(span.stored(), 13);
-        assert_eq!(span.framing(), nonzero(1));
+        assert_eq!(nonzero(span.stored() - span.payload()), nonzero(1));
         let span = super::FramedSpan::from_parts("target.CATPart".into(), NonZeroU32::MAX);
         assert_eq!(span.payload(), "target.CATPart".len() as u64);
         assert_eq!(

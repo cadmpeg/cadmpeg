@@ -166,24 +166,6 @@ impl ContainerSummary {
         }
     }
 
-    /// Constructs an unclassified summary for a known source format.
-    #[must_use]
-    pub fn unclassified(
-        format: impl Into<String>,
-        container_kind: ContainerKind,
-        entries: Vec<ContainerEntry>,
-        losses: Vec<LossNote>,
-        notes: Vec<String>,
-    ) -> Self {
-        Self {
-            identity: FormatIdentity::unclassified(format),
-            container_kind,
-            entries,
-            losses,
-            notes,
-        }
-    }
-
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {
@@ -205,13 +187,13 @@ mod tests {
 
     #[test]
     fn an_unclassified_summary_states_its_format_inside_the_identity() {
-        let summary = ContainerSummary::unclassified(
-            "rhino",
-            ContainerKind::Flat,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        );
+        let summary = ContainerSummary {
+            identity: cadmpeg_core::dialect::FormatIdentity::unclassified("rhino"),
+            container_kind: ContainerKind::Flat,
+            entries: Vec::new(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
 
         let bare = serde_json::to_value(&summary).expect("a summary serializes");
         assert!(bare.get("losses").is_none(), "{bare}");

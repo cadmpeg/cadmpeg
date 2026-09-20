@@ -71,15 +71,25 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
 
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
-        ir.model.features.push(Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
+        ir.model.features.push(Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
                 .expect("identity grammar"),
             ordinal,
-            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                kind: "test".into(),
-                parameters: BTreeMap::new(),
-            }),
-        ));
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                    kind: "test".into(),
+                    parameters: BTreeMap::new(),
+                }),
+            ),
+            native_ref: None,
+        });
     }
 
     let (transferred, _) =

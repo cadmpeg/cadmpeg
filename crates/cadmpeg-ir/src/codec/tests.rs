@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -80,13 +82,13 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(ContainerSummary::unclassified(
-            "foreign",
-            crate::ContainerKind::Flat,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ))
+        Ok(serde_json::from_value(serde_json::json!({
+            "identity": {"classification": "unclassified", "format": "foreign"},
+            "container_kind": "flat",
+            "entries": [],
+            "notes": []
+        }))
+        .expect("foreign inspection fixture"))
     }
 
     fn decode_impl(
@@ -271,7 +273,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
 
     assert!(result.report().container_only());
     assert_eq!(result.report().notes, ["kept"]);
-    assert_eq!(result.report().coverage()["entities"], 3);
+    assert_eq!(wire::coverage(result.report())["entities"], 3);
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {

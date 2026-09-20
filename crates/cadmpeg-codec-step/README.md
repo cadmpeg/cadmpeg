@@ -94,8 +94,8 @@ failure can leave a partial file.
 
 [`ExportReport::census`] groups DATA instances by entity keyword, and
 [`EntityCensus::total`] gives the complete DATA instance count.
-[`ExportReport::error_count`] counts loss notes whose severity is at least
-`Error`; lower-severity losses still require caller review.
+Inspect [`ExportReport::losses`] for each loss and its severity;
+lower-severity losses still require caller review.
 
 ## References
 
@@ -117,7 +117,6 @@ Requires Rust 1.88 or later. Licensed under Apache-2.0.
 [`Encoder`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/write/trait.Encoder.html
 [`EntityCensus::total`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.EntityCensus.html#method.total
 [`ExportReport::census`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.census
-[`ExportReport::error_count`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#method.error_count
 [`ExportReport::losses`]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/report/struct.ExportReport.html#structfield.losses
 [`StepCodec`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/struct.StepCodec.html
 [`StepError`]: https://docs.rs/cadmpeg-codec-step/latest/cadmpeg_codec_step/enum.StepError.html

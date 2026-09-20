@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::draft::CommitSession;
 use crate::draft::DraftError;
 use crate::draft::ModelDraft;
-use crate::report::decode::TransferLedger;
 
 use crate::document::Model;
 use crate::features::{
@@ -16,11 +14,21 @@ fn parent_draft() -> ModelDraft {
     let mut draft = ModelDraft::new();
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
         draft
-            .insert(Feature::new(
-                format!("test:parents:feature#{key}").try_into().unwrap(),
+            .insert(Feature {
+                id: format!("test:parents:feature#{key}").try_into().unwrap(),
                 ordinal,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ))
+                name: None,
+                suppressed: None,
+                dependencies: crate::features::DistinctMembers::default(),
+                source_properties: std::collections::BTreeMap::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: crate::features::FeatureContent::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            })
             .unwrap();
     }
     draft
@@ -120,46 +128,4 @@ fn parent_admission_checks_tree_ownership_across_the_destination_and_draft() {
         assert!(error.to_string().contains("states no regeneration parent"));
         assert_eq!(destination, base);
     }
-}
-
-#[test]
-fn incomplete_commit_discards_only_parent_entries_owned_by_discarded_children() {
-    let mut base = CadIr::empty();
-    parent_draft()
-        .with_accounting()
-        .commit_incomplete(
-            &mut base,
-            &mut Annotations::default(),
-            &mut Vec::new(),
-            &mut TransferLedger::default(),
-            |_, id| id != "test:parents:feature#1-child",
-        )
-        .unwrap();
-    assert_eq!(base.model.features.len(), 1);
-    assert!(base
-        .model
-        .feature_regeneration_parent(&"test:parents:feature#1-child".try_into().unwrap())
-        .is_none());
-    assert_eq!(
-        CadIr::from_json(&base.to_canonical_json().unwrap()).unwrap(),
-        base
-    );
-
-    let mut rejected_base = CadIr::empty();
-    let before = rejected_base.clone();
-    let error = parent_draft()
-        .with_accounting()
-        .commit_incomplete(
-            &mut rejected_base,
-            &mut Annotations::default(),
-            &mut Vec::new(),
-            &mut TransferLedger::default(),
-            |_, id| id != "test:parents:feature#0-parent",
-        )
-        .unwrap_err();
-    assert!(
-        matches!(error, DraftError::FeatureParents { .. }),
-        "{error}"
-    );
-    assert_eq!(rejected_base, before);
 }

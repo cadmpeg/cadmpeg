@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use crate::examples::unit_cube;
 use crate::geometry::SurfaceGeometry;
 use crate::ids::UnknownId;
@@ -727,11 +729,30 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
         IntcurveSupportContext::try_new(sides, [0.0, 1.0], [vec![f64::NAN], vec![], vec![]])
             .is_err()
     );
-    assert!(context.edit(|_, range, _| *range = [1.0, 1.0]).is_err());
+    assert!(edit::replace(&mut context, |previous| {
+        let sides = previous.sides().clone();
+        let mut range = previous.parameter_range();
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let range: &mut [f64; 2] = &mut range;
+            *range = [1.0, 1.0];
+        };
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+    })
+    .is_err());
     assert_eq!(context, original);
-    assert!(context
-        .edit(|_, _, discontinuities| discontinuities[1].push(f64::INFINITY))
-        .is_err());
+    assert!(edit::replace(&mut context, |previous| {
+        let sides = previous.sides().clone();
+        let range = previous.parameter_range();
+        let mut discontinuities = previous.discontinuities().clone();
+        {
+            let discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
+
+            discontinuities[1].push(f64::INFINITY);
+        };
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+    })
+    .is_err());
     assert_eq!(context, original);
     let mut wire = serde_json::to_value(&context).unwrap();
     assert_eq!(
@@ -740,19 +761,34 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     );
     wire["parameter_range"] = serde_json::json!([1.0, 1.0]);
     assert!(serde_json::from_value::<IntcurveSupportContext>(wire).is_err());
-    context
-        .edit(|sides, range, _| {
+    edit::replace(&mut context, |previous| {
+        let mut sides = previous.sides().clone();
+        let mut range = previous.parameter_range();
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let range: &mut [f64; 2] = &mut range;
+
             sides[0].pcurve.as_mut().unwrap().parameter_range = None;
             *range = [1.0, 1.0];
-        })
-        .unwrap();
+        };
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+    })
+    .unwrap();
     let unchanged = context.clone();
-    assert!(context
-        .edit(|sides, _, _| {
+    assert!(edit::replace(&mut context, |previous| {
+        let mut sides = previous.sides().clone();
+        let range = previous.parameter_range();
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+
             sides[0].pcurve.as_mut().unwrap().parameter_range =
                 Some(DirectedParameterRange::new([5.0, 2.0]).unwrap());
-        })
-        .is_err());
+        };
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+    })
+    .is_err());
     assert_eq!(context, unchanged);
 }
 

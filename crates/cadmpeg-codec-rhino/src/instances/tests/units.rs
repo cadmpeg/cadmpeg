@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::chunks::ArchiveVersion;
 use crate::loss::RhinoLossCode;
 use crate::test_support::test_dump as bytes;
@@ -122,15 +124,17 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                     assert_eq!(units.meters_per_unit_bits, scale.to_bits());
                 }
                 for container_only in [false, true] {
-                    let result = crate::RhinoCodec
-                        .decode(
-                            &mut Cursor::new(&document),
-                            &DecodeOptions {
-                                container_only,
-                                ..DecodeOptions::default()
-                            },
-                        )
-                        .unwrap();
+                    let result = EditableDecodeResult::from(
+                        crate::RhinoCodec
+                            .decode(
+                                &mut Cursor::new(&document),
+                                &DecodeOptions {
+                                    container_only,
+                                    ..DecodeOptions::default()
+                                },
+                            )
+                            .unwrap(),
+                    );
                     for (code, count) in [
                         (RhinoLossCode::IntegrityFailure, 0),
                         (

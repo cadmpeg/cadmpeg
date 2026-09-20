@@ -893,7 +893,14 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     assert_eq!(report.census.counts.get("ADVANCED_FACE"), Some(&6));
     assert_eq!(report.census.counts.get("VERTEX_POINT"), Some(&8));
     // The cube is fully representable: no error/blocking losses.
-    assert_eq!(report.error_count(), 0);
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.severity >= cadmpeg_ir::report::Severity::Error)
+            .count(),
+        0
+    );
 }
 
 #[test]

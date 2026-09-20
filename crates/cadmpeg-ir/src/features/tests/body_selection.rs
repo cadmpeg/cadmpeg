@@ -73,7 +73,11 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
     .unwrap();
     assert_eq!(members.bodies().collect::<Vec<_>>(), [&b, &a]);
     assert_eq!(
-        members.native().collect::<Vec<_>>(),
+        members
+            .0
+            .iter()
+            .map(|row| row.native.as_str())
+            .collect::<Vec<_>>(),
         ["native-first", "native-second"]
     );
     let selection = BodySelection::HistoricalSet {

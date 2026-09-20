@@ -1104,17 +1104,27 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let mut feature = Feature::new(
-        FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Scale {
-            bodies: BodySelection::Native(group_id.into()),
-            center: Some(ScaleCenter::ModelOrigin),
-            factors: ScaleFactors::Uniform {
-                factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
-            },
-        }),
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Scale {
+                bodies: BodySelection::Native(group_id.into()),
+                center: Some(ScaleCenter::ModelOrigin),
+                factors: ScaleFactors::Uniform {
+                    factor: cadmpeg_ir::scalar::NonZeroReal::new(1.5).unwrap(),
+                },
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(scale_scope.id.clone());
     super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs)
         .unwrap();
@@ -1155,19 +1165,29 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
     };
-    let mut move_feature = Feature::new(
-        FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::MoveBody {
-            bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
-                1.0, 2.0, 3.0,
-            ))
-            .unwrap(),
-            rotation: None,
-            copies: 0,
-        }),
-    );
+    let mut move_feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Native(group_id.into()),
+                translation: cadmpeg_ir::features::FiniteVector3::new(
+                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+                )
+                .unwrap(),
+                rotation: None,
+                copies: 0,
+            }),
+        ),
+        native_ref: None,
+    };
     move_feature.native_ref = Some(move_scope.id.clone());
     super::super::bind_feature_body_selections(
         std::slice::from_mut(&mut move_feature),

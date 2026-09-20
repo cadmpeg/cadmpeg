@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{
-    format_identity, is_valid_identity, IdentityComponent, IdentityError, IdentityKey,
-    IdentityNamespace,
-};
+use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
 
 #[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
@@ -83,14 +80,14 @@ fn kind_replacement_preserves_admitted_namespace_and_key() {
 #[test]
 fn three_component_ids_are_valid() {
     assert!(is_valid_identity("step:file:signature#0"));
-    assert!(format_identity("step", "file", "signature", 0u8).is_ok());
+    assert!(IdentityNamespace::new("step", "file", "signature").is_ok());
 }
 
 #[test]
 fn two_component_ids_are_rejected() {
     assert!(!is_valid_identity("step:signature#0"));
     assert!(matches!(
-        format_identity("step", "", "signature", 0u8),
+        IdentityNamespace::new("step", "", "signature"),
         Err(IdentityError::InvalidComponent { label: "scope", .. })
     ));
 }
@@ -227,7 +224,10 @@ fn arena_identity_types_enforce_the_entity_identity_grammar() {
 fn checked_identity_admission_and_typed_conversion() {
     use super::{BodyId, Identity};
     let text = "test:model:body#1";
-    let identity = format_identity("test", "model", "body", 1).unwrap();
+    let identity = super::Identity::compose(
+        &IdentityNamespace::new("test", "model", "body").unwrap(),
+        IdentityKey::try_new("1".to_owned()).unwrap(),
+    );
     assert_eq!(identity.as_str(), text);
     assert_eq!(
         serde_json::to_string(&identity).unwrap(),

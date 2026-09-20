@@ -2,6 +2,8 @@
 //! Resolution of a write request against the source: the synthesis catalog, the
 //! preservation path, and the two refusals.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::loss::IgesLossCode;
 use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
@@ -47,9 +49,11 @@ fn inherit(
 #[test]
 fn inherit_replays_a_non_default_version_verbatim() {
     let source = point_file_at_version_flag(9);
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = inherit(decoded.ir(), Some(decoded.source_fidelity())).unwrap();
 
     assert!(matches!(
@@ -57,11 +61,19 @@ fn inherit_replays_a_non_default_version_verbatim() {
         WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
@@ -86,7 +98,12 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(plan
@@ -125,7 +142,18 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "iges");
-    assert_eq!(refusal.requested(), Some("iges:1.0-fixed-ascii"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("iges:1.0-fixed-ascii")
+    );
     assert!(
         refusal
             .available()
@@ -153,11 +181,19 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotProvided {}
     );
     assert!(plan
@@ -220,11 +256,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("an IGES write always names its dialect");
+        let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target",
+        )
+        .clone()
+        .expect("an IGES write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
 

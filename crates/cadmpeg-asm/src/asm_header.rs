@@ -47,13 +47,6 @@ fn declared_width(bytes: &[u8]) -> Option<RefWidth> {
     }
 }
 
-/// The integer and reference width `bytes` declares, in bytes. A slice without
-/// a readable header is read at the `BinaryFile8` width, which is the width of
-/// every construction the decoder synthesizes.
-pub fn stream_ref_width(bytes: &[u8]) -> RefWidth {
-    declared_width(bytes).unwrap_or(RefWidth::Eight)
-}
-
 /// Stored record-count word of an ASM `BinaryFile4` header.
 pub fn record_count(bytes: &[u8]) -> Option<u32> {
     if declared_width(bytes) != Some(RefWidth::Four) {

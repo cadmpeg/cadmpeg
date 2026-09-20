@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -35,7 +37,10 @@ fn parallel_carriers_report_zero_solution_samples() {
     let result = CreoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("synthetic carrier decode");
-    let coverage = result.report().coverage();
+    let coverage = wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+        result.report(),
+        "coverage",
+    );
     assert!(coverage
         .get("brep_vertex_carrier_zero_candidate_count")
         .is_some_and(|count| *count > 0));

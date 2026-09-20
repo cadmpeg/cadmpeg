@@ -198,13 +198,6 @@ pub struct Region {
     pub shells: Vec<ShellId>,
 }
 
-impl Region {
-    /// Ordered void boundaries of a solid region.
-    pub fn void_shells(&self) -> impl Iterator<Item = &ShellId> {
-        self.shells.iter().skip(1)
-    }
-}
-
 /// One member of a shell: a face, a wire edge, or a free vertex.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -444,17 +437,6 @@ pub struct Face {
 }
 
 impl Face {
-    /// The explicit outer loop, absent when the source did not classify.
-    #[must_use]
-    pub const fn outer(&self) -> Option<&LoopId> {
-        self.loops.outer()
-    }
-
-    /// Inner loops, excluding the outer when one is present.
-    pub fn inner(&self) -> impl Iterator<Item = &LoopId> {
-        self.loops.inner()
-    }
-
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn loop_role(&self, id: &LoopId) -> LoopBoundaryRole {
@@ -504,29 +486,6 @@ impl FaceLoops {
     #[must_use]
     pub const fn classified(outer: LoopId, inner: Vec<LoopId>) -> Self {
         Self::Classified { outer, inner }
-    }
-
-    /// The explicit outer loop.
-    ///
-    /// Absent on an unclassified face: a face the source did not classify
-    /// states no outer loop, and position in the list is not a classification.
-    #[must_use]
-    pub const fn outer(&self) -> Option<&LoopId> {
-        match self {
-            Self::Unspecified { .. } => None,
-            Self::Classified { outer, .. } => Some(outer),
-        }
-    }
-
-    /// The inner loops.
-    ///
-    /// Empty on an unclassified face, for the same reason [`Self::outer`] is
-    /// absent there.
-    pub fn inner(&self) -> impl Iterator<Item = &LoopId> + '_ {
-        match self {
-            Self::Unspecified { .. } => [].iter(),
-            Self::Classified { inner, .. } => inner.iter(),
-        }
     }
 
     /// Ordered loop ids: outer first when the face states one.
@@ -820,16 +779,6 @@ impl Loop {
         }
         self.boundary = LoopBoundary::Ring(LoopRing::new(coedges, vertex_uses)?);
         Ok(())
-    }
-
-    /// Role of this loop on its owning face.
-    #[must_use]
-    pub fn boundary_role_in(&self, faces: &[Face]) -> LoopBoundaryRole {
-        faces
-            .iter()
-            .find(|face| face.id == self.face)
-            .map(|face| face.loop_role(&self.id))
-            .unwrap_or_default()
     }
 
     /// Returns the ordered coedges when this is a ring boundary.
@@ -1726,8 +1675,15 @@ mod tests {
         assert!(wire["loops"].get("loops").is_none());
         let restored: Face = serde_json::from_value(wire).unwrap();
         assert_eq!(restored.loop_role(&outer), LoopBoundaryRole::Outer);
-        assert_eq!(restored.outer(), Some(&outer));
-        for inner in restored.inner() {
+        let FaceLoops::Classified {
+            outer: restored_outer,
+            inner,
+        } = &restored.loops
+        else {
+            panic!("classified loops")
+        };
+        assert_eq!(restored_outer, &outer);
+        for inner in inner {
             assert_eq!(restored.loop_role(inner), LoopBoundaryRole::Inner);
         }
     }
@@ -1787,8 +1743,7 @@ mod tests {
             LoopId::mint("test:model:loop#0").expect("identity"),
             LoopId::mint("test:model:loop#1").expect("identity"),
         ]);
-        assert_eq!(unclassified.outer(), None);
-        assert_eq!(unclassified.inner().count(), 0);
+        assert!(matches!(unclassified, FaceLoops::Unspecified { .. }));
         assert_eq!(unclassified.len(), 2);
         assert_eq!(
             unclassified.role(&LoopId::mint("test:model:loop#0").expect("identity")),

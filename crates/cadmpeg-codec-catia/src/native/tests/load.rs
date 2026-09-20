@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -348,93 +350,112 @@ fn schema_configuration_productions_retain_exact_same_graph_incidence() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode configuration incidences");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_RECORD_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_SELECTOR_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT.as_str()
         ),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
-        ),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONFIGURATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_RESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_CLASSIFIED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_COUNT.as_str()
+        ),
         0
     );
     assert!(decoded.ir().model.configurations.is_empty());
@@ -501,15 +522,14 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
         )
         .expect("decode configuration row intervals");
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_ENTITY_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT
-        ),
+        wire::coverage_count(decoded.report(), crate::coverage::DECODED_SCHEMA_CONFIGURATION_ROW_INTERVENING_SCHEMA_CONFIGURATION_COUNT.as_str()),
         0
     );
 }
@@ -556,21 +576,24 @@ fn schema_configuration_productions_preserve_unresolved_identities() {
         .decode(&mut Cursor::new(cyclic_file), &DecodeOptions::default())
         .expect("decode cyclic configuration row");
     assert_eq!(
-        cyclic
-            .report()
-            .coverage_count(crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT),
+        wire::coverage_count(
+            cyclic.report(),
+            crate::coverage::DECODED_COMPLETE_SCHEMA_CONFIGURATION_ROW_CHAIN_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        cyclic
-            .report()
-            .coverage_count(crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT),
+        wire::coverage_count(
+            cyclic.report(),
+            crate::coverage::DECODED_ORDERED_SCHEMA_CONFIGURATION_ROW_LINK_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        cyclic
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT),
+        wire::coverage_count(
+            cyclic.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_ORDER_COUNT.as_str()
+        ),
         1
     );
 
@@ -605,50 +628,58 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode terminal-null configuration incidences");
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ENTITY_REFERENCE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CLASS_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_SUCCESSOR_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_SCHEMA_CONFIGURATION_ROW_CHAIN_TERMINAL_COUNT.as_str()
         ),
         0
     );

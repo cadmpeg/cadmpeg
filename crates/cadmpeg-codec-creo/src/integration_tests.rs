@@ -2,6 +2,8 @@
 //! End-to-end contracts over synthesized Creo PSB byte images.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::test_support::build_prt;
 use crate::test_support::jpeg_payload;
 use crate::test_support::push_generated_plane_row;
@@ -20,13 +22,15 @@ use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
 use crate::CreoCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    CreoCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized Creo part should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized Creo part should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("creo").is_some());
@@ -241,15 +245,17 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
             ("THMB_IMG_MAIN", jpeg_payload()),
         ],
     );
-    let result = CreoCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("container-only Creo decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container-only Creo decode"),
+    );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.surfaces.is_empty());

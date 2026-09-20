@@ -438,7 +438,7 @@ pub(super) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Optio
 
 /// A balanced subtype scope in token space.
 ///
-/// [`subtype_span`] is the only constructor: the field is private and the type
+/// `subtype_span` is the only constructor: the field is private and the type
 /// has no `From` and no `Deref`. Every value therefore states one scope whose
 /// every `SubtypeClose` has a matching open within the span, and whose final
 /// token is the close that balances it. The walks that refuse an unbalanced
@@ -469,7 +469,7 @@ impl<'a> SubtypeScope<'a> {
     /// first of these is the identifier that names it, and the rest are the
     /// fields the construction states.
     ///
-    /// Total: [`subtype_span`] is the only constructor. It refuses unless the
+    /// Total: `subtype_span` is the only constructor. It refuses unless the
     /// token at `start` is the scope's own `SubtypeOpen`, and it builds
     /// `tokens` as `toks[start..=pos]` with `pos > start`, so the slice holds
     /// at least the opening and the closing delimiter and this range is in
@@ -496,7 +496,7 @@ impl<'a> SubtypeScope<'a> {
     /// collect that nested construction's markers as owned; that shape was the
     /// defect, and no caller states it now.
     ///
-    /// Total: the unbalanced stream that [`owned_marker_positions`] refuses is
+    /// Total: the unbalanced stream that `owned_marker_positions` refuses is
     /// a state this type cannot hold.
     pub fn owned_marker_positions(&self) -> Vec<usize> {
         walk_owned_markers(self.tokens).0
@@ -557,8 +557,7 @@ pub(super) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
 }
 
 /// The subtype scope at payload chunk `chunk_index` when its immediately
-/// following identifier is `expected`. Token-space counterpart of
-/// [`crate::sab::payload_subtype_span`].
+/// following identifier is `expected`.
 ///
 /// The scope carries its own balance proof, so a caller that walks it needs no
 /// walk of its own to establish one. The identifier this function matched is
