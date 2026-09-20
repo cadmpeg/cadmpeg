@@ -149,7 +149,11 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.loops.len(), 1);
     assert_eq!(
-        decoded.ir().model.loops[0].boundary_role_in(&decoded.ir().model.faces),
+        (&decoded.ir().model.faces)
+            .iter()
+            .find(|face| face.id == decoded.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&decoded.ir().model.loops[0].id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
@@ -175,7 +179,11 @@ fn complex_face_bound_partials_keep_attributes_when_reordered() {
     assert_eq!(reordered.ir().model.bodies.len(), 1);
     assert_eq!(reordered.ir().model.loops.len(), 1);
     assert_eq!(
-        reordered.ir().model.loops[0].boundary_role_in(&reordered.ir().model.faces),
+        (&reordered.ir().model.faces)
+            .iter()
+            .find(|face| face.id == reordered.ir().model.loops[0].face)
+            .map(|face| face.loop_role(&reordered.ir().model.loops[0].id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(reordered.ir().model.surfaces.iter().any(|surface| {

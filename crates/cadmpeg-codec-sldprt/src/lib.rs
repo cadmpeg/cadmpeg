@@ -450,9 +450,12 @@ mod tests {
             .to_owned()
             .try_into()
             .expect("source image identity");
-        let record =
-            cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained("source", 0, payload)
-                .expect("source image extent");
+        let record = cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+            "source",
+            0,
+            cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: payload },
+        )
+        .expect("source image extent");
         fidelity
             .insert_retained_record(id, record)
             .expect("source image identity is unique");

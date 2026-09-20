@@ -1026,10 +1026,26 @@ fn transfers_external_product_paths_and_targets() {
     let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
-    assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
-    assert_eq!(document.as_document_id(), None);
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+            _ => None,
+        }),
+        Some("parts/widget.FCStd")
+    );
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                Some(document_id.as_str()),
+            _ => None,
+        }),
+        None
+    );
     assert_eq!(object.as_deref(), Some("Body"));
-    assert!(!document.is_missing());
+    assert!(!matches!(
+        document,
+        cadmpeg_ir::products::ExternalDocument::Missing {}
+    ));
 
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -1135,7 +1151,7 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
     assert!(matches!(
         &copy.source,
         Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
-            if document.as_path() == Some("other.FCStd") && object == "Box"
+            if (match &document { cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()), _ => None }) == Some("other.FCStd") && object == "Box"
     ));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());

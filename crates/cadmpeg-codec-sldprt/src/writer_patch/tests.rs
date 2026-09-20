@@ -526,7 +526,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
         let source_fidelity = decoded.source_fidelity_mut();
         let mut annotations =
             cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
-        annotations.clear_exactness();
+        annotations.retain_exactness(|_| false);
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(
@@ -741,8 +741,12 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
     fidelity
         .insert_retained_record(
             crate::source_image_id(),
-            cadmpeg_ir::RetainedSourceRecord::retained("source", 0, image)
-                .expect("the retained baseline is a source record"),
+            cadmpeg_ir::RetainedSourceRecord::from_bytes(
+                "source",
+                0,
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: image },
+            )
+            .expect("the retained baseline is a source record"),
         )
         .expect("the source image record was removed first");
 

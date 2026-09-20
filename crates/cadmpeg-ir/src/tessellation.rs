@@ -688,16 +688,6 @@ pub enum ChannelAddressing {
 }
 
 impl ChannelAddressing {
-    /// Domain stored on the CADIR wire for this addressing.
-    #[must_use]
-    pub const fn domain(&self) -> TessellationChannelDomain {
-        match self {
-            Self::Vertex {} => TessellationChannelDomain::Vertex,
-            Self::Corner { .. } => TessellationChannelDomain::Corner,
-            Self::Triangle { .. } => TessellationChannelDomain::Triangle,
-        }
-    }
-
     /// Explicit selectors, empty for vertex-order addressing.
     #[must_use]
     pub fn indices(&self) -> &[u32] {
@@ -1267,12 +1257,6 @@ impl TessellationChannel {
     #[must_use]
     pub fn addressing(&self) -> &ChannelAddressing {
         &self.addressing
-    }
-
-    /// Domain stored on the CADIR wire for this channel.
-    #[must_use]
-    pub fn domain(&self) -> TessellationChannelDomain {
-        self.addressing.domain()
     }
 
     /// Byte size of one element of [`Self::data`].

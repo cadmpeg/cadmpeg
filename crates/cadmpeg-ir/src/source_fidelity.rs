@@ -32,11 +32,6 @@ pub struct DecodeSidecar {
 }
 
 impl DecodeSidecar {
-    /// Binds decode metadata to exact serialized CADIR bytes.
-    pub fn bind(ir_bytes: &[u8], report: DecodeReport, fidelity: SourceFidelity) -> Self {
-        Self::bind_sha256(Sha256Digest::digest(ir_bytes), report, fidelity)
-    }
-
     /// Binds decode metadata to a previously computed CADIR SHA-256 digest.
     pub fn bind_sha256(
         ir_sha256: Sha256Digest,
@@ -231,15 +226,6 @@ impl RetainedSourceRecord {
         }
     }
 
-    /// Retains source bytes.
-    pub fn retained(
-        stream: impl Into<SourceOwner>,
-        offset: u64,
-        data: Vec<u8>,
-    ) -> Result<Self, SourceExtentError> {
-        Self::from_bytes(stream, offset, RetainedBytes::Inline { data })
-    }
-
     /// Records a source record from a retained image already in hand.
     pub fn from_bytes(
         stream: impl Into<SourceOwner>,
@@ -253,16 +239,6 @@ impl RetainedSourceRecord {
             offset,
             bytes,
         })
-    }
-
-    /// Records unavailable source bytes by their stored length and digest.
-    pub fn unavailable(
-        stream: impl Into<SourceOwner>,
-        offset: u64,
-        byte_len: u64,
-        sha256: Sha256Digest,
-    ) -> Result<Self, SourceExtentError> {
-        Self::from_bytes(stream, offset, RetainedBytes::Digest { byte_len, sha256 })
     }
 
     /// Returns the source stream containing the record.
@@ -680,7 +656,11 @@ mod tests {
 
     #[test]
     fn the_sidecar_writes_through_the_finite_route() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         assert_eq!(
             sidecar.to_canonical_json().expect("the sidecar writes"),
             serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
@@ -700,7 +680,11 @@ mod tests {
 
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
 
@@ -724,8 +708,8 @@ mod tests {
         let mut builder = crate::AnnotationBuilder::new();
         let stream = crate::annotations::StreamHandle::new(crate::stream_name!(" \t"));
         builder.note("synthetic:point#0", &stream, 17).tag("point");
-        let sidecar = DecodeSidecar::bind(
-            ir_json.as_bytes(),
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
             report(),
             SourceFidelity::with_annotations(builder.build()),
         );
@@ -741,7 +725,11 @@ mod tests {
 
     #[test]
     fn decode_sidecar_states_its_report_identity_once() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(
             json.contains("\"classification\": \"unclassified\"")
@@ -760,7 +748,11 @@ mod tests {
 
     #[test]
     fn decode_sidecar_reports_a_missing_report_at_the_outer_boundary() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::default(),
+        );
         let mut value = serde_json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
 
@@ -778,7 +770,11 @@ mod tests {
         fidelity
             .insert_retained_record(id("record"), record(b"payload"))
             .unwrap();
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), fidelity);
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            fidelity,
+        );
         let mut value = serde_json::to_value(sidecar).unwrap();
         value["fidelity"]["retained_records"]["synthetic:source:record#record"]["bytes"]
             ["byte_len"] = 1.into();

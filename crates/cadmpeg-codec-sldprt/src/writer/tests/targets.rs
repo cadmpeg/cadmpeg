@@ -87,7 +87,12 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .to_owned()
         .try_into()
         .expect("source image identity");
-    let record = RetainedSourceRecord::retained("sldprt", 0, data).expect("source image extent");
+    let record = RetainedSourceRecord::from_bytes(
+        "sldprt",
+        0,
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: data },
+    )
+    .expect("source image extent");
     fidelity
         .insert_retained_record(source_image_id, record)
         .expect("source image identity is unique");

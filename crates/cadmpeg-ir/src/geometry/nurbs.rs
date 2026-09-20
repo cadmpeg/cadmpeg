@@ -155,16 +155,6 @@ impl NurbsPoles3 {
         }
         Ok(())
     }
-
-    /// Replace the weights, keeping the pole positions.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a weight lane that does not cover the poles or carries a zero or
-    /// non-finite weight, as [`Self::from_lanes`] does.
-    pub fn with_weights(&self, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
-        Self::from_lanes(self.points(), weights)
-    }
 }
 
 /// The control grid of a NURBS surface, stating the surface's rational form.
@@ -413,11 +403,6 @@ impl BsplineSurface {
     /// Degree in the second parameter.
     pub const fn v_degree(&self) -> u32 {
         self.v_degree
-    }
-
-    /// Rectangular control grid in first-parameter-major order.
-    pub fn control_points(&self) -> &[Vec<Point3>] {
-        &self.control_points
     }
 
     /// Atomically edit pole coordinates while preserving the grid and finite values.

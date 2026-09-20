@@ -1573,10 +1573,11 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     )
     .expect("valid rational boundary");
     let mut scaled = first.clone();
-    let scaled_poles = scaled
-        .pole_rows()
-        .with_weights(Some(vec![2.0; scaled.pole_count()]))
-        .unwrap();
+    let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+        scaled.pole_rows().points(),
+        Some(vec![2.0; scaled.pole_count()]),
+    )
+    .unwrap();
     scaled.set_poles(scaled_poles).unwrap();
     assert_eq!(
         homogeneous_curve_boundary_matches(&first, &scaled, [0.0, 1.0], 0.0),

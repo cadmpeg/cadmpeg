@@ -676,7 +676,11 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
     // parameter domain supplies the exterior, and the procedural surface
     // below is where that fact lives.
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert!(matches!(
@@ -1246,7 +1250,11 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert_eq!(coedge.pcurves.len(), 1);
@@ -1521,7 +1529,11 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(loop_.coedges().len(), 1);

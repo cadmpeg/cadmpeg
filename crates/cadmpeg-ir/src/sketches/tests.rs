@@ -1847,7 +1847,7 @@ fn constraint_admission_checks_scalar_bounds_and_polar_angle_presence() {
             definition
         );
     }
-    assert_eq!(SketchLabelValue::try_from(-1.0).unwrap().get(), -1.0);
+    assert_eq!(SketchLabelValue::try_from(-1.0).unwrap().0, -1.0);
 }
 
 #[test]

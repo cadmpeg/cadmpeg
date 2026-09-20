@@ -504,7 +504,10 @@ mod tests {
                 .framed()
                 .expect("framed malformed occurrence");
             let provenance = loss.provenance.as_ref().expect("located product loss");
-            assert_eq!(provenance.format(), "rhino");
+            assert_eq!(
+                cadmpeg_test_support::wire::field::<String>(&provenance, "format"),
+                "rhino"
+            );
             assert_eq!(provenance.offset, source.range.start as u64);
             assert!(loss.message.contains(&source.identity.source_id));
             assert_eq!(

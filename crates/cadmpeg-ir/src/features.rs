@@ -1164,11 +1164,6 @@ impl PolygonSideCount {
     pub fn new(value: u32) -> Option<Self> {
         (value >= 3).then_some(Self(value))
     }
-
-    /// Returns the number of sides.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
 }
 
 impl<'de> Deserialize<'de> for PolygonSideCount {
@@ -1740,11 +1735,6 @@ impl FeatureContent {
     /// Whether the sequence has no content.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-
-    /// The source content in order.
-    pub fn as_slice(&self) -> &[FeatureSourceContent] {
-        &self.0
     }
 }
 
@@ -5105,18 +5095,6 @@ impl TrimCellSelection {
             && removed.iter().all(|ordinal| seen.insert(*ordinal)))
         .then_some(Self { removed, total })
     }
-
-    /// Returns the one-based removed-cell ordinals.
-    #[must_use]
-    pub fn removed(&self) -> &[u64] {
-        &self.removed
-    }
-
-    /// Returns the number of cells in the source partition.
-    #[must_use]
-    pub const fn total(&self) -> u64 {
-        self.total
-    }
 }
 
 #[derive(Deserialize)]
@@ -6229,12 +6207,6 @@ impl<B> BodyMember<B> {
         &self.body
     }
 
-    /// Native selection member in this row.
-    #[must_use]
-    pub fn native(&self) -> &str {
-        self.native.as_str()
-    }
-
     /// Consume the row and return its body identity and native member.
     #[must_use]
     pub fn into_parts(self) -> (B, String) {
@@ -6303,11 +6275,6 @@ impl<B> BodyMembers<B> {
     /// Borrow the body identities in source order.
     pub fn bodies(&self) -> impl Iterator<Item = &B> {
         self.0.iter().map(BodyMember::body)
-    }
-
-    /// Borrow the native members in source order.
-    pub fn native(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(BodyMember::native)
     }
 }
 

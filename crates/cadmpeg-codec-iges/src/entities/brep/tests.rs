@@ -191,7 +191,11 @@ fn decode_builds_a_vertex_only_pole_loop() {
     assert_eq!(vertex.as_str(), "iges:model:vertex#D11:D5:1");
     assert!(pcurves.is_empty());
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert!(
@@ -219,7 +223,11 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         .find(|loop_| loop_.id.as_str() == "iges:model:loop#D11:D7")
         .unwrap();
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
     assert!(
@@ -455,7 +463,11 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(
-        loop_.boundary_role_in(&result.ir().model.faces),
+        (&result.ir().model.faces)
+            .iter()
+            .find(|face| face.id == loop_.face)
+            .map(|face| face.loop_role(&loop_.id))
+            .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
     assert_eq!(loop_.coedges().len(), 4);

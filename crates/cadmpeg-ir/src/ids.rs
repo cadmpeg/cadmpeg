@@ -851,23 +851,6 @@ impl Identity {
     }
 }
 
-/// Format a three-component identity and reject grammar violations.
-///
-/// # Errors
-///
-/// Returns [`IdentityError`] when any component is empty, contains `:`, `#`, or
-/// whitespace, or when the key is empty or contains `#` or whitespace.
-pub fn format_identity(
-    format: &str,
-    scope: &str,
-    kind: &str,
-    key: impl Display,
-) -> Result<Identity, IdentityError> {
-    let namespace = IdentityNamespace::new(format, scope, kind)?;
-    let key = key.to_string();
-    Ok(Identity::compose(&namespace, IdentityKey::try_new(key)?))
-}
-
 /// Failure to mint an entity identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityError {

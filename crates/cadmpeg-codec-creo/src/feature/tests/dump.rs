@@ -507,7 +507,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:sketch_feature#917")
         .expect("sketch feature");
     assert_eq!(
-        sketch_feature.source_content.as_slice(),
+        (&*sketch_feature.source_content),
         [
             cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),

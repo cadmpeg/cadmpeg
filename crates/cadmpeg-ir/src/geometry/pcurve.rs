@@ -1492,11 +1492,6 @@ impl PcurveNurbs {
         self.poles.points()
     }
 
-    /// Number of poles.
-    pub fn pole_count(&self) -> usize {
-        self.poles.len()
-    }
-
     /// Atomically edit pole positions and preserve finite coordinates.
     ///
     /// The closure states its own refusal, which discards the whole edit.

@@ -489,11 +489,13 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
             .expect("decode retains the source image");
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
             .expect("decoded source image has a valid digest");
-        cadmpeg_ir::RetainedSourceRecord::unavailable(
+        cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
-            record.byte_len(),
-            digest,
+            cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                byte_len: record.byte_len(),
+                sha256: digest,
+            },
         )
         .expect("source image extent")
     };

@@ -167,7 +167,7 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         })
         .unwrap();
     assert!(surface
-        .control_points()
+        .control_points
         .iter()
         .flatten()
         .all(|point| point.z == 2.0));
