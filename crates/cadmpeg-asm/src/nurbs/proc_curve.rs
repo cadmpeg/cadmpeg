@@ -617,17 +617,10 @@ pub fn procedural_curve_resolving_refs(
 /// surfaces. A plain generated `intcurve` has one direct UV block, which is
 /// the second slot in the ref-form grammar. The selector's sign is handled by
 /// the owning PCURVE decoder because it composes with the intcurve sense bit.
-pub fn pcurve_for_selector_resolving_refs(
-    toks: &[Token],
-    selector: i64,
-    table: &SubtypeTable,
-) -> Option<PcurveNurbs> {
-    pcurve_for_selector_with_chart(toks, selector, table).map(|(pcurve, _)| pcurve)
-}
-
-/// Decode a selector pcurve and report whether it remains in the standalone
-/// face surface's native parameter chart.
-pub(crate) fn pcurve_for_selector_with_chart(
+///
+/// Returns whether the pcurve remains in the standalone face surface's
+/// native parameter chart.
+pub fn pcurve_for_selector_with_chart(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
