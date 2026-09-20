@@ -23,7 +23,7 @@ use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use super::{
-    geometry::{orthonormal_pair, valid_edited_curve_structure, valid_edited_nurbs_direction},
+    geometry::{orthonormal_pair, valid_edited_nurbs_direction},
     records::native_stream,
 };
 use crate::native::F3dNative;
@@ -3101,7 +3101,7 @@ pub(super) fn validate_curve_edits(
                         "edited F3D curve {id} is not a patchable NURBS carrier"
                     )));
                 }
-                if !valid_edited_curve_structure(before, after) {
+                if !valid_edited_nurbs_direction(before.knots(), after.degree(), after.knots()) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D curve {id} changes the NURBS knot layout"
                     )));
@@ -3184,7 +3184,6 @@ pub(super) fn validate_pcurve_edits(
                 before_nurbs.knots(),
                 after_nurbs.degree(),
                 after_nurbs.knots(),
-                after_nurbs.control_points().len(),
             )
             && before_nurbs.control_points().len() == after_nurbs.control_points().len()
             && before_nurbs.weights().is_some() == after_nurbs.weights().is_some()
@@ -3330,7 +3329,6 @@ pub(super) fn validate_surface_edits(
                     before.u_knots(),
                     after.u_degree(),
                     after.u_knots(),
-                    after.u_count(),
                 ) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D surface {id} changes the NURBS u knot layout"
@@ -3340,7 +3338,6 @@ pub(super) fn validate_surface_edits(
                     before.v_knots(),
                     after.v_degree(),
                     after.v_knots(),
-                    after.v_count(),
                 ) {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D surface {id} changes the NURBS v knot layout"

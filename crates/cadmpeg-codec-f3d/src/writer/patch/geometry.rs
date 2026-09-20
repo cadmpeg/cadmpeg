@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::nurbs::{knots_nondecreasing, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Color, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -25,29 +24,24 @@ use cadmpeg_asm::sab;
 
 const EPS_ORTHONORMAL: f64 = 1.0e-9;
 
-pub(super) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
-    valid_edited_nurbs_direction(
-        before.knots(),
-        after.degree(),
-        after.knots(),
-        after.control_points().len(),
-    )
-}
-
+/// Whether one parametric direction of an edited NURBS carrier keeps a knot
+/// layout the byte patcher can write.
+///
+/// The carrier types state the rest of the knot contract on admission:
+/// `NurbsCurve::new` and `PcurveNurbs::new` call `require_curve_cardinality`
+/// and `require_nondecreasing_knots`, and `NurbsSurface::new` calls
+/// `require_length` and `require_nondecreasing_knots` per axis. A knot count
+/// that follows from the degree and the pole count, finite knots and
+/// non-decreasing knots therefore hold for every value this reads. What is
+/// left is the writer's own degree range and the distinct-knot count, which
+/// the native knot lane holds verbatim.
 pub(super) fn valid_edited_nurbs_direction(
     before_knots: &[f64],
     after_degree: u32,
     after_knots: &[f64],
-    control_count: usize,
 ) -> bool {
-    let Ok(degree) = usize::try_from(after_degree) else {
-        return false;
-    };
     (1..=20).contains(&after_degree)
-        && after_knots.len() == control_count + degree + 1
         && unique_knot_count(after_knots) == unique_knot_count(before_knots)
-        && after_knots.iter().all(|value| value.is_finite())
-        && knots_nondecreasing(after_knots)
 }
 
 pub(super) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
