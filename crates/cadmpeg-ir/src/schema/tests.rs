@@ -27,9 +27,11 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     });
 
     let mut references = Vec::new();
-    ir.model
-        .visit_references(&mut |reference| references.push(reference.target))
-        .expect("every entity states its typed references");
+    crate::schema::EntitySchema::visit_references(
+        &ir.model.product_definitions[0],
+        &mut |reference| references.push(reference.target),
+    )
+    .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
 
     let report = validate_neutral(&ir, Vec::new());

@@ -252,16 +252,6 @@ pub(crate) fn format_words(
         }))
 }
 
-/// Every dialect the identity registry declares for `format`, in registry
-/// order, joined with its capability row.
-///
-/// Empty when `format` names no registry section. Answers from the embedded
-/// tables and reads no file.
-pub fn dialects(format: &str) -> Result<Vec<&'static DialectEntry>, RegistryLoadError> {
-    let canonical = canonical_format_name(format)?.unwrap_or(format);
-    Ok(registries()?.rows_of(canonical).collect())
-}
-
 /// The declared disposition for one dialect id, or `None` when the registry
 /// carries no row for it.
 ///
@@ -280,8 +270,7 @@ mod tests {
     use cadmpeg_core::dialect::DialectId;
 
     use super::{
-        dialects, is_format_name, registries, support, IdentityRegistry, Registries,
-        RegistryLoadError,
+        is_format_name, registries, support, IdentityRegistry, Registries, RegistryLoadError,
     };
     use crate::disposition::WriteDisposition;
     use crate::{build_encoder, Format};
@@ -423,8 +412,8 @@ mod tests {
         }
     }
 
-    /// `dialects` and `support` answer from the same joined table the renderer
-    /// prints, and neither reads a file.
+    /// `support` answers from the joined table the renderer prints without
+    /// reading a file.
     #[test]
     fn the_lookups_serve_the_embedded_tables() {
         let registries = registries().expect("embedded registry loads");
@@ -437,9 +426,7 @@ mod tests {
             );
         }
         for format in &registries.formats {
-            let rows = dialects(format).expect("embedded registry loads");
-            let expected = registries.rows_of(format).collect::<Vec<_>>();
-            assert_eq!(rows, expected, "{format}");
+            let rows = registries.rows_of(format).collect::<Vec<_>>();
             assert!(
                 rows.iter().all(|row| row.id.namespace() == format),
                 "{format}"
@@ -448,8 +435,6 @@ mod tests {
 
         let absent = DialectId::parse("test:nonesuch").expect("the absent id is grammatical");
         assert!(support(&absent).expect("embedded registry loads").is_none());
-        assert!(dialects("nonesuch")
-            .expect("embedded registry loads")
-            .is_empty());
+        assert!(registries.rows_of("nonesuch").next().is_none());
     }
 }

@@ -179,17 +179,6 @@ mod tests {
 
     #[test]
     fn format_aliases_reach_the_same_dialect_rows() {
-        let canonical = crate::dialects("rhino")
-            .expect("embedded registry loads")
-            .into_iter()
-            .map(|row| row.id.as_str())
-            .collect::<Vec<_>>();
-        let alias = crate::dialects("3dm")
-            .expect("embedded registry loads")
-            .into_iter()
-            .map(|row| row.id.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(alias, canonical);
         assert_eq!(
             dialect_table(Some("3dm")).expect("Rhino alias"),
             dialect_table(Some("rhino")).expect("Rhino format")

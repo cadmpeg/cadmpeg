@@ -12,7 +12,7 @@ use crate::provenance::SourceObjectAssociation;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
-    TessellationId
+    TessellationId, into_string
 );
 
 /// Admission error in a tessellation mesh or channel carrier.

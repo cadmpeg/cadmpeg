@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 crate::ids::id_type!(
     /// Stable presentation-document identity.
-    PresentationId
+    PresentationId, compose
 );
 
 /// Persisted camera pose.

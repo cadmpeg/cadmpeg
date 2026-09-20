@@ -49,20 +49,8 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         )
         .expect("add height")
         .add_object("Part", "App::Part")
-        .expect("add part")
-        .add_dependency("Part", "Box")
-        .expect("add dependency")
-        .add_property(
-            "Part",
-            "Group",
-            "App::PropertyLinkList",
-            vec![crate::FcstdPropertyValue::empty("LinkList")
-                .with_attribute("count", "1")
-                .with_child(crate::FcstdPropertyValue::attribute("Link", "value", "Box"))],
-        )
-        .expect("add group")
-        .add_side_entry("Payload.bin", b"extension payload".to_vec())
-        .expect("add payload");
+        .expect("add part");
+    crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::validate_native(&ir).is_empty());
     crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())

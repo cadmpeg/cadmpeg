@@ -10,7 +10,7 @@ use crate::features::{FeatureId, ParameterId};
 
 crate::ids::id_type!(
     /// Stable spreadsheet identity.
-    SpreadsheetId
+    SpreadsheetId, compose
 );
 
 /// One used spreadsheet cell and its A1 address.
