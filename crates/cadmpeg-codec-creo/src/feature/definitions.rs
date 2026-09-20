@@ -3432,26 +3432,30 @@ fn trim_line_line_intersection(
         first_end[0] - first_start[0],
         first_end[1] - first_start[1],
         0.0,
-    )
-    .unit_nonzero()?;
+    );
     let second = Vector3::new(
         second_end[0] - second_start[0],
         second_end[1] - second_start[1],
         0.0,
-    )
-    .unit_nonzero()?;
-    let determinant = first.x.mul_add(second.y, -first.y * second.x);
-    if determinant.abs() <= TRIM_INTERSECTION_EPS {
+    );
+    if first.unit_nonzero()?.cross(second.unit_nonzero()?).z.abs() <= TRIM_INTERSECTION_EPS {
         return None;
     }
+    // Solve in component-scaled directions. Unit directions are for the
+    // angular gate; their square roots need not perturb exact junctions.
+    let first_scale = first.x.abs().max(first.y.abs());
+    let second_scale = second.x.abs().max(second.y.abs());
+    let first = [first.x / first_scale, first.y / first_scale];
+    let second = [second.x / second_scale, second.y / second_scale];
+    let determinant = first[0].mul_add(second[1], -first[1] * second[0]);
     let relative = [
         second_start[0] - first_start[0],
         second_start[1] - first_start[1],
     ];
-    let parameter = relative[0].mul_add(second.y, -relative[1] * second.x) / determinant;
+    let parameter = relative[0].mul_add(second[1], -relative[1] * second[0]) / determinant;
     let point = [
-        parameter.mul_add(first.x, first_start[0]),
-        parameter.mul_add(first.y, first_start[1]),
+        parameter.mul_add(first[0], first_start[0]),
+        parameter.mul_add(first[1], first_start[1]),
     ];
     point.iter().all(|value| value.is_finite()).then_some(point)
 }

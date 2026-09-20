@@ -1337,8 +1337,16 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
         let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
-            let [right_term, left_term] =
-                scaled_ratio_products(value, denominator, [right[r + 1], left[j - r]])?;
+            let [right_term, left_term] = if denominator.is_finite() {
+                scaled_ratio_products(value, denominator, [right[r + 1], left[j - r]])?
+            } else {
+                let right_knot = knots[span + r + 1];
+                let left_knot = knots[span + 1 - j + r];
+                [
+                    value * difference_quotient(right_knot, t, right_knot, left_knot)?,
+                    value * difference_quotient(t, left_knot, right_knot, left_knot)?,
+                ]
+            };
             next[r] = saved + right_term;
             saved = left_term;
         }
@@ -1368,13 +1376,29 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
             let right_denominator = knots[index + degree + 1] - knots[index + 1];
             let left = if left_denominator == 0.0 {
                 0.0
-            } else {
+            } else if left_denominator.is_finite() {
                 degree as f64 * lower_at(index) / left_denominator
+            } else {
+                difference_quotient(
+                    degree as f64 * lower_at(index),
+                    0.0,
+                    knots[index + degree],
+                    knots[index],
+                )
+                .unwrap_or(f64::NAN)
             };
             let right = if right_denominator == 0.0 {
                 0.0
-            } else {
+            } else if right_denominator.is_finite() {
                 degree as f64 * lower_at(index + 1) / right_denominator
+            } else {
+                difference_quotient(
+                    degree as f64 * lower_at(index + 1),
+                    0.0,
+                    knots[index + degree + 1],
+                    knots[index + 1],
+                )
+                .unwrap_or(f64::NAN)
             };
             left - right
         })
@@ -1412,13 +1436,29 @@ fn bspline_basis_second_derivative(
             let right_denominator = knots[index + degree + 1] - knots[index + 1];
             let left = if left_denominator == 0.0 {
                 0.0
-            } else {
+            } else if left_denominator.is_finite() {
                 degree as f64 * lower_at(index) / left_denominator
+            } else {
+                difference_quotient(
+                    degree as f64 * lower_at(index),
+                    0.0,
+                    knots[index + degree],
+                    knots[index],
+                )
+                .unwrap_or(f64::NAN)
             };
             let right = if right_denominator == 0.0 {
                 0.0
-            } else {
+            } else if right_denominator.is_finite() {
                 degree as f64 * lower_at(index + 1) / right_denominator
+            } else {
+                difference_quotient(
+                    degree as f64 * lower_at(index + 1),
+                    0.0,
+                    knots[index + degree + 1],
+                    knots[index + 1],
+                )
+                .unwrap_or(f64::NAN)
             };
             left - right
         })
