@@ -15,23 +15,23 @@ use std::collections::BTreeMap;
 
 crate::ids::id_type!(
     /// Identifies a neutral planar sketch.
-    SketchId
+    SketchId, compose, into_string
 );
 crate::ids::id_type!(
     /// Identifies solved geometry in a sketch.
-    SketchEntityId
+    SketchEntityId, compose
 );
 crate::ids::id_type!(
     /// Identifies a neutral spatial sketch.
-    SpatialSketchId
+    SpatialSketchId, compose
 );
 crate::ids::id_type!(
     /// Identifies solved geometry in a spatial sketch.
-    SpatialSketchEntityId
+    SpatialSketchEntityId, compose
 );
 crate::ids::id_type!(
     /// Identifies a geometric sketch constraint.
-    SketchConstraintId
+    SketchConstraintId, compose
 );
 
 /// Font weight admitted by neutral sketch text.
