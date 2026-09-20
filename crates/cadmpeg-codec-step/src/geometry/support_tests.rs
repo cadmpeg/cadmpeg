@@ -69,7 +69,7 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
 
 #[test]
 fn small_shears_are_not_similarities() {
-    use cadmpeg_ir::math::{Transform, Transform2};
+    use super::{Transform, Transform2};
     for a in [1e-10, 1., 1e200] {
         let shear = Transform::affine([
             [a, 0.5 * a, 0., 0.],
