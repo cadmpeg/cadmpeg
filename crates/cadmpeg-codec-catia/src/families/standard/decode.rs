@@ -9828,9 +9828,9 @@ mod circle_axis_tests {
             ),
             false,
         )
-        .unwrap();
-        let residual =
-            super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.)).unwrap();
+        .expect("anisotropic nurbs surface");
+        let residual = super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.))
+            .expect("witness distance for a point on the surface");
         assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2));
     }
 }
