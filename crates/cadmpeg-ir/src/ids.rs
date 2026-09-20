@@ -888,7 +888,7 @@ impl fmt::Display for IdentityError {
 impl std::error::Error for IdentityError {}
 
 macro_rules! id_type {
-    ($(#[$meta:meta])* $name:ident) => {
+    ($(#[$meta:meta])* $name:ident $(, $helper:ident)*) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
         #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -910,31 +910,12 @@ macro_rules! id_type {
                 $crate::ids::Identity::new(value).map(Self::from)
             }
 
-            /// Compose an identity from an admitted namespace and key.
-            #[must_use]
-            pub fn compose(
-                namespace: &$crate::ids::IdentityNamespace,
-                key: impl Into<$crate::ids::IdentityKey>,
-            ) -> Self {
-                Self($crate::ids::Identity::compose(namespace, key))
-            }
-
-            /// Return the underlying id string.
-            #[must_use]
-            pub fn into_string(self) -> String {
-                self.0.into_string()
-            }
+            $($crate::ids::id_type!(@helper $helper);)*
 
             /// Borrow the underlying id string.
             #[must_use]
             pub fn as_str(&self) -> &str {
                 self.0.as_str()
-            }
-
-            /// Copy the admitted key.
-            #[must_use]
-            pub fn key(&self) -> $crate::ids::IdentityKey {
-                self.0.key()
             }
         }
 
@@ -966,6 +947,30 @@ macro_rules! id_type {
             fn try_from(value: &str) -> Result<Self, Self::Error> {
                 Self::mint(value)
             }
+        }
+    };
+    (@helper compose) => {
+        /// Compose an identity from an admitted namespace and key.
+        #[must_use]
+        pub fn compose(
+            namespace: &$crate::ids::IdentityNamespace,
+            key: impl Into<$crate::ids::IdentityKey>,
+        ) -> Self {
+            Self($crate::ids::Identity::compose(namespace, key))
+        }
+    };
+    (@helper into_string) => {
+        /// Return the underlying id string.
+        #[must_use]
+        pub fn into_string(self) -> String {
+            self.0.into_string()
+        }
+    };
+    (@helper key) => {
+        /// Copy the admitted key.
+        #[must_use]
+        pub fn key(&self) -> $crate::ids::IdentityKey {
+            self.0.key()
         }
     };
 }
@@ -1012,12 +1017,6 @@ macro_rules! local_id_type {
                 Self($crate::ids::Identity::compose(namespace, key).into_string())
             }
 
-            /// Return the underlying id string.
-            #[must_use]
-            pub fn into_string(self) -> String {
-                self.0
-            }
-
             /// Borrow the underlying id string.
             #[must_use]
             pub fn as_str(&self) -> &str {
@@ -1051,15 +1050,15 @@ macro_rules! local_id_type {
 
 id_type!(
     /// Identifies a [`crate::topology::Body`].
-    BodyId
+    BodyId, compose, into_string
 );
 id_type!(
     /// Identifies one feature-input topology state.
-    FeatureInputTopologyId
+    FeatureInputTopologyId, compose
 );
 id_type!(
     /// Identifies one feature-result topology state.
-    FeatureResultTopologyId
+    FeatureResultTopologyId, compose
 );
 local_id_type!(
     /// Identifies a body within one feature-input topology state.
@@ -1079,63 +1078,63 @@ local_id_type!(
 );
 id_type!(
     /// Identifies a [`crate::topology::Region`].
-    RegionId
+    RegionId, compose
 );
 id_type!(
     /// Identifies a [`crate::topology::Shell`].
-    ShellId
+    ShellId, compose
 );
 id_type!(
     /// Identifies a [`crate::topology::Face`].
-    FaceId
+    FaceId, compose, into_string, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Loop`].
-    LoopId
+    LoopId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Coedge`].
-    CoedgeId
+    CoedgeId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Edge`].
-    EdgeId
+    EdgeId, compose, into_string, key
 );
 id_type!(
     /// Identifies a [`crate::topology::Vertex`].
-    VertexId
+    VertexId, compose, into_string, key
 );
 id_type!(
     /// Identifies a [`crate::geometry::Surface`] carrier.
-    SurfaceId
+    SurfaceId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::geometry::Curve`] carrier.
-    CurveId
+    CurveId, compose, key
 );
 id_type!(
     /// Identifies a [`crate::geometry::pcurve::Pcurve`] carrier.
-    PcurveId
+    PcurveId, compose
 );
 id_type!(
     /// Identifies a [`crate::geometry::ProceduralSurface`] construction.
-    ProceduralSurfaceId
+    ProceduralSurfaceId, compose, into_string
 );
 id_type!(
     /// Identifies a [`crate::geometry::ProceduralCurve`] construction.
-    ProceduralCurveId
+    ProceduralCurveId, compose, into_string
 );
 id_type!(
     /// Identifies a [`crate::subd::SubdSurface`] carrier.
-    SubdId
+    SubdId, compose
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
-    PointId
+    PointId, compose
 );
 id_type!(
     /// Identifies a passthrough [`crate::unknown::UnknownRecord`].
-    UnknownId
+    UnknownId, compose, into_string
 );
 
 impl std::borrow::Borrow<str> for UnknownId {
@@ -1146,27 +1145,27 @@ impl std::borrow::Borrow<str> for UnknownId {
 
 id_type!(
     /// Identifies a decoded [`crate::appearance::Appearance`] asset.
-    AppearanceId
+    AppearanceId, compose, key
 );
 id_type!(
     /// Identifies an [`crate::appearance::AppearanceBinding`] assignment.
-    AppearanceBindingId
+    AppearanceBindingId, compose
 );
 id_type!(
     /// Identifies a linked [`crate::attributes::SourceAttribute`] record.
-    AttributeId
+    AttributeId, compose, into_string
 );
 id_type!(
     /// Identifies a canonical [`crate::products::ProductDefinition`].
-    ProductDefinitionId
+    ProductDefinitionId, compose
 );
 id_type!(
     /// Identifies a placed [`crate::products::Occurrence`].
-    OccurrenceId
+    OccurrenceId, compose
 );
 id_type!(
     /// Identifies a document-level [`crate::pmi::PmiAnnotation`].
-    PmiId
+    PmiId, compose, into_string
 );
 id_type!(
     /// Identifies a [`crate::presentation::PresentationLayer`].

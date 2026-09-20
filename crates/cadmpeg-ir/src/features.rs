@@ -828,12 +828,12 @@ impl DraftAnchor {
 
 crate::ids::id_type!(
     /// Identifies a neutral construction feature.
-    FeatureId
+    FeatureId, compose, into_string, key
 );
 
 crate::ids::id_type!(
     /// Identifies a neutral design configuration.
-    ConfigurationId
+    ConfigurationId, compose
 );
 
 /// A named parametric model variant.
@@ -989,7 +989,7 @@ impl ConfigurationEvaluation {
 
 crate::ids::id_type!(
     /// Identifies a neutral design parameter.
-    ParameterId
+    ParameterId, compose, key
 );
 
 /// A named design expression, optionally owned by a construction feature.

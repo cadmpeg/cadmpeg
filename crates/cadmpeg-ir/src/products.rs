@@ -15,7 +15,7 @@ use crate::transform::Transform;
 
 crate::ids::id_type!(
     /// Stable assembly-joint identity.
-    JointId
+    JointId, compose
 );
 
 /// Role of a component definition in the product tree.

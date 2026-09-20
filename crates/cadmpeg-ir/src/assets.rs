@@ -9,7 +9,7 @@ use cadmpeg_core::text::NonBlankString;
 
 crate::ids::id_type!(
     /// Stable identity of one document asset.
-    AssetId
+    AssetId, compose
 );
 
 /// Nonempty embedded asset bytes.

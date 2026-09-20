@@ -154,7 +154,6 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
     let id = HistoricalBodyId::try_from("member-1").unwrap();
     assert_eq!(id.as_str(), "member-1");
     assert_eq!(serde_json::to_string(&id).unwrap(), "\"member-1\"");
-    assert_eq!(id.into_string(), "member-1");
 }
 
 #[test]
@@ -193,7 +192,7 @@ fn arena_identity_types_enforce_the_entity_identity_grammar() {
                 serde_json::to_string(&id).unwrap(),
                 serde_json::to_string($valid).unwrap()
             );
-            assert_eq!(id.into_string(), $valid);
+            assert_eq!(crate::ids::Identity::from(id).into_string(), $valid);
         }};
     }
 

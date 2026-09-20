@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 crate::ids::id_type!(
     /// Stable semantic-annotation identity.
-    SemanticAnnotationId
+    SemanticAnnotationId, compose
 );
 
 /// Semantic role of an annotation independent of its drawing presentation.
