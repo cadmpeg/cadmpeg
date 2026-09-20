@@ -617,21 +617,27 @@ fn scale_decoded_curve(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center().get();
-                let axis = circle_curve.axis();
-                let ref_direction = circle_curve.ref_direction();
                 let radius = circle_curve.radius().get();
-                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    scale_ir_point(center, scale).ok_or_else(|| {
+                let center = scale_ir_point(center, scale)
+                    .and_then(cadmpeg_ir::features::FinitePoint3::new)
+                    .ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",
                         )
-                    })?,
-                    *axis,
-                    *ref_direction,
-                    radius * scale.value(),
-                )
-                .map_err(|message| GeometryError::malformed(offset, message))?;
+                    })?;
+                let radius = cadmpeg_ir::scalar::PositiveLength::new(radius * scale.value())
+                    .ok_or_else(|| {
+                        GeometryError::malformed(
+                            offset,
+                            "CircleCurve.radius must be positive and finite",
+                        )
+                    })?;
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    center,
+                    circle_curve.frame(),
+                    radius,
+                );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin().get();

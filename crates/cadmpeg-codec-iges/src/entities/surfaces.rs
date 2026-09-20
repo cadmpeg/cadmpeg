@@ -12,6 +12,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
     boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
@@ -26,6 +27,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, PositiveLength};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -902,98 +904,68 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
 }
 
 fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceGeometry> {
-    match geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    origin.translated(*normal, distance),
-                    *normal,
-                    *u_axis,
-                )
-                .ok()?,
-            )))
+    let offset = match geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+            let origin = plane.origin().get();
+            let origin = FinitePoint3::new(origin.translated(*plane.normal(), distance))?;
+            SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                origin,
+                plane.frame(),
+            ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius().get();
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    *origin,
-                    *axis,
-                    *ref_direction,
-                    radius + distance,
-                )
-                .ok()?,
-            )))
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
+            let radius = cylinder.radius().get();
+            let radius = PositiveLength::new(radius + distance)?;
+            SolvedSurfaceGeometry::Cylinder(cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                cylinder.origin(),
+                cylinder.frame(),
+                radius,
+            ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius().get();
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    *center,
-                    *axis,
-                    *ref_direction,
-                    radius + distance,
-                )
-                .ok()?,
-            )))
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) => {
+            let radius = sphere.radius().get();
+            let radius = NonZeroLength::new(radius + distance)?;
+            SolvedSurfaceGeometry::Sphere(cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                sphere.center(),
+                sphere.frame(),
+                radius,
+            ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    *center,
-                    *axis,
-                    *ref_direction,
-                    major_radius,
-                    minor_radius + distance,
-                )
-                .ok()?,
-            )))
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) => {
+            let minor_radius = torus.minor_radius().get();
+            let minor_radius = NonZeroLength::new(minor_radius + distance)?;
+            SolvedSurfaceGeometry::Torus(cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                torus.center(),
+                torus.frame(),
+                torus.major_radius(),
+                minor_radius,
+            ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-            if {
-                let ratio = cone_surface.ratio().get();
-                ratio == 1.0
-            } =>
-        {
-            let origin = cone_surface.origin();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius().get();
-            let ratio = cone_surface.ratio().get();
-            let half_angle = cone_surface.half_angle().get();
-            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    origin.translated(*axis, -distance * half_angle.sin()),
-                    *axis,
-                    *ref_direction,
-                    radius + distance * half_angle.cos(),
-                    ratio,
-                    half_angle,
-                )
-                .ok()?,
-            )))
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone)) if cone.ratio().get() == 1.0 => {
+            let origin = cone.origin().get();
+            let radius = cone.radius().get();
+            let half_angle = cone.half_angle().get();
+            let origin =
+                FinitePoint3::new(origin.translated(*cone.axis(), -distance * half_angle.sin()))?;
+            let radius = NonNegativeLength::new(radius + distance * half_angle.cos())?;
+            SolvedSurfaceGeometry::Cone(cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                origin,
+                cone.frame(),
+                radius,
+                cone.ratio(),
+                cone.half_angle(),
+            ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => None,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => None,
-        SurfaceGeometry::Procedural { .. } => None,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => None,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => None,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
-    }
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cone(_)
+            | SolvedSurfaceGeometry::Nurbs(_)
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Unknown { .. },
+        )
+        | SurfaceGeometry::Procedural { .. } => return None,
+    };
+    Some(SurfaceGeometry::Solved(offset))
 }
 
 fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds>) -> [f64; 2] {

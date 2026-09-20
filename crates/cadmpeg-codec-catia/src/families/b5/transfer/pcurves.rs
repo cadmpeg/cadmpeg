@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::PcurveId;
-use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
@@ -186,23 +186,15 @@ pub(super) fn oriented_circle_plan(
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
-    let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius().get();
-    let mut axis = *axis;
-    let ref_direction = *ref_direction;
+    let mut circle_curve = *circle_curve;
     let oriented_angles = if delta < 0.0 {
-        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+        circle_curve.reverse_parameterization();
         [-angles[0], -angles[1]]
     } else {
         angles
     };
     let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
-    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
-            .ok()?,
-    ));
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
     let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
     let [Some(start), Some(end)] = evaluated else {
         return None;

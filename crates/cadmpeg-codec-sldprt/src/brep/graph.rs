@@ -30,6 +30,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
@@ -2494,66 +2495,53 @@ fn fold_surface_frame(
     loop {
         match geometry {
             SolvedSurfaceGeometry::Plane(payload) => {
-                let origin = payload.origin();
-                let normal = payload.normal();
-                *payload = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    *origin,
-                    *normal,
-                    u_reference,
-                )?;
+                let frame = OrthonormalFrame3::new(*payload.normal(), u_reference)
+                    .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
+                *payload =
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(payload.origin(), frame);
                 return Ok(());
             }
             SolvedSurfaceGeometry::Cylinder(payload) => {
-                let origin = payload.origin().get();
-                let axis = payload.axis();
-                let radius = payload.radius().get();
-                *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    origin,
-                    *axis,
-                    u_reference,
-                    radius,
-                )?;
+                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                    .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
+                *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                    payload.origin(),
+                    frame,
+                    payload.radius(),
+                );
                 return Ok(());
             }
             SolvedSurfaceGeometry::Cone(payload) => {
-                let origin = payload.origin().get();
-                let axis = payload.axis();
-                let radius = payload.radius().get();
-                let ratio = payload.ratio().get();
-                let half_angle = payload.half_angle().get();
-                *payload = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    origin,
-                    *axis,
-                    u_reference,
-                    radius,
-                    ratio,
-                    half_angle,
-                )?;
+                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                    .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
+                *payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    payload.origin(),
+                    frame,
+                    payload.radius(),
+                    payload.ratio(),
+                    payload.half_angle(),
+                );
                 return Ok(());
             }
             SolvedSurfaceGeometry::Torus(payload) => {
-                let center = payload.center().get();
-                let axis = payload.axis();
-                let major_radius = payload.major_radius().get();
-                let minor_radius = payload.minor_radius().get();
-                *payload = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    center,
-                    *axis,
-                    u_reference,
-                    major_radius,
-                    minor_radius,
-                )?;
+                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                    .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
+                *payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    payload.center(),
+                    frame,
+                    payload.major_radius(),
+                    payload.minor_radius(),
+                );
                 return Ok(());
             }
             SolvedSurfaceGeometry::Sphere(payload) => {
-                let center = payload.center().get();
-                let radius = payload.radius().get();
-                *payload = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    center,
-                    v_reference,
-                    u_reference,
-                    radius,
-                )?;
+                let frame = OrthonormalFrame3::new(v_reference, u_reference)
+                    .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
+                *payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                    payload.center(),
+                    frame,
+                    payload.radius(),
+                );
                 return Ok(());
             }
             SolvedSurfaceGeometry::Transformed { basis, .. } => geometry = basis,

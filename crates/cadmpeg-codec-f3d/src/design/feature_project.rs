@@ -3744,9 +3744,11 @@ fn project_hem(
             gap_owner_record_index,
             length_owner_record_index,
         } => SheetMetalHemForm::GapLength {
-            gap: cadmpeg_ir::scalar::NonNegativeLength::new(
-                design_length(parameter(*gap_owner_record_index, "HemGap")?)?.get(),
-            )?,
+            gap: cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(parameter(
+                *gap_owner_record_index,
+                "HemGap",
+            )?)?)
+            .ok()?,
             length: design_positive_length(parameter(*length_owner_record_index, "HemLength")?)?,
         },
         DesignHemParameterOwners::RadiusAngle {
@@ -3761,9 +3763,11 @@ fn project_hem(
             length_owner_record_index,
             radius_owner_record_index,
         } => SheetMetalHemForm::Teardrop {
-            gap: cadmpeg_ir::scalar::NonNegativeLength::new(
-                design_length(parameter(*gap_owner_record_index, "HemGap")?)?.get(),
-            )?,
+            gap: cadmpeg_ir::scalar::NonNegativeLength::try_from(design_length(parameter(
+                *gap_owner_record_index,
+                "HemGap",
+            )?)?)
+            .ok()?,
             length: design_positive_length(parameter(*length_owner_record_index, "HemLength")?)?,
             radius: design_positive_length(parameter(*radius_owner_record_index, "HemRadius")?)?,
         },
@@ -5302,7 +5306,7 @@ fn cyclic_parameter_components(
 fn design_positive_length(
     parameter: &DesignParameter,
 ) -> Option<cadmpeg_ir::scalar::PositiveLength> {
-    cadmpeg_ir::scalar::PositiveLength::new(design_length(parameter)?.get())
+    cadmpeg_ir::scalar::PositiveLength::try_from(design_length(parameter)?).ok()
 }
 
 pub(super) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
@@ -8871,9 +8875,10 @@ fn project_coil(
         DesignCoilExtent::RevolutionsPitch => (
             CoilExtent::RevolutionsPitch {
                 revolutions: dimensionless("Revolutions")?,
-                pitch: cadmpeg_ir::scalar::NonZeroLength::new(
-                    design_length(unique("Pitch")?)?.get(),
-                )?,
+                pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
+                    "Pitch",
+                )?)?)
+                .ok()?,
             },
             design_angle(unique("TaperAngle")?)?,
             &[
@@ -8886,12 +8891,14 @@ fn project_coil(
         ),
         DesignCoilExtent::HeightPitch => (
             CoilExtent::HeightPitch {
-                height: cadmpeg_ir::scalar::NonZeroLength::new(
-                    design_length(unique("Height")?)?.get(),
-                )?,
-                pitch: cadmpeg_ir::scalar::NonZeroLength::new(
-                    design_length(unique("Pitch")?)?.get(),
-                )?,
+                height: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
+                    "Height",
+                )?)?)
+                .ok()?,
+                pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
+                    "Pitch",
+                )?)?)
+                .ok()?,
             },
             design_angle(unique("TaperAngle")?)?,
             &["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"],
@@ -8899,9 +8906,10 @@ fn project_coil(
         DesignCoilExtent::Spiral => (
             CoilExtent::Spiral {
                 revolutions: dimensionless("Revolutions")?,
-                radial_pitch: cadmpeg_ir::scalar::NonZeroLength::new(
-                    design_length(unique("Pitch")?)?.get(),
-                )?,
+                radial_pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(design_length(unique(
+                    "Pitch",
+                )?)?)
+                .ok()?,
             },
             cadmpeg_ir::scalar::Angle::new(0.0)?,
             &["Diameter", "SectionSize", "Revolutions", "Pitch"],

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
@@ -11,6 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationError;
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 
 pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
@@ -114,7 +116,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
             let placed = placed_point(*transform, point.position())?;
             point
-                .set_position(placed)
+                .set_position(placed.get())
                 .map_err(|refusal| CodecError::Malformed(refusal.into()))?;
         }
     }
@@ -216,13 +218,26 @@ fn non_finite_vector() -> CodecError {
 }
 
 /// Places a point, refusing a placement that leaves the finite range.
-fn placed_point(transform: Transform, point: Point3) -> Result<Point3, CodecError> {
-    transform.apply_point(point).ok_or_else(non_finite_point)
+fn placed_point(transform: Transform, point: Point3) -> Result<FinitePoint3, CodecError> {
+    transform
+        .apply_point(point)
+        .and_then(FinitePoint3::new)
+        .ok_or_else(non_finite_point)
 }
 
 /// Places a direction, refusing a placement that leaves the finite range.
 fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, CodecError> {
     transform.apply_vector(vector).ok_or_else(non_finite_vector)
+}
+
+fn placed_frame(
+    transform: Transform,
+    frame: OrthonormalFrame3,
+    refusal: &'static str,
+) -> Result<OrthonormalFrame3, CodecError> {
+    let axis = placed_vector(transform, *frame.axis())?;
+    let reference = placed_vector(transform, *frame.reference())?;
+    OrthonormalFrame3::new(axis, reference).ok_or_else(|| CodecError::malformed(refusal))
 }
 
 fn check_rigid(transform: Transform) -> Result<(), CodecError> {
@@ -240,73 +255,68 @@ fn transform_surface(
 ) -> Result<(), CodecError> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
-            *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                placed_point(transform, *origin)?,
-                placed_vector(transform, *normal)?,
-                placed_vector(transform, *u_axis)?,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = placed_point(transform, plane_surface.origin().get())?;
+            let frame = placed_frame(
+                transform,
+                plane_surface.frame(),
+                "PlaneSurface.normal/u_axis must form an orthonormal frame",
+            )?;
+            *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius().get();
-            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                placed_point(transform, *origin)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *ref_direction)?,
-                radius,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = placed_point(transform, cylinder_surface.origin().get())?;
+            let frame = placed_frame(
+                transform,
+                cylinder_surface.frame(),
+                "CylinderSurface.axis/ref_direction must form an orthonormal frame",
+            )?;
+            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                origin,
+                frame,
+                cylinder_surface.radius(),
+            );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius().get();
-            let ratio = cone_surface.ratio().get();
-            let half_angle = cone_surface.half_angle().get();
-            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                placed_point(transform, *origin)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *ref_direction)?,
-                radius,
-                ratio,
-                half_angle,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = placed_point(transform, cone_surface.origin().get())?;
+            let frame = placed_frame(
+                transform,
+                cone_surface.frame(),
+                "ConeSurface.axis/ref_direction must form an orthonormal frame",
+            )?;
+            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                origin,
+                frame,
+                cone_surface.radius(),
+                cone_surface.ratio(),
+                cone_surface.half_angle(),
+            );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius().get();
-            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                placed_point(transform, *center)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *ref_direction)?,
-                radius,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = placed_point(transform, sphere_surface.center().get())?;
+            let frame = placed_frame(
+                transform,
+                sphere_surface.frame(),
+                "SphereSurface.axis/ref_direction must form an orthonormal frame",
+            )?;
+            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                center,
+                frame,
+                sphere_surface.radius(),
+            );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                placed_point(transform, *center)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *ref_direction)?,
-                major_radius,
-                minor_radius,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = placed_point(transform, torus_surface.center().get())?;
+            let frame = placed_frame(
+                transform,
+                torus_surface.frame(),
+                "TorusSurface.axis/ref_direction must form an orthonormal frame",
+            )?;
+            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                center,
+                frame,
+                torus_surface.major_radius(),
+                torus_surface.minor_radius(),
+            );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs
@@ -355,39 +365,39 @@ fn transform_surface(
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
-            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                placed_point(transform, origin)?,
-                placed_vector(transform, direction)?,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = placed_point(transform, line_curve.origin().get())?;
+            let direction =
+                UnitVector3::new(placed_vector(transform, *line_curve.direction().as_raw())?)
+                    .ok_or_else(|| {
+                        CodecError::malformed("LineCurve.direction must have unit length")
+                    })?;
+            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
-            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                placed_point(transform, center)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *ref_direction)?,
-                radius,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = placed_point(transform, circle_curve.center().get())?;
+            let frame = placed_frame(
+                transform,
+                circle_curve.frame(),
+                "CircleCurve.axis/ref_direction must form an orthonormal frame",
+            )?;
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                center,
+                frame,
+                circle_curve.radius(),
+            );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                placed_point(transform, center)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *major_direction)?,
-                major_radius,
-                minor_radius,
+            let center = placed_point(transform, ellipse_curve.center().get())?;
+            let frame = placed_frame(
+                transform,
+                ellipse_curve.frame(),
+                "EllipseCurve.axis/major_direction must form an orthonormal frame",
+            )?;
+            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                center,
+                frame,
+                ellipse_curve.major_radius(),
+                ellipse_curve.minor_radius(),
             )
             .map_err(CodecError::malformed)?;
         }
@@ -419,39 +429,35 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-            let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance().get();
-            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                placed_point(transform, vertex)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *major_direction)?,
-                focal_distance,
-            )
-            .map_err(CodecError::malformed)?;
+            let vertex = placed_point(transform, parabola_curve.vertex().get())?;
+            let frame = placed_frame(
+                transform,
+                parabola_curve.frame(),
+                "ParabolaCurve.axis/major_direction must form an orthonormal frame",
+            )?;
+            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                vertex,
+                frame,
+                parabola_curve.focal_distance(),
+            );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius().get();
-            let minor_radius = hyperbola_curve.minor_radius().get();
-            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                placed_point(transform, center)?,
-                placed_vector(transform, *axis)?,
-                placed_vector(transform, *major_direction)?,
-                major_radius,
-                minor_radius,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = placed_point(transform, hyperbola_curve.center().get())?;
+            let frame = placed_frame(
+                transform,
+                hyperbola_curve.frame(),
+                "HyperbolaCurve.axis/major_direction must form an orthonormal frame",
+            )?;
+            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                center,
+                frame,
+                hyperbola_curve.major_radius(),
+                hyperbola_curve.minor_radius(),
+            );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let point = degenerate_curve.point().get();
-            *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
-                placed_point(transform, point)?,
-            )
-            .map_err(CodecError::malformed)?;
+            let point = placed_point(transform, degenerate_curve.point().get())?;
+            *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
