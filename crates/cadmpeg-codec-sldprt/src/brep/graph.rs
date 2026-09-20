@@ -2628,7 +2628,7 @@ fn derive_planar_pcurves(
         let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
             continue;
         };
-        let origin = *plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = *plane_surface.normal();
         let u_reference = *plane_surface.u_axis();
         let v_reference = cadmpeg_ir::math::Vector3::new(
@@ -2828,7 +2828,7 @@ fn derive_cylindrical_pcurves(
         else {
             continue;
         };
-        let origin = cylinder_surface.origin();
+        let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.axis();
         let u_reference = cylinder_surface.ref_direction();
         let radius = cylinder_surface.radius().get();
@@ -3459,7 +3459,7 @@ fn derive_revolved_circle_pcurves(
                     (ratio - 1.0).abs() < EPS_NORMAL_NONZERO
                 } =>
             {
-                let origin = cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();
@@ -3485,7 +3485,7 @@ fn derive_revolved_circle_pcurves(
                 (*axis, *ref_direction, v)
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
                 let major_radius = torus_surface.major_radius().get();
@@ -5586,7 +5586,7 @@ fn synthesize_sphere_seams(
         else {
             continue;
         };
-        let center = sphere_surface.center();
+        let center = sphere_surface.center().get();
         let axis = sphere_surface.axis();
         let radius = sphere_surface.radius().get();
         let face_loops = face.loops.to_vec();
@@ -5701,7 +5701,7 @@ fn synthesize_sphere_seams(
         let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
             continue;
         };
-        let center = *sphere_surface.center();
+        let center = sphere_surface.center().get();
         let radius = sphere_surface.radius().get();
         if face.loops.len() != 1 {
             continue;

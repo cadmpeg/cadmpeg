@@ -295,7 +295,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("generated cylinder: {:?}", surface.geometry);
     };
-    let origin = *cylinder_surface.origin();
+    let origin = cylinder_surface.origin().get();
     let axis = *cylinder_surface.axis();
     let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
@@ -609,7 +609,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
-    let origin = *cylinder_surface.origin();
+    let origin = cylinder_surface.origin().get();
     let axis = *cylinder_surface.axis();
     let ref_direction = *cylinder_surface.ref_direction();
     let radius = cylinder_surface.radius().get();

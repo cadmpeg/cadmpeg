@@ -604,7 +604,7 @@ mod tests {
         let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
             panic!("expected cone");
         };
-        let origin = *cone_surface.origin();
+        let origin = cone_surface.origin().get();
         let axis = *cone_surface.axis();
         let ref_direction = *cone_surface.ref_direction();
         let radius = cone_surface.radius().get();
@@ -634,7 +634,7 @@ mod tests {
         let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = carrier.geometry.solved() else {
             panic!("expected torus");
         };
-        let center = *torus_surface.center();
+        let center = torus_surface.center().get();
         let axis = *torus_surface.axis();
         let ref_direction = *torus_surface.ref_direction();
         let major_radius = torus_surface.major_radius().get();

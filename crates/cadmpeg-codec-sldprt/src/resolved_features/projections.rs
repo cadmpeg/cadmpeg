@@ -2291,7 +2291,7 @@ fn unique_planar_face(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let candidate_origin = *plane_surface.origin();
+                let candidate_origin = plane_surface.origin().get();
                 let candidate_normal = *plane_surface.normal();
                 let candidate_length = candidate_normal.norm();
                 if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {

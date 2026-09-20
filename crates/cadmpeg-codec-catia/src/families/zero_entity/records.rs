@@ -1452,7 +1452,7 @@ fn zero_entity_model_curve(
     };
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
@@ -1503,7 +1503,7 @@ fn zero_entity_model_curve(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { constant_coordinate(1).is_some() } =>
         {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
@@ -1556,7 +1556,7 @@ fn zero_entity_model_curve(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if { (cone_surface.ratio().get() == 1.0) && (constant_coordinate(1).is_some()) } =>
         {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -1592,7 +1592,7 @@ fn zero_entity_model_curve(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if { constant_coordinate(0).is_some() } =>
         {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -1624,7 +1624,7 @@ fn zero_entity_model_curve(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if { constant_coordinate(1).is_some() } =>
         {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -1703,7 +1703,7 @@ fn zero_entity_model_curve_construction(
     if !(cone_surface.ratio().get() == 1.0) {
         return None;
     }
-    let origin = cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
     let radius = cone_surface.radius().get();
@@ -1767,7 +1767,7 @@ fn zero_entity_model_curve_construction(
 fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
     let point = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let v_axis = normal.cross(*u_axis);
@@ -1778,7 +1778,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
@@ -1802,7 +1802,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
                 ratio == 1.0
             } =>
         {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -1823,7 +1823,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();

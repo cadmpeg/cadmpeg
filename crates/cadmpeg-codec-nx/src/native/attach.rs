@@ -5905,7 +5905,7 @@ fn block_placement(
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
             continue;
         };
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let normal = canonical_normal(*normal, angular_tolerance)?;
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
@@ -6068,13 +6068,9 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         return None;
     };
-    let center = sphere_surface.center();
-    let radius = sphere_surface.radius().get();
-    ((radius).is_finite() && radius > 0.0 && center.is_finite()).then_some((
-        body,
-        *center,
-        Length::new(radius)?,
-    ))
+    let center = sphere_surface.center().get();
+    let radius = sphere_surface.radius();
+    (radius.get() > 0.0).then_some((body, center, Length::from(radius)))
 }
 
 struct NewBodyEvidence<'a> {
@@ -7487,7 +7483,7 @@ fn cylindrical_face_witnesses(
         else {
             continue;
         };
-        let origin = cylinder_surface.origin();
+        let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.axis();
         let radius = cylinder_surface.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
@@ -7601,7 +7597,7 @@ fn plane_annulus_witness(
         else {
             continue;
         };
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
             continue;
@@ -7839,7 +7835,7 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             else {
                 continue;
             };
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
                 continue;
@@ -8057,7 +8053,7 @@ fn simple_hole_chamfers(
             else {
                 continue;
             };
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let half_angle = cone_surface.half_angle().get();
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {

@@ -174,7 +174,7 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
     let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = surface.geometry.solved() else {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
-    let center = *torus_surface.center();
+    let center = torus_surface.center().get();
     let axis = *torus_surface.axis();
     let ref_direction = *torus_surface.ref_direction();
     let major_radius = torus_surface.major_radius().get();
@@ -326,7 +326,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let origin = *cylinder_surface.origin();
+    let origin = cylinder_surface.origin().get();
     let axis = *cylinder_surface.axis();
     let ref_direction = *cylinder_surface.ref_direction();
     let radius = cylinder_surface.radius().get();
@@ -425,7 +425,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let origin = *cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = *cone_surface.axis();
     let ref_direction = *cone_surface.ref_direction();
     let radius = cone_surface.radius().get();
@@ -494,7 +494,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
-    let origin = *plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = *plane_surface.normal();
     let u_axis = *plane_surface.u_axis();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());

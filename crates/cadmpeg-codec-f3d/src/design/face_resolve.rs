@@ -2063,7 +2063,7 @@ fn extrude_target_plane_candidate(
             else {
                 return None;
             };
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
                 return None;
@@ -2149,13 +2149,13 @@ fn face_coincident_with_sketch(
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         return false;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };
     parallel_vectors(*normal, sketch_normal, angular_tolerance)
-        && point_plane_distance(*origin, sketch_origin, sketch_normal) <= linear_tolerance
+        && point_plane_distance(origin, sketch_origin, sketch_normal) <= linear_tolerance
 }
 
 fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {

@@ -1329,7 +1329,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
         else {
             panic!("expected an exact plane offset carrier");
         };
-        let origin = *plane_surface.origin();
+        let origin = plane_surface.origin().get();
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
         assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =

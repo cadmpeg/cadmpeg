@@ -1033,14 +1033,14 @@ fn complete_cylinder_source_carrier(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = first else {
         return None;
     };
-    let origin = cylinder.origin();
+    let origin = cylinder.origin().get();
     let axis = cylinder.axis();
     let ref_direction = cylinder.ref_direction();
     let candidate = cylinder.radius().get();
     ((candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
         && carriers.iter().all(|candidate| *candidate == first))
     .then_some(HoleCylinder {
-        origin: *origin,
+        origin,
         axis: *axis,
         ref_direction: *ref_direction,
         radius: candidate,

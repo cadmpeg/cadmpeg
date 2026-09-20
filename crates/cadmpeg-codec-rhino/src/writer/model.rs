@@ -181,12 +181,12 @@ impl<'a> WritableFaceSurface<'a> {
         }
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
-                let origin = plane.origin();
+                let origin = plane.origin().get();
                 let normal = plane.normal();
                 let u_axis = plane.u_axis();
                 check_frame(surface.id.as_str(), *normal, *u_axis, "plane")?;
                 Ok(Self::Plane {
-                    origin: *origin,
+                    origin,
                     normal: *normal,
                     u_axis: *u_axis,
                 })

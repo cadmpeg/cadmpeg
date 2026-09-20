@@ -5731,7 +5731,7 @@ fn native_embedded_surface(
     };
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             native_ident(bytes, "plane")?;
@@ -5748,14 +5748,14 @@ fn native_embedded_surface(
             bytes.push(0x0b);
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
-            native_embedded_cone(bytes, *origin, *axis, *ref_direction, radius, 1.0, 0.0)?;
+            native_embedded_cone(bytes, origin, *axis, *ref_direction, radius, 1.0, 0.0)?;
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -5763,7 +5763,7 @@ fn native_embedded_surface(
             let half_angle = cone_surface.half_angle().get();
             native_embedded_cone(
                 bytes,
-                *origin,
+                origin,
                 *axis,
                 *ref_direction,
                 radius,
@@ -5772,7 +5772,7 @@ fn native_embedded_surface(
             )?;
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
@@ -5791,7 +5791,7 @@ fn native_embedded_surface(
             bytes.extend_from_slice(&[0x0b; 5]);
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -6246,7 +6246,7 @@ fn native_embedded_surface_with_bounds(
             native_embedded_cone_with_bounds(bytes, geometry, bounds)?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
@@ -6268,7 +6268,7 @@ fn native_embedded_surface_with_bounds(
             }
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -6324,20 +6324,20 @@ fn native_embedded_cone_with_bounds(
 ) -> Result<(), CodecError> {
     let (origin, axis, ref_direction, radius, ratio, half_angle) = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
-            (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
+            (origin, *axis, *ref_direction, radius, 1.0, 0.0)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
-            (*origin, *axis, *ref_direction, radius, ratio, half_angle)
+            (origin, *axis, *ref_direction, radius, ratio, half_angle)
         }
         _ => {
             return Err(CodecError::Malformed(

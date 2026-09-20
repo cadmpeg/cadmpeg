@@ -8834,7 +8834,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             else {
                 return None;
             };
-            let origin = *cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = *cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
             Some(crate::history_records::AsmHistoricalCylinder {
@@ -8854,7 +8854,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             else {
                 return None;
             };
-            let origin = *plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = *plane_surface.normal();
             Some(crate::history_records::AsmHistoricalPlane {
                 surface: stable_ref(surface.id.as_str())?,
@@ -8871,17 +8871,17 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let (origin, direction) = match surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                    let origin = *cylinder_surface.origin();
+                    let origin = cylinder_surface.origin().get();
                     let axis = *cylinder_surface.axis();
                     (origin, axis)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                    let origin = *cone_surface.origin();
+                    let origin = cone_surface.origin().get();
                     let axis = *cone_surface.axis();
                     (origin, axis)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                    let center = *torus_surface.center();
+                    let center = torus_surface.center().get();
                     let axis = *torus_surface.axis();
                     (center, axis)
                 }

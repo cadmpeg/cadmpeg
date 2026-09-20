@@ -220,7 +220,7 @@ fn b5_planar_loop_points(
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         return None;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let u_axis = plane_surface.u_axis();
     let normal = normal.unit()?;
@@ -262,7 +262,7 @@ fn b5_planar_loop_points(
                 uv_origin.v + parameter * direction.v,
             )
         });
-        let lifted = uv_endpoints.map(|uv| b5_plane_point(*origin, u_axis, v_axis, uv));
+        let lifted = uv_endpoints.map(|uv| b5_plane_point(origin, u_axis, v_axis, uv));
         let forward_error = lifted[0].distance(start).max(lifted[1].distance(end));
         let reverse_error = lifted[1].distance(start).max(lifted[0].distance(end));
         let error = forward_error.min(reverse_error);

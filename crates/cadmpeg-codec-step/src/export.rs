@@ -2666,13 +2666,13 @@ impl<'a> Builder<'a> {
                 else {
                     return None;
                 };
-                let center = torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = torus_surface.axis();
                 let ref_direction = torus_surface.ref_direction();
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
                 let placement =
-                    geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
+                    geometry::placement(&mut self.emitter, center, *axis, *ref_direction);
                 Some(self.emitter.emit(
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(

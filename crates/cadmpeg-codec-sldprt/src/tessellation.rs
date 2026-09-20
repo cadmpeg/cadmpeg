@@ -1886,7 +1886,7 @@ fn cylindrical_trim(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         return None;
     };
-    let origin = cylinder_surface.origin();
+    let origin = cylinder_surface.origin().get();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
     let radius = cylinder_surface.radius().get();
@@ -1934,7 +1934,7 @@ fn cylindrical_trim(
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
-            let axial = point.vector_from(*origin).dot(axis);
+            let axial = point.vector_from(origin).dot(axis);
             if !axial.is_finite() {
                 return None;
             }
@@ -1955,7 +1955,7 @@ fn cylindrical_trim(
                 .into_iter()
                 .map(|vertex_id| {
                     let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-                    cylinder_angle(point, *origin, axis, *ref_direction)
+                    cylinder_angle(point, origin, axis, *ref_direction)
                 })
                 .collect::<Option<Vec<_>>>()
         })
@@ -1965,7 +1965,7 @@ fn cylindrical_trim(
         .collect::<Vec<_>>();
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
-        origin: *origin,
+        origin: origin,
         axis,
         ref_direction: *ref_direction,
         radius,
@@ -1990,7 +1990,7 @@ fn conical_trim(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
         return None;
     };
-    let origin = cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
     let radius = cone_surface.radius().get();
@@ -2049,7 +2049,7 @@ fn conical_trim(
                 let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
                 let transverse = axis.cross(reference).unit()?;
                 let major_direction = major_direction.unit()?;
-                let center_delta = center.vector_from(*origin);
+                let center_delta = center.vector_from(origin);
                 let center_axial = center_delta.dot(axis);
                 let center_radial = center_delta - axis.scale(center_axial);
                 let expected_radius = (radius + center_axial * slope).abs();
@@ -2082,7 +2082,7 @@ fn conical_trim(
                 {
                     return None;
                 }
-                let center_delta = center.vector_from(*origin);
+                let center_delta = center.vector_from(origin);
                 let center_axial = center_delta.dot(axis);
                 let center_radial = center_delta - axis.scale(center_axial);
                 let expected_radius = (radius + center_axial * slope).abs();
@@ -2099,8 +2099,8 @@ fn conical_trim(
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
-            let axial = point.vector_from(*origin).dot(axis);
-            let angle = cone_angle(point, *origin, axis, *ref_direction, ratio)?;
+            let axial = point.vector_from(origin).dot(axis);
+            let angle = cone_angle(point, origin, axis, *ref_direction, ratio)?;
             if !axial.is_finite() || !angle.is_finite() {
                 return None;
             }
@@ -2114,7 +2114,7 @@ fn conical_trim(
     let (min_axial, max_axial) = axial_bounds?;
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(ConicalTrim {
-        origin: *origin,
+        origin: origin,
         axis,
         ref_direction: *ref_direction,
         radius,
@@ -2238,10 +2238,10 @@ fn analytic_trim(
 fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
     let (origin, normal, u_axis) = match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            (*origin, *normal, *u_axis)
+            (origin, *normal, *u_axis)
         }
         SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let basis = plane_frame(basis)?;
@@ -2701,30 +2701,30 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
             normal.unit()
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let axis = axis.unit()?;
-            let delta = subtract(point, *origin);
+            let delta = subtract(point, origin);
             let radial = delta - axis.scale(delta.dot(axis));
             radial.unit()
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
-            subtract(point, *center).unit()
+            let center = sphere_surface.center().get();
+            subtract(point, center).unit()
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius().get();
             let axis = axis.unit()?;
-            let delta = subtract(point, *center);
+            let delta = subtract(point, center);
             let axial = delta.dot(axis);
             let radial = delta - axis.scale(axial);
             let radial_unit = radial.unit()?;
             (radial_unit.scale(radial.norm() - major_radius) + axis.scale(axial)).unit()
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -2737,7 +2737,7 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
             if !slope.is_finite() {
                 return None;
             }
-            let delta = point.vector_from(*origin);
+            let delta = point.vector_from(origin);
             let axial = delta.dot(axis);
             let major = delta.dot(reference);
             let minor = delta.dot(transverse);
@@ -2772,15 +2772,15 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
     };
     match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            Some(subtract(point, *origin).dot(*normal).abs() / normal.norm())
+            Some(subtract(point, origin).dot(*normal).abs() / normal.norm())
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
-            let delta = subtract(point, *origin);
+            let delta = subtract(point, origin);
             let axis_length = axis.norm();
             let axial = delta.dot(*axis) / axis_length;
             let radial = Vector3::new(
@@ -2791,16 +2791,16 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             Some((radial.norm() - radius).abs())
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let radius = sphere_surface.radius().get();
-            Some((subtract(point, *center).norm() - radius).abs())
+            Some((subtract(point, center).norm() - radius).abs())
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
-            let delta = subtract(point, *center);
+            let delta = subtract(point, center);
             let axis_length = axis.norm();
             let axial = delta.dot(*axis) / axis_length;
             let radial = Vector3::new(
@@ -2814,7 +2814,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             )
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -2831,7 +2831,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             if !slope.is_finite() {
                 return None;
             }
-            let delta = subtract(point, *origin);
+            let delta = subtract(point, origin);
             let axial = delta.dot(axis);
             let major = delta.dot(reference);
             let minor = delta.dot(transverse);

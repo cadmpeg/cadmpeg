@@ -76,7 +76,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = base_surface.geometry.solved() else {
         panic!("base face did not produce a plane");
     };
-    let origin = *plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = *plane_surface.normal();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(2.0, 1.5, 0.0));
@@ -315,7 +315,7 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
-    let origin = *plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = *plane_surface.normal();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));

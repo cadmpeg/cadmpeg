@@ -273,7 +273,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
-                let origin = plane_surface.origin();
+                let origin = plane_surface.origin().get();
                 let normal = plane_surface.normal();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
