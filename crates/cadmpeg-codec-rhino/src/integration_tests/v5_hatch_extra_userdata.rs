@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! V5 hatch compatibility-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::fixtures::hatch_parameters;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
@@ -75,7 +77,7 @@ fn hatch_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
     )
 }
 
-fn assert_object_record(result: &cadmpeg_test_support::EditableDecodeResult, record: &[u8]) {
+fn assert_object_record(result: &EditableDecodeResult, record: &[u8]) {
     let retained = result
         .source_fidelity()
         .retained_record("rhino:object:record#000000")

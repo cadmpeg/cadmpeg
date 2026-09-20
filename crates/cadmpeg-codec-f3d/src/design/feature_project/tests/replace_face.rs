@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::wire;
+
 use crate::design::feature_project::{
     bind_surface_trim_cell_selections, project_replace_face, project_surface_trim,
 };
@@ -395,6 +397,6 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..
-        }) if cadmpeg_test_support::wire::field::<Vec<u64>>(&selection, "removed") == [1, 4] && cadmpeg_test_support::wire::field::<u64>(&selection, "total") == 5
+        }) if wire::field::<Vec<u64>>(&selection, "removed") == [1, 4] && wire::field::<u64>(&selection, "total") == 5
     ));
 }

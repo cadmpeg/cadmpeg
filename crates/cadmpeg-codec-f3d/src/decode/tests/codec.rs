@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 use cadmpeg_core::container::ContainerRole;
@@ -564,9 +566,8 @@ fn decode_yields_metadata_and_honest_report() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
     let mut cur = Cursor::new(f3d);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
-        codec.decode(&mut cur, &DecodeOptions::default()).unwrap(),
-    );
+    let result =
+        EditableDecodeResult::from(codec.decode(&mut cur, &DecodeOptions::default()).unwrap());
 
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());

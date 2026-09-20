@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -275,86 +277,86 @@ fn decode_retains_outer_object_graph_order_and_references() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_OBJECT_GRAPH_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_GRAPH_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_OBJECT_RECORD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_RECORD_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DESIGN_OBJECT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DESIGN_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_FIELD_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DESIGN_OBJECT_RELATION_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::CLASSIFIED_DESIGN_OBJECT_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DESIGN_OWNER_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_SKETCH_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_SKETCH_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_CONFIGURATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_COUNT.as_str()
         ),
         0
     );

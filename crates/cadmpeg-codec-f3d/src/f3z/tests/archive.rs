@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
+
 use crate::test_support::assembly_test::{
     f3d_without_brep, f3d_without_brep_with_xref_placement, f3z_archive,
     f3z_archive_with_design_description, XREF_ROLE,
@@ -19,7 +21,7 @@ use std::io::Cursor;
 #[test]
 fn f3z_archive_merges_identity_occurrences() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let component_alone = cadmpeg_test_support::EditableDecodeResult::from(
+    let component_alone = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(component.clone()),
@@ -35,7 +37,7 @@ fn f3z_archive_merges_identity_occurrences() {
             ("comp.f3d", component.as_slice()),
         ],
     );
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .unwrap(),
@@ -145,7 +147,7 @@ fn f3z_archive_merges_identity_occurrences() {
         .expect("merged F3Z regenerates at the named row");
     assert!(!regenerated.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             &(report),
             "identity/target"
         )
@@ -176,7 +178,7 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
         ],
     );
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .expect("admitted duplicate-role references remain independently mergeable"),
@@ -292,7 +294,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(archive.as_slice()),
@@ -311,9 +313,10 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
             TargetRequest::Inherit,
         )
         .expect("unmerged F3Z archive remains replayable");
-    let reported = cadmpeg_test_support::wire::field_or_default::<
-        Option<cadmpeg_core::dialect::DialectId>,
-    >(&(plan.report()), "identity/target")
+    let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
     .as_ref()
     .expect("an F3D export names its target")
     .clone();
@@ -468,7 +471,7 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
 
     let graph = cadmpeg_ir::products::AssemblyGraph::new(&decoded.ir().model.occurrences)
         .expect("merged occurrence graph");
-    let resolved = cadmpeg_test_support::assembly::resolved_transform(&graph, &child.id)
+    let resolved = assembly::resolved_transform(&graph, &child.id)
         .expect("resolved nested occurrence transform");
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
@@ -568,7 +571,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences)
             .expect("nested occurrence graph");
         assert_eq!(
-            cadmpeg_test_support::assembly::resolved_transform(&graph, &child.id)
+            assembly::resolved_transform(&graph, &child.id)
                 .unwrap()
                 .rows(),
             expected

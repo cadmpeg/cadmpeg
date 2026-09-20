@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -38,7 +40,7 @@ fn decode_builds_valid_topology_and_geometry() {
 
     let f3d = f3d_with_smbh(&synthetic_geometry_smbh());
     let mut cur = Cursor::new(f3d);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
@@ -156,7 +158,7 @@ fn decode_transfers_generated_wire_body_topology() {
             &DecodeOptions::default(),
         )
         .expect("generated wire body decode");
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
     assert_eq!(result.ir().model.bodies.len(), 1);
     assert_eq!(
         result.ir().model.bodies[0].kind,
@@ -276,7 +278,7 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     use cadmpeg_ir::math::Point3;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("generated degenerate curve decode"),

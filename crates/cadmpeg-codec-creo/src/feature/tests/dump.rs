@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
@@ -307,7 +309,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .unwrap()
         .rows[0]
         .offset;
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -554,79 +556,79 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
             == "creo:model:sketch_feature#917"));
     let coverage = result.report();
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT).as_str()
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
@@ -648,63 +650,63 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let coverage = result.report();
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
             (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT)
                 .as_str()
@@ -712,16 +714,16 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
         ),
         1
     );
@@ -796,30 +798,30 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
     let coverage = result.report();
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_DIMENSION_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT).as_str()
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         2
     );
@@ -929,44 +931,44 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     let coverage = result.report();
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_RELATION_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SKAMP_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SKAMP_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT.as_str()
         ),
         1
     );
@@ -1004,9 +1006,9 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         .expect("decode malformed relation table");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
         ),
         1
     );
@@ -1031,23 +1033,23 @@ fn decode_accepts_the_count_one_empty_relation_table() {
         .expect("decode empty relation table");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::DECODED_FEATURE_RELATION_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
         ),
         0
     );
@@ -1075,7 +1077,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),

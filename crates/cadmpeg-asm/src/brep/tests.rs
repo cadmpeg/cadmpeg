@@ -2,6 +2,8 @@
 #![allow(clippy::default_trait_access)]
 //! Unit tests for B-rep topology decode, geometry recognition, and
 //! procedural carrier classification.
+use cadmpeg_test_support::edit;
+
 use super::emit::{emit_attributes, emit_edges};
 use super::geometry::{
     analytic_procedural_surface, edge_pcurve_parameter_ranges, is_asm_stream_delimiter,
@@ -170,7 +172,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
             scaled_weights,
         )
         .expect("scaled weights are finite and non-zero");
-        cadmpeg_test_support::edit::replace(&mut scaled, |previous| {
+        edit::replace(&mut scaled, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
                 previous.degree(),
                 previous.knots().to_vec(),

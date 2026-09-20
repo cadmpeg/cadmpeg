@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -38,30 +40,30 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
         .expect("decode typed unresolved face");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT.as_str()
         ),
         1
     );
@@ -90,9 +92,9 @@ fn decode_reports_typed_distinct_surface_b5_faces() {
         )
         .expect("decode typed multi-surface face");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT.as_str()
         ),
         1
     );
@@ -176,80 +178,80 @@ fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
         )
         .expect("decode typed face without resolved topology");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
+        wire::coverage_count(
+            result.report(),
             (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT)
                 .as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT.as_str()
         ),
         1
     );

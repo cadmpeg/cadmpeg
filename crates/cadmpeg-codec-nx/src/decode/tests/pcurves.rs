@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
+use cadmpeg_test_support::edit;
+
 const TOLERANT_INTERSECTION_FIT: f64 = 1.0e-8;
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 
@@ -475,7 +478,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
     .is_none());
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
@@ -507,7 +510,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
@@ -799,14 +802,14 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     };
     {
         let replacement = true;
-        cadmpeg_test_support::edit::replace(support_surface, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(support_surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     replacement,
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -819,14 +822,14 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     };
     {
         let replacement = true;
-        cadmpeg_test_support::edit::replace(candidate_surface, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(candidate_surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     replacement,
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1025,20 +1028,17 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
-        surface.control_grid(),
-        Some(weight_grid),
-    );
+    let poles = NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
-        cadmpeg_test_support::edit::replace(surface, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     previous.u_periodic(),
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1075,20 +1075,17 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
-        surface.control_grid(),
-        Some(weight_grid),
-    );
+    let poles = NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
-        cadmpeg_test_support::edit::replace(surface, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(surface, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     previous.u_periodic(),
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1492,7 +1489,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         };
         {
             let replacement = Some(range);
-            cadmpeg_test_support::edit::replace(metadata, |previous| {
+            edit::replace(metadata, |previous| {
                 cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
                     previous.wrapper_reversed,
                     replacement,

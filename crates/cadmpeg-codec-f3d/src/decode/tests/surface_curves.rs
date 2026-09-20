@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -29,7 +31,7 @@ use crate::F3dCodec;
 fn generated_projection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionRole, ProjectionTail};
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_projection_smbh())),
@@ -76,7 +78,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         let discontinuity_flag = &mut edited_discontinuity_flag;
         let tail = &mut edited_tail;
 
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();
@@ -157,7 +159,7 @@ fn generated_projection_decodes_and_writes_source_less() {
 fn generated_early_close_projection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -218,7 +220,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
 fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -261,7 +263,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         let context = &mut edited_context;
         let selector = &mut edited_selector;
 
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();
@@ -334,7 +336,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
         ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
     ] {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             F3dCodec
                 .decode(
                     &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_curve_smbh(
@@ -358,7 +360,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
                 unreachable!()
             };
-            cadmpeg_test_support::edit::with_output(
+            edit::with_output(
                 &mut *(match family {
                     cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, .. }
                     | cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained {
@@ -432,7 +434,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         ("para_silh_int_cur", None),
         ("taper_silh_int_cur", Some(0.35)),
     ] {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             F3dCodec
                 .decode(
                     &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(

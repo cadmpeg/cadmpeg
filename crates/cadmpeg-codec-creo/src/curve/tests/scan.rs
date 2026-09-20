@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::build_prt;
 use crate::test_support::visibgeom_payload;
 use crate::test_support::world;
@@ -47,7 +49,7 @@ fn scan_discovers_curve_halfedge_topology() {
     );
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -82,16 +84,16 @@ fn scan_discovers_curve_halfedge_topology() {
         })
     ));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT.as_str()
         ),
         1
     );
@@ -181,7 +183,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.opaque_spans[0].offset, 13);
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
     assert_eq!(parameters.body.last(), Some(&0xff));
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),

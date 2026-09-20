@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use super::{
     check_procedural_support_consistency, edge_pcurve_parameter_ranges, pcurve_parameter_domain,
     pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface, SurfacePcurveContext,
@@ -452,7 +454,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     };
     {
         let replacement = Some([0.0, std::f64::consts::PI]);
-        cadmpeg_test_support::edit::replace(metadata, |previous| {
+        edit::replace(metadata, |previous| {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,

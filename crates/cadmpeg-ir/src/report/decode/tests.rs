@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::wire;
+
 use crate::report::decode::{DecodeReport, DecodeTransfer, TransferLedger};
 use cadmpeg_core::dialect::DialectLayers;
 use std::collections::BTreeMap;
@@ -79,15 +81,14 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
     .expect("omitted record has no target");
     assert_eq!(omitted.target(), None);
     assert_eq!(
-        cadmpeg_test_support::wire::field::<crate::report::decode::TransferDisposition>(
+        wire::field::<crate::report::decode::TransferDisposition>(
             &(omitted.outcome),
             "disposition"
         ),
         TransferDisposition::Omitted
     );
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<String>>(&(omitted.outcome), "note")
-            .as_deref(),
+        wire::field_or_default::<Option<String>>(&(omitted.outcome), "note").as_deref(),
         Some("unsupported")
     );
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
@@ -63,7 +65,7 @@ use crate::writer::tests::round_trips::{
 };
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("step").is_some());
@@ -155,7 +157,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             "STEP output must be deterministic for {schema:?}"
         );
         assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("STEP cube decode"),
@@ -187,7 +189,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert_eq!(
-            &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
                 plan.report().write_path(),
                 "fidelity"
             ),
@@ -201,7 +203,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             export.write_path(),
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
-        let edited_result = cadmpeg_test_support::EditableDecodeResult::from(
+        let edited_result = EditableDecodeResult::from(
             codec
                 .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
                 .expect("edited STEP document decode"),

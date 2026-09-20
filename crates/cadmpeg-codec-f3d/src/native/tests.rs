@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
@@ -165,7 +167,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             &DecodeOptions::default(),
         )
         .expect("generated tolerant coedges must decode");
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
 
     assert_eq!(decoded.ir().model.coedges.len(), 3);
     assert_eq!(decoded.ir().model.edges.len(), 3);
@@ -343,7 +345,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     append_generated_record_tail(&mut smbh, "coedge", &tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),

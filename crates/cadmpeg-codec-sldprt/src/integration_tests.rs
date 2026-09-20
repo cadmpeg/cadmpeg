@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
@@ -39,15 +41,15 @@ use crate::test_support::pmi::pmi_semantic_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
-    cadmpeg_test_support::EditableDecodeResult::from(
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized SLDPRT should decode"),
     )
 }
 
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(result.ir());
@@ -238,8 +240,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 
 #[test]
 fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir() {
-    let first =
-        cadmpeg_test_support::EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
+    let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().model.faces.len(), 6);
     assert_eq!(first.ir().model.edges.len(), 12);
     assert_valid(&first);
@@ -277,7 +278,7 @@ fn versioned_part() -> Vec<u8> {
 }
 
 fn plan(
-    result: &cadmpeg_test_support::EditableDecodeResult,
+    result: &EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
@@ -291,8 +292,8 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        &(plan.report()),
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
         "identity/target",
     )
     .as_ref()
@@ -412,7 +413,7 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -455,7 +456,7 @@ fn the_patch_path_names_the_preserved_dialect() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let cadmpeg_ir::report::export::FidelityResolution::Degraded { reason } =
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity",
         )
@@ -521,7 +522,7 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
         cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),

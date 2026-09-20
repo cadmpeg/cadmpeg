@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::examples::unit_cube;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
@@ -64,7 +66,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     };
     {
         let replacement = false;
-        cadmpeg_test_support::edit::replace(nurbs, |previous| {
+        edit::replace(nurbs, |previous| {
             crate::geometry::nurbs::NurbsCurve::new(
                 previous.degree(),
                 previous.knots().to_vec(),

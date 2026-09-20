@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -24,15 +26,15 @@ use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_st
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
-    cadmpeg_test_support::EditableDecodeResult::from(
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
         CatiaCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized CATPart should decode"),
     )
 }
 
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
@@ -82,16 +84,16 @@ fn standard_nested_pipeline_builds_a_valid_radial_topology_graph() {
     assert_eq!(result.ir().model.edges.len(), 6);
     assert_eq!(result.ir().model.coedges.len(), 12);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
         ),
         1
     );
@@ -139,9 +141,9 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.coedges.len(), 4);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
         ),
         1
     );
@@ -165,9 +167,9 @@ fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT.as_str()
         ),
         1
     );
@@ -204,9 +206,9 @@ fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
         .iter()
         .any(|curve| { matches!(curve.geometry, CurveGeometry::Procedural { .. }) }));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT.as_str()
         ),
         1
     );
@@ -266,7 +268,7 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
         a8_catpart(),
     ];
     for bytes in fixtures {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             CatiaCodec
                 .decode(
                     &mut Cursor::new(bytes),
@@ -331,7 +333,7 @@ fn every_decode_path_populates_v1_annotations() {
         inner_no_directory_a8_catpart(),
     ];
     for fixture in fixtures {
-        let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        let decoded = EditableDecodeResult::from(
             CatiaCodec
                 .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
                 .unwrap(),
@@ -339,7 +341,7 @@ fn every_decode_path_populates_v1_annotations() {
         assert_every_entity_has_v1_annotation(decoded.ir(), &decoded.source_fidelity().annotations);
     }
 
-    let container_only = cadmpeg_test_support::EditableDecodeResult::from(
+    let container_only = EditableDecodeResult::from(
         CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart()),

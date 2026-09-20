@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -59,9 +61,9 @@ fn decode_rejects_a_constant_formula_that_disagrees_with_its_stored_result() {
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT.as_str()
         ),
         0
     );

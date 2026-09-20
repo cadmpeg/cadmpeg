@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -265,13 +267,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
 
     assert!(result.report().container_only());
     assert_eq!(result.report().notes, ["kept"]);
-    assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-            &(result.report()),
-            "coverage"
-        )["entities"],
-        3
-    );
+    assert_eq!(wire::coverage(result.report())["entities"], 3);
 }
 
 fn dialect_layer(id: &'static str) -> DialectMatch {

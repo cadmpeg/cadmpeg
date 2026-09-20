@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::scan;
 use std::io::Cursor;
 
@@ -148,7 +150,7 @@ fn container_and_native_arenas_retain_loop_roster() {
     assert_eq!(scan.loop_arrays.records.len(), 1);
     assert_eq!(scan.loop_arrays.records[0].lo_id, 1);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),

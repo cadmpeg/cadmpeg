@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
@@ -894,8 +896,7 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
-    let result =
-        cadmpeg_test_support::EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
@@ -955,8 +956,7 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
-    let result =
-        cadmpeg_test_support::EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::EnumerationValueDegraded.kind()

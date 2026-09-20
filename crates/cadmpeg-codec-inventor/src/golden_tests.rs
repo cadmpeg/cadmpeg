@@ -5,6 +5,8 @@
 //! [`crate::test_support::test_fixtures::primary_envelope_fixture`]. Shared harness:
 //! [`cadmpeg_test_support::golden`]. `UPDATE_GOLDEN=1` rewrites goldens only.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -50,7 +52,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) {
         Ok(result) => {
-            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            let result = EditableDecodeResult::from(result);
             serde_json::json!({
                 "ir": result.ir(),
                 "report": result.report(),

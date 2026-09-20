@@ -2,6 +2,8 @@
 //! Sketch-history binding and sketch-geometry projection decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -281,7 +283,7 @@ fn decode_binds_unique_sketch_history_to_profile_consumers() {
         "Contents/Keywords",
         br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="21"/><Rib Name="Web" Type="Rib" id="22" Profile="21" Direction="0,1,0" BothSides="false" Operation="Join"><Dimension Name="Thickness">2mm</Dimension></Rib></Keywords>"#,
     ));
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap(),

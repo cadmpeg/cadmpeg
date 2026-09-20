@@ -2,6 +2,8 @@
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -109,7 +111,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
 fn decode_encode_decode_reaches_fixpoint() {
     let fixture = sldprt_with_body_and_history(&triangle_body());
 
-    let first = cadmpeg_test_support::EditableDecodeResult::from(
+    let first = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .expect("first decode"),
@@ -204,8 +206,7 @@ fn decode_is_equivariant_under_rigid_translation() {
 /// misconception cannot hide behind a self-consistent round trip.
 #[test]
 fn source_less_cube_reaches_encode_decode_fixpoint() {
-    let first =
-        cadmpeg_test_support::EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
+    let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();

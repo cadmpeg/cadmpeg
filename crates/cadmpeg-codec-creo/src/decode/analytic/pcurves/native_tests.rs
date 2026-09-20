@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::decode::analytic::edges::nonperiodic_nurbs_endpoint_points;
 use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
@@ -289,7 +291,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
     };
     {
         let replacement = true;
-        cadmpeg_test_support::edit::replace(&mut periodic, |previous| {
+        edit::replace(&mut periodic, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
                 previous.degree(),
                 previous.knots().to_vec(),

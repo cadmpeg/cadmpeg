@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 //! End-to-end contracts over synthesized `OpenNURBS` archives.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Cursor;
@@ -39,14 +41,14 @@ mod unit_binding;
 mod unknown_userdata;
 mod v5_hatch_extra_userdata;
 mod views_userdata;
-fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
-    cadmpeg_test_support::EditableDecodeResult::from(
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
         RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized 3DM archive should decode"),
     )
 }
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("rhino").is_some());
@@ -67,7 +69,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);
         assert_valid(&result);
-        let container = cadmpeg_test_support::EditableDecodeResult::from(
+        let container = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(bytes),

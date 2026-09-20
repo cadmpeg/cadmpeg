@@ -2,6 +2,8 @@
 //! Directory Entry quarantine: the two-list parse, its arena, and its ledger.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -125,7 +127,7 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         .expect("quarantined directory ledger row");
     assert_eq!(row.target(), Some("iges:quarantine:directory#3"));
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
+        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
             &(row.outcome),
             "disposition"
         ),

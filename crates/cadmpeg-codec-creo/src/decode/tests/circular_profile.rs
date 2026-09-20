@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::edit;
+
 use crate::decode::feature_history::axes::section_profile_ref;
 use crate::decode::holes::placement::{
     cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
@@ -261,7 +263,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
-    cadmpeg_test_support::edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Line { start, .. } = definition {
@@ -278,7 +280,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
-    cadmpeg_test_support::edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Line { end, .. } = definition {

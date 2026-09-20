@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::decode::tests::options_in;
 use crate::test_support::extract_streams;
 use crate::test_support::test_bytes::put_f64;
@@ -401,9 +403,8 @@ fn decode_maps_parasolid_tolerance_sentinel_to_none() {
 #[test]
 fn decode_dual_writes_inline_entity_metadata_to_annotations() {
     let mut cur = Cursor::new(topology_part_prt());
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
-        NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap(),
-    );
+    let result =
+        EditableDecodeResult::from(NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap());
     let ir = result.ir();
     let annotations = &result.source_fidelity().annotations;
 
@@ -1016,7 +1017,7 @@ fn decode_retains_unsupported_named_stream_payloads() {
         ("/Root/UG_PART/LastSavedToggleInfoStream", toggle.clone()),
         ("/Root/vendor/private", vendor.clone()),
     ]);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         NxCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .unwrap(),
@@ -1098,7 +1099,7 @@ fn container_only_retains_typed_saved_toggle_payload() {
     let toggle_len = toggle.len() as u64;
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         NxCodec
             .decode(
                 &mut Cursor::new(file),

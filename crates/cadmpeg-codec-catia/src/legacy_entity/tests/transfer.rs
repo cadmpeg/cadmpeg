@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -24,51 +26,51 @@ fn decode_accounts_for_unresolved_legacy_entity_runs() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode legacy identity run");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ENTITY_RUN_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ENTITY_IDENTITY_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_81_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_82_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_E5_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_IDENTITY_LEAD_FD_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ROLE_SELECTOR_COUNT.as_str()
         ),
         0
     );
@@ -126,51 +128,51 @@ fn decode_retains_compound_legacy_text_fields_and_relation_roles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode compound legacy fields");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_TEXT_FIELD_COUNT.as_str()
         ),
         6
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_E3_ROLE_TAIL_TEXT_FIELD_COUNT.as_str()
         ),
         6
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ROLE_TEXT_FIELD_COUNT.as_str()
         ),
         5
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_SELECTED_ROLE_COUNT.as_str()
         ),
         4
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT.as_str()
         ),
         5
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT.as_str()
         ),
         5
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_RELATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_RELATION_COUNT.as_str()
         ),
         2
     );
@@ -255,37 +257,37 @@ fn decode_retains_legacy_relation_synchronous_states() {
         .expect("decode legacy relation update states");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_SYNCHRONOUS_STATE_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_SYNCHRONOUS_RELATION_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ASYNCHRONOUS_RELATION_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_SCHEMA_FIELD_COUNT.as_str()
         ),
         3
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_ROLE_FIELD_BINDING_COUNT.as_str()
         ),
         4
     );
@@ -389,9 +391,9 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_parameter() {
         .as_deref()
         .is_some_and(|id| id.starts_with("catia:legacy:entity-run#")));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -434,16 +436,16 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
     );
     assert_eq!(parameter.expression, "\"Cilas Evans\"");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_STRING_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_NAMED_STRING_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -531,9 +533,9 @@ fn decode_transfers_an_input_bound_legacy_string_formula() {
         .collect::<Vec<_>>();
     assert_eq!(dependency_names, ["#1_", "#2_"]);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -569,16 +571,16 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     );
     assert_eq!(parameter.expression, "11");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_INTEGER_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_LEGACY_NAMED_INTEGER_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -611,9 +613,9 @@ fn decode_transfers_an_unset_typed_legacy_parameter() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.properties["value_type"], "LENGTH");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -700,9 +702,9 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
     );
     assert_eq!(integer.properties["value_type"], "Integer");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
         ),
         2
     );
@@ -734,9 +736,9 @@ fn decode_does_not_override_a_string_value_type_descriptor() {
 
         assert!(decoded.ir().model.parameters.is_empty());
         assert_eq!(
-            cadmpeg_test_support::wire::coverage_count(
-                &(decoded.report()),
-                (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+            wire::coverage_count(
+                decoded.report(),
+                crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
             ),
             0
         );
@@ -769,9 +771,9 @@ fn decode_rejects_a_legacy_parameter_with_multiple_type_descriptors() {
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT.as_str()
         ),
         0
     );
@@ -820,9 +822,9 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         ))
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -835,9 +837,9 @@ fn decode_resolves_only_an_acyclic_unique_legacy_type_selector_chain() {
         .expect("decode cyclic legacy type");
     assert!(cyclic.ir().model.parameters.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(cyclic.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            cyclic.report(),
+            crate::coverage::TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT.as_str()
         ),
         0
     );
@@ -903,9 +905,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -920,9 +922,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         .expect("decode mismatched legacy formula");
     assert_eq!(mismatched.ir().model.parameters[0].expression, "6");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(mismatched.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            mismatched.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         0
     );
@@ -939,9 +941,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(parameter.value, None);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(unset.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -958,9 +960,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
     assert!(parameter.expression.is_empty());
     assert_eq!(parameter.value, None);
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(mismatched_unset.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            mismatched_unset.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         0
     );
@@ -981,9 +983,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         Some("Boolean")
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(boolean.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            boolean.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -1010,9 +1012,9 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
         ))
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(conditional.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            conditional.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -1083,9 +1085,9 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
     };
     assert_eq!(parameter.expression, "2+3");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(transferred.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            transferred.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -1112,9 +1114,9 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         .expect("decode mismatched output assignment");
     assert_eq!(mismatched_value.ir().model.parameters[0].expression, "6");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(mismatched_value.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            mismatched_value.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         0
     );
@@ -1134,9 +1136,9 @@ fn decode_transfers_a_zero_input_legacy_output_assignment() {
         .expression
         .is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(mismatched_type.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            mismatched_type.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         0
     );
@@ -1199,9 +1201,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         Some(cadmpeg_ir::ParameterValue::String("Easy Evans".to_string()))
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );
@@ -1221,9 +1223,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         "\"Cilas Evans\""
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(mismatched.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            mismatched.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         0
     );
@@ -1249,9 +1251,9 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
         Some(cadmpeg_ir::ParameterValue::String("ied".to_string()))
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(methods.report()),
-            (crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT).as_str()
+        wire::coverage_count(
+            methods.report(),
+            crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT.as_str()
         ),
         1
     );

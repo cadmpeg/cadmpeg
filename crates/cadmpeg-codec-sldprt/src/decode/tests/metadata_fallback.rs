@@ -2,6 +2,8 @@
 //! Metadata-only fallback and retained-source-image decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -112,7 +114,7 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
 fn decode_without_geometry_falls_back_to_metadata() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
@@ -246,7 +248,7 @@ fn metadata_fallback_binds_resolved_extrusion_operation() {
 fn retained_source_image_round_trips_byte_exactly() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source.clone());
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),

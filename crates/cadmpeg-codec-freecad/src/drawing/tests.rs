@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -132,7 +134,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(
         neutral_view
             .direction
-            .map(|value| cadmpeg_test_support::wire::value::<[f64; 3]>(&value)),
+            .map(|value| wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -320,7 +322,7 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
     assert_eq!(
         drawing
             .direction
-            .map(|value| cadmpeg_test_support::wire::value::<[f64; 3]>(&value)),
+            .map(|value| wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
     assert_eq!(

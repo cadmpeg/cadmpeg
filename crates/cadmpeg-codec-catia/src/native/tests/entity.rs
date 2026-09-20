@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -232,16 +234,16 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
         .expect("decode complete numeric entity-value pair");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PAIR_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NUMERIC_ENTITY_VALUE_PACKET_COUNT.as_str()
         ),
         0
     );
@@ -326,86 +328,86 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode reference-signature incidences");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_2_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_PREFIX_ATOM_35_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_MULTI_MEMBER_REFERENCE_SIGNATURE_COHORT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_COHORT_MEMBER_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_REFERENCE_SIGNATURE_COHORT_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_INSTRUCTION_COUNT.as_str()
         ),
         8
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCE_SIGNATURE_TOKEN_COUNT.as_str()
         ),
         8
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_REFERENCE_SIGNATURE_ENTITY_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNRESOLVED_REFERENCE_SIGNATURE_ENTITY_COUNT.as_str()
         ),
         0
     );
@@ -649,59 +651,59 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain evaluation");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_EVALUATED_DEFINITION_CHAIN_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNSET_DEFINITION_CHAIN_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
+        wire::coverage_count(
+            decoded.report(),
             (crate::coverage::DECODED_STRUCTURALLY_OWNED_DEFINITION_CHAIN_EVALUATION_COUNT)
                 .as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DEFINITION_CHAIN_EVALUATION_OWNER_COUNT.as_str()
         ),
         0
     );
@@ -779,23 +781,23 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode definition-chain atom");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(atom.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            atom.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(atom.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT).as_str()
+        wire::coverage_count(
+            atom.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_ATOM_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(atom.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT).as_str()
+        wire::coverage_count(
+            atom.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_EVALUATION_COUNT.as_str()
         ),
         0
     );
@@ -822,8 +824,7 @@ fn native_namespace_binds_two_definition_value_chains() {
             )
             .expect("decode definition-chain state");
         assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(&(decoded
-                .report()), "coverage")
+            wire::coverage(decoded.report())
                 .get(coverage)
                 .copied()
                 .unwrap_or(0),
@@ -840,9 +841,9 @@ fn native_namespace_binds_two_definition_value_chains() {
         )
         .expect("decode nested definition-chain selector");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(nested.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT).as_str()
+        wire::coverage_count(
+            nested.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_SCHEMA_SELECTOR_COUNT.as_str()
         ),
         1
     );
@@ -896,9 +897,9 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         "8"
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -933,9 +934,9 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         .properties
         .contains_key("catia_definition_evaluation_opcode_offset"));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(boolean.report()),
-            (crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            boolean.report(),
+            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -951,9 +952,9 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         .expect("decode invalid Boolean definition-chain atom");
     assert!(invalid_boolean.ir().model.parameters.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(invalid_boolean.report()),
-            (crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            invalid_boolean.report(),
+            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
         ),
         0
     );
@@ -972,9 +973,9 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     assert!(unset_parameter.value.is_none());
     assert!(unset_parameter.expression.is_empty());
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(unset.report()),
-            (crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT).as_str()
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
         ),
         1
     );
@@ -1057,37 +1058,37 @@ fn literal_owner_slots_remain_unassigned() {
         )
         .expect("decode literal owner slot");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DEFINITION_CHAIN_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DEFINITION_CHAIN_VALUE_OWNER_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNASSIGNED_DEFINITION_CHAIN_EVALUATION_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNASSIGNED_OBJECT_OWNER_SLOT_COUNT.as_str()
         ),
         1
     );
@@ -1139,23 +1140,23 @@ fn native_namespace_binds_and_validates_definition_values() {
         )
         .expect("decode definition-bound value");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_DEFINITION_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DEFINITION_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OWNED_DEFINITION_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_DEFINITION_VALUE_OWNER_COUNT.as_str()
         ),
         0
     );

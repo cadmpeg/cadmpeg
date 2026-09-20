@@ -2688,6 +2688,7 @@ mod tests {
     use crate::loss::RhinoLossCode;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     fn chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = typecode.to_le_bytes().to_vec();
@@ -3185,11 +3186,10 @@ mod tests {
         let point = chunk(TCODE_RH_POINT, &point_body);
         data.extend(&point);
 
-        let result =
-            cadmpeg_test_support::EditableDecodeResult::from(crate::decode::seal_for_test(
-                decode_v1(&data).expect("valid V1 point with attribute suffix"),
-                false,
-            ));
+        let result = EditableDecodeResult::from(crate::decode::seal_for_test(
+            decode_v1(&data).expect("valid V1 point with attribute suffix"),
+            false,
+        ));
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
@@ -3200,11 +3200,10 @@ mod tests {
 
     #[test]
     fn v1_settings_presentation_records_are_opaque_and_table_end_is_structural() {
-        let result =
-            cadmpeg_test_support::EditableDecodeResult::from(crate::decode::seal_for_test(
-                decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
-                false,
-            ));
+        let result = EditableDecodeResult::from(crate::decode::seal_for_test(
+            decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
+            false,
+        ));
         assert_eq!(result.ir().tolerances.linear.get(), 10.0);
         assert_eq!(result.source_fidelity().retained_records().len(), 3);
         assert_eq!(
@@ -3230,11 +3229,10 @@ mod tests {
         let record = chunk(0x0020_0004, b"legacy annotation payload");
         bytes.extend(&record);
 
-        let result =
-            cadmpeg_test_support::EditableDecodeResult::from(crate::decode::seal_for_test(
-                decode_v1(&bytes).expect("framed malformed direct V1 record"),
-                false,
-            ));
+        let result = EditableDecodeResult::from(crate::decode::seal_for_test(
+            decode_v1(&bytes).expect("framed malformed direct V1 record"),
+            false,
+        ));
         assert_eq!(result.ir().model.points.len(), 1);
         let retained = &result.source_fidelity().retained_records();
         // `53b52e008` retains the source boundary of a V1 record the decode
@@ -3273,11 +3271,10 @@ mod tests {
         bytes.extend(rhinoio_surface_object());
         bytes.extend(rhinoio_brep_object());
 
-        let result =
-            cadmpeg_test_support::EditableDecodeResult::from(crate::decode::seal_for_test(
-                decode_v1(&bytes).expect("valid V1 direct records"),
-                false,
-            ));
+        let result = EditableDecodeResult::from(crate::decode::seal_for_test(
+            decode_v1(&bytes).expect("valid V1 direct records"),
+            false,
+        ));
         let namespace = result
             .ir()
             .native
@@ -3326,34 +3323,13 @@ mod tests {
                 .count(),
             1
         );
+        assert_eq!(wire::coverage(result.report())["legacy_v1_annotations"], 5);
+        assert_eq!(wire::coverage(result.report())["legacy_v1_nurbs_curves"], 1);
         assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_annotations"],
-            5
-        );
-        assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_nurbs_curves"],
+            wire::coverage(result.report())["legacy_v1_nurbs_surfaces"],
             1
         );
-        assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_nurbs_surfaces"],
-            1
-        );
-        assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_nurbs_breps"],
-            1
-        );
+        assert_eq!(wire::coverage(result.report())["legacy_v1_nurbs_breps"], 1);
         assert_eq!(result.source_fidelity().retained_records().len(), 8);
         assert!(result
             .source_fidelity()
@@ -3378,13 +3354,7 @@ mod tests {
         assert_eq!(model.edges.len(), 4);
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
-        assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_breps"],
-            1
-        );
+        assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
@@ -3397,13 +3367,7 @@ mod tests {
         );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
-                &(result.report()),
-                "coverage"
-            )["legacy_v1_breps"],
-            1
-        );
+        assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
@@ -3462,11 +3426,10 @@ mod tests {
             false,
         )
         .expect("framed face");
-        let result =
-            cadmpeg_test_support::EditableDecodeResult::from(crate::decode::seal_for_test(
-                decode_v1(&source).expect("invalid BREP remains source-retained"),
-                false,
-            ));
+        let result = EditableDecodeResult::from(crate::decode::seal_for_test(
+            decode_v1(&source).expect("invalid BREP remains source-retained"),
+            false,
+        ));
         assert_eq!(result.ir().model.entity_count(), 0);
         assert!(result
             .source_fidelity()

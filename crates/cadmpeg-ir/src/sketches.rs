@@ -2424,8 +2424,6 @@ impl TryFrom<f64> for SketchLabelValue {
     }
 }
 
-impl SketchLabelValue {}
-
 const EPS_POLAR_DISTANCE_ZERO: f64 = 1.0e-12;
 
 /// A sketch constraint definition with admitted local arity and scalar values.

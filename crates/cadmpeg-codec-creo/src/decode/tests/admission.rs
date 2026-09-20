@@ -5,6 +5,8 @@
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
@@ -92,7 +94,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
 #[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(
                 &mut Cursor::new(data),
@@ -153,7 +155,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(
                 &mut Cursor::new(data),
@@ -205,16 +207,16 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         )
     ));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT.as_str()
         ),
         0
     );
@@ -232,16 +234,16 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         })
     ));
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT.as_str()
         ),
         1
     );
@@ -300,9 +302,9 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         assert_eq!(association.fields()["replay_ordinal"], ordinal);
     }
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT.as_str()
         ),
         4
     );
@@ -333,7 +335,7 @@ fn decode_annotations_cover_every_emitted_entity() {
     let datum_offset =
         container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut reader, &DecodeOptions::default())
             .expect("decode"),
@@ -432,7 +434,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(scan.features.operations[5].kind.as_str(), "Surface");
     assert_eq!(scan.features.operations[5].stored_name_prefix(), Some(b'y'));
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),

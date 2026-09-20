@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive scan and physical-ledger unit tests.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::test_support::test_archive::{
     archive, archive_entries, streaming_archive, streaming_archive_with_options,
 };
@@ -181,7 +183,7 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
 fn thumbnail_bytes_are_retained_with_digest() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("Document.xml", xml), ("thumbnails/Thumbnail.png", b"png")]);
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         FcstdCodec
             .decode(
                 &mut Cursor::new(bytes),

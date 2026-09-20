@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -235,44 +237,44 @@ fn terminal_entity_identity_is_a_null_formula_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode formula with null output");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_FORMULA_OUTPUT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNCLASSIFIED_FORMULA_OUTPUT_ENTITY_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_FORMULA_OUTPUT_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_NULL_OBJECT_RECORD_REFERENCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_OBJECT_RECORD_REFERENCE_COUNT.as_str()
         ),
         0
     );

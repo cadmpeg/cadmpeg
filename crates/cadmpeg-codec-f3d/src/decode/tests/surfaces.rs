@@ -9,6 +9,8 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::geometry::CurveGeometry;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -36,7 +38,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("mesh-surface decode"),

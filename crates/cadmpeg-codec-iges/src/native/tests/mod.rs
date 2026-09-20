@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
@@ -181,7 +183,7 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss
 fn decode_preserves_native_entities_and_graph() {
     let bytes = point_file();
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         IgesCodec
             .decode(
                 &mut Cursor::new(bytes.as_slice()),

@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::edit;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1192,7 +1194,7 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     edited[0].modifiers.push("unknown_modifier".into());
     {
         let replacement = edited;
-        cadmpeg_test_support::edit::replace(references, |_| {
+        edit::replace(references, |_| {
             cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
         })
     }

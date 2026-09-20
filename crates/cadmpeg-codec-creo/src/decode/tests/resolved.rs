@@ -6,6 +6,8 @@
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::build_prt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
@@ -148,30 +150,30 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     );
     let coverage = result.report();
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         4
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         4
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         0
     );
@@ -202,37 +204,37 @@ fn decode_reports_missing_declared_section_segment_rows() {
     let coverage = result.report();
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         1
     );
@@ -266,65 +268,65 @@ fn decode_counts_resolved_section_segment_geometry() {
     let coverage = result.report();
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_LINE_SEGMENT_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::RESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT).as_str()
+            crate::coverage::UNRESOLVED_FEATURE_LINE_SEGMENT_GEOMETRY_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SEGMENT_ROW_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         4
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         0
     );
@@ -349,16 +351,16 @@ fn decode_reports_missing_declared_solver_variable_rows() {
     let coverage = result.report();
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT).as_str()
+            crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
+        wire::coverage_count(
             &(coverage),
-            (crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT).as_str()
+            crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         1
     );

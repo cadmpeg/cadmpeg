@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::chunks::ArchiveVersion;
 use crate::loss::RhinoLossCode;
 use crate::presentation::install;
@@ -461,7 +463,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
             }
             None => assert!(hatch_patterns.is_empty()),
         }
-        let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        let decoded = EditableDecodeResult::from(
             crate::RhinoCodec
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                 .expect("complete hatch decode"),

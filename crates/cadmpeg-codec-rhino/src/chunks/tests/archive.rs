@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
@@ -160,14 +162,11 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
-    let result = cadmpeg_test_support::EditableDecodeResult::from(crate::decode::with_expand(
-        &scan,
-        |expand| {
-            let mut context = crate::decode::DecodeContext::new(&scan, expand);
-            context.set_retention_limits(point.len(), point.len());
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
-        },
-    ));
+    let result = EditableDecodeResult::from(crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+    }));
 
     let retained = &result.source_fidelity().retained_records();
     assert_eq!(
@@ -205,14 +204,11 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
-    let result = cadmpeg_test_support::EditableDecodeResult::from(crate::decode::with_expand(
-        &scan,
-        |expand| {
-            let mut context = crate::decode::DecodeContext::new(&scan, expand);
-            context.set_retention_limits(point.len(), point.len());
-            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
-        },
-    ));
+    let result = EditableDecodeResult::from(crate::decode::with_expand(&scan, |expand| {
+        let mut context = crate::decode::DecodeContext::new(&scan, expand);
+        context.set_retention_limits(point.len(), point.len());
+        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+    }));
     assert_eq!(
         result
             .source_fidelity()
@@ -520,10 +516,7 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         "1 framed object record(s) for class 4ed7d4e4-e947-11d3-bfe5-0010830122f0 could not be decoded"
     ));
     let provenance = failure.provenance.as_ref().expect("failure provenance");
-    assert_eq!(
-        cadmpeg_test_support::wire::field::<String>(&provenance, "format"),
-        "rhino"
-    );
+    assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
     assert!(provenance
         .tag
         .as_deref()
@@ -852,10 +845,7 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     ];
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
-        let result = cadmpeg_test_support::EditableDecodeResult::from(decode(&archive(&[
-            failure.clone(),
-            point,
-        ])));
+        let result = EditableDecodeResult::from(decode(&archive(&[failure.clone(), point])));
         assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
             result

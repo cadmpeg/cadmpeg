@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design history transfer unit tests.
 
+use cadmpeg_test_support::edit;
+
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -268,7 +270,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
                 cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
                     .expect("identity grammar"),
             );
-            cadmpeg_test_support::edit::replace(children, |previous| {
+            edit::replace(children, |previous| {
                 cadmpeg_ir::features::TreeChildren::new(previous.to_vec(), active)
             })
         }

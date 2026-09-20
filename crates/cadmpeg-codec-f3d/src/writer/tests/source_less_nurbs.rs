@@ -10,6 +10,8 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
+use cadmpeg_test_support::edit;
+
 use cadmpeg_ir::geometry::CurveGeometry;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -327,7 +329,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     };
     {
         let replacement = [-2.0, 3.0];
-        cadmpeg_test_support::edit::replace(inline, |previous| {
+        edit::replace(inline, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
                 previous.wrapper_reversed,
                 previous.native_tail_flags,

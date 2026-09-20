@@ -3,6 +3,8 @@
 //!
 //! An export whose report carries no losses must decode back to an IR that
 //! [`cadmpeg_ir::diff`] reports as empty against the pre-write document.
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -93,7 +95,7 @@ fn lossless_exports_round_trip_to_identical_ir() {
         else {
             continue;
         };
-        let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        let decoded = EditableDecodeResult::from(decoded);
         if try_lossless_round_trip(&stem, decoded.ir(), decoded.ir(), None)
             || try_lossless_round_trip(
                 &stem,
@@ -378,7 +380,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
         {
             let replacement = None;
-            cadmpeg_test_support::edit::replace(procedural, |previous| {
+            edit::replace(procedural, |previous| {
                 cadmpeg_ir::geometry::RecordBounds::try_option(replacement).map(|bounds| {
                     cadmpeg_ir::geometry::ProceduralSurface::new(
                         previous.id.clone(),

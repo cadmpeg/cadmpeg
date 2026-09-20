@@ -4,6 +4,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_core::CodecError;
@@ -57,8 +59,8 @@ fn written_text(plan: ExportPlan) -> String {
 }
 
 fn target_of(plan: &ExportPlan) -> Option<String> {
-    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        &(plan.report()),
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
         "identity/target",
     )
     .as_ref()
@@ -395,7 +397,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         )
         .expect("AP214 is a catalog row");
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -423,7 +425,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
         )
         .expect("AP203 edition 1 is a catalog row");
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -493,9 +495,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 TargetRequest::Explicit(schema.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{schema:?} is a catalog row, got {error}"));
-        let claimed = cadmpeg_test_support::wire::field_or_default::<
-            Option<cadmpeg_core::dialect::DialectId>,
-        >(&(plan.report()), "identity/target")
+        let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target",
+        )
         .as_ref()
         .cloned()
         .expect("a STEP write always names its schema");

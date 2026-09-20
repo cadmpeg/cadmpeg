@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document.xml persistence-graph unit tests.
+use cadmpeg_test_support::wire;
+
 use crate::test_support::test_archive::{archive, archive_entries};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
@@ -324,7 +326,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     match result.ir().model.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
-            let distance = cadmpeg_test_support::wire::field::<f64>(&payload, "distance");
+            let distance = wire::field::<f64>(&payload, "distance");
             let cadmpeg_ir::geometry::OffsetSide::Direction {
                 direction,
                 support: None,
