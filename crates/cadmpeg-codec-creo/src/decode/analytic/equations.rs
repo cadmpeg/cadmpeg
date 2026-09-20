@@ -1229,9 +1229,9 @@ pub(in crate::decode) fn circle_parameters(
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     Some((
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],

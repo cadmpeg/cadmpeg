@@ -1748,16 +1748,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 .ok()?,
             ))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-            if {
-                let radius = circle_curve.radius();
-                radius.is_finite() && radius > 0.0
-            } =>
-        {
-            let center = circle_curve.center();
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
                 [axis.x, axis.y, axis.z],

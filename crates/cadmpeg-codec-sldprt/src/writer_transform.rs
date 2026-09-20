@@ -364,12 +364,12 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                placed_point(transform, *center)?,
+                placed_point(transform, center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *ref_direction)?,
                 radius,

@@ -447,10 +447,10 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = *circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = *circle_curve.axis();
                 let ref_direction = *circle_curve.ref_direction();
-                let radius = circle_curve.radius();
+                let radius = circle_curve.radius().get();
                 edited_curves.contains(curve.id.as_str()).then(|| {
                     (
                         curve.id.as_str().to_owned(),

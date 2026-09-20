@@ -616,12 +616,12 @@ fn scale_decoded_curve(
                     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = circle_curve.radius();
+                let radius = circle_curve.radius().get();
                 *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    scale_ir_point(*center, scale).ok_or_else(|| {
+                    scale_ir_point(center, scale).ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",
@@ -693,13 +693,13 @@ pub(crate) fn exact_nurbs(
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = circle_curve.radius();
+                let radius = circle_curve.radius().get();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
-                    center: *center,
+                    center: center,
                     axis: *axis,
                     xaxis: *ref_direction,
                     yaxis,

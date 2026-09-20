@@ -813,10 +813,10 @@ mod tests {
         let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
             panic!("expected exact plane-cylinder circle");
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
-        let radius = circle_curve.radius();
-        assert_eq!(*center, Point3::new(0.0, 0.0, 4.0));
+        let radius = circle_curve.radius().get();
+        assert_eq!(center, Point3::new(0.0, 0.0, 4.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(radius, 5.0);
         assert_eq!(

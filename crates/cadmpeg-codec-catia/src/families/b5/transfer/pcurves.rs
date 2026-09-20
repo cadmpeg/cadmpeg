@@ -186,10 +186,10 @@ pub(super) fn oriented_circle_plan(
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     let mut axis = *axis;
     let ref_direction = *ref_direction;
     let oriented_angles = if delta < 0.0 {
@@ -200,7 +200,7 @@ pub(super) fn oriented_circle_plan(
     };
     let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(*center, axis, ref_direction, radius)
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
             .ok()?,
     ));
     let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));

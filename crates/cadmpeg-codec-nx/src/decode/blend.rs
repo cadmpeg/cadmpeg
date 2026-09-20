@@ -3579,10 +3579,10 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
 ) -> Option<f64> {
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            (*center, *axis, *ref_direction, None)
+            (center, *axis, *ref_direction, None)
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();

@@ -610,11 +610,11 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
         &mut ir.model.curves[1].geometry
     {
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = circle_curve.radius();
-        let mut center = *center;
+        let radius = circle_curve.radius().get();
+        let mut center = center;
         center.z = 0.01;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             center,
@@ -700,11 +700,11 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
         &mut ir.model.curves[0].geometry
     {
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = circle_curve.radius();
-        let mut center = *center;
+        let radius = circle_curve.radius().get();
+        let mut center = center;
         center.z = 0.01;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             center,

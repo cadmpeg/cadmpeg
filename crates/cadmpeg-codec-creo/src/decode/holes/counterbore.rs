@@ -850,9 +850,9 @@ fn counterbore_source_boundary_circle(
                 else {
                     return None;
                 };
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = circle_curve.axis();
-                let candidate = circle_curve.radius();
+                let candidate = circle_curve.radius().get();
                 ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalize([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
@@ -888,7 +888,7 @@ fn counterbore_source_boundary_circle(
                 ((alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT
                     && distance <= EPS_GEOMETRY_AGREEMENT * scale)
                     .then_some(())?;
-                Some((other, *center, axis))
+                Some((other, center, axis))
             })
             .collect::<Vec<_>>();
         let [boundary] = boundaries.as_slice() else {

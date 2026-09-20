@@ -2750,13 +2750,13 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     else {
         return false;
     };
-    let left_center = circle_curve.center();
+    let left_center = circle_curve.center().get();
     let left_axis = circle_curve.axis();
-    let left_radius = circle_curve.radius();
-    let right_center = circle_curve_2.center();
+    let left_radius = circle_curve.radius().get();
+    let right_center = circle_curve_2.center().get();
     let right_axis = circle_curve_2.axis();
-    let right_radius = circle_curve_2.radius();
-    if (*left_center).distance(*right_center) > E5_ENDPOINT_MATCH_TOLERANCE
+    let right_radius = circle_curve_2.radius().get();
+    if (left_center).distance(right_center) > E5_ENDPOINT_MATCH_TOLERANCE
         || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
         || (*left_axis).dot(*right_axis) < 1.0 - E5_CARRIER_AXIS_COSINE_TOLERANCE
     {
@@ -2802,15 +2802,15 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
         ) => {
-            let left_center = circle_curve.center();
+            let left_center = circle_curve.center().get();
             let left_axis = circle_curve.axis();
             let left_ref_direction = circle_curve.ref_direction();
-            let left_radius = circle_curve.radius();
-            let right_center = circle_curve_2.center();
+            let left_radius = circle_curve.radius().get();
+            let right_center = circle_curve_2.center().get();
             let right_axis = circle_curve_2.axis();
             let right_ref_direction = circle_curve_2.ref_direction();
-            let right_radius = circle_curve_2.radius();
-            (*left_center).distance(*right_center) <= 2e-3
+            let right_radius = circle_curve_2.radius().get();
+            (left_center).distance(right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
                 && (*left_axis).dot(*right_axis) >= 1.0 - EPS_E5_DECODE_GEOMETRY
                 && (*left_ref_direction).dot(*right_ref_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
@@ -3980,9 +3980,9 @@ mod route_tests {
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                     if {
-                        let center = circle_curve.center();
-            let radius = circle_curve.radius();
-                        *center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
+                        let center = circle_curve.center().get();
+            let radius = circle_curve.radius().get();
+                        center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
                     })
         );
         assert!(
@@ -4027,7 +4027,7 @@ mod route_tests {
         )
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })
+            matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
         );
     }
 
@@ -4075,7 +4075,7 @@ mod route_tests {
         )
         .expect("cylinder boundary circle");
         assert!(
-            matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 2.0 })
+            matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
         );
 
         let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -4273,11 +4273,11 @@ mod route_tests {
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                     if {
-                        let center = circle_curve.center();
+                        let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-                        *center == Point3::new(5.0, 7.0, 3.0)
+            let radius = circle_curve.radius().get();
+                        center == Point3::new(5.0, 7.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
                             && radius == 2.0
@@ -4298,11 +4298,11 @@ mod route_tests {
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                     if {
-                        let center = circle_curve.center();
+                        let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-                        *center == Point3::new(-3.0, -3.0, 3.0)
+            let radius = circle_curve.radius().get();
+                        center == Point3::new(-3.0, -3.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
                             && radius == 2.0

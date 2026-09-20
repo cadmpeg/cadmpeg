@@ -2632,7 +2632,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
         SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             Some(vector_sum(&[
                 (-radius * t.sin(), *ref_direction),
                 (radius * t.cos(), axis.cross(*ref_direction)),
@@ -2714,7 +2714,7 @@ fn curve_second_derivative_inner(
         SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             Some(vector_sum(&[
                 (-radius * t.cos(), *ref_direction),
                 (-radius * t.sin(), axis.cross(*ref_direction)),
@@ -3917,14 +3917,11 @@ fn direct_curve_parameter_near_point(
             delta.dot(direction) / direction.dot(direction)
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-            if radius == 0.0 {
-                return None;
-            }
-            let (x, y, _) = components(*center, *axis, *ref_direction);
+            let radius = circle_curve.radius().get();
+            let (x, y, _) = components(center, *axis, *ref_direction);
             let canonical = (y / radius).atan2(x / radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
@@ -4072,12 +4069,12 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             Some(offset(origin, &[(t, direction)]))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             Some(offset(
-                *center,
+                center,
                 &[
                     (radius * t.cos(), *ref_direction),
                     (radius * t.sin(), axis.cross(*ref_direction)),

@@ -1555,8 +1555,8 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
             ],
         ), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
-                    let center = circle_curve.center();
-    let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+    let radius = circle_curve.radius().get();
                     (center.z - upper_parameter).abs() < EPS_COAXIAL_CIRCLE
                         && (radius - upper_radius).abs() < EPS_COAXIAL_CIRCLE
                 }));
@@ -1581,16 +1581,16 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     assert!(
         matches!(tangent_candidates.as_slice(), [(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle")]
                 if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
                     (center.z - 1.5).abs() < EPS_CONIC_INTERSECTION && (radius - 3.5).abs() < EPS_CONIC_INTERSECTION
                 })
     );
     assert!(
         matches!(resolve_curve_candidates(tangent_candidates, None), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cone_torus_circle"))
                 if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
                     (center.z - 1.5).abs() < EPS_COAXIAL_CIRCLE && (radius - 3.5).abs() < EPS_COAXIAL_CIRCLE
                 })
     );
@@ -1630,8 +1630,8 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     "axis_containing_plane_torus_meridian_circle",
                 )) if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
                     (center.x - 3.0).abs() < EPS_CONIC_INTERSECTION
                         && center.y.abs() < EPS_CONIC_INTERSECTION
                         && center.z.abs() < EPS_CONIC_INTERSECTION

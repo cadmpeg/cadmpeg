@@ -450,7 +450,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     );
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-                if { circle_curve.radius() == 1.0 })
+                if { circle_curve.radius().get() == 1.0 })
     ));
     let circle = result
         .ir()

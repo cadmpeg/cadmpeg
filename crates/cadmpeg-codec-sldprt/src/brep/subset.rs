@@ -73,10 +73,10 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
                 center.x

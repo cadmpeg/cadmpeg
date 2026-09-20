@@ -1100,7 +1100,7 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_curve(&rec("ellipse", circ)).unwrap() {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             assert_eq!(radius, 30.0)
         }
         other => panic!("expected circle, got {other:?}"),

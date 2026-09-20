@@ -158,9 +158,9 @@ pub(super) fn project_edge(
     let tolerance = EdgeProjectionTolerance::of(edge)?.get();
     match edge.curve().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            let center = circle_curve.center();
-            let radius = circle_curve.radius();
-            let center = project_point(*center, origin, u_axis, v_axis);
+            let center = circle_curve.center().get();
+            let radius = circle_curve.radius().get();
+            let center = project_point(center, origin, u_axis, v_axis);
             if !circle_contains_point(center, radius, start, tolerance)
                 || !circle_contains_point(center, radius, end, tolerance)
             {

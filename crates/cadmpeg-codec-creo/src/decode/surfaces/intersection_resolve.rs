@@ -203,7 +203,7 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
                 return false;
             };
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let axis = [axis.x, axis.y, axis.z];
             let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {

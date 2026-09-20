@@ -551,10 +551,10 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 native_vector(records, [direction.x, direction.y, direction.z]);
             }
             Some(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = *circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = *circle_curve.axis();
                 let ref_direction = *circle_curve.ref_direction();
-                let radius = circle_curve.radius();
+                let radius = circle_curve.radius().get();
                 native_curve_base(records, "ellipse")?;
                 native_point(
                     records,

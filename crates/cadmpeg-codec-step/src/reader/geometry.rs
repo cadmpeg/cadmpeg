@@ -3810,10 +3810,10 @@ fn curve_parameter_at_point(
             Some(offset(origin).dot(direction))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radial = offset(*center);
+            let radial = offset(center);
             let y_axis = axis.cross(*ref_direction);
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }

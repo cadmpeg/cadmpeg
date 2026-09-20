@@ -1438,24 +1438,23 @@ fn closed_planar_circle(
     else {
         return None;
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     let axis = axis.unit()?;
     let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
     let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
-    if !radius.is_finite()
-        || radius <= tolerance
+    if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-        || analytic_surface_residual(surface.solved()?, *center)? > tolerance
+        || analytic_surface_residual(surface.solved()?, center)? > tolerance
         || analytic_surface_residual(surface.solved()?, boundary_point)? > tolerance
         || boundary_point.distance(end_point) > tolerance
-        || (boundary_point.distance(*center) - radius).abs() > tolerance
+        || (boundary_point.distance(center) - radius).abs() > tolerance
     {
         return None;
     }
     Some(CircularHole {
-        center: frame.project(*center),
+        center: frame.project(center),
         radius,
     })
 }
@@ -1474,24 +1473,23 @@ fn planar_boundary_samples(
             Some((vec![frame.project(start)], 0.0))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let axis = axis.unit()?;
             let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
             let transverse = axis.cross(reference).unit()?;
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                || !radius.is_finite()
                 || radius <= tolerance
-                || analytic_surface_residual(surface.solved()?, *center)? > tolerance
+                || analytic_surface_residual(surface.solved()?, center)? > tolerance
             {
                 return None;
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
                 start,
-                *center,
+                center,
                 reference,
                 transverse,
                 radius,
@@ -1500,7 +1498,7 @@ fn planar_boundary_samples(
             )?;
             let end_parameter = ellipse_parameter(
                 end,
-                *center,
+                center,
                 reference,
                 transverse,
                 radius,
@@ -1509,7 +1507,7 @@ fn planar_boundary_samples(
             )?;
             let span = shortest_arc_span(start_parameter, end_parameter)?;
             PlanarArc {
-                center: *center,
+                center: center,
                 first_direction: reference,
                 second_direction: transverse,
                 first_radius: radius,
@@ -1925,9 +1923,8 @@ fn cylindrical_trim(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let curve_axis = circle_curve.axis();
-                let curve_radius = circle_curve.radius();
+                let curve_radius = circle_curve.radius().get();
                 if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !curve_radius.is_finite()
                     || (curve_radius - radius).abs() > tolerance
                 {
                     return None;
@@ -2082,12 +2079,11 @@ fn conical_trim(
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let curve_axis = circle_curve.axis();
-                let curve_radius = circle_curve.radius();
+                let curve_radius = circle_curve.radius().get();
                 if (ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
                     || curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || !curve_radius.is_finite()
                 {
                     return None;
                 }

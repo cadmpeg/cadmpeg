@@ -1855,11 +1855,11 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
                 if {
-                    let center = circle_curve.center();
+                    let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = circle_curve.radius();
-                    *center == Point3::new(0.0, 3.0, 0.0)
+        let radius = circle_curve.radius().get();
+                    center == Point3::new(0.0, 3.0, 0.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
                         && radius == 2.0

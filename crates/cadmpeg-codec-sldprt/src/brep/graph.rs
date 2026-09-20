@@ -1523,9 +1523,9 @@ fn decode_graph(
             .flatten()
             .and_then(|carrier| match &carrier.carrier().geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                    let center = circle_curve.center();
+                    let center = circle_curve.center().get();
                     let ref_direction = circle_curve.ref_direction();
-                    let radius = circle_curve.radius();
+                    let radius = circle_curve.radius().get();
                     Some(cadmpeg_ir::math::Point3::new(
                         center.x + ref_direction.x * radius,
                         center.y + ref_direction.y * radius,
@@ -2704,14 +2704,13 @@ fn derive_planar_pcurves(
                 )
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = circle_curve.radius();
+                let radius = circle_curve.radius().get();
                 let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
                 if axis_dot.abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || plane_distance(*center).abs() > EPS_PLANAR_DISTANCE
-                    || radius <= 0.0
+                    || plane_distance(center).abs() > EPS_PLANAR_DISTANCE
                 {
                     continue;
                 }
@@ -2720,7 +2719,7 @@ fn derive_planar_pcurves(
                 };
                 PcurveGeometry::Circle(
                     match cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
-                        uv(*center),
+                        uv(center),
                         ref_direction,
                         if axis_dot < 0.0 {
                             cadmpeg_ir::math::Point2::new(ref_direction.v, -ref_direction.u)
@@ -2864,7 +2863,7 @@ fn derive_cylindrical_pcurves(
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let circle_axis = circle_curve.axis();
-                    let circle_radius = circle_curve.radius();
+                    let circle_radius = circle_curve.radius().get();
                     (circle_radius.abs() - radius.abs()).abs() < EPS_CIRCLE_RADIUS_MATCH
                         && (circle_axis.x * axis.x
                             + circle_axis.y * axis.y
@@ -2873,7 +2872,7 @@ fn derive_cylindrical_pcurves(
                             > 1.0 - EPS_AXIS_ALIGNMENT
                 } =>
             {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let circle_axis = circle_curve.axis();
                 let circle_reference = circle_curve.ref_direction();
                 let d = [
@@ -3463,10 +3462,10 @@ fn derive_revolved_circle_pcurves(
         else {
             continue;
         };
-        let circle_center = circle_curve.center();
+        let circle_center = circle_curve.center().get();
         let circle_axis = circle_curve.axis();
         let circle_reference = circle_curve.ref_direction();
-        let circle_radius = circle_curve.radius();
+        let circle_radius = circle_curve.radius().get();
         let (surface_axis, surface_reference, v) = match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
@@ -3663,9 +3662,9 @@ fn derive_spherical_pcurves(
         else {
             continue;
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
-        let circle_radius = circle_curve.radius();
+        let circle_radius = circle_curve.radius().get();
         let axis_dot = axis.x * v_reference.x + axis.y * v_reference.y + axis.z * v_reference.z;
         let geometry = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
             let d = [
@@ -5411,8 +5410,8 @@ fn synthesize_cylinder_seams(
             let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
                 return None;
             };
-            let center = *circle_curve.center();
-            let radius = circle_curve.radius();
+            let center = circle_curve.center().get();
+            let radius = circle_curve.radius().get();
             Some(cadmpeg_ir::math::Point3::new(
                 center.x - ref_direction.x * radius,
                 center.y - ref_direction.y * radius,

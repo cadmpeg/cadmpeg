@@ -1475,10 +1475,10 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(center.x * scale, center.y * scale, center.z * scale),
                 *axis,
@@ -2433,10 +2433,10 @@ mod tests {
         let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = curve else {
             panic!("test curve changed family");
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
-        let radius = circle_curve.radius();
-        assert_point3(*center, [50.8, 76.2, 101.6]);
+        let radius = circle_curve.radius().get();
+        assert_point3(center, [50.8, 76.2, 101.6]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(radius, 127.0);
     }
