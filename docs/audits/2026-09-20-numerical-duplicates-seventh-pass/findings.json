@@ -1,0 +1,500 @@
+[
+  {
+    "id": "ASM7-01",
+    "crate": "cadmpeg-asm",
+    "priority": 3,
+    "kind": "policy",
+    "confidence": "Behavior confirmed; defect classification depends on the intended approximation contract",
+    "title": "A relatively curved tiny spine is classified as linear",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-asm/src/brep/geometry.rs",
+        "function": "linear_nurbs_spine",
+        "line": 761,
+        "sha256": "5130baffa0a1cedc149f9e7fae664d53474bd6b13a089ecc9851bb49e64e9b9b"
+      },
+      {
+        "path": "crates/cadmpeg-asm/src/brep/geometry.rs",
+        "function": "analytic_rolling_ball_surface",
+        "line": 621,
+        "sha256": "2d239b6e9509e28581c6f968fc05c1f8ea88e24b68add020cfee9ef2b1f555f3"
+      }
+    ],
+    "trigger": "A quadratic Bezier spine with poles (0,0,0),(5e-11,4e-11,0),(1e-10,0,0) is accepted as an X-axis line. Its midpoint is (5e-11,2e-11,0): 20% of the chord off that line.",
+    "impact": "The collinearity tolerance is 1e-10*max(extent,1). It dominates this entire spine and can enable cylinder classification. The absolute error is only 2e-11 mm, so whether this is wrong depends on whether this owner promises exact analytic recognition or an allowed absolute approximation.",
+    "repair": "Decide and document that contract. For exact recognition, use a scale-relative criterion or source error bounds. If absolute approximation is intended, retain it explicitly and do not describe the replacement as exact.",
+    "verification": "asm::curved_spine_becomes_line; complete extracted classifier and checked NURBS evaluation.",
+    "limit": "Policy-dependent observation, not counted as a confirmed numerical defect. Tiny physical dimensions; downstream complete rolling-ball transfer was not executed.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "CATIA7-01",
+    "crate": "cadmpeg-codec-catia",
+    "priority": 1,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "A short witnessed arc is replaced by a full circle",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-catia/src/families/standard/decode.rs",
+        "function": "standard_analytic_curve_parameter_range",
+        "line": 8081,
+        "sha256": "c6a4a759c2110a27fded97b172741ec72e61012a38f650b7e9a7ecfb77fb5de9"
+      }
+    ],
+    "trigger": "A unit circle with endpoints at angles 0 and 0.001 radians and an interior witness at 0.0005 returns [0, TAU]. Its endpoint separation is about 0.001 mm, below the 0.002 mm endpoint threshold.",
+    "impact": "The proximity shortcut runs before angular or witness checks. A small edge can gain almost one full turn; the witness already distinguishes the short arc. This is not a last-bit normalization difference.",
+    "repair": "Use source closure information or a distinct angular/witness decision for full turns. Endpoint proximity alone cannot establish closure.",
+    "verification": "catia::short_witnessed_arc_becomes_full_circle; complete extracted function and its actual helpers, checked IR circle.",
+    "limit": "No complete codec decode or export was run.",
+    "relation_to_prior_audits": "The sixth-pass repair stabilized standard_analytic_curve_angle at extreme radii. This is the caller\u2019s separate full-turn shortcut.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "CREO7-01",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Plane\u2013circle intersection returns the circle center for a secant",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/equations.rs",
+        "function": "intersect_plane_with_circle",
+        "line": 1187,
+        "sha256": "a3444dce332d11ec9eed8056d0a8d863aa20e7164cf21326335688313cc5e43d"
+      }
+    ],
+    "trigger": "For circle center (0,0,0), axis Z, radius 1e-7, and plane x=0, the function returns only (0,0,0). The exact intersections are (0,+1e-7,0) and (0,-1e-7,0).",
+    "impact": "The squared radial remainder is compared with 1e-12*max(radius,1)^2 and classified as tangent. The result is not on the circle. intersection_resolve uses this owner when cutting carrier-intersection circles by a plane.",
+    "repair": "Use a dimensionless radial comparison and a stable half-chord; classify multiplicity independently of a 1 mm floor.",
+    "verification": "creo::tiny_plane_circle_returns_center; complete extracted function with production vector helpers.",
+    "limit": "No complete codec decode or export was run.",
+    "relation_to_prior_audits": "Earlier fixes covered trim/sketch circle solvers and surface candidate constructors. This is the separate analytic plane-cut owner.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "CREO7-02",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Tiny disjoint sphere supports manufacture a tangent point",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/planes.rs",
+        "function": "tangent_sphere_point",
+        "line": 95,
+        "sha256": "ecd57a17742c5319e0d5eda65b654c4528a1908fea8f285a9599c870088dde4a"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/planes.rs",
+        "function": "tangent_plane_sphere_point",
+        "line": 116,
+        "sha256": "7607f8c7659519cd72bda18fbd07b2f64addc126ded7fb65a6a19ae8a3d85ccf"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/planes.rs",
+        "function": "point_on_carrier",
+        "line": 42,
+        "sha256": "f42fc5dd9ef61da51f84d36637bedb2e9509e5b2a5fd04e659451be8c06ff131"
+      }
+    ],
+    "trigger": "Radius-1e-10 spheres at x=0 and x=3e-10 return the midpoint x=1.5e-10 although they are disjoint. A sphere at x=3e-10 with radius 1e-10 and plane x=0 returns the origin. point_on_carrier accepts these false candidates against the sphere supports.",
+    "impact": "The pair constructors use an absolute 1e-9 floor and the final carrier gate uses an even larger absolute 1e-7 floor. solve_carriers_with_diagnostics therefore cannot remove these false pair candidates at its final membership check.",
+    "repair": "Use support-scaled tangency and membership residuals. Any absolute model tolerance must be explicit and must not silently turn a disjoint pair into a unique exact tangent.",
+    "verification": "creo::disjoint_tiny_spheres_invent_tangent; complete extracted tangent and membership functions.",
+    "limit": "Very small model lengths; constructor and final membership behavior reproduced. The complete triple-carrier solver was inspected, not executed.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 2
+  },
+  {
+    "id": "CREO7-03",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 3,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Carrier membership retains an overflowing squared norm",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/planes.rs",
+        "function": "point_on_carrier",
+        "line": 42,
+        "sha256": "f42fc5dd9ef61da51f84d36637bedb2e9509e5b2a5fd04e659451be8c06ff131"
+      }
+    ],
+    "trigger": "The exact point (1e200,0,0) on a radius-1e200 sphere centered at the origin is rejected because dot(relative,relative).sqrt() is infinite.",
+    "impact": "Valid candidates are rejected by the common final membership gate. Cylinder radial distance and the torus tube-distance arm contain the same unscaled squared-norm construction.",
+    "repair": "Use robust norms in each arm and stable radial projection where needed. Keep this range repair separate from the small-radius tolerance policy.",
+    "verification": "creo::large_sphere_point_is_refused; complete function, sphere arm executed; cylinder and torus copies confirmed in source.",
+    "limit": "Extreme finite model coordinates. Only the sphere witness was executed.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 3
+  },
+  {
+    "id": "CREO7-04",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 3,
+    "kind": "duplication",
+    "confidence": "High",
+    "title": "Remaining section collectors duplicate an existing collector policy",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "prototype_pcurves",
+        "line": 1581,
+        "sha256": "f20b9573d38cc06eccd15fd45c66a56a1997df694d48ce5141259c88cfaad281"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "curve_prototype_topology",
+        "line": 1598,
+        "sha256": "4eb14c230dc7f2a5d428b41d9b7d41c8300e752323a1e4915a93075f13ed8bbc"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "curve_topology_rows",
+        "line": 1615,
+        "sha256": "60fb8c28b99d112a1c61f9a1333f629d1dc128d043dd780b7c347ae8f5fb294c"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "curve_prototypes",
+        "line": 1480,
+        "sha256": "870fc430460942dbf490488c159d0cf3603b728315d65e9504e5b05a810882f8"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "curve_parameters",
+        "line": 1534,
+        "sha256": "58f4e64a527a1f15026c5e1d3b7fd668cf00b843cfcd0ed3166f1acd14e4b87b"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "curve_expressions",
+        "line": 1497,
+        "sha256": "724ec783bb2d2dbdeb6ac5f0ae943fbbf993c753fb0c537bd1761001db47ad87"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "surface_contours",
+        "line": 1353,
+        "sha256": "ee6c69c5207f8de755f589d21bed56071c500f8783d3e74522e52f223bf135b8"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "cross_section_surface_contours",
+        "line": 1372,
+        "sha256": "24eb191bfa7b1fa24b033138c6247c21d6eb09e1e6a771bf03b8ec5c8ec1e16e"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "cross_section_curve_prototypes",
+        "line": 1644,
+        "sha256": "8e1601e1fd0e7617f92dccee77c924729463c99eb6cc78d0e0272c2d506ffa10"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "datum_cylinders",
+        "line": 1683,
+        "sha256": "969e173a749f404998da9ad7a222304f01661bdf471f11078d1cace0a3d82fa3"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/container.rs",
+        "function": "collect_section_records",
+        "line": 2770,
+        "sha256": "c621af6f55cc1f326bec6b462468d247aa74b0799451822124db3f05f82bbdfc"
+      }
+    ],
+    "trigger": "prototype_pcurves and curve_prototype_topology have the same identifier-normalized loop: decode each section, relocate offsets, append, sort. The listed siblings repeat that traversal with different relocation closures or section filters.",
+    "impact": "collect_section_records already owns this policy and accepts the decoder, relocation and ordering operations. The remaining loops duplicate that owner without adding a traversal guarantee. No runtime defect is asserted.",
+    "repair": "Route these collectors through the existing helper. Preserve each relocation field and section predicate. two_chart_pcurves can reuse the collection prefix while retaining its distinct uniqueness filter; datum_planes must retain its additional named-plane record.",
+    "verification": "Source and AST comparison only; no behavior change or runtime reproduction.",
+    "limit": "This is one maintenance family, not one finding per function. Typed getters and representation-specific conversions are excluded.",
+    "relation_to_prior_audits": "CREO3-05 and CREO4-02 migrated other collectors. These remaining bodies still contain the common loop.",
+    "status": "open",
+    "rank_in_crate": 4
+  },
+  {
+    "id": "F3D7-01",
+    "crate": "cadmpeg-codec-f3d",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Trace-only angle recovery discards a finite body rotation",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/feature_project.rs",
+        "function": "matrix_axis_angle",
+        "line": 4076,
+        "sha256": "7de3b17b7e45d9918986e4451f41572dbfb631989f738412f8a2ebf8efdba32f"
+      },
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/feature_project.rs",
+        "function": "project_move",
+        "line": 3363,
+        "sha256": "26572976fee081d686caa6362dfe9b4c55d7ba4d42ad0a2e3eeff8ea260758df"
+      }
+    ],
+    "trigger": "A proper Z rotation of 1e-8 radians has nonzero off-diagonal sine entries but a trace that rounds to 3. matrix_axis_angle returns None, despite its stated zero-angle gate being 1e-12.",
+    "impact": "project_move writes rotation=None into MoveBody. The source contains a resolvable rotation, but the feature projection loses it.",
+    "repair": "Recover the small angle from both the skew part and trace with atan2, while retaining the half-turn axis branch.",
+    "verification": "fusion::representable_rotation_is_discarded; extracted function plus checked proper-rigid Transform.",
+    "limit": "No complete codec decode or export was run.",
+    "relation_to_prior_audits": "The first audit repaired half-turn axis recovery in this function. Small-angle trace cancellation is a different remaining branch.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "FREECAD7-01",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Endpoint snapping collapses an exact pcurve domain",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/topology_transfer.rs",
+        "function": "normalize_pcurve_parameter_range",
+        "line": 1608,
+        "sha256": "dde4d0f01fd060059500eef43dabf8f9fd79091645a9ef52d0b35edc6da97460"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/topology_transfer.rs",
+        "function": "bounded_pcurve_range",
+        "line": 1601,
+        "sha256": "15832978f4cf7c61592a6852507112cd7623fcbe3b06fa9de954f270c576d3ee"
+      }
+    ],
+    "trigger": "A valid degree-one pcurve with knots [0,0,1e-10,1e-10] and range [0,1e-10] returns [0,0]. Both endpoints are within the floored 1e-9 tolerance of the lower knot; the lower comparison wins even for an exact upper endpoint.",
+    "impact": "The stored pcurve range is corrupted. The edge-use path also drops the range because bounded_pcurve_range requires a strict increase. Small parameter intervals do not imply small model geometry: the probe\u2019s poles span one parameter-space unit.",
+    "repair": "Preserve exact endpoint matches first; then snap to an unambiguous nearest boundary with a tolerance bounded by the domain separation.",
+    "verification": "fc_range::exact_small_domain_collapses; complete extracted normalizer and checked PcurveNurbs construction.",
+    "limit": "No complete codec decode or export was run.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "FREECAD7-02",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 3,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Periodic knot extension overflows a cancellable period",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/brep.rs",
+        "function": "normalize_periodic_knots",
+        "line": 4787,
+        "sha256": "ee731325e0f0b02f9c636eb82f8cdecc75469d9d39b56b4d91955237d51afc1b"
+      }
+    ],
+    "trigger": "For degree 1 and periodic knots [-1e308,-9e307,9e307,1e308], the function returns Ok with exterior knots -infinity and +infinity. The correct exterior values are -1.1e308 and +1.1e308, both representable.",
+    "impact": "Computing last-first first overflows, although each final three-term sum is finite. Text and binary curve/pcurve paths and surface knot normalization share this owner; later finite-knot admission refuses the result.",
+    "repair": "Compute each exterior knot with a scaled or cancellation-safe sum; reject only an unrepresentable final knot.",
+    "verification": "fc_periodic::finite_periodic_extension_overflows; complete extracted function, error-message carrier stub.",
+    "limit": "Extreme finite knot parameters. The full FreeCAD parser was not executed.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 2
+  },
+  {
+    "id": "NX7-01",
+    "crate": "cadmpeg-codec-nx",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Common rational weight scaling changes closest-point projection",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-nx/src/decode/blend.rs",
+        "function": "rational_squared_distance_derivative",
+        "line": 2273,
+        "sha256": "9e591073c2aebc934ddafca849be0bbaf0bc82c003dbdc55d52979619f900c3b"
+      },
+      {
+        "path": "crates/cadmpeg-codec-nx/src/decode/blend.rs",
+        "function": "homogeneous_residual_distance",
+        "line": 2610,
+        "sha256": "3c7cef7e69317207fafcbccec6489f343b0fe32be82fdd8d118f183e87d58751"
+      },
+      {
+        "path": "crates/cadmpeg-codec-nx/src/decode/blend.rs",
+        "function": "closest_nurbs_curve_parameter_with_budget",
+        "line": 3751,
+        "sha256": "512184f0bfc214be4062069c7004089e47bafe99b0bce0e58b044f292e418526"
+      }
+    ],
+    "trigger": "A line from (0,0,0) to (1,0,0), queried at x=0.25, has residual controls [-0.25*w,0,0,w] and [0.75*w,0,0,w]. Common weights 1 give a nonconstant derivative; 1e200 returns None; 1e-200 returns all zeros. The endpoint residual becomes infinity or zero instead of 0.25.",
+    "impact": "The NURBS geometry is unchanged by a common weight factor. Raw Bernstein products and residual squares make projection depend on that arbitrary representation factor; the production caller accepts these finite positive weights.",
+    "repair": "Normalize homogeneous controls before polynomial products and use a robust dehomogenized residual norm. Preserve root ordering and the existing work budget.",
+    "verification": "nx::common_weight_scale_changes_projection; actual derivative-product and distance helpers; checked NURBS constructor and IR evaluation control.",
+    "limit": "Extreme common weight factors with ordinary point coordinates. Full budgeted root isolation was not run.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "RHINO7-01",
+    "crate": "cadmpeg-codec-rhino",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Shallow extrusion miters lose their tilt through acos",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/extrusion.rs",
+        "function": "active_miter",
+        "line": 865,
+        "sha256": "8fe619d11c87d4838ed36de2d909c7351e4e786cac5d7cbe35c172e98738244b"
+      },
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/extrusion.rs",
+        "function": "mitered_local",
+        "line": 595,
+        "sha256": "6b077d4de899501408ae7ff35f6bb36c646b3342862569aa679317f0c7145911"
+      }
+    ],
+    "trigger": "active_miter accepts normal (1e-8,0,1). Its normalized Z rounds to 1; acos(Z) becomes zero. Transforming (1e8,0,0) leaves Z=0, with a 1 mm residual against the intended miter plane instead of Z approximately -1.",
+    "impact": "The input retains a finite transverse normal component, but profile point and basis construction discard the tilt. The error grows with profile extent.",
+    "repair": "Recover the angle with atan2(hypot(normal.x,normal.y),normal.z), or use a direct stable miter map.",
+    "verification": "rhino::shallow_miter_tilt_is_lost; full admission, normalization, miter and Rodrigues helpers; error-carrier stub.",
+    "limit": "Angle 1e-8 radians. The 1 mm residual witness uses a 1e8 mm profile extent; a 1 mm profile has a 1e-8 mm error.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "SLDPRT7-01",
+    "crate": "cadmpeg-codec-sldprt",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Source-less angular validation still rejects valid short and shallow lines",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-sldprt/src/resolved_features/write_prepare.rs",
+        "function": "validate_solved_dimension",
+        "line": 738,
+        "sha256": "862fc3b918d0cb94439d8222706bc457c46d27d73160d02b11cd84c8cbc3dfc2"
+      }
+    ],
+    "trigger": "Two perpendicular segments of length 1e-5 are rejected as degenerate because their length product 1e-10 is compared against the linear 1e-9 threshold. Unit-length lines at angle 1e-8 instead measure as zero through acos and fail the final 1e-9 agreement test.",
+    "impact": "The source-less writer refuses valid dimensions. This is a separate angle implementation from the already repaired relation-record helper, with both a dimensional mismatch and small-angle cancellation.",
+    "repair": "Check each line length against the linear gate, then compute the angle from normalized cross and dot with atan2. Share the established angle policy where ownership allows.",
+    "verification": "sld::valid_angular_dimensions_are_refused; verbatim numeric block from the Angle arm and vector2_length, with a Result wrapper and error stub.",
+    "limit": "The numeric branch and final comparison were reproduced; complete source-less export was not run.",
+    "relation_to_prior_audits": "SLDPRT6-01 repaired relation_records::line_line_angle. This independent writer branch still uses the old arithmetic.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "STEP7-01",
+    "crate": "cadmpeg-codec-step",
+    "priority": 3,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Finite mesh mass properties are lost when centroid moments overflow",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-codec-step/src/reader/validation.rs",
+        "function": "mesh_properties",
+        "line": 330,
+        "sha256": "5a739fbcd04798ef081d61ff16278ce09fdf29eb490e2c02c304659484964738"
+      }
+    ],
+    "trigger": "Scale the tetrahedron (0,0,0),(2,0,0),(0,1,0),(0,0,1) by 1e90. Its area, volume (1e270/3), and centroid (5e89,2.5e89,2.5e89) are finite, but mesh_properties returns None because volume-weighted centroid terms overflow.",
+    "impact": "The validation-property reader loses its computed comparison values. Moving the origin fixed translation cancellation, but does not bound the fourth-power centroid moment intermediates.",
+    "repair": "Accumulate in a scaled local coordinate system and rescale area, volume and centroid separately; use stable summation for many triangles.",
+    "verification": "step::finite_mass_properties_are_lost; complete function with minimal body/mesh containers exposing the same fields and slices. Unit-scale tetrahedron is the control.",
+    "limit": "Extreme finite model scale. No full STEP validation-property import was run.",
+    "relation_to_prior_audits": "STEP2-01 repaired translation dependence. This is uniform-scale overflow in the remaining moment accumulation.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "IR7-01",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Circle intersection loses the smaller circle at unequal scales",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-ir/src/math/planar.rs",
+        "function": "circle_intersections",
+        "line": 140,
+        "sha256": "5656709230915e1423a9846f1e8b78e338757a47ea2dcb4023db8dcb0d594df4"
+      }
+    ],
+    "trigger": "A unit circle at the origin and a radius-1e200 circle centered at (1e200,0) return a single point (0,0). Analytically they have two intersections near (5e-201,+1) and (5e-201,-1). The returned center is not on the unit circle.",
+    "impact": "After scaling by the large circle, the small radius is 1e-200 and its square underflows. The height becomes zero and two finite roots collapse to a false tangent. This shared helper is used by codec and IR intersection owners.",
+    "repair": "Preserve independent radial scales and evaluate the half-chord without squaring away the small radius. Include strongly unequal circles, not only common scaling.",
+    "verification": "planar::unequal_circles_intersect_at_wrong_center; complete current function and current finite-sum implementation.",
+    "limit": "Extreme radius ratio. No claim that ordinary comparable circles fail.",
+    "relation_to_prior_audits": "The earlier planar repair handled common extreme scaling. This witness changes the ratio between the two radii.",
+    "status": "open",
+    "rank_in_crate": 1
+  },
+  {
+    "id": "IR7-02",
+    "crate": "cadmpeg-ir",
+    "priority": 3,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Normalized-vector derivatives are refused after intermediate overflow",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "unit_vector_with_derivative",
+        "line": 5346,
+        "sha256": "0527ce53e3700063c2dfe22e819c554cff3db4bcb1af474b4f140685dd7dbcde"
+      }
+    ],
+    "trigger": "vector=(1,1,1), derivative=(MAX,MAX,MAX) returns None. The normalized vector is constant along this parallel derivative, so its derivative is zero. vector=(MAX,MAX,0) with zero derivative is also refused although its unit direction is finite.",
+    "impact": "The raw projection unit.dot(derivative), or the full vector length, overflows before a finite normalized result can be formed. Sweep and rolling-ball differential evaluation consume this helper.",
+    "repair": "Scale the vector and derivative independently and form the projected derivative with stable products and sums; preserve representable final normalized derivatives.",
+    "verification": "eval::parallel_derivative_is_refused; complete function plus actual offset/vector-sum helpers.",
+    "limit": "Extreme finite derivatives or vector magnitudes; no full procedural surface evaluation was run.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 2
+  },
+  {
+    "id": "IR7-03",
+    "crate": "cadmpeg-ir",
+    "priority": 3,
+    "kind": "numerical",
+    "confidence": "High",
+    "title": "Sweep rail transforms bypass stable affine arithmetic in two copies",
+    "locations": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "linear_sweep_rail_point",
+        "line": 5300,
+        "sha256": "c9df2d311858d896984aa42665e49473130b6e9f2caa9f929ecdbd11359493c8"
+      },
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "linear_sweep_rail_vector",
+        "line": 5308,
+        "sha256": "87f1302a3c9775d34e52595d228b533659b23e7fe373e5ad9245d5b0c1dc2c43"
+      }
+    ],
+    "trigger": "The proper 180-degree rotation about (1,1,1) has diagonal -1/3 and off-diagonal 2/3. Applied to (MAX,MAX,MAX), both helpers produce an infinite Z component. The checked shared Transform applies the same matrix with finite components.",
+    "impact": "The first two positive terms overflow before the last negative term cancels them. Point and vector copies repeat the same unsafe matrix arithmetic despite an existing stable transform owner.",
+    "repair": "Reuse the stable transform or finite-dot operation for both point and derivative transformation. Remove the duplicated raw product-sum policy.",
+    "verification": "eval::proper_rotation_produces_nonfinite_rail; both complete helpers plus proper-rigid validation and stable-transform comparison.",
+    "limit": "Coordinates near f64::MAX. The computed final result is representable; this is not rejection of an intrinsically unrepresentable transform.",
+    "relation_to_prior_audits": "Different owner or failure mechanism from the earlier reported witnesses.",
+    "status": "open",
+    "rank_in_crate": 3
+  }
+]
