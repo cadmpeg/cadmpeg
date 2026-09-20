@@ -390,7 +390,6 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
 pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     match surface {

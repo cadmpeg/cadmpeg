@@ -248,7 +248,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         v_range: [-1.0, 1.0],
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
-        lifted_curve_geometry(&pcurve, &plane, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&pcurve, &plane)
     else {
         panic!("plane lift must be NURBS");
     };
@@ -266,14 +266,14 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         chart_origin: 0.0,
     };
     assert!(
-        matches!(lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new()), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius() == 2.0 })
+        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius() == 2.0 })
     );
     let meridian = B5Pcurve {
         control_points: vec![[1.0, -2.0], [1.0, 4.0]],
         ..pcurve
     };
     assert!(matches!(
-        lifted_curve_geometry(&meridian, &cylinder, &mut crate::nurbs::LaneRefusals::new()),
+        lifted_curve_geometry(&meridian, &cylinder),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
 }
@@ -305,7 +305,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         chart_origin: 0.0,
     };
     let geometry =
-        lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&pcurve, &cylinder)
             .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
@@ -350,7 +350,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         ..pcurve.clone()
     };
     assert!(
-        matches!(lifted_curve_geometry(&cone_pcurve, &cone, &mut crate::nurbs::LaneRefusals::new()), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(lifted_curve_geometry(&cone_pcurve, &cone), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius();
             radius == scale * 0.5
@@ -376,7 +376,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         ..pcurve
     };
     assert!(
-        matches!(lifted_curve_geometry(&torus_pcurve, &torus, &mut crate::nurbs::LaneRefusals::new()), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(lifted_curve_geometry(&torus_pcurve, &torus), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius();
             radius == 2.0 * scale
@@ -407,7 +407,7 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         v_range: [-1.0, 1.0],
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
-        lifted_curve_geometry(&pcurve, &plane, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&pcurve, &plane)
     else {
         panic!("expected lifted rational curve");
     };
@@ -606,7 +606,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         lifted_endpoints: None,
     };
     let geometry =
-        lifted_curve_geometry(&pcurve, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&pcurve, &cylinder)
             .expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
@@ -640,11 +640,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
         ..pcurve.clone()
     };
-    let tiny_geometry = lifted_curve_geometry(
-        &tiny_pcurve,
-        &cylinder,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let tiny_geometry = lifted_curve_geometry(&tiny_pcurve, &cylinder)
     .expect("tiny cylinder latitude");
     let tiny_end = cylinder_point(
         [0.0; 3],
@@ -695,7 +691,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ..pcurve
     };
     let turnback_geometry =
-        lifted_curve_geometry(&turnback, &cylinder, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&turnback, &cylinder)
             .expect("turnback latitude locus");
     let turnback_end = cylinder_point(
         [0.0; 3],
@@ -733,7 +729,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ..reversed_pcurve
     };
     let cone_geometry =
-        lifted_curve_geometry(&cone_pcurve, &cone, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&cone_pcurve, &cone)
             .expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
@@ -864,7 +860,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())
     );
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&pcurve, &cone, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&pcurve, &cone)
     else {
         panic!("expected cone latitude circle");
     };
@@ -1311,7 +1307,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         Point2::new(std::f64::consts::PI, 1.0)
     );
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&base, &torus, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&base, &torus)
     else {
         panic!("expected meridian circle");
     };
@@ -1327,7 +1323,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         ..base
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&latitude, &torus, &mut crate::nurbs::LaneRefusals::new())
+        lifted_curve_geometry(&latitude, &torus)
     else {
         panic!("expected latitude circle");
     };

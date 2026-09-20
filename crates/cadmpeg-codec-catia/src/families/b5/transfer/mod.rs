@@ -467,7 +467,7 @@ fn build_plan(
             }) {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
-            let lifted = lifted_curve_geometry(pcurve, surface, refusal).or_else(|| {
+            let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
                 let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
                     &surface_plan.get(&loop_.surface)?.geometry
                 else {
@@ -970,7 +970,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
                 )?,
             };
-            let curve = lifted_curve_geometry(pcurve, source_surface, refusal);
+            let curve = lifted_curve_geometry(pcurve, source_surface);
             Some(ResolvedExtrusionSupport {
                 surface_object_id,
                 surface,
