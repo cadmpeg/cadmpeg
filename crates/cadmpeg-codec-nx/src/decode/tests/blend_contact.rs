@@ -14,6 +14,7 @@ use crate::decode::offset::{
     continue_surface_intersection_parameters, solve_damped_least_squares_4x4,
 };
 use crate::decode::pcurves::blend_boundary_parameter_from_support_spine;
+use cadmpeg_ir::math::Point3;
 
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw, CurveGeometry,

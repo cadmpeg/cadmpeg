@@ -6,6 +6,7 @@
 //! explicit body records. It derives one body hierarchy when those records are
 //! absent. It also derives supported pcurves and periodic seams.
 
+use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
