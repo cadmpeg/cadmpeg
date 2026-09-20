@@ -871,7 +871,9 @@ fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
 }
 
 fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
-    value.unit_nonzero().ok_or_else(|| error(offset, format!("{name} is invalid")))
+    value
+        .unit_nonzero()
+        .ok_or_else(|| error(offset, format!("{name} is invalid")))
 }
 
 fn local_to_world_vector(

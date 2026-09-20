@@ -2776,7 +2776,9 @@ fn hole_axis_key(placement: &HolePlacement) -> Option<[GridCoordinate; 6]> {
         origin.y - station * axis.y,
         origin.z - station * axis.z,
     );
-    if !closest.is_finite() || !axis.is_finite() { return None; }
+    if !closest.is_finite() || !axis.is_finite() {
+        return None;
+    }
     Some([
         quantize(closest.x),
         quantize(closest.y),
@@ -3747,7 +3749,8 @@ fn match_marker_loci_to_bore_axes(
 
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let quantize_scalar = |value: f64| GridCoordinate::new(value, QUANTUM);
-    let mut grouped = HashMap::<[GridCoordinate; 3], HashMap<[GridCoordinate; 3], Vec<(Point3, Vector3)>>>::new();
+    let mut grouped =
+        HashMap::<[GridCoordinate; 3], HashMap<[GridCoordinate; 3], Vec<(Point3, Vector3)>>>::new();
     for surface in surfaces {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
@@ -3766,7 +3769,9 @@ fn match_marker_loci_to_bore_axes(
             origin.y - closest_distance * canonical.y,
             origin.z - closest_distance * canonical.z,
         );
-        if !closest.is_finite() || !canonical.is_finite() { continue; }
+        if !closest.is_finite() || !canonical.is_finite() {
+            continue;
+        }
         grouped
             .entry([
                 quantize_scalar(canonical.x),

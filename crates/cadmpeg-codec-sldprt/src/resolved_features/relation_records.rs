@@ -475,7 +475,10 @@ mod relation_records_tests {
         let x = [[0.0, 0.0], [1.0e200, 0.0]];
         let y = [[0.0, 0.0], [0.0, 1.0e200]];
         assert_eq!(super::line_line_angle(x, x), Some(0.0));
-        assert_eq!(super::line_line_angle(x, y), Some(std::f64::consts::FRAC_PI_2));
+        assert_eq!(
+            super::line_line_angle(x, y),
+            Some(std::f64::consts::FRAC_PI_2)
+        );
         assert_eq!(super::dynamic_line_line_angle(x, x), Some(0.0));
     }
 
@@ -2257,7 +2260,13 @@ pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Op
     if first.norm() <= SKETCH_POINT_TOLERANCE || second.norm() <= SKETCH_POINT_TOLERANCE {
         return None;
     }
-    Some(first.unit_nonzero()?.dot(second.unit_nonzero()?).clamp(-1.0, 1.0).acos())
+    Some(
+        first
+            .unit_nonzero()?
+            .dot(second.unit_nonzero()?)
+            .clamp(-1.0, 1.0)
+            .acos(),
+    )
 }
 
 pub(super) fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {

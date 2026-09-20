@@ -1873,11 +1873,16 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vect
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    let property = property(properties, "Placement")
-        .or_else(|| property(properties, "AttachmentOffset"))?;
+    let property =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))?;
     let matrix = crate::placement::placement_matrix(property).ok()??.rows();
     let column = |index| Vector3::new(matrix[0][index], matrix[1][index], matrix[2][index]);
-    Some((Point3::new(matrix[0][3], matrix[1][3], matrix[2][3]), column(2), column(0), column(1)))
+    Some((
+        Point3::new(matrix[0][3], matrix[1][3], matrix[2][3]),
+        column(2),
+        column(0),
+        column(1),
+    ))
 }
 
 fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {

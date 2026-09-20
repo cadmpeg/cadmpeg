@@ -1564,10 +1564,18 @@ pub fn nurbs_curve_point(
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-        let index = span - degree + local;
-        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
-    }));
+    let sum = |values: &[f64]| {
+        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+            let index = span - degree + local;
+            Some((
+                [basis, 1.0],
+                weights
+                    .and_then(|weights| weights.get(index).copied())
+                    .unwrap_or(1.0),
+                *control_points.get(index)?,
+            ))
+        }))
+    };
     let base = sum(&basis)?;
     Some(Point3::from(base.project(base, &[])?))
 }
@@ -2318,13 +2326,28 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
     let v_basis = bspline_basis(surface.v_knots(), v_degree, v_span, v_at)?;
-    let sum = |u_values: &[f64], v_values: &[f64]| Homogeneous::sum(
-        u_values.iter().copied().enumerate().flat_map(|(i, u_value)| {
-            v_values.iter().copied().enumerate().map(move |(j, v_value)| {
-                let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-                Some(([u_value, v_value], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
-            })
-        }));
+    let sum = |u_values: &[f64], v_values: &[f64]| {
+        Homogeneous::sum(
+            u_values
+                .iter()
+                .copied()
+                .enumerate()
+                .flat_map(|(i, u_value)| {
+                    v_values
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .map(move |(j, v_value)| {
+                            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+                            Some((
+                                [u_value, v_value],
+                                surface.weight(pole_u, pole_v).unwrap_or(1.0),
+                                surface.pole(pole_u, pole_v)?,
+                            ))
+                        })
+                }),
+        )
+    };
     let base = sum(&u_basis, &v_basis)?;
     Some(Point3::from(base.project(base, &[])?))
 }
@@ -2403,14 +2426,20 @@ pub fn nurbs_surface_isocurve(
     let mut control_points = Vec::with_capacity(varying_count);
     let mut sums = Vec::with_capacity(varying_count);
     for varying in 0..varying_count {
-        let sum = Homogeneous::sum(fixed_basis.iter().copied().enumerate().map(|(local, basis)| {
-            let fixed = fixed_span - fixed_degree + local;
-            let (pole_u, pole_v) = match fixed_axis {
-                SurfaceParameterAxis::U => (fixed, varying),
-                SurfaceParameterAxis::V => (varying, fixed),
-            };
-            Some(([basis, 1.0], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
-        }))?;
+        let sum = Homogeneous::sum(fixed_basis.iter().copied().enumerate().map(
+            |(local, basis)| {
+                let fixed = fixed_span - fixed_degree + local;
+                let (pole_u, pole_v) = match fixed_axis {
+                    SurfaceParameterAxis::U => (fixed, varying),
+                    SurfaceParameterAxis::V => (varying, fixed),
+                };
+                Some((
+                    [basis, 1.0],
+                    surface.weight(pole_u, pole_v).unwrap_or(1.0),
+                    surface.pole(pole_u, pole_v)?,
+                ))
+            },
+        ))?;
         let point = Point3::from(sum.project(sum, &[])?);
         control_points.push(point);
         sums.push(sum);
@@ -2427,7 +2456,11 @@ pub fn nurbs_surface_isocurve(
             surface.u_periodic(),
         ),
     };
-    let weights = if rational { Some(Homogeneous::weights(&sums)?) } else { None };
+    let weights = if rational {
+        Some(Homogeneous::weights(&sums)?)
+    } else {
+        None
+    };
     NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic).ok()
 }
 
@@ -2522,13 +2555,28 @@ pub fn nurbs_surface_second_partials(
     let v_derivative = bspline_basis_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
     let u_second = bspline_basis_second_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
     let v_second = bspline_basis_second_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
-    let sum = |u_values: &[f64], v_values: &[f64]| Homogeneous::sum(
-        u_values.iter().copied().enumerate().flat_map(|(i, u_value)| {
-            v_values.iter().copied().enumerate().map(move |(j, v_value)| {
-                let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-                Some(([u_value, v_value], surface.weight(pole_u, pole_v).unwrap_or(1.0), surface.pole(pole_u, pole_v)?))
-            })
-        }));
+    let sum = |u_values: &[f64], v_values: &[f64]| {
+        Homogeneous::sum(
+            u_values
+                .iter()
+                .copied()
+                .enumerate()
+                .flat_map(|(i, u_value)| {
+                    v_values
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .map(move |(j, v_value)| {
+                            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+                            Some((
+                                [u_value, v_value],
+                                surface.weight(pole_u, pole_v).unwrap_or(1.0),
+                                surface.pole(pole_u, pole_v)?,
+                            ))
+                        })
+                }),
+        )
+    };
     let base = sum(&u_basis, &v_basis)?;
     let u = sum(&u_derivative, &v_basis)?;
     let v = sum(&u_basis, &v_derivative)?;
@@ -2539,7 +2587,9 @@ pub fn nurbs_surface_second_partials(
     let du = u.project(base, &[(u, point)])?;
     let dv = v.project(base, &[(v, point)])?;
     Some(SurfaceSecondPartials {
-        point: Point3::from(point), du: Vector3::from(du), dv: Vector3::from(dv),
+        point: Point3::from(point),
+        du: Vector3::from(du),
+        dv: Vector3::from(dv),
         duu: Vector3::from(uu.project(base, &[(uu, point), (u, du), (u, du)])?),
         duv: Vector3::from(uv.project(base, &[(uv, point), (u, dv), (v, du)])?),
         dvv: Vector3::from(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?),
@@ -2591,7 +2641,9 @@ fn periodic_parameter(
         return Some(parameter);
     }
     let period = end - start;
-    if !period.is_finite() || period <= 0.0 { return None; }
+    if !period.is_finite() || period <= 0.0 {
+        return None;
+    }
     let relative = parameter - start;
     let offset = if relative.is_finite() {
         relative.rem_euclid(period)
@@ -2909,14 +2961,24 @@ fn nurbs_curve_tangent(
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
     let derivatives = bspline_basis_derivative(knots, degree, span, t)?;
-    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-        let index = span - degree + local;
-        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
-    }));
+    let sum = |values: &[f64]| {
+        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+            let index = span - degree + local;
+            Some((
+                [basis, 1.0],
+                weights
+                    .and_then(|weights| weights.get(index).copied())
+                    .unwrap_or(1.0),
+                *control_points.get(index)?,
+            ))
+        }))
+    };
     let base = sum(&basis)?;
     let derivative = sum(&derivatives)?;
     let point = base.project(base, &[])?;
-    Some(Vector3::from(derivative.project(base, &[(derivative, point)])?))
+    Some(Vector3::from(
+        derivative.project(base, &[(derivative, point)])?,
+    ))
 }
 
 fn nurbs_curve_second_derivative(
@@ -2931,16 +2993,27 @@ fn nurbs_curve_second_derivative(
     let basis = bspline_basis(knots, degree, span, t)?;
     let first_basis = bspline_basis_derivative(knots, degree, span, t)?;
     let second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
-    let sum = |values: &[f64]| Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-        let index = span - degree + local;
-        Some(([basis, 1.0], weights.and_then(|weights| weights.get(index).copied()).unwrap_or(1.0), *control_points.get(index)?))
-    }));
+    let sum = |values: &[f64]| {
+        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+            let index = span - degree + local;
+            Some((
+                [basis, 1.0],
+                weights
+                    .and_then(|weights| weights.get(index).copied())
+                    .unwrap_or(1.0),
+                *control_points.get(index)?,
+            ))
+        }))
+    };
     let base = sum(&basis)?;
     let first_sum = sum(&first_basis)?;
     let second_sum = sum(&second_basis)?;
     let point = base.project(base, &[])?;
     let first = first_sum.project(base, &[(first_sum, point)])?;
-    Some(Vector3::from(second_sum.project(base, &[(second_sum, point), (first_sum, first), (first_sum, first)])?))
+    Some(Vector3::from(second_sum.project(
+        base,
+        &[(second_sum, point), (first_sum, first), (first_sum, first)],
+    )?))
 }
 
 /// Evaluate a curve carrier selected by arena id, including supported
@@ -4125,10 +4198,14 @@ fn direct_curve_parameter_near_point(
 fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, f64)> {
     let inverse = transform.try_inverse_affine().ok()?;
     let coordinates = inverse.apply_point(point)?;
-    let tolerance_scale = inverse.affine_rows().iter()
+    let tolerance_scale = inverse
+        .affine_rows()
+        .iter()
         .flat_map(|row| &row[..3])
         .fold(0.0_f64, |length, &value| length.hypot(value));
-    tolerance_scale.is_finite().then_some((coordinates, tolerance_scale))
+    tolerance_scale
+        .is_finite()
+        .then_some((coordinates, tolerance_scale))
 }
 
 fn polyline_parameter_near_point(

@@ -3477,9 +3477,14 @@ fn trim_line_circle_intersection(
 ) -> Option<[f64; 2]> {
     let direction = [end[0] - start[0], end[1] - start[1]];
     let relative = [start[0] - center[0], start[1] - center[1]];
-    let coordinate_scale = direction.into_iter().chain(relative).map(f64::abs)
+    let coordinate_scale = direction
+        .into_iter()
+        .chain(relative)
+        .map(f64::abs)
         .fold(radius.abs(), f64::max);
-    if !coordinate_scale.is_finite() || coordinate_scale == 0.0 { return None; }
+    if !coordinate_scale.is_finite() || coordinate_scale == 0.0 {
+        return None;
+    }
     let d = direction.map(|value| value / coordinate_scale);
     let r = relative.map(|value| value / coordinate_scale);
     let radius = radius / coordinate_scale;
@@ -3490,9 +3495,7 @@ fn trim_line_circle_intersection(
     let linear = 2.0 * r[0].mul_add(d[0], r[1] * d[1]);
     let constant = r[0].mul_add(r[0], r[1] * r[1]) - radius * radius;
     let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let scale = linear
-        .abs()
-        .max((4.0 * quadratic * constant).abs().sqrt());
+    let scale = linear.abs().max((4.0 * quadratic * constant).abs().sqrt());
     let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
     if !discriminant.is_finite() || discriminant < -tolerance {
         return None;
@@ -7213,10 +7216,24 @@ mod tests {
     #[test]
     fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
         for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
-            assert_eq!(super::trim_line_circle_intersection(
-                [-radius, 2.0 * radius], [radius, 2.0 * radius], [0.0; 2], radius), None);
-            assert_eq!(super::trim_line_circle_intersection(
-                [-radius, radius], [radius, radius], [0.0; 2], radius), Some([0.0, radius]));
+            assert_eq!(
+                super::trim_line_circle_intersection(
+                    [-radius, 2.0 * radius],
+                    [radius, 2.0 * radius],
+                    [0.0; 2],
+                    radius
+                ),
+                None
+            );
+            assert_eq!(
+                super::trim_line_circle_intersection(
+                    [-radius, radius],
+                    [radius, radius],
+                    [0.0; 2],
+                    radius
+                ),
+                Some([0.0, radius])
+            );
         }
     }
 

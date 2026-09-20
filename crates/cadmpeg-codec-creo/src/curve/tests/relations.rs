@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::curve::parse_relation_expression;
 use crate::curve::evaluate_creo_math_function;
 use crate::curve::evaluate_creo_relation_function;
 use crate::curve::expression_records;
+use crate::curve::parse_relation_expression;
 use crate::curve::reevaluate_expression_records;
 use crate::curve::relation_round;
 use crate::curve::tests::evaluate_expression_program;
@@ -179,16 +179,22 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     assert!(evaluate_expression("max(-0,0)", &values)
         .expect("maximum tie")
         .is_sign_positive());
-    let Some(CurveExpressionValue::Length(minimum)) = parse_relation_expression::<CurveExpressionValue>(
-        "min(0[mm],-0[mm])",
-        &BTreeMap::new(),
-        RelationEvaluationContext::default(),
-    ) else {
+    let Some(CurveExpressionValue::Length(minimum)) =
+        parse_relation_expression::<CurveExpressionValue>(
+            "min(0[mm],-0[mm])",
+            &BTreeMap::new(),
+            RelationEvaluationContext::default(),
+        )
+    else {
         panic!("dimensioned minimum tie")
     };
     assert!(minimum.is_sign_negative());
-    let maximum =
-        parse_relation_expression::<crate::curve::AffineValue>("max(-0,0)", &BTreeMap::new(), RelationEvaluationContext::default()).expect("affine maximum tie");
+    let maximum = parse_relation_expression::<crate::curve::AffineValue>(
+        "max(-0,0)",
+        &BTreeMap::new(),
+        RelationEvaluationContext::default(),
+    )
+    .expect("affine maximum tie");
     assert!(maximum.constant.is_sign_positive());
     assert_eq!(maximum.linear, 0.0);
     assert_eq!(relation_round(f64::MAX, 8.0, true), Some(f64::MAX));
@@ -721,9 +727,12 @@ fn bracketed_relation_units_are_not_dependencies() {
         ("1[mm]/.1[cm]", CurveExpressionValue::Number(1.0)),
     ];
     for (expression, expected) in cases {
-        let actual =
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default())
-                .expect(expression);
+        let actual = parse_relation_expression::<CurveExpressionValue>(
+            expression,
+            &values,
+            RelationEvaluationContext::default(),
+        )
+        .expect(expression);
         match (actual, expected) {
             (CurveExpressionValue::Number(actual), CurveExpressionValue::Number(expected))
             | (CurveExpressionValue::Length(actual), CurveExpressionValue::Length(expected))
@@ -742,8 +751,11 @@ fn bracketed_relation_units_are_not_dependencies() {
         None
     );
 
-    let pressure =
-        parse_relation_expression::<CurveExpressionValue>("1[N/mm^2]", &values, RelationEvaluationContext::default());
+    let pressure = parse_relation_expression::<CurveExpressionValue>(
+        "1[N/mm^2]",
+        &values,
+        RelationEvaluationContext::default(),
+    );
     assert_eq!(
         pressure,
         Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
@@ -756,7 +768,11 @@ fn bracketed_relation_units_are_not_dependencies() {
         }))
     );
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("1[(N/mm^2)]", &values, RelationEvaluationContext::default(),),
+        parse_relation_expression::<CurveExpressionValue>(
+            "1[(N/mm^2)]",
+            &values,
+            RelationEvaluationContext::default(),
+        ),
         pressure
     );
     assert_eq!(
@@ -776,7 +792,11 @@ fn bracketed_relation_units_are_not_dependencies() {
         "1[ton]/(1000[kg]*9.80665[m/s^2])",
     ] {
         let Some(CurveExpressionValue::Number(value)) =
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default())
+            parse_relation_expression::<CurveExpressionValue>(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            )
         else {
             panic!("unexpected value kind for {expression}");
         };
@@ -797,7 +817,11 @@ fn bracketed_relation_units_are_not_dependencies() {
         ("491.67[R]", 273.15),
     ] {
         let Some(CurveExpressionValue::Quantity(value)) =
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default())
+            parse_relation_expression::<CurveExpressionValue>(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            )
         else {
             panic!("unexpected value kind for {expression}");
         };
@@ -818,11 +842,19 @@ fn bracketed_relation_units_are_not_dependencies() {
         );
     }
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("1[C/s]", &values, RelationEvaluationContext::default(),),
+        parse_relation_expression::<CurveExpressionValue>(
+            "1[C/s]",
+            &values,
+            RelationEvaluationContext::default(),
+        ),
         None
     );
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("2[mm]^2", &values, RelationEvaluationContext::default(),),
+        parse_relation_expression::<CurveExpressionValue>(
+            "2[mm]^2",
+            &values,
+            RelationEvaluationContext::default(),
+        ),
         Some(CurveExpressionValue::Quantity(CurveExpressionQuantity {
             value: 4.0,
             length_power: 2,
@@ -875,7 +907,11 @@ fn bracketed_relation_units_are_not_dependencies() {
     ];
     for (expression, expected) in dimensioned_cases {
         assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default(),),
+            parse_relation_expression::<CurveExpressionValue>(
+                expression,
+                &values,
+                RelationEvaluationContext::default(),
+            ),
             Some(expected),
             "{expression}"
         );
@@ -904,15 +940,22 @@ fn bracketed_relation_units_are_not_dependencies() {
             "{incompatible}"
         );
     }
-    let force_ratio =
-        parse_relation_expression::<CurveExpressionValue>("1[lbf]/1[N]", &values, RelationEvaluationContext::default());
+    let force_ratio = parse_relation_expression::<CurveExpressionValue>(
+        "1[lbf]/1[N]",
+        &values,
+        RelationEvaluationContext::default(),
+    );
     let Some(CurveExpressionValue::Number(force_ratio)) = force_ratio else {
         panic!("force ratio");
     };
     assert!((force_ratio - 4.448_221_615_260_5).abs() < 1.0e-12);
     for malformed in ["1[N/mm^]", "1[N//mm]", "1[N^128]"] {
         assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(malformed, &values, RelationEvaluationContext::default(),),
+            parse_relation_expression::<CurveExpressionValue>(
+                malformed,
+                &values,
+                RelationEvaluationContext::default(),
+            ),
             None,
             "{malformed}"
         );
@@ -939,21 +982,37 @@ fn formats_relation_reals_with_creo_rtos_conventions() {
     ];
     for (expression, expected) in cases {
         assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default()),
+            parse_relation_expression::<CurveExpressionValue>(
+                expression,
+                &values,
+                RelationEvaluationContext::default()
+            ),
             Some(CurveExpressionValue::String(expected.to_owned())),
             "{expression}"
         );
     }
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("rtos(1,-1)", &values, RelationEvaluationContext::default()),
+        parse_relation_expression::<CurveExpressionValue>(
+            "rtos(1,-1)",
+            &values,
+            RelationEvaluationContext::default()
+        ),
         None
     );
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("rtos(1,1.5)", &values, RelationEvaluationContext::default()),
+        parse_relation_expression::<CurveExpressionValue>(
+            "rtos(1,1.5)",
+            &values,
+            RelationEvaluationContext::default()
+        ),
         None
     );
     assert_eq!(
-        parse_relation_expression::<CurveExpressionValue>("rtos(1,129)", &values, RelationEvaluationContext::default()),
+        parse_relation_expression::<CurveExpressionValue>(
+            "rtos(1,129)",
+            &values,
+            RelationEvaluationContext::default()
+        ),
         None
     );
     assert_eq!(
@@ -966,7 +1025,11 @@ fn formats_relation_reals_with_creo_rtos_conventions() {
     );
     for expression in ["rtos('one')", "rtos(1,2[mm])", "itos('one')"] {
         assert_eq!(
-            parse_relation_expression::<CurveExpressionValue>(expression, &values, RelationEvaluationContext::default()),
+            parse_relation_expression::<CurveExpressionValue>(
+                expression,
+                &values,
+                RelationEvaluationContext::default()
+            ),
             None,
             "{expression}"
         );

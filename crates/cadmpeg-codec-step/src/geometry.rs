@@ -127,7 +127,10 @@ fn point2(e: &mut Emitter, p: Point2) -> Ref {
 
 fn direction2(e: &mut Emitter, v: Point2) -> Option<Ref> {
     let unit = Vector3::new(v.u, v.v, 0.0).unit_nonzero()?;
-    Some(e.emit_interned("DIRECTION", &format!("'',({},{})", real(unit.x), real(unit.y))))
+    Some(e.emit_interned(
+        "DIRECTION",
+        &format!("'',({},{})", real(unit.x), real(unit.y)),
+    ))
 }
 
 fn similarity_transform_2d(transform: &Transform2) -> bool {
@@ -156,7 +159,9 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
     let scale = x.u.hypot(x.v);
     let x = direction2(e, x)?;
     let y = direction2(e, y)?;
-    if !scale.is_finite() { return None; }
+    if !scale.is_finite() {
+        return None;
+    }
     Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
         &format!("'',{x},{y},{origin},{}", real(scale)),
@@ -171,7 +176,9 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let direction = line_pcurve.direction();
             let point = point2(e, *origin);
             let magnitude = direction.u.hypot(direction.v);
-            if !magnitude.is_finite() { return None; }
+            if !magnitude.is_finite() {
+                return None;
+            }
             let direction = direction2(e, *direction)?;
             let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
             e.emit("LINE", &format!("'',{point},{vector}"))

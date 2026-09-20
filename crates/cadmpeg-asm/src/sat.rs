@@ -486,13 +486,19 @@ fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Pr
     if field == "}" {
         return Ok(Prim::Close);
     }
-    let digits = field.strip_prefix('+').or_else(|| field.strip_prefix('-')).unwrap_or(&field);
+    let digits = field
+        .strip_prefix('+')
+        .or_else(|| field.strip_prefix('-'))
+        .unwrap_or(&field);
     if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return field.parse::<i64>().map(Prim::Integer).map_err(|_| StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "integer field is outside the signed 64-bit range".to_string(),
-        });
+        return field
+            .parse::<i64>()
+            .map(Prim::Integer)
+            .map_err(|_| StreamError {
+                format: StreamFormat::Text,
+                offset: at,
+                reason: "integer field is outside the signed 64-bit range".to_string(),
+            });
     }
     if let Ok(value) = field.parse::<f64>() {
         return Ok(Prim::Real(value));
@@ -1436,7 +1442,10 @@ fn type_record(head: &str, prims: &[Prim], k: f64) -> Vec<Token> {
 mod tests {
     #[test]
     fn numerical_audit_sat_integer_fields_preserve_exact_values_and_reject_overflow() {
-        let stream = parse(&asm_stream("audit-integer 9007199254740993 -9223372036854775808 9223372036854775807 #\n")).unwrap();
+        let stream = parse(&asm_stream(
+            "audit-integer 9007199254740993 -9223372036854775808 9223372036854775807 #\n",
+        ))
+        .unwrap();
         let tokens = &stream.records[0].tokens;
         assert!(tokens.contains(&Token::Long(9_007_199_254_740_993)));
         assert!(tokens.contains(&Token::Long(i64::MIN)));

@@ -10,8 +10,8 @@ use cadmpeg_ir::transform::Transform;
 use serde::{ser::SerializeStruct, Serialize};
 
 use crate::chunks::{
-    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges,
-    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
+    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor};

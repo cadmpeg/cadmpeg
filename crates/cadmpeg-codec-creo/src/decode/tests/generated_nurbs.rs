@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: generated nurbs.
 
-use crate::feature::rows::agreed_feature_affected_ids;
 use super::section_axis_line_carrier;
 use crate::decode::feature_history::dependencies::{
     agreed_feature_replay_edge_ids, agreed_feature_replay_geometry_ids,
@@ -29,6 +28,7 @@ use crate::decode::uniqueness::{
     unique_feature_section_transform, unique_owned_feature_definition,
 };
 use crate::feature::definitions::ScalarLane;
+use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;

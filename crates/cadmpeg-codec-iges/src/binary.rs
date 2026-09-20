@@ -222,8 +222,12 @@ impl<'a> BitReader<'a> {
         }
         let bias = 1_u64 << (exponent_bits - 1);
         let exponent = i128::from(biased_exponent) - i128::from(bias);
-        if exponent > 1024 { return Err(malformed("a Binary real is not finite")); }
-        if exponent < -1074 { return Ok(if negative { -0.0 } else { 0.0 }); }
+        if exponent > 1024 {
+            return Err(malformed("a Binary real is not finite"));
+        }
+        if exponent < -1074 {
+            return Ok(if negative { -0.0 } else { 0.0 });
+        }
         // The range checks prove this conversion and keep the power finite.
         let exponent = exponent as i32;
         let fraction = 0.5 + (fraction as f64 / 2_f64.powi(i32::from(fraction_bits) + 1));
@@ -1239,14 +1243,28 @@ mod tests {
             writer.push_bits(negative, 1);
             writer.push_bits(3072, 12);
             writer.push_bits(0, 51);
-            let value = super::BitReader::new(&writer.bytes).read_real(12, 51).unwrap();
-            assert_eq!(value, if negative == 0 { 2.0_f64.powi(1023) } else { -2.0_f64.powi(1023) });
+            let value = super::BitReader::new(&writer.bytes)
+                .read_real(12, 51)
+                .unwrap();
+            assert_eq!(
+                value,
+                if negative == 0 {
+                    2.0_f64.powi(1023)
+                } else {
+                    -2.0_f64.powi(1023)
+                }
+            );
         }
         // Integer exponent subtraction also preserves low bits with a wide field.
         let mut writer = BitWriter::default();
         writer.push_bits(0, 1);
         writer.push_bits((1_u64 << 62) + 1, 63);
-        assert_eq!(super::BitReader::new(&writer.bytes).read_real(63, 0).unwrap(), 1.0);
+        assert_eq!(
+            super::BitReader::new(&writer.bytes)
+                .read_real(63, 0)
+                .unwrap(),
+            1.0
+        );
     }
 
     use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};

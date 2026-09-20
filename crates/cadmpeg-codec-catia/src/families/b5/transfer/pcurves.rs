@@ -565,14 +565,19 @@ pub(super) fn lifted_curve_geometry(
     }
 }
 
-pub(super) fn nurbs_isocurve(
-    pcurve: &B5Pcurve,
-    surface: &NurbsSurface,
-) -> Option<NurbsCurve> {
+pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, u)
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            u,
+        )
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V, v)
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
+            v,
+        )
     } else {
         None
     }

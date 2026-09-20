@@ -25,7 +25,7 @@ use super::support_uv::{
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
 use crate::framing::node_kind::NodeKind;
-use crate::native::vector::{dot_vector};
+use crate::native::vector::dot_vector;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;

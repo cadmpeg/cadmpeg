@@ -767,9 +767,13 @@ pub(crate) fn remap_nurbs_domain(
         .copied()
         .map(|knot| {
             let fraction = (knot - source[0]) / denominator;
-            let value = if fraction == 0.0 { target[0] }
-                else if fraction == 1.0 { target[1] }
-                else { (1.0 - fraction) * target[0] + fraction * target[1] };
+            let value = if fraction == 0.0 {
+                target[0]
+            } else if fraction == 1.0 {
+                target[1]
+            } else {
+                (1.0 - fraction) * target[0] + fraction * target[1]
+            };
             value
                 .is_finite()
                 .then_some(value)
@@ -825,8 +829,11 @@ fn insert_knot_once(
     let k = knots.iter().rposition(|knot| *knot <= value).ok_or(())?;
     let k = if degree == 0 { k.min(n) } else { k };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
-    if multiplicity > degree || k < degree || k - degree > n
-        || k.checked_sub(multiplicity).is_none_or(|tail| tail > n) {
+    if multiplicity > degree
+        || k < degree
+        || k - degree > n
+        || k.checked_sub(multiplicity).is_none_or(|tail| tail > n)
+    {
         return Err(());
     }
     let mut output = alloc_filled(
@@ -892,8 +899,11 @@ fn elevate_to_degree(
                 .map_err(|()| error(offset, "polycurve endpoint clamping failed"))?;
         }
     }
-    let mut internal = knots.iter().copied()
-        .filter(|knot| *knot > domain[0] && *knot < domain[1]).collect::<Vec<_>>();
+    let mut internal = knots
+        .iter()
+        .copied()
+        .filter(|knot| *knot > domain[0] && *knot < domain[1])
+        .collect::<Vec<_>>();
     internal.dedup();
     for knot in internal {
         while knots.iter().filter(|value| **value == knot).count() < degree {
@@ -902,23 +912,33 @@ fn elevate_to_degree(
         }
     }
     let spans = (degree..points.len())
-        .filter(|&span| knots[span] < knots[span + 1]
-            && knots[span] >= domain[0] && knots[span + 1] <= domain[1])
+        .filter(|&span| {
+            knots[span] < knots[span + 1]
+                && knots[span] >= domain[0]
+                && knots[span + 1] <= domain[1]
+        })
         .collect::<Vec<_>>();
     if spans.is_empty() {
         return Err(error(offset, "polycurve segment has no nonempty span"));
     }
     let mut elevated = Vec::new();
     let mut elevated_knots = alloc_filled(
-        target.checked_add(1).ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
-        domain[0], "Rhino polycurve elevated knots",
-    ).map_err(|cause| GeometryError::malformed(offset, cause.to_string()))?;
+        target
+            .checked_add(1)
+            .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
+        domain[0],
+        "Rhino polycurve elevated knots",
+    )
+    .map_err(|cause| GeometryError::malformed(offset, cause.to_string()))?;
     for (index, span) in spans.into_iter().enumerate() {
         let bezier = elevate_bezier(points[span - degree..=span].to_vec(), target);
         let disconnected = knots.iter().filter(|knot| **knot == knots[span]).count() > degree;
         let skip = usize::from(index > 0 && !disconnected);
         if index > 0 {
-            elevated_knots.extend(std::iter::repeat_n(knots[span], target + usize::from(disconnected)));
+            elevated_knots.extend(std::iter::repeat_n(
+                knots[span],
+                target + usize::from(disconnected),
+            ));
         }
         elevated.extend(bezier.into_iter().skip(skip));
     }
@@ -1060,8 +1080,15 @@ pub(crate) fn join_nurbs_segments(
         }
         // Unequal endpoint weights are different homogeneous poles. Keep both
         // with a full-multiplicity knot so neither segment's rational shape changes.
-        let previous_weight = weights.as_ref().and_then(|weights| weights.last()).copied().unwrap_or(1.0);
-        let next_weight = segment.weights().and_then(|weights| weights.first().copied()).unwrap_or(1.0);
+        let previous_weight = weights
+            .as_ref()
+            .and_then(|weights| weights.last())
+            .copied()
+            .unwrap_or(1.0);
+        let next_weight = segment
+            .weights()
+            .and_then(|weights| weights.first().copied())
+            .unwrap_or(1.0);
         let skip = usize::from(index > 0 && previous_weight == next_weight);
         let segment_points = segment.control_points();
         if let Some(target) = &mut weights {
@@ -1749,10 +1776,28 @@ mod tests {
         use cadmpeg_ir::eval::curve_point_solved;
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
         let cases = [
-            NurbsCurve::from_lanes(2, vec![-1.0, -1.0, 0.0, 1.0, 2.0, 2.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0), Point3::new(2.0, 0.0, 0.0)], None, false).unwrap(),
-            NurbsCurve::from_lanes(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
-                (0..6).map(|x| Point3::new(f64::from(x), 0.0, 0.0)).collect(), None, false).unwrap(),
+            NurbsCurve::from_lanes(
+                2,
+                vec![-1.0, -1.0, 0.0, 1.0, 2.0, 2.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+            NurbsCurve::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0],
+                (0..6)
+                    .map(|x| Point3::new(f64::from(x), 0.0, 0.0))
+                    .collect(),
+                None,
+                false,
+            )
+            .unwrap(),
         ];
         for curve in cases {
             for degree in [2, 3] {
@@ -1763,8 +1808,11 @@ mod tests {
                 assert_eq!(elevated.knots()[elevated.control_points().len()], end);
                 for fraction in [0.0, 0.125, 0.25, 0.5, 0.625, 0.875, 1.0] {
                     let at = start + (end - start) * fraction;
-                    let expected = curve_point_solved(&SolvedCurveGeometry::Nurbs(curve.clone()), at).unwrap();
-                    let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(elevated.clone()), at).unwrap();
+                    let expected =
+                        curve_point_solved(&SolvedCurveGeometry::Nurbs(curve.clone()), at).unwrap();
+                    let actual =
+                        curve_point_solved(&SolvedCurveGeometry::Nurbs(elevated.clone()), at)
+                            .unwrap();
                     assert!(actual.distance(expected) <= 64.0 * f64::EPSILON);
                 }
             }
@@ -1775,10 +1823,30 @@ mod tests {
     fn numerical_audit_join_preserves_independently_scaled_rational_segments() {
         use cadmpeg_ir::eval::curve_point_solved;
         use cadmpeg_ir::geometry::SolvedCurveGeometry;
-        let first = NurbsCurve::from_lanes(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![Point3::new(-2.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)], Some(vec![2.0; 3]), false).unwrap();
-        let second = NurbsCurve::from_lanes(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)], Some(vec![1.0; 3]), false).unwrap();
+        let first = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(-2.0, 0.0, 0.0),
+                Point3::new(-1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            Some(vec![2.0; 3]),
+            false,
+        )
+        .unwrap();
+        let second = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0; 3]),
+            false,
+        )
+        .unwrap();
         let joined = super::join_nurbs_segments(vec![first, second], 0).unwrap();
         let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
         assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
@@ -1786,12 +1854,22 @@ mod tests {
 
     #[test]
     fn numerical_audit_remap_and_join_keep_large_finite_values() {
-        let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0e-200, 1.0e-200],
-            vec![Point3::new(f64::MAX, 0.0, 0.0); 2], None, false).unwrap();
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0e-200, 1.0e-200],
+            vec![Point3::new(f64::MAX, 0.0, 0.0); 2],
+            None,
+            false,
+        )
+        .unwrap();
         let remapped = super::remap_nurbs_domain(curve, [0.0, 1.0e200], 0).unwrap();
         assert_eq!(remapped.knots(), &[0.0, 0.0, 1.0e200, 1.0e200]);
         let joined = super::join_nurbs_segments(vec![remapped.clone(), remapped], 0).unwrap();
-        assert!(joined.curve.control_points().iter().all(|point| point.x == f64::MAX));
+        assert!(joined
+            .curve
+            .control_points()
+            .iter()
+            .all(|point| point.x == f64::MAX));
     }
 
     use super::{
