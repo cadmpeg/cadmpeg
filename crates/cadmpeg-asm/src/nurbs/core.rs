@@ -12,7 +12,7 @@ use crate::nurbs::reader::{
     construction_marker_positions, is_periodic, marker_at, marker_positions, read_control_points,
     read_knots, take_tagged_int, BsplineMarker, KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{self, decode_cache_resolving_refs, SubtypeTables};
+use crate::nurbs::subtypes;
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;
@@ -172,7 +172,7 @@ pub(super) fn owned_curve_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsCu
 ///
 /// [`toks::SubtypeTable::span`] answers with the balanced scope the reference
 /// names, so `decode_scope` reads a proven scope and needs no walk of its own
-/// to establish one. Token-space counterpart of [`decode_cache_resolving_refs`].
+/// to establish one.
 fn cache_from_subtype_refs<T, D>(
     toks: &[Token],
     table: &toks::SubtypeTable,
@@ -482,27 +482,6 @@ pub(super) fn decode_owned_surface_cache_at(
         .find_map(|pos| decode_surface_block(bytes, pos, int_width).map(|decoded| decoded.surface))
 }
 
-/// [`decode_owned_surface_cache_at`], following subtype-table references at the
-/// stream's integer width. Every caller reaches a scope through a walk that
-/// already read the width, and the subtype table indexes different offsets at
-/// each width, so probing the other one walks the reference graph a second time
-/// against a table built for a stream this is not.
-pub(super) fn decode_owned_surface_cache_resolving_refs_at(
-    scope: subtypes::SubtypeScope<'_>,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    int_width: RefWidth,
-) -> Option<NurbsSurface> {
-    decode_cache_resolving_refs(
-        scope,
-        active_bytes,
-        tables,
-        &mut Vec::new(),
-        decode_owned_surface_cache_at,
-        int_width,
-    )
-}
-
 /// Decode the unique well-formed 3D curve cache across both integer widths.
 ///
 /// This generic entry point has no stream-width or owning-scope witness. It
@@ -524,24 +503,6 @@ pub fn decode_owned_curve_cache_at(
         .owned_marker_positions(int_width)
         .into_iter()
         .find_map(|pos| decode_curve_block(bytes, pos, int_width).map(|decoded| decoded.curve))
-}
-
-/// [`decode_owned_curve_cache_at`], following subtype-table references at the
-/// stream's integer width.
-pub(super) fn decode_owned_curve_cache_resolving_refs_at(
-    scope: subtypes::SubtypeScope<'_>,
-    active_bytes: &[u8],
-    tables: &SubtypeTables,
-    int_width: RefWidth,
-) -> Option<NurbsCurve> {
-    decode_cache_resolving_refs(
-        scope,
-        active_bytes,
-        tables,
-        &mut Vec::new(),
-        decode_owned_curve_cache_at,
-        int_width,
-    )
 }
 
 fn decode_unique_cache<T>(
