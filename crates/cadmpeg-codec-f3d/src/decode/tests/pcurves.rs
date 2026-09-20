@@ -119,7 +119,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                 (
                     definition_payload.base().clone(),
                     base_range_value,
-                    *definition_payload.base_endpoints(),
+                    definition_payload.base_endpoints(),
                 ),
                 cadmpeg_ir::geometry::CacheContract::from_form(
                     definition_payload.cache_first().cloned(),

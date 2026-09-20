@@ -183,16 +183,17 @@ fn parameterized_curve_definition() -> ProceduralCurveDefinition {
             )
             .expect("finite ordered support context"),
             tail: Some(SurfaceCurveCacheFirst {
-                form: SurfaceCurveTail {
-                    extension: 7,
-                    revision: 23100,
-                    cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+                form: SurfaceCurveTail::try_new(
+                    7,
+                    23100,
+                    RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
                         interval: [Some(0.0), Some(1.0)],
                         closed_form: 0,
                     }),
-                    support_bounds: [[None; 4]; 2],
-                    solved_range: [Some(-1.0), Some(2.0)],
-                },
+                    [[None; 4]; 2],
+                    [Some(-1.0), Some(2.0)],
+                )
+                .expect("finite surface curve tail"),
                 flags: true,
             }),
         },

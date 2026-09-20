@@ -16,6 +16,16 @@ use crate::units::FiniteVector;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+fn admit_base_endpoint(value: Option<f64>) -> Result<Option<FiniteReal>, ProceduralGeometryError> {
+    value
+        .map(|value| {
+            FiniteReal::new(value).ok_or(ProceduralGeometryError::Payload(
+                "SurfaceOffset.base_endpoints is not finite",
+            ))
+        })
+        .transpose()
+}
+
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
 const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
 
@@ -43,7 +53,7 @@ pub struct SurfaceOffsetCurveConstruction {
     /// Optional parameter endpoints following the embedded base curve in
     /// the cache-first layout.
     #[serde(default)]
-    base_endpoints: [Option<f64>; 2],
+    base_endpoints: [Option<FiniteReal>; 2],
     /// Cache contract: the cache-first shared-context fields, or the legacy
     /// solved-cache tolerance the context-first layout states instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
@@ -104,6 +114,14 @@ impl SurfaceOffsetCurveConstruction {
         distance: f64,
         [shift, scale]: [f64; 2],
     ) -> Result<Self, ProceduralGeometryError> {
+        if !cache
+            .form()
+            .is_none_or(super::CacheFirstCurveForm::values_are_finite)
+        {
+            return Err(ProceduralGeometryError::Payload(
+                "SurfaceOffset cache-first form is not finite",
+            ));
+        }
         Ok(Self {
             context,
             discontinuity_flag,
@@ -114,7 +132,10 @@ impl SurfaceOffsetCurveConstruction {
             base,
             base_range: ParameterInterval::new(base_range)
                 .map_err(ProceduralGeometryError::Payload)?,
-            base_endpoints,
+            base_endpoints: [
+                admit_base_endpoint(base_endpoints[0])?,
+                admit_base_endpoint(base_endpoints[1])?,
+            ],
             cache,
             distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
                 "SurfaceOffset.distance is not finite",
@@ -152,8 +173,8 @@ impl SurfaceOffsetCurveConstruction {
         self.base_range.as_raw()
     }
     /// Return the base endpoints.
-    pub fn base_endpoints(&self) -> &[Option<f64>; 2] {
-        &self.base_endpoints
+    pub fn base_endpoints(&self) -> [Option<f64>; 2] {
+        self.base_endpoints.map(|value| value.map(FiniteReal::get))
     }
     /// Return the cache first.
     pub const fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
@@ -266,7 +287,7 @@ impl DeformableCurveConstruction {
                     && trailing_parameter.is_finite()
             }
         };
-        if !payload_finite {
+        if !payload_finite || !cache_first.values_are_finite() {
             return Err(ProceduralGeometryError::Payload(
                 "deformable curve payload is not finite",
             ));
@@ -895,7 +916,7 @@ impl SpringCurvePayload {
     /// Admit the construction parameters.
     pub fn try_new(layout: SpringLayout, direction: i64) -> Result<Self, ProceduralGeometryError> {
         let context = layout.support_context();
-        let inline_ranges_finite = match &layout {
+        let layout_values_finite = match &layout {
             crate::geometry::SpringLayout::ContextFirst {
                 supports,
                 first_pcurve,
@@ -913,11 +934,11 @@ impl SpringCurvePayload {
                     }
                 }
             }
-            crate::geometry::SpringLayout::CacheFirst { .. } => true,
+            crate::geometry::SpringLayout::CacheFirst { form, .. } => form.values_are_finite(),
         };
-        if context.is_err() || !inline_ranges_finite {
+        if context.is_err() || !layout_values_finite {
             return Err(ProceduralGeometryError::Payload(
-                "spring context or null-support ranges are invalid",
+                "spring context, null-support ranges, or cache-first form are invalid",
             ));
         }
         Ok(Self { layout, direction })

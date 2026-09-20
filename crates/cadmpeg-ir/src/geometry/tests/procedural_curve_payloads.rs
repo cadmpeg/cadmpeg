@@ -307,3 +307,31 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
         .to_string();
     assert!(error.contains("support"), "{error}");
 }
+
+#[test]
+fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
+    let admitted = crate::geometry::LawCurveVersionForm::try_new(20_900, 0, [Some(-1.0), None])
+        .expect("finite law curve version form");
+    let wire = serde_json::to_value(&admitted).unwrap();
+    assert_eq!(wire["stamp"], serde_json::json!(20_900));
+    assert_eq!(wire["post_enum"], serde_json::json!(0));
+    assert_eq!(wire["parameter_range"], serde_json::json!([-1.0, null]));
+    assert_eq!(
+        serde_json::from_value::<crate::geometry::LawCurveVersionForm>(wire).unwrap(),
+        admitted
+    );
+
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for range in [[Some(value), None], [None, Some(value)]] {
+            assert!(crate::geometry::LawCurveVersionForm::try_new(20_900, 0, range).is_err());
+            assert!(crate::geometry::LawCurveVersionForm::try_from(
+                crate::geometry::LawCurveVersionFormWire {
+                    stamp: 20_900,
+                    post_enum: 0,
+                    parameter_range: range,
+                }
+            )
+            .is_err());
+        }
+    }
+}

@@ -6192,6 +6192,20 @@ pub enum BlendRadiusLaw {
     },
 }
 
+impl BlendRadiusLaw {
+    /// Whether every scalar this law carries is finite. The sign of a radius
+    /// selects the support offset side, so a negative radius is admitted. A
+    /// law curve states its own checked control points.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        match self {
+            Self::Constant { signed_radius } => signed_radius.is_finite(),
+            Self::Linear { start, end } => start.is_finite() && end.is_finite(),
+            Self::Law { .. } => true,
+        }
+    }
+}
+
 /// A neutral curve construction linked to its solved carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6382,14 +6396,74 @@ impl IntcurveSupportSide {
 /// `law_int_cur` serializer form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "LawCurveVersionFormWire")]
 pub struct LawCurveVersionForm {
     /// Serializer version stamp emitted after the subtype name.
-    pub stamp: i64,
+    stamp: i64,
     /// Native enum following the version stamp.
-    pub post_enum: i64,
+    post_enum: i64,
     /// Solved-curve interval endpoints; `None` records an unbounded bound.
-    pub parameter_range: [Option<f64>; 2],
+    parameter_range: [Option<f64>; 2],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct LawCurveVersionFormWire {
+    /// Serializer version stamp emitted after the subtype name.
+    stamp: i64,
+    /// Native enum following the version stamp.
+    post_enum: i64,
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    parameter_range: [Option<f64>; 2],
+}
+
+impl TryFrom<LawCurveVersionFormWire> for LawCurveVersionForm {
+    type Error = &'static str;
+
+    fn try_from(wire: LawCurveVersionFormWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.stamp, wire.post_enum, wire.parameter_range)
+    }
+}
+
+impl LawCurveVersionForm {
+    /// Admit a stamped law-curve form whose interval endpoints are finite.
+    pub fn try_new(
+        stamp: i64,
+        post_enum: i64,
+        parameter_range: [Option<f64>; 2],
+    ) -> Result<Self, &'static str> {
+        if !parameter_range
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+        {
+            return Err("law curve parameter_range bounds must be finite");
+        }
+        Ok(Self {
+            stamp,
+            post_enum,
+            parameter_range,
+        })
+    }
+
+    /// Serializer version stamp emitted after the subtype name.
+    #[must_use]
+    pub const fn stamp(&self) -> i64 {
+        self.stamp
+    }
+
+    /// Native enum following the version stamp.
+    #[must_use]
+    pub const fn post_enum(&self) -> i64 {
+        self.post_enum
+    }
+
+    /// Solved-curve interval endpoints; `None` records an unbounded bound.
+    #[must_use]
+    pub const fn parameter_range(&self) -> &[Option<f64>; 2] {
+        &self.parameter_range
+    }
 }
 
 /// Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.
@@ -6658,6 +6732,21 @@ pub struct CacheFirstCurveForm {
     pub extension: i64,
 }
 
+impl CacheFirstCurveForm {
+    /// Whether every scalar this form carries is finite. A solved cache states
+    /// its tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.support_bounds
+            .iter()
+            .flatten()
+            .chain(self.solved_range.iter())
+            .flatten()
+            .all(|value| value.is_finite())
+            && self.cache.values_are_finite()
+    }
+}
+
 /// One support slot in a context-first spring construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6805,25 +6894,147 @@ pub struct CacheFirstCurveParameterization {
     pub closed_form: i64,
 }
 
+impl CacheFirstCurveParameterization {
+    /// Whether every stored interval bound is finite.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.interval
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+    }
+}
+
+impl RevisionCacheForm<CacheFirstCurveParameterization> {
+    /// Whether every stored scalar is finite. A solved cache states its
+    /// tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.parameterization()
+            .is_none_or(CacheFirstCurveParameterization::values_are_finite)
+    }
+}
+
 /// Family-independent tail fields carried by a cache-first surface curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "SurfaceCurveTailWire")]
 pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
-    pub extension: i64,
+    extension: i64,
     /// Positive serializer-revision integer opening the cache-first layout.
     #[serde(default)]
-    pub revision: i64,
+    revision: i64,
     /// Approximation-cache form selected by the shared context enum.
-    pub cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
     #[serde(default)]
-    pub support_bounds: [[Option<f64>; 4]; 2],
+    support_bounds: [[Option<f64>; 4]; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
     #[serde(default)]
-    pub solved_range: [Option<f64>; 2],
+    solved_range: [Option<f64>; 2],
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct SurfaceCurveTailWire {
+    /// Native integer following the discontinuity arrays.
+    extension: i64,
+    /// Positive serializer-revision integer opening the cache-first layout.
+    #[serde(default)]
+    revision: i64,
+    /// Approximation-cache form selected by the shared context enum.
+    cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+    /// Optional U/V bound fields following each ordered support surface.
+    #[serde(default)]
+    support_bounds: [[Option<f64>; 4]; 2],
+    /// Optional solved-curve interval endpoints; absent endpoints inherit the
+    /// solved NURBS domain.
+    #[serde(default)]
+    solved_range: [Option<f64>; 2],
+}
+
+impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
+    type Error = &'static str;
+
+    fn try_from(wire: SurfaceCurveTailWire) -> Result<Self, Self::Error> {
+        Self::try_new(
+            wire.extension,
+            wire.revision,
+            wire.cache,
+            wire.support_bounds,
+            wire.solved_range,
+        )
+    }
+}
+
+impl SurfaceCurveTail {
+    /// Admit a cache-first surface-curve tail whose scalars are all finite.
+    pub fn try_new(
+        extension: i64,
+        revision: i64,
+        cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+        support_bounds: [[Option<f64>; 4]; 2],
+        solved_range: [Option<f64>; 2],
+    ) -> Result<Self, &'static str> {
+        let tail = Self {
+            extension,
+            revision,
+            cache,
+            support_bounds,
+            solved_range,
+        };
+        if tail.values_are_finite() {
+            Ok(tail)
+        } else {
+            Err("surface curve tail bounds must be finite")
+        }
+    }
+
+    /// Whether every scalar this tail carries is finite. A solved cache states
+    /// its tolerance as a `FitTolerance`, which is finite by type.
+    #[must_use]
+    fn values_are_finite(&self) -> bool {
+        self.support_bounds
+            .iter()
+            .flatten()
+            .chain(self.solved_range.iter())
+            .flatten()
+            .all(|value| value.is_finite())
+            && self.cache.values_are_finite()
+    }
+
+    /// Native integer following the discontinuity arrays.
+    #[must_use]
+    pub const fn extension(&self) -> i64 {
+        self.extension
+    }
+
+    /// Serializer-revision integer opening the cache-first layout.
+    #[must_use]
+    pub const fn revision(&self) -> i64 {
+        self.revision
+    }
+
+    /// Approximation-cache form selected by the shared context enum.
+    #[must_use]
+    pub const fn cache(&self) -> &RevisionCacheForm<CacheFirstCurveParameterization> {
+        &self.cache
+    }
+
+    /// Optional U/V bound fields following each ordered support surface.
+    #[must_use]
+    pub const fn support_bounds(&self) -> &[[Option<f64>; 4]; 2] {
+        &self.support_bounds
+    }
+
+    /// Optional solved-curve interval endpoints.
+    #[must_use]
+    pub const fn solved_range(&self) -> &[Option<f64>; 2] {
+        &self.solved_range
+    }
 }
 
 /// Cache-first surface-curve tail paired with its family-specific flags.

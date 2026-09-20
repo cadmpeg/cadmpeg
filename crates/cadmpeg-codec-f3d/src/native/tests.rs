@@ -554,9 +554,9 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
         unreachable!()
     };
     let version = version.as_ref().expect("version stamp");
-    assert_eq!(version.stamp, 20900);
-    assert_eq!(version.post_enum, 0);
-    assert_eq!(version.parameter_range, [None, None]);
+    assert_eq!(version.stamp(), 20900);
+    assert_eq!(version.post_enum(), 0);
+    assert_eq!(*version.parameter_range(), [None, None]);
     assert!(matches!(primary, LawFormula::Named { name, .. } if name.as_str() == primary_name));
     assert!(matches!(
         primary.variables()[0],
@@ -765,11 +765,11 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     else {
         panic!("expected surface-curve construction")
     };
-    assert_eq!(tail.form.revision, 23100);
-    assert_eq!(tail.form.extension, 7);
+    assert_eq!(tail.form.revision(), 23100);
+    assert_eq!(tail.form.extension(), 7);
     assert!(tail.flags.flag);
     assert_eq!(tail.flags.second_flag, Some(false));
-    assert_eq!(tail.form.solved_range, [Some(-1.0), Some(2.0)]);
+    assert_eq!(*tail.form.solved_range(), [Some(-1.0), Some(2.0)]);
     assert_eq!(context.parameter_range(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
@@ -840,7 +840,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     assert_eq!(form.extension, 7);
     assert_eq!(*base_u_range, [-1.0, 2.0]);
     assert_eq!(*base_v_range, [-3.0, 4.0]);
-    assert_eq!(*base_endpoints, [None, None]);
+    assert_eq!(base_endpoints, [None, None]);
     assert_eq!(*base_range, [-0.5, 1.5]);
     assert_eq!(*distance, -2.5);
     assert_eq!(*shift, 0.75);
@@ -880,7 +880,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
             (
                 expected_payload.base().clone(),
                 *actual_payload.base_range(),
-                *actual_payload.base_endpoints(),
+                actual_payload.base_endpoints(),
             ),
             cadmpeg_ir::geometry::CacheContract::from_form(actual_payload.cache_first().cloned()),
             *actual_payload.distance(),
