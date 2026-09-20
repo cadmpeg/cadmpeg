@@ -416,19 +416,42 @@ fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
     result.is_finite().then_some(result)
 }
 
+/// The outcome of [`product_sum`].
+pub(crate) enum ProductSum {
+    /// A term is absent, or a factor is not finite. The sum has no value.
+    Undefined,
+    /// The terms cancel to exactly zero.
+    Zero,
+    /// The sum, in the extended exponent range.
+    Value(ScaledValue),
+}
+
+impl ProductSum {
+    /// The two outcomes `ExactSignedSum::finish` and `scaled_finite` state,
+    /// whose `None` is an exact zero.
+    fn from_scaled(value: Option<ScaledValue>) -> Self {
+        match value {
+            Some(value) => Self::Value(value),
+            None => Self::Zero,
+        }
+    }
+}
+
 /// Sum products without losing a finite result to an intermediate exponent.
 /// Ordinary inputs use f64 arithmetic; range loss and cancellation replay the
-/// same terms through the exact accumulator. The inner None is an exact zero.
+/// same terms through the exact accumulator.
 pub(crate) fn product_sum<const N: usize>(
     terms: impl Iterator<Item = Option<[f64; N]>> + Clone,
-) -> Option<Option<ScaledValue>> {
+) -> ProductSum {
     let mut sum = 0.0_f64;
     let mut largest = 0.0_f64;
     let mut exact = false;
     for factors in terms.clone() {
-        let factors = factors?;
+        let Some(factors) = factors else {
+            return ProductSum::Undefined;
+        };
         if factors.iter().any(|value| !value.is_finite()) {
-            return None;
+            return ProductSum::Undefined;
         }
         if factors.contains(&0.0) {
             continue;
@@ -444,13 +467,16 @@ pub(crate) fn product_sum<const N: usize>(
     }
     exact |= largest != 0.0 && sum.abs() / largest < f64::EPSILON;
     if !exact {
-        return Some(scaled_finite(sum));
+        return ProductSum::from_scaled(scaled_finite(sum));
     }
     let mut sum = ExactSignedSum::default();
     for factors in terms {
-        sum.add_factors(factors?);
+        let Some(factors) = factors else {
+            return ProductSum::Undefined;
+        };
+        sum.add_factors(factors);
     }
-    Some(sum.finish())
+    ProductSum::from_scaled(sum.finish())
 }
 
 #[cfg(test)]

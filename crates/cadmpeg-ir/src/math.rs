@@ -215,9 +215,10 @@ pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {
         return None;
     }
     let denominator = sum::scaled_finite(denominator)?;
-    match sum::product_sum(std::iter::once(Some([left, right])))? {
-        Some(numerator) => numerator.quotient(denominator),
-        None => Some(0.0),
+    match sum::product_sum(std::iter::once(Some([left, right]))) {
+        sum::ProductSum::Value(numerator) => numerator.quotient(denominator),
+        sum::ProductSum::Zero => Some(0.0),
+        sum::ProductSum::Undefined => None,
     }
 }
 
