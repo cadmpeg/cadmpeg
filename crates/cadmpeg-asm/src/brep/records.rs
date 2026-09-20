@@ -58,15 +58,15 @@ macro_rules! native_record {
             pub(super) struct Wire {
                 /// Globally unique deterministic identifier for this native record.
                 #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
-                pub id: String,
+                pub(super) id: String,
                 $(#[doc = $entity_doc])*
-                pub $entity: $entity_ty,
+                pub(super) $entity: $entity_ty,
                 #[doc = $index_doc]
-                pub record_index: u32,
+                pub(super) record_index: u32,
                 $(
                     $(#[doc = $field_doc])*
                     $($(#[$wire_attr])*)?
-                    pub $field: $field_ty,
+                    pub(super) $field: $field_ty,
                 )*
             }
         }
