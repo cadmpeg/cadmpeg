@@ -23,13 +23,12 @@ use crate::records::FeatureSource;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
-pub(super) type SurfaceSelectionFaceBindings =
-    HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
+type SurfaceSelectionFaceBindings = HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
 
-pub(super) struct FaceSelectionContext<'a> {
-    pub(super) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
-    pub(super) feature_ref: Option<&'a str>,
-    pub(super) surface_selection_faces: &'a SurfaceSelectionFaceBindings,
+struct FaceSelectionContext<'a> {
+    ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+    feature_ref: Option<&'a str>,
+    surface_selection_faces: &'a SurfaceSelectionFaceBindings,
 }
 
 pub(crate) struct TopologySelectionInputs<'a> {
@@ -457,7 +456,7 @@ pub(crate) fn bind_topology_selections(
     Ok(())
 }
 
-pub(super) fn resolve_planar_face_selection(
+fn resolve_planar_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
@@ -515,7 +514,7 @@ pub(super) fn resolve_planar_face_selection(
     };
 }
 
-pub(super) fn resolve_offset_plane_face_selection(
+fn resolve_offset_plane_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
@@ -666,6 +665,9 @@ fn resolve_body_selection(
         }
     }
 }
+
+#[cfg(test)]
+mod offset_plane_tests;
 
 #[cfg(test)]
 mod tests {

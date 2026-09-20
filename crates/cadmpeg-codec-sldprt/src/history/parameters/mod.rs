@@ -29,6 +29,8 @@ use crate::history::project::{
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
 
 pub(crate) mod eval;
+#[cfg(test)]
+mod literal_tests;
 
 use self::eval::{exact_integer_f64, ParameterExpressionParser};
 
@@ -120,7 +122,7 @@ fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue
         .or_else(|| formatted_text_dimension_literal(name, expression))
 }
 
-pub(super) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
+fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
     let expression = expression.trim();
     if expression.is_empty()
         || expression.chars().any(|character| {
@@ -144,10 +146,7 @@ pub(super) fn bare_text_parameter_literal(expression: &str) -> Option<ParameterV
     Some(ParameterValue::String(expression.to_owned()))
 }
 
-pub(super) fn formatted_text_dimension_literal(
-    name: &str,
-    expression: &str,
-) -> Option<ParameterValue> {
+fn formatted_text_dimension_literal(name: &str, expression: &str) -> Option<ParameterValue> {
     let suffix = name.strip_prefix("TXD")?;
     if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;

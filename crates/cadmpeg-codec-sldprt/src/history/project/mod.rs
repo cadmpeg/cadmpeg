@@ -24,6 +24,8 @@ use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame
 use crate::records::FeatureSource;
 
 pub(super) mod datum;
+#[cfg(test)]
+mod feature_projection_tests;
 pub(crate) mod modify;
 pub(crate) mod pattern;
 pub(super) mod sketch;
@@ -921,7 +923,7 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
         .sum()
 }
 
-pub(super) fn project_feature_content(
+fn project_feature_content(
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
 ) -> Result<cadmpeg_ir::features::FeatureContent, cadmpeg_core::CodecError> {
@@ -1002,7 +1004,7 @@ pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<Design
 }
 
 /// Project every native feature dimension into the neutral parameter arena.
-pub(super) fn project_definition(
+fn project_definition(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
     native_by_source: &HashMap<String, &str>,
@@ -1168,7 +1170,7 @@ pub(super) fn project_definition(
     }
 }
 
-pub(super) fn parameter_names(feature: &Feature) -> Vec<String> {
+fn parameter_names(feature: &Feature) -> Vec<String> {
     let mut names = feature
         .content
         .iter()

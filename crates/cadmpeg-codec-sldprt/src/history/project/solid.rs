@@ -21,7 +21,7 @@ use crate::history::literals::{
     strip_diameter_modifier, valid_direction,
 };
 
-pub(in crate::history) fn project_extrude(
+pub(super) fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
@@ -234,7 +234,7 @@ pub(in crate::history) fn project_extrude(
     }))
 }
 
-pub(in crate::history) fn project_hole(
+pub(super) fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<crate::records::FeatureSource, &Feature>,
     history_features: &[Feature],
@@ -424,7 +424,7 @@ pub(crate) fn threaded_hole_major_diameter(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(in crate::history) struct HoleProfileConstruction {
+pub(super) struct HoleProfileConstruction {
     pub(in crate::history) diameter: cadmpeg_ir::scalar::PositiveLength,
     pub(in crate::history) depth: Option<Length>,
     pub(in crate::history) construction: HoleConstruction,
@@ -479,9 +479,7 @@ fn hole_profile_construction(
     }
 }
 
-pub(in crate::history) fn hole_sketch_construction(
-    profile: &Feature,
-) -> Option<HoleProfileConstruction> {
+pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
     enum ParsedDimension {
         Diameter(Length),
         Length(Length),
