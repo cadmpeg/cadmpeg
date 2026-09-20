@@ -1191,12 +1191,13 @@ fn linear_pcurve_carrier(
             }
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-            if start[1] == end[1] && sphere_surface.radius().get() > 0.0 =>
+            if start[1] == end[1] =>
         {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
+            (radius > 0.0).then_some(())?;
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1209,12 +1210,13 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-            if start[0] == end[0] && sphere_surface.radius().get() > 0.0 =>
+            if start[0] == end[0] =>
         {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
+            (radius > 0.0).then_some(())?;
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1236,13 +1238,14 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if start[1] == end[1] && torus_surface.minor_radius().get() > 0.0 =>
+            if start[1] == end[1] =>
         {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
+            (minor_radius > 0.0).then_some(())?;
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1255,13 +1258,14 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-            if start[0] == end[0] && torus_surface.minor_radius().get() > 0.0 =>
+            if start[0] == end[0] =>
         {
             let center = torus_surface.center();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
+            (minor_radius > 0.0).then_some(())?;
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
