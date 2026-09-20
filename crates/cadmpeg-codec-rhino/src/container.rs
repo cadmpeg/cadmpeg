@@ -28,7 +28,7 @@ use crate::objects::{
 };
 use crate::wire::Uuid;
 /// Maximum direct table records retained or described in one document.
-pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
+const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_TABLE: u32 = 0x1000_0000;
@@ -190,9 +190,9 @@ pub(crate) struct Table {
     /// Direct records in the table.
     pub(crate) records: Vec<Record>,
     /// Number of direct records, including compactly summarized records.
-    pub(crate) record_count: usize,
+    record_count: usize,
     /// Object record typecode counts discovered without class parsing.
-    pub(crate) object_typecodes: BTreeMap<u32, usize>,
+    object_typecodes: BTreeMap<u32, usize>,
 }
 
 impl Table {
@@ -224,22 +224,22 @@ impl Table {
     }
 
     /// Complete table chunk range.
-    pub(crate) fn range(&self) -> &std::ops::Range<usize> {
+    fn range(&self) -> &std::ops::Range<usize> {
         &self.range
     }
 
     /// Table body bytes inside `data`, absent when the body is out of view.
-    pub(crate) fn body_bytes<'a>(&self, data: &'a [u8]) -> Option<&'a [u8]> {
+    fn body_bytes<'a>(&self, data: &'a [u8]) -> Option<&'a [u8]> {
         data.get(self.body.clone())
     }
 
     /// Table body range, excluding the table header and checksum.
-    pub(crate) fn body(&self) -> &std::ops::Range<usize> {
+    fn body(&self) -> &std::ops::Range<usize> {
         &self.body
     }
 
     /// Table chunk bytes outside the body: the header and any checksum.
-    pub(crate) fn framing(&self) -> NonZeroU32 {
+    fn framing(&self) -> NonZeroU32 {
         self.framing
     }
 }
@@ -254,7 +254,7 @@ pub(crate) struct Scan<'a> {
     /// Parsed archive version.
     pub(crate) archive: ArchiveVersion,
     /// Comment chunk descriptor.
-    pub(crate) comment: Record,
+    comment: Record,
     /// Tables in source order.
     pub(crate) tables: Vec<Table>,
     /// All object records in source order.
@@ -266,7 +266,7 @@ pub(crate) struct Scan<'a> {
     /// Decoded built-in history records in source order.
     pub(crate) history: Vec<crate::history::HistoryRecord>,
     /// Validated EOF descriptor.
-    pub(crate) eof_offset: usize,
+    eof_offset: usize,
     /// Recoverable checksum and unknown-record notes.
     pub(crate) warnings: Diagnostics,
     /// Typed metadata decoded from property, setting, and layer records.
@@ -1192,7 +1192,7 @@ pub(crate) fn scan_owned(data: Vec<u8>) -> Result<Scan<'static>, CodecError> {
 }
 
 #[cfg(test)]
-pub(crate) fn scan_with_test_record_limit(
+fn scan_with_test_record_limit(
     data: Vec<u8>,
     record_limit: usize,
 ) -> Result<Scan<'static>, CodecError> {
@@ -1200,7 +1200,7 @@ pub(crate) fn scan_with_test_record_limit(
 }
 
 /// Build the format-neutral container summary.
-pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
+fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     let mut entries = Vec::with_capacity(scan.tables.len());
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();

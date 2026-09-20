@@ -19,10 +19,10 @@ pub(crate) const V5_ANGULAR_EXTRA: Uuid = Uuid::from_canonical([
 pub(crate) const LINEAR: Uuid = Uuid::from_canonical([
     0xe5, 0x50, 0x88, 0x2b, 0xf4, 0x4d, 0x41, 0x54, 0xa1, 0xef, 0x6e, 0x50, 0xcb, 0xbb, 0xf5, 0x43,
 ]);
-pub(crate) const ANGULAR: Uuid = Uuid::from_canonical([
+const ANGULAR: Uuid = Uuid::from_canonical([
     0xd4, 0x17, 0x78, 0x6b, 0xf6, 0xcd, 0x4f, 0x12, 0x9e, 0x1f, 0x06, 0x3f, 0x41, 0x4d, 0xbe, 0xb6,
 ]);
-pub(crate) const RADIAL: Uuid = Uuid::from_canonical([
+const RADIAL: Uuid = Uuid::from_canonical([
     0xfc, 0x74, 0x9c, 0x2f, 0x4c, 0x00, 0x41, 0xfd, 0x98, 0x40, 0x26, 0xd9, 0x4f, 0x04, 0x7a, 0xd3,
 ]);
 pub(crate) const V5_LINEAR: Uuid = Uuid::from_canonical([
@@ -34,25 +34,25 @@ pub(crate) const V5_RADIAL: Uuid = Uuid::from_canonical([
 pub(crate) const V5_ANGULAR: Uuid = Uuid::from_canonical([
     0x84, 0x1b, 0xc4, 0x0b, 0xa9, 0x71, 0x4a, 0x8e, 0x94, 0xe5, 0xbb, 0xa2, 0x6d, 0x67, 0x34, 0x8e,
 ]);
-pub(crate) const ORDINATE: Uuid = Uuid::from_canonical([
+const ORDINATE: Uuid = Uuid::from_canonical([
     0x03, 0x12, 0x48, 0x28, 0x4c, 0x9b, 0x4d, 0x28, 0x9a, 0x82, 0x66, 0x4d, 0xdd, 0xe7, 0xa1, 0x4f,
 ]);
 pub(crate) const V5_ORDINATE: Uuid = Uuid::from_canonical([
     0xc8, 0x28, 0x8d, 0x69, 0x5b, 0xd8, 0x4f, 0x50, 0x9b, 0xaf, 0x52, 0x5a, 0x00, 0x86, 0xb0, 0xc3,
 ]);
-pub(crate) const CENTERMARK: Uuid = Uuid::from_canonical([
+const CENTERMARK: Uuid = Uuid::from_canonical([
     0xd4, 0x67, 0x67, 0xba, 0x7e, 0x8f, 0x4d, 0x9d, 0x9a, 0x92, 0x66, 0x05, 0x02, 0x19, 0xa5, 0xb9,
 ]);
 pub(crate) const V2_ANNOTATION: Uuid = Uuid::from_canonical([
     0xab, 0xaf, 0x58, 0x73, 0x41, 0x45, 0x11, 0xd4, 0x80, 0x0f, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-pub(crate) const V2_LINEAR: Uuid = Uuid::from_canonical([
+const V2_LINEAR: Uuid = Uuid::from_canonical([
     0x5d, 0xe6, 0xb2, 0x0d, 0x48, 0x6b, 0x11, 0xd4, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-pub(crate) const V2_RADIAL: Uuid = Uuid::from_canonical([
+const V2_RADIAL: Uuid = Uuid::from_canonical([
     0x5d, 0xe6, 0xb2, 0x0e, 0x48, 0x6b, 0x11, 0xd4, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-pub(crate) const V2_ANGULAR: Uuid = Uuid::from_canonical([
+const V2_ANGULAR: Uuid = Uuid::from_canonical([
     0x5d, 0xe6, 0xb2, 0x0f, 0x48, 0x6b, 0x11, 0xd4, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
 pub(crate) const V2_TEXT_OBJECT: Uuid = Uuid::from_canonical([
@@ -64,7 +64,7 @@ pub(crate) const V2_LEADER: Uuid = Uuid::from_canonical([
 pub(crate) const V2_REALLY_BIG_NUMBER: f64 = 1.0e150;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OrdinateAxis {
+enum OrdinateAxis {
     X,
     Y,
 }
@@ -80,7 +80,7 @@ impl OrdinateAxis {
 
 /// Dimension family and defining plane-space geometry.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Definition {
+enum Definition {
     Linear {
         definition_point: [f64; 2],
         dimension_line_point: [f64; 2],
@@ -110,7 +110,7 @@ pub(crate) enum Definition {
 
 /// Style and V2 payload exclusive to one dimension family.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DimensionFamily {
+enum DimensionFamily {
     /// Pre-V5 dimension with a table index and inline text style.
     Legacy {
         dimstyle_index: i32,
@@ -132,21 +132,21 @@ pub(crate) enum DimensionFamily {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Dimension {
     pub(crate) source_range: Range<usize>,
-    pub(crate) annotation_type: i32,
-    pub(crate) rich_text: String,
-    pub(crate) user_text: String,
-    pub(crate) family: DimensionFamily,
-    pub(crate) plane: Plane,
-    pub(crate) horizontal_direction: [f64; 2],
-    pub(crate) allow_text_scaling: bool,
-    pub(crate) use_default_text_point: bool,
-    pub(crate) user_text_point: [f64; 2],
-    pub(crate) flip_arrows: [bool; 2],
-    pub(crate) arrow_position: i32,
-    pub(crate) detail_measured: Uuid,
-    pub(crate) distance_scale: f64,
-    pub(crate) definition: Definition,
-    pub(crate) measurement: f64,
+    annotation_type: i32,
+    rich_text: String,
+    user_text: String,
+    family: DimensionFamily,
+    plane: Plane,
+    horizontal_direction: [f64; 2],
+    allow_text_scaling: bool,
+    use_default_text_point: bool,
+    user_text_point: [f64; 2],
+    flip_arrows: [bool; 2],
+    arrow_position: i32,
+    detail_measured: Uuid,
+    distance_scale: f64,
+    definition: Definition,
+    measurement: f64,
     pub(crate) override_present: bool,
 }
 
@@ -162,7 +162,7 @@ pub(crate) struct Annotation {
     pub(crate) kind: i32,
     pub(crate) horizontal_direction: [f64; 2],
     pub(crate) allow_text_scaling: bool,
-    pub(crate) override_present: bool,
+    override_present: bool,
 }
 
 struct TextContent {

@@ -19,39 +19,39 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
-pub(crate) mod annotations;
-pub(crate) mod brep;
-pub(crate) mod cage;
-pub(crate) mod chunks;
-pub(crate) mod container;
-pub(crate) mod coverage;
-pub(crate) mod curve_on_surface;
-pub(crate) mod curves;
-pub(crate) mod decode;
-pub(crate) mod detail;
-pub(crate) mod dialect;
-pub(crate) mod dimensions;
-pub(crate) mod document_data;
-pub(crate) mod extrusion;
-pub(crate) mod hatch;
-pub(crate) mod history;
-pub(crate) mod instances;
+mod annotations;
+mod brep;
+mod cage;
+mod chunks;
+mod container;
+mod coverage;
+mod curve_on_surface;
+mod curves;
+mod decode;
+mod detail;
+mod dialect;
+mod dimensions;
+mod document_data;
+mod extrusion;
+mod hatch;
+mod history;
+mod instances;
 /// Byte-offset constants generated from `docs/layouts/rhino.toml`.
-pub(crate) mod layout;
-pub(crate) mod legacy;
-pub(crate) mod loss;
-pub(crate) mod mesh;
-pub(crate) mod mesh_modifiers;
-pub(crate) mod morph;
-pub(crate) mod objects;
-pub(crate) mod polyedge;
-pub(crate) mod presentation;
-pub(crate) mod product;
-pub(crate) mod settings;
-pub(crate) mod subd;
-pub(crate) mod surfaces;
-pub(crate) mod views;
-pub(crate) mod wire;
+mod layout;
+mod legacy;
+mod loss;
+mod mesh;
+mod mesh_modifiers;
+mod morph;
+mod objects;
+mod polyedge;
+mod presentation;
+mod product;
+mod settings;
+mod subd;
+mod surfaces;
+mod views;
+mod wire;
 mod writer;
 
 #[doc(hidden)]
@@ -183,4 +183,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

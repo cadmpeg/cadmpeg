@@ -15,7 +15,7 @@ pub(crate) const TCODE_ENDOFFILE: u32 = token::END_OF_FILE;
 /// The short table terminator typecode.
 pub(crate) const TCODE_ENDOFTABLE: u32 = token::END_OF_TABLE;
 /// The legacy summary chunk typecode.
-pub(crate) const TCODE_SUMMARY: u32 = 0x0200_0013;
+const TCODE_SUMMARY: u32 = 0x0200_0013;
 const TCODE_V1_OPENNURBS_CLASS_UUID: u32 = 0x0002_fffd;
 /// The bit marking a short chunk.
 pub(crate) const TCODE_SHORT: u32 = token::TCODE_SHORT;
@@ -105,7 +105,7 @@ impl ArchiveVersion {
     }
 
     /// Returns whether V1's optional EOF marker is allowed.
-    pub(crate) fn allows_optional_eof(self) -> bool {
+    fn allows_optional_eof(self) -> bool {
         matches!(self, Self::V1)
     }
 }
@@ -424,7 +424,7 @@ pub(crate) fn checked_count_bytes(
 
 /// Trailing checksum algorithm selected for a long chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ChecksumKind {
+enum ChecksumKind {
     /// V1 CRC-CCITT checksum, stored in two bytes.
     Crc16,
     /// V2+ IEEE CRC32 checksum, stored in four bytes.
@@ -441,11 +441,7 @@ impl ChecksumKind {
 }
 
 /// Selects the checksum algorithm without treating V1's CRC bit as CRC32.
-pub(crate) fn checksum_kind(
-    archive: ArchiveVersion,
-    typecode: u32,
-    class_uuid: bool,
-) -> Option<ChecksumKind> {
+fn checksum_kind(archive: ArchiveVersion, typecode: u32, class_uuid: bool) -> Option<ChecksumKind> {
     if archive == ArchiveVersion::V1
         && (typecode & 0x0001_0000 != 0
             || typecode == TCODE_SUMMARY
@@ -797,15 +793,13 @@ pub(crate) fn checksum_children_through_class_end(
 
 /// Decodes a packed one-byte payload version.
 #[cfg(test)]
-pub(crate) fn packed_version(value: u8) -> (i32, i32) {
+fn packed_version(value: u8) -> (i32, i32) {
     (i32::from(value >> 4), i32::from(value & 0x0f))
 }
 
 /// Decodes an anonymous little-endian `(i32 major, i32 minor)` version.
 #[cfg(test)]
-pub(crate) fn anonymous_version(
-    reader: &mut BoundedReader<'_>,
-) -> Result<(i32, i32), FramingError> {
+fn anonymous_version(reader: &mut BoundedReader<'_>) -> Result<(i32, i32), FramingError> {
     Ok((reader.i32()?, reader.i32()?))
 }
 

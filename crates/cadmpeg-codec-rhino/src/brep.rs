@@ -42,7 +42,7 @@ const TL_BREP: Uuid = Uuid::from_canonical([
     0xf0, 0x6f, 0xc2, 0x43, 0xa3, 0x2a, 0x46, 0x08, 0x9d, 0xd8, 0xa7, 0xd2, 0xc4, 0xce, 0x2a, 0x36,
 ]);
 /// Maximum number of records in one Brep array.
-pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
+const MAX_BREP_ITEMS: usize = 1 << 20;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
@@ -157,7 +157,7 @@ pub(crate) enum RawTrimKind {
 }
 
 impl RawTrimKind {
-    pub(crate) fn parse(value: i32) -> Option<Self> {
+    fn parse(value: i32) -> Option<Self> {
         Some(match value {
             0 => Self::Unknown,
             1 => Self::Boundary,
@@ -185,7 +185,7 @@ pub(crate) enum RawTrimIso {
 }
 
 impl RawTrimIso {
-    pub(crate) fn parse(value: i32) -> Option<Self> {
+    fn parse(value: i32) -> Option<Self> {
         Some(match value {
             0 => Self::None,
             1 => Self::X,
@@ -211,7 +211,7 @@ pub(crate) enum RawLoopKind {
 }
 
 impl RawLoopKind {
-    pub(crate) fn parse(value: i32) -> Option<Self> {
+    fn parse(value: i32) -> Option<Self> {
         Some(match value {
             0 => Self::Unknown,
             1 => Self::Outer,

@@ -223,7 +223,7 @@ impl serde::Serialize for CapType {
 }
 
 impl CapType {
-    pub(crate) fn as_str(self) -> &'static str {
+    fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Flat => "flat",

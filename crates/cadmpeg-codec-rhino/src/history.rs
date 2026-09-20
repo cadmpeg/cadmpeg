@@ -20,14 +20,14 @@ const HISTORY_CLASS: Uuid = Uuid::from_canonical([
 const VALUE_CAP: usize = 1 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RecordType {
+enum RecordType {
     HistoryParameters,
     FeatureParameters,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryValue {
-    pub(crate) id: i32,
+    id: i32,
     pub(crate) value: Value,
 }
 
@@ -52,68 +52,68 @@ pub(crate) enum Value {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EmbeddedGeometry {
-    pub(crate) class_id: Uuid,
-    pub(crate) class_data_range: Range<usize>,
-    pub(crate) userdata: Vec<UserdataDescriptor>,
+    class_id: Uuid,
+    class_data_range: Range<usize>,
+    userdata: Vec<UserdataDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SubdEdgeChain {
-    pub(crate) subd_id: Uuid,
-    pub(crate) edges: Vec<SubdEdge>,
+    subd_id: Uuid,
+    edges: Vec<SubdEdge>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SubdEdge {
-    pub(crate) id: u32,
-    pub(crate) reversed: bool,
+struct SubdEdge {
+    id: u32,
+    reversed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObjectReference {
-    pub(crate) object_id: Uuid,
-    pub(crate) component: [i32; 2],
-    pub(crate) geometry_type: i32,
-    pub(crate) point: Point3,
-    pub(crate) evaluation: EvaluationParameter,
-    pub(crate) instance_path: Vec<InstanceReference>,
-    pub(crate) osnap_mode: i32,
+    object_id: Uuid,
+    component: [i32; 2],
+    geometry_type: i32,
+    point: Point3,
+    evaluation: EvaluationParameter,
+    instance_path: Vec<InstanceReference>,
+    osnap_mode: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EvaluationParameter {
-    pub(crate) parameter_type: i32,
-    pub(crate) component: [i32; 2],
-    pub(crate) parameters: [f64; 4],
-    pub(crate) intervals: [Option<[f64; 2]>; 3],
+struct EvaluationParameter {
+    parameter_type: i32,
+    component: [i32; 2],
+    parameters: [f64; 4],
+    intervals: [Option<[f64; 2]>; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct InstanceReference {
-    pub(crate) reference_id: Uuid,
-    pub(crate) transform: Xform,
-    pub(crate) definition_id: Uuid,
-    pub(crate) geometry_index: i32,
-    pub(crate) evaluation: Option<InstanceEvaluation>,
+struct InstanceReference {
+    reference_id: Uuid,
+    transform: Xform,
+    definition_id: Uuid,
+    geometry_index: i32,
+    evaluation: Option<InstanceEvaluation>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct InstanceEvaluation {
-    pub(crate) component: [i32; 2],
-    pub(crate) parameter: EvaluationParameter,
+struct InstanceEvaluation {
+    component: [i32; 2],
+    parameter: EvaluationParameter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,
-    pub(crate) id: Uuid,
-    pub(crate) version: i32,
-    pub(crate) command_id: Uuid,
-    pub(crate) descendants: Vec<Uuid>,
-    pub(crate) antecedents: Vec<Uuid>,
+    id: Uuid,
+    version: i32,
+    command_id: Uuid,
+    descendants: Vec<Uuid>,
+    antecedents: Vec<Uuid>,
     pub(crate) values: Vec<HistoryValue>,
-    pub(crate) record_type: RecordType,
-    pub(crate) copy_on_replace: bool,
+    record_type: RecordType,
+    copy_on_replace: bool,
 }
 
 /// Result of scanning the history-record table.
@@ -126,7 +126,7 @@ pub(crate) struct HistoryScan {
 }
 
 /// Stable source-fidelity identity for a complete history record boundary.
-pub(crate) fn source_id(source_offset: usize) -> String {
+fn source_id(source_offset: usize) -> String {
     format!("rhino:history:source#{source_offset:012}")
 }
 

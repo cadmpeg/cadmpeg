@@ -46,7 +46,7 @@ fn stated_write_tolerance(
     )))
 }
 
-pub(crate) trait WriteSeek: Write + Seek {}
+trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
 const TCODE_PROPERTIES_TABLE: u32 = 0x1000_0014;
@@ -114,7 +114,7 @@ const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
-pub(crate) fn write(
+fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn Write,
@@ -126,7 +126,7 @@ pub(crate) fn write(
     Ok(())
 }
 
-pub(crate) fn write_seekable(
+fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,

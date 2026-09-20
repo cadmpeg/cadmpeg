@@ -45,13 +45,13 @@ pub(crate) enum Control {
 pub(crate) struct LocalizerKind(pub(crate) i32);
 
 impl LocalizerKind {
-    pub(crate) const NONE: Self = Self(0);
-    pub(crate) const SPHERE: Self = Self(1);
-    pub(crate) const PLANE: Self = Self(2);
-    pub(crate) const CYLINDER: Self = Self(3);
-    pub(crate) const CURVE: Self = Self(4);
-    pub(crate) const SURFACE: Self = Self(5);
-    pub(crate) const DISTANCE: Self = Self(6);
+    const NONE: Self = Self(0);
+    const SPHERE: Self = Self(1);
+    const PLANE: Self = Self(2);
+    const CYLINDER: Self = Self(3);
+    const CURVE: Self = Self(4);
+    const SURFACE: Self = Self(5);
+    const DISTANCE: Self = Self(6);
 }
 
 impl fmt::Debug for LocalizerKind {
@@ -88,7 +88,7 @@ pub(crate) struct Localizer {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Morph {
-    pub(crate) source_range: Range<usize>,
+    source_range: Range<usize>,
     pub(crate) control: Control,
     pub(crate) captive_ids: Vec<Uuid>,
     pub(crate) localizers: Vec<Localizer>,

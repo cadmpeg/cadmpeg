@@ -104,10 +104,10 @@ pub(crate) enum DecodedSurface {
 /// plane extents.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlaneParameterization {
-    pub(crate) u_domain: [f64; 2],
-    pub(crate) v_domain: [f64; 2],
-    pub(crate) u_extents: [f64; 2],
-    pub(crate) v_extents: [f64; 2],
+    u_domain: [f64; 2],
+    v_domain: [f64; 2],
+    u_extents: [f64; 2],
+    v_extents: [f64; 2],
 }
 
 impl PlaneParameterization {

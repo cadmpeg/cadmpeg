@@ -704,4 +704,4 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;

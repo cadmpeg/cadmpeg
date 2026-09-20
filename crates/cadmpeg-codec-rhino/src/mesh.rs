@@ -88,13 +88,13 @@ const OPENNURBS4: Uuid = Uuid::from_canonical([
     0x17, 0xb3, 0xec, 0xda, 0x17, 0xba, 0x4e, 0x45, 0x9e, 0x67, 0xa2, 0xb8, 0xd9, 0xbe, 0x52, 0x0d,
 ]);
 /// Codec-owned UV channel kind.
-pub(crate) const CHANNEL_UV: u32 = 0x5248_0001;
+const CHANNEL_UV: u32 = 0x5248_0001;
 /// Codec-owned color channel kind.
-pub(crate) const CHANNEL_COLOR: u32 = 0x5248_0002;
+const CHANNEL_COLOR: u32 = 0x5248_0002;
 /// Codec-owned surface-parameter channel kind.
-pub(crate) const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
+const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
-pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
+const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 /// Maximum vertex count declared by one mesh.
 const MAX_MESH_VERTICES: usize = 1 << 24;
 /// Maximum face count declared by one mesh.
