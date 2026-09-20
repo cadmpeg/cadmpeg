@@ -167,9 +167,13 @@ impl<V> Strips<V> {
         &self.0
     }
 
-    /// The strips in mesh order, for editing in place.
-    pub fn as_mut_slice(&mut self) -> &mut [Strip<V>] {
-        &mut self.0
+    /// Every strip vertex in mesh order, for editing in place.
+    ///
+    /// The narrow write route: a caller reaches the vertices and never a
+    /// strip, so the vertex span the mint proved a `u32` index can name
+    /// stays the span the strips hold.
+    pub fn vertices_mut(&mut self) -> impl Iterator<Item = &mut V> {
+        self.0.iter_mut().flat_map(Strip::vertices_mut)
     }
 }
 
@@ -611,17 +615,13 @@ impl TessellationMesh {
                 }
             }
             Self::Strips { strips } => {
-                for strip in strips.as_mut_slice().iter_mut() {
-                    for vertex in strip.vertices_mut().iter_mut() {
-                        edit(vertex)?;
-                    }
+                for vertex in strips.vertices_mut() {
+                    edit(vertex)?;
                 }
             }
             Self::ShadedStrips { strips } => {
-                for strip in strips.as_mut_slice().iter_mut() {
-                    for vertex in strip.vertices_mut().iter_mut() {
-                        edit(&mut vertex.position)?;
-                    }
+                for vertex in strips.vertices_mut() {
+                    edit(&mut vertex.position)?;
                 }
             }
         }
@@ -665,10 +665,8 @@ impl TessellationMesh {
                 }
             }
             Self::ShadedStrips { strips } => {
-                for strip in strips.as_mut_slice().iter_mut() {
-                    for vertex in strip.vertices_mut().iter_mut() {
-                        edit(&mut vertex.normal)?;
-                    }
+                for vertex in strips.vertices_mut() {
+                    edit(&mut vertex.normal)?;
                 }
             }
         }

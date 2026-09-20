@@ -1411,7 +1411,7 @@ impl ProceduralSurfaceDefinition {
         value: Option<FitTolerance>,
     ) -> Result<(), CacheContractError> {
         if let Self::VariableBlend(payload) = self {
-            return set_variable_blend_cache(payload.cache_mut(), value);
+            return payload.write_cache_fit_tolerance(value);
         }
         if self.owns_revision_cache() {
             return match value {
@@ -7070,10 +7070,19 @@ impl SpringLayout {
         }
     }
 
-    fn cache_first_mut(&mut self) -> Option<&mut CacheFirstCurveForm> {
+    /// Write the fit tolerance of the cache-first layout's cache form.
+    ///
+    /// The narrow write route: the borrow of the form stays inside this
+    /// method, so the layout lends no interior of the admitted payload that
+    /// holds it. The context-first layout owns no cache form.
+    fn write_revision_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+        write: ToleranceWrite,
+    ) -> RevisionCacheWrite {
         match self {
-            Self::CacheFirst { form, .. } => Some(form),
-            Self::ContextFirst { .. } => None,
+            Self::CacheFirst { form, .. } => form.cache.write_fit_tolerance(value, write),
+            Self::ContextFirst { .. } => RevisionCacheWrite::NoForm,
         }
     }
 }
