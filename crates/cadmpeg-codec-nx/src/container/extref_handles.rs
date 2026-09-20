@@ -24,11 +24,11 @@ impl ExtrefHandles {
         &self.0
     }
 
-    pub(crate) fn closing_duplicate(&self) -> bool {
+    pub(super) fn closing_duplicate(&self) -> bool {
         self.0.len() >= 2 && self.0[self.0.len() - 1] == self.0[self.0.len() - 2]
     }
 
-    pub(crate) fn values(&self) -> &[u32] {
+    pub(super) fn values(&self) -> &[u32] {
         &self.0[..self.0.len() - usize::from(self.closing_duplicate())]
     }
 

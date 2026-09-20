@@ -615,7 +615,7 @@ pub(crate) struct ExtrefIndexedRecord {
     pub(crate) byte_len: usize,
 }
 
-pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
+fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(usize, String)>)> {
     (0..payload.len().saturating_sub(4))
         .rev()
         .find_map(|marker| {
@@ -639,7 +639,7 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
         })
 }
 
-pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
+fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
     let Some(index) = parse_extref_record_index(payload) else {
         return Vec::new();
     };
@@ -685,7 +685,7 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         .collect()
 }
 
-pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>> {
+fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>> {
     if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
         return None;
     }
