@@ -80,6 +80,12 @@ impl Homogeneous {
         if lower > upper {
             return None;
         }
+        // `lower..=upper` states every binary scale that keeps the complete net
+        // inside the `f64` exponent range, and the refusal above states that it
+        // is not empty. Zero is the preferred scale because it keeps the source
+        // weights. A preferred scale outside the admitted interval is not an
+        // error: the nearest admitted scale is then the one that preserves the
+        // relative weights.
         let exponent = 0_i32.clamp(lower, upper);
         weights
             .into_iter()
