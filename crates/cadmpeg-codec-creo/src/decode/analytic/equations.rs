@@ -5,7 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::decode::quadratic::real_roots;
+use crate::decode::quadratic::{cancelling_coefficient, real_roots};
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
@@ -18,7 +18,6 @@ const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
-const EPS_QUADRATIC_CANCELLATION: f64 = 64.0 * f64::EPSILON;
 
 #[derive(Clone, Copy)]
 pub(in crate::decode) struct PlaneEquation {
@@ -165,21 +164,6 @@ fn abs_dot(left: [f64; 3], right: [f64; 3]) -> f64 {
         .zip(right)
         .map(|(left, right)| (left * right).abs())
         .sum()
-}
-
-/// A coefficient of a quadric restricted to a line or to a plane. The terms come
-/// from the quadric matrix and the restriction frame, so a sum that cancels to
-/// within the rounding error of those terms states that the coefficient is zero.
-/// A zero quadratic coefficient states that the direction is parallel to a
-/// ruling, so the line meets the quadric in the single point of the remaining
-/// linear equation. A zero constant states that the restriction origin lies on
-/// the quadric, which keeps a tangency a double root rather than a discriminant
-/// that is negative only by the rounding of its coefficients.
-fn cancelling_coefficient(value: f64, terms: f64) -> f64 {
-    if value.abs() <= EPS_QUADRATIC_CANCELLATION * terms {
-        return 0.0;
-    }
-    value
 }
 
 fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
