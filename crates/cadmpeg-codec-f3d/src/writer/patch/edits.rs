@@ -3179,6 +3179,9 @@ pub(super) fn validate_pcurve_edits(
                 "F3D regeneration does not support this pcurve edit: {id}"
             )));
         };
+        // `PcurveNurbs::new` and `PcurveNurbs::edit_control_points` both
+        // require finite poles, so pole finiteness is not a condition this
+        // chain can refuse.
         let valid = id.starts_with("f3d:brep:entity#")
             && valid_edited_nurbs_direction(
                 before_nurbs.knots(),
@@ -3191,11 +3194,7 @@ pub(super) fn validate_pcurve_edits(
                 weights
                     .iter()
                     .all(|weight| weight.is_finite() && *weight > 0.0)
-            })
-            && after_nurbs
-                .control_points()
-                .iter()
-                .all(cadmpeg_ir::math::Point2::is_finite);
+            });
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
