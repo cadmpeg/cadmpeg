@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::assert_annotation;
 use crate::test_support::assert_unknown_visible_surface;
 use crate::test_support::build_prt;
@@ -109,9 +111,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
     assert_eq!(record.fields()["extrusion_direction"][1], 0.0);
     assert_eq!(record.fields()["extrusion_direction"][2], 1.0);
     assert_eq!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)
@@ -193,9 +193,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         4.0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage()
+        wire::coverage(result.report())
             .get("decoded_positional_extrusion_direction_count")
             .copied(),
         Some(1)
@@ -277,9 +275,11 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode surface parameters");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode surface parameters"),
+    );
 
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"];
     assert_eq!(records.len(), 1);
@@ -354,9 +354,10 @@ fn decode_retains_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields()["type26_split_coordinate_envelope"].is_null());
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_FIVE_COORDINATE_ENVELOPE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -424,9 +425,10 @@ fn decode_places_complete_positional_torus() {
             < 1.0e-12
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_POSITIONAL_TORUS_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -454,9 +456,10 @@ fn decode_reports_transferred_positional_cylinders() {
         .expect("decode positional cylinder");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_POSITIONAL_CYLINDER_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -521,9 +524,10 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
         );
     }
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_PAIRED_ENVELOPE_SPHERE_COUNT.as_str()
+        ),
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -562,9 +566,10 @@ fn decode_retains_split_type26_coordinate_envelope_in_native_ir() {
     }
     assert!(record.fields()["type26_five_coordinate_envelope"].is_null());
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_SPLIT_COORDINATE_ENVELOPE_COUNT.as_str()
+        ),
         1
     );
     assert!(result
@@ -620,9 +625,11 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let expected_offset =
         container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset as u64;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
         namespace.arenas()["plane_local_systems"][0].fields()["surface_id"],
@@ -697,15 +704,24 @@ fn decode_transfers_plane_from_shared_rank_two_local_system_image() {
     );
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_VISIBLE_PLANE_SURFACE_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT.as_str()
+        ),
         0
     );
 }
@@ -954,9 +970,10 @@ fn decode_replays_a_unique_section_prototype_minor_radius_at_type26_row_end() {
         0.199_999_999_999_999_98
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_TYPE26_REPLAYED_MINOR_RADIUS_COUNT.as_str()
+        ),
         1
     );
 }
@@ -994,9 +1011,10 @@ fn decode_places_first_plane_instance_from_named_prototype() {
         ))
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         1
     );
 }
@@ -1047,9 +1065,10 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
 
     assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1070,9 +1089,10 @@ fn decode_does_not_use_incomplete_frame_for_prototype_join() {
 
     assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -1101,9 +1121,10 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
     assert_unknown_visible_surface(&result.ir().model.surfaces, 8);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT.as_str()
+        ),
         1
     );
 }

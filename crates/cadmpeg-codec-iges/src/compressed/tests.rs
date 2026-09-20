@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use super::{normalize, parse_data_entity, parse_directory_record};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
@@ -148,9 +150,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     assert_eq!(lines[directory_start + 4][64..72], *b"       1");
     assert_eq!(lines[directory_start + 5][64..72], *b"       3");
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["representation"],
@@ -183,7 +187,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     let displacement = plan
@@ -206,9 +213,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
 #[test]
 fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let source = compressed_points_file();
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -221,11 +230,19 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();

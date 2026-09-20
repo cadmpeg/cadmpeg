@@ -257,8 +257,7 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
-/// pcurve block the scope itself owns. Token-space counterpart of
-/// [`decode_pcurve_fit_tolerance`].
+/// pcurve block the scope itself owns.
 ///
 /// The blocks searched are the ones [`explicit_pcurve_cache`] selects from, so
 /// the tolerance belongs to the pcurve that function returns. Nested support

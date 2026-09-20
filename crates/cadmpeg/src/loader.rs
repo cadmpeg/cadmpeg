@@ -108,7 +108,11 @@ mod tests {
             "notes": [],
         }))
         .unwrap();
-        let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let sidecar = DecodeSidecar::bind_sha256(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+            report,
+            SourceFidelity::default(),
+        );
         std::fs::write(
             cadmpeg_ir::decode_sidecar_path(&path).unwrap(),
             sidecar.to_canonical_json().unwrap(),

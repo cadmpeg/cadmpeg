@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::owner_scoped_angular_dimension_definition;
 use crate::design::dimensions::owner_scoped_line_length_dimension_definition;
@@ -167,17 +169,21 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .with_native_ref(entity.native_ref.clone())
     .with_geometry_ref(entity.geometry_ref.clone())
     .with_endpoint_refs(entity.endpoint_refs.clone());
-    duplicate
-        .geometry
-        .edit(|definition| {
+    edit::replace(&mut duplicate.geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
             const RADIUS_PERTURBATION: f64 = 5.0e-7;
+
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
 
             let SketchGeometryDefinition::Circle { radius, .. } = definition else {
                 unreachable!("test entity is circular")
             };
             *radius = cadmpeg_ir::scalar::Length::new(radius.get() + RADIUS_PERTURBATION).unwrap();
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     assert!(matches!(
         owner_scoped_radial_dimension_definition(
             &[entity.clone(), duplicate.clone()],

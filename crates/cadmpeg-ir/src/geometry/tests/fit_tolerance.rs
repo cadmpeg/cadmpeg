@@ -114,10 +114,8 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
     definition
         .set_legacy_cache(LegacyCache::try_new(0.5).expect("admissible fit tolerance"))
         .expect("an exact curve states its own cache tolerance");
-    let mut curve = ProceduralCurve::new(curve_id(), definition);
+    let curve = ProceduralCurve::new(curve_id(), definition);
     assert_eq!(curve.cache_fit_tolerance(), Some(0.5));
-    curve.raise_cache_fit_tolerance(FitTolerance::try_new(f64::MAX).expect("admissible"));
-    assert_eq!(curve.cache_fit_tolerance(), Some(f64::MAX));
 
     let mut replica = replica_definition();
     assert!(replica
@@ -131,37 +129,6 @@ fn replica_definition() -> ProceduralCurveDefinition {
         source: crate::ids::CurveId::mint("synthetic:test:curve#0").expect("valid identity"),
         transform: crate::transform::Transform::identity(),
     }
-}
-
-#[test]
-fn raising_the_fit_tolerance_of_a_slotless_construction_leaves_it_unchanged() {
-    let untouched = ProceduralCurve::new(curve_id(), replica_definition());
-    let mut raised = ProceduralCurve::new(curve_id(), replica_definition());
-
-    raised.raise_cache_fit_tolerance(FitTolerance::try_new(0.5).expect("admissible"));
-
-    assert_eq!(raised, untouched);
-    assert_eq!(raised.cache_fit_tolerance(), None);
-}
-
-#[test]
-fn raising_the_fit_tolerance_of_a_legacy_slot_keeps_the_higher_of_the_two() {
-    let legacy = |fit_tolerance: f64| {
-        ProceduralCurve::new(
-            curve_id(),
-            ProceduralCurveDefinition::Exact {
-                cache: Some(LegacyCache::try_new(fit_tolerance).expect("admissible")),
-            },
-        )
-    };
-
-    let mut curve = legacy(3.0);
-    curve.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
-    assert_eq!(curve.cache_fit_tolerance(), Some(7.0));
-
-    let mut curve = legacy(9.0);
-    curve.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
-    assert_eq!(curve.cache_fit_tolerance(), Some(9.0));
 }
 
 fn parameterized_curve_definition() -> ProceduralCurveDefinition {
@@ -249,19 +216,6 @@ fn requiring_a_fit_tolerance_refuses_a_layout_that_states_no_solved_cache() {
     );
     assert_eq!(parameterized, untouched);
     assert_eq!(parameterized.cache_fit_tolerance(), None);
-}
-
-#[test]
-fn raising_the_fit_tolerance_of_an_empty_legacy_slot_states_no_cache() {
-    let empty =
-        || ProceduralCurve::new(curve_id(), ProceduralCurveDefinition::Exact { cache: None });
-    let untouched = empty();
-    let mut raised = empty();
-
-    raised.raise_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible"));
-
-    assert_eq!(raised, untouched);
-    assert_eq!(raised.cache_fit_tolerance(), None);
 }
 
 fn revision_exact_definition() -> ProceduralSurfaceDefinition {

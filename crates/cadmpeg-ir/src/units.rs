@@ -76,11 +76,6 @@ impl<const N: usize> NonzeroVector<N> {
                 > f64::EPSILON)
             .then_some(Self(value))
     }
-
-    /// Return the coordinates without normalization.
-    pub const fn get(self) -> [f64; N] {
-        self.0
-    }
 }
 
 macro_rules! vector_wire {
@@ -351,7 +346,7 @@ mod tests {
         assert!(serde_json::from_str::<NonzeroVector<3>>("[0,0,0]").is_err());
         let coordinates = [2.0, -3.0, 4.0];
         let value = NonzeroVector::new(coordinates).expect("nonzero");
-        assert_eq!(value.get(), coordinates);
+        assert_eq!(value.0, coordinates);
         let wire = serde_json::to_string(&value).expect("serialize");
         assert_eq!(wire, "[2.0,-3.0,4.0]");
         assert_eq!(

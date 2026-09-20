@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
+use cadmpeg_test_support::assembly;
+
 use crate::native;
 use crate::product::{
     list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
@@ -144,15 +146,13 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[0].id)
+        assembly::resolved_transform(&graph, &link_occurrences[0].id)
             .unwrap()
             .rows()[0][3],
         115.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&link_occurrences[1].id)
+        assembly::resolved_transform(&graph, &link_occurrences[1].id)
             .unwrap()
             .rows()[0][3],
         118.0
@@ -971,22 +971,19 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
         .expect("valid assembly graph");
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Inner").id)
+        assembly::resolved_transform(&graph, &occurrence("Inner").id)
             .unwrap()
             .rows()[0][3],
         8.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Outer").id)
+        assembly::resolved_transform(&graph, &occurrence("Outer").id)
             .unwrap()
             .rows()[0][3],
         20.0
     );
     assert_eq!(
-        graph
-            .resolved_transform(&occurrence("Override").id)
+        assembly::resolved_transform(&graph, &occurrence("Override").id)
             .unwrap()
             .rows()[0][3],
         14.0
@@ -1026,10 +1023,26 @@ fn transfers_external_product_paths_and_targets() {
     let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
         panic!("path prototype is external");
     };
-    assert_eq!(document.as_path(), Some("parts/widget.FCStd"));
-    assert_eq!(document.as_document_id(), None);
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+            _ => None,
+        }),
+        Some("parts/widget.FCStd")
+    );
+    assert_eq!(
+        (match &document {
+            cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                Some(document_id.as_str()),
+            _ => None,
+        }),
+        None
+    );
     assert_eq!(object.as_deref(), Some("Body"));
-    assert!(!document.is_missing());
+    assert!(!matches!(
+        document,
+        cadmpeg_ir::products::ExternalDocument::Missing {}
+    ));
 
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -1135,7 +1148,7 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
     assert!(matches!(
         &copy.source,
         Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
-            if document.as_path() == Some("other.FCStd") && object == "Box"
+            if (match &document { cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()), _ => None }) == Some("other.FCStd") && object == "Box"
     ));
     assert!(crate::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());

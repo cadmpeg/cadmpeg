@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -72,50 +74,59 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.pcurves.len(), 3);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT),
-        1
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT),
-        0
-    );
-    assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT),
-        1
-    );
-    assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT),
+        wire::coverage_count(
+            result.report(),
+            (crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result.report().coverage_count(
-            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT.as_str()
         ),
         3
     );

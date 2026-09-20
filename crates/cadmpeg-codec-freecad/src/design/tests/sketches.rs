@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design sketches transfer unit tests.
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -749,13 +751,13 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     assert_eq!(
         point_on_object
             .label_distance
-            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+            .map(|value| wire::value::<f64>(&value)),
         Some(2.5)
     );
     assert_eq!(
         point_on_object
             .label_position
-            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+            .map(|value| wire::value::<f64>(&value)),
         Some(0.25)
     );
     assert_eq!(point_on_object.driving, Some(false));

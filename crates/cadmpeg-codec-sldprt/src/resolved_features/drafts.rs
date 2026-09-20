@@ -698,7 +698,14 @@ mod tests {
                 panic!("typed draft");
             };
             *faces = FaceSelection::Native("explicit-faces".into());
-            anchor.pull_mut().unwrap().direction =
+            let (cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                pull: Some(pull), ..
+            }
+            | cadmpeg_ir::features::DraftAnchor::PartingLine { pull, .. }) = anchor
+            else {
+                panic!("draft pull fixture");
+            };
+            pull.direction =
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
         });
         super::super::projections::project_draft_operands(&mut projected, &[history], &[lane]);

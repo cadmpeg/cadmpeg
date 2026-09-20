@@ -23,7 +23,7 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
         .push(FeatureSourceContent::Text("text".into()))
         .unwrap();
     assert_eq!(
-        content.as_slice(),
+        (&*content),
         &[
             FeatureSourceContent::Text("text".into()),
             FeatureSourceContent::Text("text".into()),
@@ -41,14 +41,24 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
 
 #[test]
 fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
-    let mut feature = Feature::new(
-        FeatureId::mint("test:test:feature#owner").unwrap(),
-        1,
-        FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-            position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            construction: None,
-        }),
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("test:test:feature#owner").unwrap(),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        ),
+        native_ref: None,
+    };
     let dependency = FeatureId::mint("test:test:feature#dependency").unwrap();
     feature.dependencies.insert(dependency.clone());
     let parameter =

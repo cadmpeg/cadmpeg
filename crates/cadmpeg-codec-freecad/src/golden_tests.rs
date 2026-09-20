@@ -10,6 +10,8 @@
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::Path;
@@ -70,22 +72,25 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let native_shape = native_shape(&result.ir().native);
-            let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
-            elide_authoring_paths(&mut ir);
-            if let Some(native) = ir.get_mut("native") {
-                *native = serde_json::json!({
-                    "__elided": "native arena values are omitted; structure is pinned by identity",
-                    "__arena_counts": native_shape["counts"].clone(),
-                    "__shape_sha256": native_shape["sha256"].clone(),
-                });
+            let result = EditableDecodeResult::from(result);
+            {
+                let native_shape = native_shape(&result.ir().native);
+                let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
+                elide_authoring_paths(&mut ir);
+                if let Some(native) = ir.get_mut("native") {
+                    *native = serde_json::json!({
+                        "__elided": "native arena values are omitted; structure is pinned by identity",
+                        "__arena_counts": native_shape["counts"].clone(),
+                        "__shape_sha256": native_shape["sha256"].clone(),
+                    });
+                }
+                serde_json::json!({
+                    "ir": ir,
+                    "report": serde_json::to_value(result.report()).expect("serialize report"),
+                    "source_fidelity": serde_json::to_value(result.source_fidelity())
+                        .expect("serialize source_fidelity"),
+                })
             }
-            serde_json::json!({
-                "ir": ir,
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(result.source_fidelity())
-                    .expect("serialize source_fidelity"),
-            })
         }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
@@ -207,9 +212,11 @@ fn encode_snapshot(bytes: &[u8]) -> String {
 fn encode_once(
     bytes: &[u8],
 ) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
-    let decoded = FcstdCodec
-        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-        .map_err(|error| error.to_string())?;
+    let decoded = EditableDecodeResult::from(
+        FcstdCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .map_err(|error| error.to_string())?,
+    );
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
@@ -264,11 +271,12 @@ fn golden_output_is_deterministic() {
 /// Pins STEP output by content for this crate's fixtures. Export errors are
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
-    let decoded =
+    let decoded = EditableDecodeResult::from(
         match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
             Ok(decoded) => decoded,
             Err(error) => return format!("decode_error: {error}\n"),
-        };
+        },
+    );
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),

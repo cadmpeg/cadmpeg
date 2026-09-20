@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::build_prt;
 use crate::test_support::build_prt_raw;
 use crate::test_support::visibgeom_payload;
@@ -707,35 +709,35 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
     assert_eq!(source.attributes["principal_unit"], "inLbmS");
     assert_eq!(source.attributes["source_length_scale_mm"], "25.4");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_principal_unit_count"],
+        wire::coverage(result.report())["decoded_legacy_principal_unit_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_real_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_real_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_real_element_count"],
+        wire::coverage(result.report())["decoded_legacy_real_element_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_integer_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_integer_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_object_arrow_count"],
+        wire::coverage(result.report())["decoded_legacy_object_arrow_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_string_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_string_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_string_element_count"],
+        wire::coverage(result.report())["decoded_legacy_string_element_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["undecoded_legacy_string_encoding_count"],
+        wire::coverage(result.report())["undecoded_legacy_string_encoding_count"],
         1
     );
     let reals = &result
@@ -835,43 +837,43 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy numbered numeric decode");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_5_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_5_element_count"],
         4
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_6_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_6_element_count"],
         5
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_7_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_7_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_9_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_9_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_11_array_count"],
+        wire::coverage(result.report())["decoded_legacy_type_11_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_11_element_count"],
+        wire::coverage(result.report())["decoded_legacy_type_11_element_count"],
         1
     );
 
@@ -917,19 +919,19 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy type-3/type-4 decode");
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_3_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_3_scalar_count"],
         2
     );
     assert_eq!(
-        result.report().coverage()["decoded_legacy_type_4_scalar_count"],
+        wire::coverage(result.report())["decoded_legacy_type_4_scalar_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_3_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_3_value_count"],
         0
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_4_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_4_value_count"],
         0
     );
 
@@ -975,35 +977,35 @@ fn incomplete_legacy_values_are_reported() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("legacy incomplete-array decode");
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_real_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_real_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_integer_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_integer_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["incomplete_legacy_object_array_count"],
+        wire::coverage(result.report())["incomplete_legacy_object_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_object_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_object_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["incomplete_legacy_string_array_count"],
+        wire::coverage(result.report())["incomplete_legacy_string_array_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_string_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_string_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["unresolved_legacy_type_3_value_count"],
+        wire::coverage(result.report())["unresolved_legacy_type_3_value_count"],
         1
     );
     assert_eq!(
-        result.report().coverage()["undecoded_legacy_type_4_encoding_count"],
+        wire::coverage(result.report())["undecoded_legacy_type_4_encoding_count"],
         1
     );
     assert_eq!(

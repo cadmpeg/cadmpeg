@@ -378,6 +378,7 @@ mod budget {
 mod product_roundtrip {
     #![allow(clippy::unwrap_used)]
 
+    use cadmpeg_test_support::assembly;
     use std::collections::{BTreeMap, HashMap, HashSet};
     use std::io::Cursor;
 
@@ -465,8 +466,7 @@ mod product_roundtrip {
             .map(|occurrence| {
                 (
                     path(occurrence, &occurrences, &definitions, &mut memo),
-                    graph
-                        .resolved_transform(&occurrence.id)
+                    assembly::resolved_transform(&graph, &occurrence.id)
                         .expect("resolved transform")
                         .rows(),
                 )

@@ -208,7 +208,7 @@ where
     None
 }
 
-/// [`surface_cache`], following subtype-table references.
+/// Decode a surface cache, following subtype-table references.
 pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
@@ -230,7 +230,7 @@ pub(super) fn owned_surface_cache_resolving_refs(
     })
 }
 
-/// [`curve_cache`], following subtype-table references.
+/// Decode a curve cache, following subtype-table references.
 pub fn curve_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,

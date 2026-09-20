@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Support-UV admission and invalidation tests.
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use crate::decode::support_uv::SerializedSupportUv;
 use crate::test_support::test_streams::prt_with_ext11_intersection;
 use crate::test_support::test_streams::two_support_charted_intersection_curve_stream_with_second_plane_axis;
@@ -25,7 +27,7 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
     let validated_id = result.ir().model.procedural_curves[0].id.clone();
     let unvalidated_id =
         ProceduralCurveId::mint("test:model:entity#synthetic:unvalidated-support-uv")
@@ -63,8 +65,14 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
-                context
-                    .edit(|context_sides, _, _| {
+                edit::replace(context, |previous| {
+                    let mut sides = previous.sides().clone();
+                    let range = previous.parameter_range();
+                    let discontinuities = previous.discontinuities().clone();
+                    {
+                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                            &mut sides;
+
                         let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
                             panic!("NURBS support lane");
                         };
@@ -77,8 +85,14 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                                 Ok(())
                             })
                             .unwrap();
-                    })
-                    .unwrap();
+                    };
+                    cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                        sides,
+                        range,
+                        discontinuities,
+                    )
+                })
+                .unwrap();
             });
         }
     }
@@ -211,7 +225,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
     let (procedural_id, curve_id, surface, pcurve, parameter_range) = {
         let procedural = &result.ir().model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()

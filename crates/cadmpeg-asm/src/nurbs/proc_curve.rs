@@ -3591,7 +3591,7 @@ mod cache_form_tests {
             // token of the ASM extension integer.
             assert_eq!(cur.pos(), toks.len());
             assert_eq!(context.form.revision, 23_100);
-            assert_eq!(context.form.cache.selector(), 2);
+            assert!(context.form.cache.parameterization().is_some());
             let (context, form) =
                 context.into_intersection(nurbs_curve_parameter_domain(&solved).unwrap());
             let parameterization = match form.cache {

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
@@ -109,9 +111,11 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let container_only = InventorCodec
-        .decode(&mut std::io::Cursor::new(source), &options)
-        .expect("container-only Inventor decode succeeds");
+    let container_only = EditableDecodeResult::from(
+        InventorCodec
+            .decode(&mut std::io::Cursor::new(source), &options)
+            .expect("container-only Inventor decode succeeds"),
+    );
     assert_eq!(
         container_only
             .report()
@@ -228,13 +232,16 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
         .expect("synthetic primary Inventor envelope decodes");
     assert_eq!(decoded.report().format(), "inventor");
-    assert_eq!(decoded.report().coverage()["rse_storage_bands"], 1);
-    assert_eq!(decoded.report().coverage()["rse_databases"], 1);
-    assert_eq!(decoded.report().coverage()["rse_registry_entries"], 1);
-    assert_eq!(decoded.report().coverage()["rse_segment_pairs"], 1);
-    assert_eq!(decoded.report().coverage()["rse_segment_meta"], 1);
-    assert_eq!(decoded.report().coverage()["rse_records"], 1);
-    assert_eq!(decoded.report().coverage()["active_kernel_carriers"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_storage_bands"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_databases"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_registry_entries"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_segment_pairs"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_segment_meta"], 1);
+    assert_eq!(wire::coverage(decoded.report())["rse_records"], 1);
+    assert_eq!(
+        wire::coverage(decoded.report())["active_kernel_carriers"],
+        1
+    );
     assert!(decoded
         .report()
         .losses

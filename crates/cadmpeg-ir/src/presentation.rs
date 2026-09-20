@@ -140,15 +140,6 @@ impl PresentationDocument {
         self.states = states;
         Ok(())
     }
-
-    /// Persisted active camera, when a Camera state is present.
-    #[must_use]
-    pub fn camera(&self) -> Option<&CameraState> {
-        self.states.iter().find_map(|state| match &state.kind {
-            PresentationStateKind::Camera(camera) => Some(camera),
-            PresentationStateKind::Native(_) => None,
-        })
-    }
 }
 
 impl From<PresentationDocument> for PresentationDocumentWire {

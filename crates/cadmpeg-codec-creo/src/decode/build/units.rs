@@ -2015,40 +2015,50 @@ mod tests {
     #[test]
     fn scales_model_geometry_and_feature_dimensions() {
         let mut ir = CadIr::empty();
-        ir.model.features.push(Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
+        ir.model.features.push(Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature")
                 .expect("identity grammar"),
-            0,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
-                direction: ExtrudeDirection::ProfileNormal {},
-                start: ExtrudeStart::OffsetProfilePlane {
-                    offset: Length::new(2.0).expect("finite length fixture"),
-                },
-                extent: ExtrudeExtent::TwoSided {
-                    first: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                                .expect("nonzero length fixture"),
-                        },
-                        draft: None,
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Unresolved("profile".into())),
+                    direction: ExtrudeDirection::ProfileNormal {},
+                    start: ExtrudeStart::OffsetProfilePlane {
+                        offset: Length::new(2.0).expect("finite length fixture"),
                     },
-                    second: ExtrudeSide {
-                        termination: LinearTermination::ToFace {
-                            face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
-                            offset: Some(Length::new(4.0).expect("finite length fixture")),
+                    extent: ExtrudeExtent::TwoSided {
+                        first: ExtrudeSide {
+                            termination: LinearTermination::Blind {
+                                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                    .expect("nonzero length fixture"),
+                            },
+                            draft: None,
                         },
-                        draft: None,
+                        second: ExtrudeSide {
+                            termination: LinearTermination::ToFace {
+                                face: cadmpeg_ir::features::FaceSelection::Native("face".into()),
+                                offset: Some(Length::new(4.0).expect("finite length fixture")),
+                            },
+                            draft: None,
+                        },
                     },
-                },
-                op: BooleanOp::NewBody,
-                solid: None,
-                face_maker: None,
-                inner_wire_taper: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
-            }),
-        ));
+                    op: BooleanOp::NewBody,
+                    solid: None,
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
+                }),
+            ),
+            native_ref: None,
+        });
         ir.model
             .parameters
             .push(cadmpeg_ir::features::DesignParameter {

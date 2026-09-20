@@ -402,12 +402,6 @@ impl AnnotationBuilder {
         Ok(self)
     }
 
-    /// Remove every sparse exactness annotation.
-    pub fn clear_exactness(&mut self) -> &mut Self {
-        self.annotations.exactness.clear();
-        self
-    }
-
     /// Retain exactness annotations selected by identity.
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
         self.annotations.exactness.retain(|id, _| keep(id));
@@ -419,11 +413,6 @@ impl AnnotationBuilder {
         let id = id.to_string();
         self.annotations.provenance.remove(&id);
         self.annotations.exactness.remove(&id);
-    }
-
-    /// Borrow the annotations built so far.
-    pub fn annotations(&self) -> &Annotations {
-        &self.annotations
     }
 
     /// Finish building and return the annotation tables.
@@ -653,7 +642,7 @@ mod tests {
         empty.note("empty", &handle, 4);
         let mut same_name = AnnotationBuilder::new();
         same_name.note("same-name", &handle, 5);
-        assert_eq!(same_name.annotations().stream_count(), 1);
+        assert_eq!(same_name.annotations.stream_count(), 1);
         for (builder, id) in [
             (second, "foreign"),
             (cloned, "cloned"),
@@ -687,7 +676,7 @@ mod tests {
             Exactness::ByteExact,
         )]);
         assert_eq!(
-            builder.annotations().exactness["f3d:edge#0"],
+            builder.annotations.exactness["f3d:edge#0"],
             ExactnessNote::Entity {
                 entity: Inexactness::Inferred,
                 fields: expected_fields,
@@ -695,7 +684,7 @@ mod tests {
         );
 
         builder.exactness("f3d:edge#0", Exactness::ByteExact);
-        assert!(builder.annotations().exactness.is_empty());
+        assert!(builder.annotations.exactness.is_empty());
     }
 
     #[test]
@@ -740,8 +729,7 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
-                serde_json::to_value(&builder.annotations().exactness["nx:model:surface#1"])
-                    .unwrap(),
+                serde_json::to_value(&builder.annotations.exactness["nx:model:surface#1"]).unwrap(),
                 if entity_first {
                     wire.clone()
                 } else {
@@ -763,11 +751,11 @@ mod tests {
         builder.remove_entity("catia:e5:curve#0");
 
         assert!(!builder
-            .annotations()
+            .annotations
             .provenance
             .contains_key("catia:e5:curve#0"));
         assert!(!builder
-            .annotations()
+            .annotations
             .exactness
             .contains_key("catia:e5:curve#0"));
     }
@@ -778,7 +766,7 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
         builder.exactness(id, Exactness::Inferred);
         builder.derived(id, "position.x").expect("nonempty path");
-        let before = serde_json::to_value(builder.annotations()).expect("serialize annotations");
+        let before = serde_json::to_value(&builder.annotations).expect("serialize annotations");
         for exactness in [
             Exactness::ByteExact,
             Exactness::Derived,
@@ -789,13 +777,13 @@ mod tests {
                 .expect_err("empty path");
             assert!(error.contains("field name cannot be empty"), "{error}");
             assert_eq!(
-                serde_json::to_value(builder.annotations()).expect("serialize annotations"),
+                serde_json::to_value(&builder.annotations).expect("serialize annotations"),
                 before
             );
         }
         assert!(builder.derived(id, "").is_err());
         assert_eq!(
-            serde_json::to_value(builder.annotations()).expect("serialize annotations"),
+            serde_json::to_value(&builder.annotations).expect("serialize annotations"),
             before
         );
         for wire in [
@@ -838,8 +826,8 @@ mod tests {
                 Vec::new(),
                 crate::report::decode::TransferLedger::default(),
             );
-            let sidecar = crate::source_fidelity::DecodeSidecar::bind(
-                ir_json.as_bytes(),
+            let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
+                crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
                 report,
                 crate::SourceFidelity::with_annotations(builder.build()),
             );

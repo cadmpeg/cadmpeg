@@ -472,10 +472,6 @@ impl OffsetCurveConstruction {
     pub fn source(&self) -> &CurveId {
         &self.source
     }
-    /// Return the distance.
-    pub fn distance(&self) -> &f64 {
-        self.distance.as_raw()
-    }
     /// Return the side.
     pub fn side(&self) -> &OffsetSide {
         &self.side

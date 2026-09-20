@@ -33,12 +33,6 @@ impl ReferenceTarget {
             Self::Null | Self::External { .. } => None,
         }
     }
-
-    /// Whether this is an explicit null reference.
-    #[must_use]
-    pub const fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
-    }
 }
 
 /// One reference target and its ordered model-subelement selectors.
@@ -67,12 +61,6 @@ impl ReferenceSelection {
     #[must_use]
     pub fn local_target(&self) -> Option<&str> {
         self.target.local()
-    }
-
-    /// Whether this selection is an explicit null reference.
-    #[must_use]
-    pub const fn is_null(&self) -> bool {
-        self.target.is_null()
     }
 }
 

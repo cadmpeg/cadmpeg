@@ -10,7 +10,12 @@ fn sidecar_wire() -> serde_json::Value {
     fidelity
         .insert_retained_record(id("a"), record(b"abc"))
         .unwrap();
-    serde_json::to_value(DecodeSidecar::bind(b"cad-ir", report(), fidelity)).unwrap()
+    serde_json::to_value(DecodeSidecar::bind_sha256(
+        crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+        report(),
+        fidelity,
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -174,12 +179,19 @@ fn complete_sidecar_admission_checks_inline_and_digest_extents() {
             assert!(error.to_string().contains(id("a").as_str()), "{error}");
         }
     }
-    assert!(RetainedSourceRecord::retained(SourceOwner::Root, u64::MAX, vec![1]).is_err());
-    assert!(RetainedSourceRecord::unavailable(
+    assert!(RetainedSourceRecord::from_bytes(
         SourceOwner::Root,
         u64::MAX,
-        1,
-        Sha256Digest::digest(b"a")
+        crate::source_fidelity::RetainedBytes::Inline { data: vec![1] }
+    )
+    .is_err());
+    assert!(RetainedSourceRecord::from_bytes(
+        SourceOwner::Root,
+        u64::MAX,
+        crate::source_fidelity::RetainedBytes::Digest {
+            byte_len: 1,
+            sha256: Sha256Digest::digest(b"a")
+        }
     )
     .is_err());
 }

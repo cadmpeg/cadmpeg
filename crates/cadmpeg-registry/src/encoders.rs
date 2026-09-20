@@ -87,7 +87,18 @@ mod tests {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
             assert_eq!(refusal.format(), encoder.id().as_str());
-            assert_eq!(refusal.requested(), Some(requested.as_str()));
+            assert_eq!(
+                ({
+                    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+                    wire["refusal"]
+                        .get("requested")
+                        .or_else(|| wire["refusal"].get("source"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned)
+                })
+                .as_deref(),
+                Some(requested.as_str())
+            );
             for target in encoder.targets() {
                 assert!(
                     refusal

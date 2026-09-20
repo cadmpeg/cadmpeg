@@ -16,7 +16,6 @@ use crate::index::identity_hash;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
-use crate::report::{decode::TransferLedger, loss::LossNote};
 use crate::schema::{EntityKind, EntitySchema};
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
@@ -72,26 +71,9 @@ impl ModelCheckpoint {
         self.length::<T>()
     }
 
-    /// Returns entities of `T` added since this checkpoint.
-    pub fn added<'a, T: ArenaEntity>(&self, model: &'a Model) -> Option<&'a [T]> {
-        T::arena(model).get(self.length::<T>()..)
-    }
-
     /// Returns mutable entities of `T` added since this checkpoint.
     pub fn added_mut<'a, T: ArenaEntity>(&self, model: &'a mut Model) -> Option<&'a mut [T]> {
         T::arena_mut(model).get_mut(self.length::<T>()..)
-    }
-
-    /// Counts all entities added since this checkpoint, rejecting arena shrinkage.
-    pub fn added_count(&self, model: &Model) -> Option<usize> {
-        let after = Self::capture(model);
-        after
-            .lengths
-            .into_iter()
-            .zip(self.lengths)
-            .try_fold(0_usize, |total, (after, before)| {
-                total.checked_add(after.checked_sub(before)?)
-            })
     }
 
     /// Discards appended entities and restores captured feature-parent relations.
@@ -216,12 +198,10 @@ pub struct ModelDraft<A = ()> {
     accounting: A,
 }
 
-/// Exactness, loss notes and transfer entries that must accompany a draft commit.
+/// Exactness annotations that must accompany a draft commit.
 #[derive(Debug, Default)]
 pub struct DraftAccounting {
     exactness: BTreeMap<String, Exactness>,
-    notes: Vec<LossNote>,
-    ledger: TransferLedger,
 }
 
 impl Default for ModelDraft {
@@ -429,42 +409,17 @@ impl ModelDraft<DraftAccounting> {
             .retain(|identity, _| keep(identity));
     }
 
-    /// Adds a staged loss note.
-    ///
-    /// Plain drafts have no accounting mutation route:
-    ///
-    /// ```compile_fail
-    /// fn stage(draft: &mut cadmpeg_ir::draft::ModelDraft, note: cadmpeg_ir::report::loss::LossNote) {
-    ///     draft.note(note);
-    /// }
-    /// ```
-    pub fn note(&mut self, note: LossNote) {
-        self.accounting.notes.push(note);
-    }
-
-    /// Returns the mutable staged transfer ledger.
-    pub fn ledger_mut(&mut self) -> &mut TransferLedger {
-        &mut self.accounting.ledger
-    }
-
-    /// Validates and atomically extends a document, annotations, notes, and ledger.
+    /// Validates and atomically extends a document and its exactness annotations.
     pub fn commit(
         mut self,
         base: &mut CadIr,
         annotations: &mut Annotations,
-        notes: &mut Vec<LossNote>,
-        ledger: &mut TransferLedger,
     ) -> Result<(), DraftError> {
         self.validate_against(base)?;
         let Self {
             model,
             identity_index: _,
-            accounting:
-                DraftAccounting {
-                    exactness,
-                    notes: staged_notes,
-                    ledger: staged_ledger,
-                },
+            accounting: DraftAccounting { exactness },
         } = self;
         base.model.append(model);
         let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
@@ -472,27 +427,7 @@ impl ModelDraft<DraftAccounting> {
             annotation_builder.exactness(identity, exactness);
         }
         *annotations = annotation_builder.build();
-        notes.extend(staged_notes);
-        ledger.entries.extend(staged_ledger.entries);
         Ok(())
-    }
-
-    /// Keeps selected staged entities, then validates and commits the resulting salvage graph.
-    pub fn commit_incomplete(
-        mut self,
-        base: &mut CadIr,
-        annotations: &mut Annotations,
-        notes: &mut Vec<LossNote>,
-        ledger: &mut TransferLedger,
-        keep: impl FnMut(EntityKind, &str) -> bool,
-    ) -> Result<(), DraftError> {
-        self.model.retain_entities(keep);
-        let identity_index = index_model_identities(&self.model)?;
-        self.accounting
-            .exactness
-            .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
-        self.identity_index = Some(identity_index);
-        self.commit(base, annotations, notes, ledger)
     }
 }
 
@@ -642,7 +577,6 @@ mod tests {
     use crate::ids::PointId;
     use crate::math::Point3;
     use crate::native::NativeRecord;
-    use crate::report::decode::TransferLedger;
     use crate::topology::{Point, Vertex};
 
     fn point(id: &str) -> Point {
@@ -691,11 +625,21 @@ mod tests {
             native_ref: None,
         });
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
-            model.features.push(Feature::new(
-                format!("test:checkpoint:feature#{key}").try_into().unwrap(),
-                ordinal as u64,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ));
+            model.features.push(Feature {
+                id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: None,
+                dependencies: crate::features::DistinctMembers::default(),
+                source_properties: std::collections::BTreeMap::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: crate::features::FeatureContent::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            });
         }
         model
             .set_feature_regeneration_parent(
@@ -703,7 +647,6 @@ mod tests {
                 "test:checkpoint:feature#parent".try_into().unwrap(),
             )
             .unwrap();
-        assert_eq!(checkpoint.added_count(&model), Some(3));
         checkpoint.discard_appended(&mut model);
         assert_eq!(model, original);
     }
@@ -715,11 +658,21 @@ mod tests {
         let mut draft = ModelDraft::new();
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             draft
-                .insert(Feature::new(
-                    format!("test:draft:feature#{key}").try_into().unwrap(),
-                    ordinal as u64,
-                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                ))
+                .insert(Feature {
+                    id: format!("test:draft:feature#{key}").try_into().unwrap(),
+                    ordinal: ordinal as u64,
+                    name: None,
+                    suppressed: None,
+                    dependencies: crate::features::DistinctMembers::default(),
+                    source_properties: std::collections::BTreeMap::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: crate::features::FeatureContent::default(),
+                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                    ),
+                    native_ref: None,
+                })
                 .unwrap();
         }
         let child = "test:draft:feature#child".try_into().unwrap();
@@ -750,17 +703,13 @@ mod tests {
             .insert(point("test:model:point#1"))
             .expect("insert point into empty draft");
         let mut annotations = Annotations::default();
-        let mut notes = Vec::new();
-        let mut ledger = TransferLedger::default();
 
         assert!(matches!(
-            draft.commit(&mut ir, &mut annotations, &mut notes, &mut ledger),
+            draft.commit(&mut ir, &mut annotations),
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
         assert!(annotations.exactness().is_empty());
-        assert!(notes.is_empty());
-        assert!(ledger.is_empty());
     }
 
     #[test]
@@ -798,27 +747,6 @@ mod tests {
             })
         );
         assert!(ir.model.vertices.is_empty());
-    }
-
-    #[test]
-    fn incomplete_commit_rechecks_duplicate_identities() {
-        let identity = "test:model:point#incomplete-duplicate";
-        let mut draft = ModelDraft::new().with_accounting();
-        draft.model_mut().points.push(point(identity));
-        draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty();
-
-        assert_eq!(
-            draft.commit_incomplete(
-                &mut ir,
-                &mut Annotations::default(),
-                &mut Vec::new(),
-                &mut TransferLedger::default(),
-                |_, _| true,
-            ),
-            Err(DraftError::IdentityCollision(identity.into()))
-        );
-        assert!(ir.model.points.is_empty());
     }
 
     #[test]

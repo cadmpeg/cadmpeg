@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::edit;
+
 use crate::decode::feature_history::axes::section_profile_ref;
 use crate::decode::holes::placement::{
     cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
@@ -261,31 +263,39 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
-    ir.model.sketch_entities[1]
-        .geometry
-        .edit(|definition| {
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Line { start, .. } = definition {
                 *start = Point2::new(0.0, 0.0);
             } else {
                 unreachable!();
             }
-        })
-        .expect("valid test fixture");
+        };
+        definition.try_into()
+    })
+    .expect("valid test fixture");
     assert_eq!(
         connected_sketch_profile_vertices(&ir, &sketch_id),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
-    ir.model.sketch_entities[1]
-        .geometry
-        .edit(|definition| {
+    edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Line { end, .. } = definition {
                 *end = Point2::new(2.0, 0.0);
             } else {
                 unreachable!();
             }
-        })
-        .expect("valid test fixture");
+        };
+        definition.try_into()
+    })
+    .expect("valid test fixture");
     assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
 }
 

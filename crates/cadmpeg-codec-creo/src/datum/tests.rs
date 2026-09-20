@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::build_prt;
 use std::io::Cursor;
 
@@ -532,7 +534,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
     assert_eq!(cylinders[0].fields()["datum_id"], 8);
     assert_eq!(cylinders[0].fields()["radius"], 0.75);
     assert_eq!(
-        result.report().coverage()["transferred_active_datum_cylinder_count"],
+        wire::coverage(result.report())["transferred_active_datum_cylinder_count"],
         1
     );
 }

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
@@ -528,11 +530,15 @@ fn spatial_sketch_paths_round_trip_through_json() {
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
 
-    let native = PathRef::spatial_sketch_selection(
-        SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
-        vec!["native:path-selection#0".into()],
-    )
-    .unwrap();
+    let native =
+        crate::features::NativeSelections::try_from(vec!["native:path-selection#0".into()])
+            .map(
+                |selections| crate::features::PathRef::SpatialSketchSelection {
+                    sketch: SpatialSketchId::mint("synthetic:test:spatial-sketch#0").unwrap(),
+                    selections,
+                },
+            )
+            .unwrap();
     let json = serde_json::to_string(&native).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
@@ -814,8 +820,11 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         assert!(serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err());
     }
     let before = geometry.clone();
-    assert!(geometry
-        .edit(|definition| {
+    assert!(edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
+
             let SpatialSketchGeometryDefinition::Arc {
                 start_angle,
                 end_angle,
@@ -825,17 +834,24 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
                 panic!("arc")
             };
             *end_angle = *start_angle;
-        })
-        .is_err());
+        };
+        definition.try_into()
+    })
+    .is_err());
     assert_eq!(geometry, before);
-    geometry
-        .edit(|definition| {
+    edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
+
             let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {
                 panic!("arc")
             };
             *end_angle = Angle::new(-3.0).unwrap();
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap()["end_angle"], -3.0);
 }
 

@@ -127,19 +127,29 @@ fn move_body_selection_uses_unique_owning_history() {
         states: vec![state(41, "unrelated-history", None)],
     };
     let histories = [history, unrelated_history];
-    let mut feature = Feature::new(
-        FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::MoveBody {
-            bodies: BodySelection::Native(group_id.into()),
-            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
-                1.0, 2.0, 3.0,
-            ))
-            .unwrap(),
-            rotation: None,
-            copies: 0,
-        }),
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Native(group_id.into()),
+                translation: cadmpeg_ir::features::FiniteVector3::new(
+                    cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+                )
+                .unwrap(),
+                rotation: None,
+                copies: 0,
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(scope.id.clone());
     let inputs = FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),

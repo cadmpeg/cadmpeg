@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
+
+use cadmpeg_ir::subd;
+use cadmpeg_test_support::wire;
 
 use super::{
     decode, decode_mesh_proxy, read_symmetry, DecodedSubd, MeshProxyFingerprint,
@@ -14,8 +18,8 @@ use crate::test_support::test_dump::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::subd::{SubdEdgeTag, SubdVertexTag};
 use std::ops::Range;
+use subd::{SubdEdgeTag, SubdVertexTag};
 
 #[derive(Clone, Copy)]
 #[expect(
@@ -659,8 +663,20 @@ fn preserves_directed_reversed_face_edge_use() {
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert!(surface.cage.faces()[0].edges()[1].reversed);
-    assert_eq!(surface.cage.edges()[1].vertices(), [2, 1]);
+    assert!(
+        wire::field::<Vec<subd::SubdEdgeUse>>(
+            &(wire::field::<Vec<subd::SubdFace>>(&(surface.cage), "faces")[0]),
+            "edges"
+        )[1]
+        .reversed
+    );
+    assert_eq!(
+        wire::field::<[u32; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[1]),
+            "vertices"
+        ),
+        [2, 1]
+    );
 }
 
 #[test]
@@ -708,10 +724,19 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
     .expect("required invariant") else {
         panic!("expected surface");
     };
-    assert_eq!(surface.cage.vertices()[0].tag, SubdVertexTag::Dart);
-    assert_eq!(surface.cage.edges()[0].tag, SubdEdgeTag::SmoothX);
     assert_eq!(
-        surface.cage.edges()[0].sector_coefficients(),
+        wire::field::<Vec<subd::SubdVertex>>(&(surface.cage), "vertices")[0].tag,
+        SubdVertexTag::Dart
+    );
+    assert_eq!(
+        wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0].tag,
+        SubdEdgeTag::SmoothX
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
         [0.125, 0.875]
     );
 }
@@ -725,7 +750,13 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
     .expect("required invariant") else {
         panic!("expected old surface");
     };
-    assert_eq!(surface.cage.edges()[0].sharpness(), [0.25, 0.25]);
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
     let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             archive: ArchiveVersion::V8,
@@ -737,7 +768,13 @@ fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
     .expect("required invariant") else {
         panic!("expected V8 surface");
     };
-    assert_eq!(surface.cage.edges()[0].sharpness(), [0.25, 0.75]);
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.75]
+    );
 }
 
 #[test]
@@ -785,12 +822,21 @@ fn scales_control_points_once_without_scaling_edge_metadata() {
         panic!("expected surface");
     };
     assert_eq!(
-        surface.cage.vertices()[2].point(),
+        wire::field::<Vec<subd::SubdVertex>>(&(surface.cage), "vertices")[2].point(),
         Point3::new(25.4, 25.4, 0.0)
     );
-    assert_eq!(surface.cage.edges()[0].sharpness(), [0.25, 0.25]);
     assert_eq!(
-        surface.cage.edges()[0].sector_coefficients(),
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sharpness"
+        ),
+        [0.25, 0.25]
+    );
+    assert_eq!(
+        wire::field::<[f64; 2]>(
+            &(wire::field::<Vec<subd::SubdEdge>>(&(surface.cage), "edges")[0]),
+            "sector_coefficients"
+        ),
         [0.125, 0.875]
     );
 }
@@ -850,11 +896,16 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     let subd = &result.ir().model.subds[0];
     assert!(subd.source_object.is_some());
-    assert_eq!(subd.cage.vertices()[2].point().x, 25.4);
+    assert_eq!(
+        wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
+            .point()
+            .x,
+        25.4
+    );
     assert_eq!(
         result
             .source_fidelity()
@@ -905,7 +956,7 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
-    let result = crate::decode::decode_for_test(&scan);
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     assert_eq!(result.ir().model.subds.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::EnumerationValueDegraded.kind()

@@ -573,9 +573,25 @@ mod tests {
         let PrototypeReference::External { document, object } = &projected.prototype else {
             panic!("the persisted file reference must remain external");
         };
-        assert_eq!(document.as_path(), Some("components/part.ipt"));
-        assert_eq!(document.as_document_id(), None);
-        assert!(!document.is_missing());
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            Some("components/part.ipt")
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
+            None
+        );
+        assert!(!matches!(
+            document,
+            cadmpeg_ir::products::ExternalDocument::Missing {}
+        ));
         assert_eq!(object, &None);
     }
 
@@ -627,8 +643,21 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.as_path(), Some("components/part.ipt"));
-        assert_eq!(document.as_document_id(), None);
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            Some("components/part.ipt")
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
+            None
+        );
     }
 
     #[test]
@@ -654,9 +683,19 @@ mod tests {
         let PrototypeReference::External { document, .. } = &projected.prototype else {
             panic!("the persisted document identity must remain external");
         };
-        assert_eq!(document.as_path(), None);
         assert_eq!(
-            document.as_document_id(),
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
+                _ => None,
+            }),
+            None
+        );
+        assert_eq!(
+            (match &document {
+                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
+                    Some(document_id.as_str()),
+                _ => None,
+            }),
             Some(expected_document_id.as_str())
         );
     }

@@ -270,7 +270,7 @@ pub(crate) fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     )
     .expect("generated SAB");
     let body = &records[1];
-    let transform_ref = cadmpeg_asm::sab::payload_token_offsets(
+    let transform_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -308,7 +308,7 @@ pub(crate) fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     )
     .expect("generated SAB");
     let body = &records[1];
-    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(
+    let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -343,7 +343,7 @@ fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -
     )
     .expect("generated SAB");
     let body = &records[1];
-    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(
+    let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         body,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -408,7 +408,7 @@ pub(crate) fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     )
     .expect("generated SAB");
     let face = &records[4];
-    let attribute_ref = cadmpeg_asm::sab::payload_token_offsets(
+    let attribute_ref = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         face,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -752,7 +752,7 @@ pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     .unwrap();
     for (record_index, reference_ordinal) in [(1usize, 3usize), (3, 5)] {
         let record = &records[record_index];
-        let offsets = cadmpeg_asm::sab::payload_token_offsets(
+        let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
             &bytes,
             record,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -855,7 +855,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -865,7 +865,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     bytes[offsets[3] + 1..offsets[3] + 9].copy_from_slice(&13i64.to_le_bytes());
     bytes[offsets[5] + 1..offsets[5] + 9].copy_from_slice(&19i64.to_le_bytes());
     let vertex = &records[14];
-    let owner = cadmpeg_asm::sab::payload_token_offsets(
+    let owner = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         vertex,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -873,7 +873,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     )
     .expect("generated vertex reference offsets")[2];
     bytes[owner + 1..owner + 9].copy_from_slice(&11i64.to_le_bytes());
-    let endpoint = cadmpeg_asm::sab::payload_token_offsets(
+    let endpoint = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         vertex,
         cadmpeg_asm::kernel_header::RefWidth::Eight,

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use crate::directory::UseFlag;
@@ -347,14 +349,17 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         })
         .expect("copious-data projection loss");
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
-    assert_eq!(provenance.format(), "iges");
-    assert_eq!(provenance.stream(), Some("iges"));
+    assert_eq!(wire::field::<String>(&provenance, "format"), "iges");
+    assert_eq!(
+        wire::field_or_default::<Option<String>>(&provenance, "stream").as_deref(),
+        Some("iges")
+    );
     assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(bytes[provenance.offset as usize + 72], b'D');
     let transfer = &result.report().transfer_ledger.entries[0];
     assert_eq!(transfer.source, "D1");
     assert_eq!(
-        transfer.note(),
+        wire::field_or_default::<Option<String>>(&(transfer.outcome), "note").as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
 }
@@ -476,7 +481,11 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
     assert_eq!(
-        witness.report().transfer_ledger.entries[0].note(),
+        wire::field_or_default::<Option<String>>(
+            &(witness.report().transfer_ledger.entries[0].outcome),
+            "note"
+        )
+        .as_deref(),
         Some("native record retained; semantic projection omitted with an attributed loss")
     );
     let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());

@@ -1119,20 +1119,6 @@ fn solve_nurbs_surface_parameter(
     best.map(|parameters| (parameters, best_distance))
 }
 
-/// Find a globally closest parameter pair on a finite NURBS surface.
-///
-/// When equivalent closest pairs exist, `seed` selects the nearest parameter
-/// branch. Without a seed, the pair nearest the parameter-space origin wins.
-pub fn nurbs_surface_closest_parameter(
-    surface: &NurbsSurface,
-    point: Point3,
-    seed: Option<Point2>,
-) -> Option<Point2> {
-    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
-    solve_nurbs_surface_parameter(surface, point, seed, None, &budget)
-        .map(|(parameters, _)| parameters)
-}
-
 /// Find a globally closest parameter pair on a finite NURBS surface within a
 /// caller-owned work slice.
 pub fn nurbs_surface_closest_parameter_with_budget(
@@ -3529,23 +3515,6 @@ fn model_curve_point_by_id_inner(
             }
         }
     }
-}
-
-/// Invert a model curve near a caller-selected branch parameter.
-///
-/// Direct analytic and NURBS carriers preserve their native parameterization.
-/// Charted tolerant intersections invert a support chart. The seed selects
-/// between repeated model-space points. The returned parameter is
-/// forward-validated against the direct carrier or complete two-support
-/// construction.
-pub fn model_curve_parameter_near_point(
-    ir: &CadIr,
-    curve_id: &crate::ids::CurveId,
-    point: Point3,
-    seed: f64,
-) -> Option<f64> {
-    let index = crate::index::ModelIndex::new(ir);
-    model_curve_parameter_near_point_in_index(&index, curve_id, point, seed)
 }
 
 /// Invert a model curve using a caller-owned lookup index.

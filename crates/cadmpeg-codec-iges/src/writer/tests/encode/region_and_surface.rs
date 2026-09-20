@@ -32,7 +32,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .model
         .shells
         .iter()
-        .find(|shell| Some(&shell.id) == source_region.void_shells().next())
+        .find(|shell| Some(&shell.id) == source_region.shells.get(1))
         .unwrap()
         .faces()
         .iter()

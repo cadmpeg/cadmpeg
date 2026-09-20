@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
     CadirEncoder, Consumption, EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption,
@@ -13,7 +15,6 @@ use crate::report::export::FidelityResolution;
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-use cadmpeg_core::target::TargetRefusalKind;
 use cadmpeg_core::CodecError;
 
 #[test]
@@ -23,7 +24,14 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("empty-catalog inheritance resolves to CADIR identity");
-    assert_eq!(plan.report().target(), None);
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref(),
+        None
+    );
     plan.write_to(&mut encoded).unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
@@ -62,8 +70,21 @@ fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     assert_eq!(plan.report().format(), "cadir");
-    assert_eq!(plan.report().target(), None);
-    assert_eq!(plan.report().fidelity(), FidelityResolution::NotProvided {});
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref(),
+        None
+    );
+    assert_eq!(
+        wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        FidelityResolution::NotProvided {}
+    );
 }
 
 #[test]
@@ -75,10 +96,10 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
-    assert!(matches!(
-        refusal.kind(),
-        TargetRefusalKind::UnknownExplicit { .. }
-    ));
+    assert_eq!(
+        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        "unknown_explicit"
+    );
     assert!(refusal.available().is_empty());
 }
 
@@ -114,7 +135,11 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         .unwrap();
     assert_eq!(plan.report().format(), "test");
     assert_eq!(
-        plan.report().target(),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target"
+        )
+        .as_ref(),
         Some(&cadmpeg_core::dialect_id!("test:new"))
     );
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
@@ -126,7 +151,13 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
     let plan = CatalogEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
-    assert_eq!(plan.report().fidelity(), FidelityResolution::NotProvided {});
+    assert_eq!(
+        wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        FidelityResolution::NotProvided {}
+    );
 }
 
 #[test]
@@ -140,7 +171,10 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
         )
         .unwrap();
     assert_eq!(
-        plan.report().fidelity(),
+        wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Degraded {
             reason: "test backend never replays".to_owned()
         }

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::wire;
+
 use crate::report::export::{CensusBasis, EntityCensus, ExportReport};
 use cadmpeg_core::dialect::DialectId;
 use std::collections::BTreeMap;
@@ -20,7 +22,12 @@ fn a_native_export_report_states_its_payload_and_names_its_target() {
 
     assert_eq!(report.format(), "step");
     assert_eq!(
-        report.target().map(DialectId::as_str),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(report),
+            "identity/target"
+        )
+        .as_ref()
+        .map(DialectId::as_str),
         Some("step:ap242-e3")
     );
     let rendered = serde_json::to_value(&report).unwrap();

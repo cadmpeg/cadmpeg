@@ -7,6 +7,8 @@
 //! `inspect` pins the container summary; `decode` pins the IR, losses, and
 //! source fidelity. Shared harness: [`cadmpeg_test_support::golden`].
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::Path;
@@ -54,12 +56,15 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match RhinoCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
-        Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-            "report": serde_json::to_value(result.report()).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(result.source_fidelity())
-                .expect("serialize source_fidelity"),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
@@ -92,9 +97,11 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
 /// instead and so cannot be pinned per target; it is covered by the unit tests
 /// in `writer/tests/targets.rs`.
 fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
-    let decoded = RhinoCodec
-        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-        .ok()?;
+    let decoded = EditableDecodeResult::from(
+        RhinoCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .ok()?,
+    );
     let mut encoded = Vec::new();
     let written = Encoder::plan(
         &RhinoCodec,

@@ -2,6 +2,8 @@
 //! Partition/deltas merge, override, and topology-recovery decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -154,9 +156,11 @@ fn merged_face_color_annotations_retain_site_owners() {
         &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
     ));
 
-    let result = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let provenance = &result.source_fidelity().annotations.provenance;
     let first = provenance
         .iter()

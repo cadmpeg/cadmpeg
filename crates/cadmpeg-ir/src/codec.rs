@@ -99,9 +99,8 @@ pub struct DecodeOptions {
 /// The sealed [`Codec`] wrapper constructs this value after it stamps the source
 /// classification onto the report and finalizes the IR and source fidelity.
 /// `#[non_exhaustive]` blocks external struct literals so callers cannot skip
-/// finalization. Read through [`Self::ir`], [`Self::report`], and
-/// [`Self::source_fidelity`]. Consume with [`Self::into_parts`] before editing
-/// either document.
+/// finalization. Read through [`Self::ir`] and [`Self::report`]. Consume with
+/// [`Self::into_parts`] to obtain the source fidelity or edit either document.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct DecodeResult {
@@ -248,11 +247,6 @@ impl DecodeResult {
     /// Borrow the transfer report.
     pub fn report(&self) -> &DecodeReport {
         &self.report
-    }
-
-    /// Borrow source fidelity.
-    pub fn source_fidelity(&self) -> &SourceFidelity {
-        &self.source_fidelity
     }
 
     /// Consume into IR, report, and source fidelity.

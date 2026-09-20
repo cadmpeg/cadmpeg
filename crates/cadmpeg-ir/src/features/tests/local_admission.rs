@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::features::FeatureOperation;
 use crate::features::{
     BinderTarget, BodySelection, CombineOperands, Feature, FeatureDefinition, FeatureId,
@@ -32,12 +34,24 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert!(TreeChildren::new(vec![first.clone()], Some(second.clone())).is_err());
     let mut children = TreeChildren::new(vec![first.clone()], Some(first)).unwrap();
     let before = children.clone();
-    assert!(children.set_active_child(Some(second.clone())).is_err());
+    assert!({
+        let active = Some(second.clone());
+        edit::replace(&mut children, |previous| {
+            crate::features::TreeChildren::new(previous.to_vec(), active)
+        })
+    }
+    .is_err());
     assert_eq!(children, before);
     children.insert(second.clone());
     children.insert(second.clone());
     assert_eq!(children.len(), 2);
-    children.set_active_child(Some(second)).unwrap();
+    {
+        let active = Some(second);
+        edit::replace(&mut children, |previous| {
+            crate::features::TreeChildren::new(previous.to_vec(), active)
+        })
+    }
+    .unwrap();
 }
 
 #[test]
@@ -106,7 +120,19 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
             native: "copied".into(),
         },
     });
-    let mut feature = Feature::new(feature_id("insert"), 0, definition);
+    let mut feature = Feature {
+        id: feature_id("insert"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    };
     assert!(feature.evaluation.outputs().is_empty());
     feature.evaluation.set_outputs(vec![body.clone()]);
     let wire = serde_json::to_value(&feature).unwrap();

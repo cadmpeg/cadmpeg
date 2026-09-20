@@ -5,6 +5,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
 use crate::test_support::test_deltas::bspline_curve_replacement_partition_stream;
@@ -907,12 +909,15 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 /// Serialize decode + inspect output as stable pretty JSON. Errors are frozen.
 fn snapshot(bytes: &[u8]) -> String {
     let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-        Ok(result) => serde_json::json!({
-            "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-            "report": serde_json::to_value(result.report()).expect("serialize report"),
-            "source_fidelity": serde_json::to_value(result.source_fidelity())
-                .expect("serialize source_fidelity"),
-        }),
+        Ok(result) => {
+            let result = EditableDecodeResult::from(result);
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
+        }
         Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
     };
     let inspect =

@@ -922,6 +922,7 @@ mod tests {
     };
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();
@@ -1122,9 +1123,11 @@ mod tests {
                 let scan = crate::container::scan_owned(bytes.clone())
                     .expect("annotation archive framing");
                 let source = scan.objects[0].framed().expect("framed annotation");
-                let decoded = crate::RhinoCodec
-                    .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-                    .expect("complete annotation decode");
+                let decoded = EditableDecodeResult::from(
+                    crate::RhinoCodec
+                        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                        .expect("complete annotation decode"),
+                );
                 let ir: CadIr = serde_json::from_slice(
                     &serde_json::to_vec(decoded.ir()).expect("annotation CADIR serialization"),
                 )
@@ -1355,7 +1358,7 @@ mod tests {
             .expect("malformed annotation loss");
         assert!(loss.message.contains(&format!("offset {source_offset}")));
         let provenance = loss.provenance.as_ref().expect("annotation provenance");
-        assert_eq!(provenance.format(), "rhino");
+        assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
         assert_eq!(provenance.offset, source_offset as u64);
         let expected_tag =
             format!("ANNOTATION/source={source_id}/class=5de6b210-486b-11d4-8014-0010830122f0");

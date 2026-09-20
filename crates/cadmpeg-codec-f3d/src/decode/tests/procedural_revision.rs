@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::edit;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
@@ -716,9 +718,19 @@ fn record_level_surface_bounds_round_trip() {
         source_less.model.procedural_surfaces[0].record_bounds(),
         None
     );
-    source_less.model.procedural_surfaces[0]
-        .set_record_bounds(Some([Some(0.1), None, Some(0.2), None]))
-        .expect("finite record bounds");
+    {
+        let replacement = Some([Some(0.1), None, Some(0.2), None]);
+        edit::replace(&mut source_less.model.procedural_surfaces[0], |previous| {
+            cadmpeg_ir::geometry::RecordBounds::try_option(replacement).map(|bounds| {
+                cadmpeg_ir::geometry::ProceduralSurface::new(
+                    previous.id.clone(),
+                    previous.definition().clone(),
+                    bounds,
+                )
+            })
+        })
+    }
+    .expect("finite record bounds");
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     let mut encoded = Vec::new();
@@ -1091,13 +1103,70 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
             Ok(())
         })
         .unwrap();
-    nurbs
-        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
-        .unwrap();
-    nurbs
-        .edit_v_knots(|knots| knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]))
-        .unwrap();
-    nurbs.set_u_periodic(true);
+    edit::replace(&mut nurbs, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    edit::replace(&mut nurbs, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    {
+        let replacement = true;
+        edit::replace(&mut nurbs, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
     *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
@@ -1155,7 +1224,26 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     }
     let poles =
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
-    nurbs.set_poles(poles.unwrap()).unwrap();
+    {
+        let replacement = poles.unwrap();
+        edit::replace(&mut nurbs, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .unwrap();
     *cache = SolvedSurfaceGeometry::Nurbs(nurbs.clone());
     let expected = nurbs.clone();
     let surface_id = surface.id.clone();
@@ -1653,9 +1741,28 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
             Ok(())
         })
         .unwrap();
-    nurbs
-        .edit_u_knots(|knots| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))
-        .unwrap();
+    edit::replace(nurbs, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
     let expected = surface.clone();
 
     let mut regenerated = Vec::new();

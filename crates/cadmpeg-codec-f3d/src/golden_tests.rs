@@ -6,6 +6,8 @@
 //! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the
 //! diff. Fixture regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
@@ -367,7 +369,7 @@ fn indent_block(block: &str) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(result) => {
-            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            let mut result = EditableDecodeResult::from(result);
             if let Some(source) = result.ir_mut().source.as_mut() {
                 elide_local_digests(&mut source.attributes);
             }
@@ -410,7 +412,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Encodes an unedited decode result via the verbatim-replay branch.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -450,7 +452,7 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 }
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
     if result.ir().model.points.is_empty() {
         return None;
     }

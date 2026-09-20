@@ -244,13 +244,6 @@ impl DatumReferences {
     pub fn as_slice(&self) -> &[DatumReference] {
         &self.0
     }
-
-    /// Replace the references after checking their precedence compartments.
-    pub fn replace(&mut self, references: Vec<DatumReference>) -> Result<(), String> {
-        let replacement = Self::try_from(references)?;
-        *self = replacement;
-        Ok(())
-    }
 }
 
 impl From<DatumReferences> for Vec<DatumReference> {
@@ -477,6 +470,7 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_test_support::edit;
     use std::num::NonZeroU32;
 
     use super::{
@@ -815,13 +809,23 @@ mod tests {
                 serde_json::to_value(&invalid).expect("serialize")
             )
             .is_err());
-            assert!(admitted.replace(invalid).is_err());
+            assert!({
+                let replacement = invalid;
+                edit::replace(&mut admitted, |_| {
+                    crate::pmi::DatumReferences::try_from(replacement)
+                })
+            }
+            .is_err());
             assert_eq!(admitted.as_slice(), valid);
         }
         let replacement = vec![reference("z", 3, None)];
-        admitted
-            .replace(replacement.clone())
-            .expect("valid replacement");
+        {
+            let replacement = replacement.clone();
+            edit::replace(&mut admitted, |_| {
+                crate::pmi::DatumReferences::try_from(replacement)
+            })
+        }
+        .expect("valid replacement");
         assert_eq!(admitted.as_slice(), replacement);
     }
 

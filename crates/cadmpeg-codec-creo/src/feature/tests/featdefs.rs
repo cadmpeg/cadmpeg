@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::build_prt;
 use std::io::Cursor;
 
@@ -597,36 +599,60 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         .is_some_and(Vec::is_empty));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
+        ),
         6
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_POINT_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_CENTERED_LINE_SEGMENT_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_REFERENCE_LINE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_BOUNDED_CURVE_SEGMENT_COUNT.as_str()
+        ),
         1
     );
-    assert!(!coverage
-        .coverage()
-        .contains_key("decoded_feature_segment_count"));
+    assert!(!wire::coverage(&(coverage)).contains_key("decoded_feature_segment_count"));
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT)
-            + coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT),
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT)
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
+        ) + wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT.as_str()
+        ),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SEGMENT_ROW_COUNT.as_str()
+        )
     );
 }
 
@@ -981,31 +1007,52 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(triples["row_count"], 2);
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SKAMP_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT.as_str()
+        ),
         0
     );
 }

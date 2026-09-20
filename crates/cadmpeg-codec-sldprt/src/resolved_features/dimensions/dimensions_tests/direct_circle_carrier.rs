@@ -70,13 +70,23 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
 }
 
 fn feature(feature_ref: &str, sketch: &SketchId) -> Feature {
-    let mut feature = Feature::new(
-        FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
-        }),
-    );
+    let mut feature = Feature {
+        id: FeatureId::mint("synthetic:test:id#neutral-feature").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(feature_ref.into());
     feature
 }

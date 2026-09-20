@@ -2,6 +2,8 @@
 //! Record-decoder tests for the `consolidated` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
@@ -1049,15 +1051,17 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated line profile");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSOLIDATED_LINE_PROFILE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT.as_str()
+        ),
         1
     );
     assert!(decoded.ir().model.curves.iter().any(
@@ -1083,17 +1087,18 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode line-profile-only nested stream");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(cadmpeg_ir::report::decode::CoverageKey::new(
-                "attached_standalone_wire_edge_count"
-            )),
+        wire::coverage_count(
+            decoded.report(),
+            (cadmpeg_ir::report::decode::CoverageKey::new("attached_standalone_wire_edge_count"))
+                .as_str()
+        ),
         1
     );
     assert_eq!(decoded.ir().model.edges[0].param_range(), Some([-4.0, 9.0]));
@@ -1111,9 +1116,10 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode revolution-only nested stream");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT.as_str()
+        ),
         1
     );
     let revolution = decoded

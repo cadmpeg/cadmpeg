@@ -42,17 +42,16 @@ little-endian `f64` values. The values populate `product_family`,
 `KernelHeader::save_format_major` and `save_format_minor` split the encoded
 save-format version, where `100 * major + minor` is the stored value.
 `KernelHeader::has_history_partition` reads [`HISTORY_PARTITION_FLAG`][history]
-from `flags`. [`FORMAT_REVISION_FLAGS`][revision] identifies bits 1 through 7;
-`KernelHeader::format_revision` reads them. `KernelHeader::unassigned_flags` preserves
-the remaining flag bits.
+from `flags`. [`FORMAT_REVISION_FLAGS`][revision] identifies bits 1 through 7.
+The `flags` field retains the complete word.
 
 `asm_header::record_stream_start` returns the byte after the fixed words, the
 three strings, and the three tolerance values. `asm_header::solved_record_limit`
 attempts to locate the history partition's first record when the header
 declares `HISTORY_PARTITION_FLAG`. It recognizes the
 `Begin-of-ASM-History-Data` preamble and the earlier `delta_state` boundary.
-`asm_header::stream_ref_width` returns the declared integer/reference
-`RefWidth` and uses `RefWidth::Eight` when the header is unreadable.
+`asm_header::parse` returns the declared integer/reference `RefWidth` in
+`BinaryHeader::width`.
 `RefWidth::bytes()` returns the encoded payload size.
 
 ## Frame SAB records
@@ -97,10 +96,10 @@ variant.
 ## Locate payload bytes
 
 `sab::payload_token` returns a decoded value token and its absolute byte offset
-at a record's chunk index. `sab::payload_token_offsets` returns all absolute
-offsets for a selected payload tag and reports a [`StreamError`][stream-error]
-when the record cannot be lexed. Both helpers use the same value-token indexing
-as `Record::chunk`.
+at a record's chunk index, using the same value-token indexing as `Record::chunk`.
+With the `test-support` feature, `test_support::sab::payload_token_offsets`
+locates all offsets for a selected payload tag in a test fixture and reports
+a [`StreamError`][stream-error] when the record cannot be lexed.
 
 `sab::payload_subtype_range` returns the absolute byte range inside the subtype
 at a chunk index when its following identifier matches the requested name. The

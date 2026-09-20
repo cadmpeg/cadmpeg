@@ -647,22 +647,6 @@ impl TessellationMesh {
     }
 }
 
-/// The mesh element addressed by one tessellation channel.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-#[serde(deny_unknown_fields)]
-pub enum TessellationChannelDomain {
-    /// One channel value is associated with each tessellation vertex.
-    #[default]
-    Vertex,
-    /// Each triangle corner selects one value from the channel table.
-    Corner,
-    /// Each triangle selects one value from the channel table.
-    Triangle,
-}
-
 /// Index table that addresses a tessellation channel payload.
 ///
 /// The domain is the wire's tag, so the selector table exists only on the two
@@ -688,16 +672,6 @@ pub enum ChannelAddressing {
 }
 
 impl ChannelAddressing {
-    /// Domain stored on the CADIR wire for this addressing.
-    #[must_use]
-    pub const fn domain(&self) -> TessellationChannelDomain {
-        match self {
-            Self::Vertex {} => TessellationChannelDomain::Vertex,
-            Self::Corner { .. } => TessellationChannelDomain::Corner,
-            Self::Triangle { .. } => TessellationChannelDomain::Triangle,
-        }
-    }
-
     /// Explicit selectors, empty for vertex-order addressing.
     #[must_use]
     pub fn indices(&self) -> &[u32] {
@@ -1267,12 +1241,6 @@ impl TessellationChannel {
     #[must_use]
     pub fn addressing(&self) -> &ChannelAddressing {
         &self.addressing
-    }
-
-    /// Domain stored on the CADIR wire for this channel.
-    #[must_use]
-    pub fn domain(&self) -> TessellationChannelDomain {
-        self.addressing.domain()
     }
 
     /// Byte size of one element of [`Self::data`].

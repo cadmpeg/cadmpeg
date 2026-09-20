@@ -37,8 +37,8 @@ pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 ///
 /// The returned id is classified from the final section payloads through the
 /// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
-/// these bytes classifies exactly what the caller reports as
-/// `ExportReport::target`.
+/// these bytes classifies exactly the dialect stored in the serialized export
+/// report's `identity.target` field.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,

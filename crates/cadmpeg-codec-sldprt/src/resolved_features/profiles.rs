@@ -3182,14 +3182,24 @@ mod detached_legacy_sketch_tests {
             sketch_entities: Vec::new(),
         };
         let expected_sketch = SketchId::mint("sldprt:model:sketch#markers:1:30").unwrap();
-        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
+        let mut neutral_feature = cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
-            30,
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }),
-        );
+            ordinal: 30,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }),
+            ),
+            native_ref: None,
+        };
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
         let mut features = vec![neutral_feature];
@@ -3262,14 +3272,24 @@ mod detached_legacy_sketch_tests {
             references: Vec::new(),
             sketch_entities: vec![unbound],
         };
-        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
+        let mut neutral_feature = cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral")
                 .expect("identity grammar"),
-            30,
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }),
-        );
+            ordinal: 30,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }),
+            ),
+            native_ref: None,
+        };
         neutral_feature.name = Some("empty".into());
         neutral_feature.native_ref = Some("feature".into());
         let mut features = vec![neutral_feature];

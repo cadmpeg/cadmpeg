@@ -201,7 +201,7 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
             panic!("expected revision form");
         };
         assert_eq!(revision_form.revision, 22_506);
-        assert_eq!(revision_form.cache.selector(), 0);
+        assert!(revision_form.cache.parameterization().is_none());
         assert_eq!(revision_form.cache.fit_tolerance(), Some(0.01));
         assert_eq!(
             revision_form.support_bounds,

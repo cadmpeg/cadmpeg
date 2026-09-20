@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-attributes class-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::test_support::test_archive as support;
@@ -126,15 +128,13 @@ fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
     )
 }
 
-fn object_presentation(
-    result: &cadmpeg_ir::codec::DecodeResult,
-) -> &cadmpeg_ir::native::NativeRecord {
+fn object_presentation(result: &EditableDecodeResult) -> &cadmpeg_ir::native::NativeRecord {
     let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
 
-fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_and_retention(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
         result.ir().model.points[0].position(),

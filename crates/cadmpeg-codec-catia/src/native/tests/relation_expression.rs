@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -167,45 +169,53 @@ fn decode_retains_an_opened_parser_version_expression_without_formula_incidence(
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            (crate::coverage::DECODED_OPENED_BOOLEAN_PARSER_VERSION_RELATION_EXPRESSION_COUNT)
+                .as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }
@@ -263,45 +273,52 @@ fn decode_retains_an_unprefixed_parser_version_expression_without_formula_incide
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_PARSER_VERSION_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_TYPED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }
@@ -336,21 +353,24 @@ fn decode_retains_a_parser_version_expression_without_fabricating_formula_incide
 
     assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_EXPRESSION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RELATION_EXPRESSION_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_FORMULA_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_PARAMETER_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_PARAMETER_COUNT.as_str()
+        ),
         0
     );
 }

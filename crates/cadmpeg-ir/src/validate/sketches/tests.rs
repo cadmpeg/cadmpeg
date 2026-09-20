@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
 use crate::math::{Point2, Point3, Vector3};
@@ -242,15 +244,22 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     };
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
 
-    ir.model.sketch_entities[result_ordinal]
-        .geometry
-        .edit(|definition| {
-            let SketchGeometryDefinition::Nurbs { curve } = definition else {
-                unreachable!("test result is a NURBS")
+    edit::replace(
+        &mut ir.model.sketch_entities[result_ordinal].geometry,
+        |previous| {
+            let mut definition = previous.definition().clone();
+            {
+                let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
+                let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                    unreachable!("test result is a NURBS")
+                };
+                curve.reverse_parameterization();
             };
-            curve.reverse_parameterization();
-        })
-        .unwrap();
+            definition.try_into()
+        },
+    )
+    .unwrap();
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
         &ir.model.sketch_entities[source_ordinal].geometry,
         &ir.model.sketch_entities[result_ordinal].geometry,
@@ -262,26 +271,33 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         "reversed fitted offset distance {reversed_distance}"
     );
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
-    ir.model.sketch_entities[result_ordinal]
-        .geometry
-        .edit(|definition| {
-            let SketchGeometryDefinition::Nurbs { curve } = definition else {
-                unreachable!("test result is a NURBS")
+    edit::replace(
+        &mut ir.model.sketch_entities[result_ordinal].geometry,
+        |previous| {
+            let mut definition = previous.definition().clone();
+            {
+                let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
+                let SketchGeometryDefinition::Nurbs { curve } = definition else {
+                    unreachable!("test result is a NURBS")
+                };
+                curve.reverse_parameterization();
+                let last = curve.pole_rows().len() - 1;
+                let mut index = 0;
+                curve
+                    .edit_control_points(|point| {
+                        if index == last {
+                            point.u += 0.01;
+                        }
+                        index += 1;
+                        Ok(())
+                    })
+                    .unwrap();
             };
-            curve.reverse_parameterization();
-            let last = curve.pole_count() - 1;
-            let mut index = 0;
-            curve
-                .edit_control_points(|point| {
-                    if index == last {
-                        point.u += 0.01;
-                    }
-                    index += 1;
-                    Ok(())
-                })
-                .unwrap();
-        })
-        .unwrap();
+            definition.try_into()
+        },
+    )
+    .unwrap();
     assert!(offset_mismatch(&validate_neutral(&ir, Vec::new())));
 }
 
@@ -397,14 +413,19 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .find(|entity| entity.id() == &disconnected)
         .expect("disconnected entity remains present")
         .geometry;
-    disconnected_geometry
-        .edit(|definition| {
+    edit::replace(disconnected_geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Line { start, .. } = definition else {
                 unreachable!("second entity is a line")
             };
             *start = Point2::new(1.0 + ir.tolerances.linear.get() * 0.5, 0.0);
-        })
-        .unwrap();
+        };
+        definition.try_into()
+    })
+    .unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(first_sketch.as_str())

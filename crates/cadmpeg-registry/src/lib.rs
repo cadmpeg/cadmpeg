@@ -17,8 +17,8 @@
 //!
 //! The other two are answered elsewhere and stay there. "What will I lose?" is
 //! `Encoder::plan`, which reports against a live document; "what did I open or
-//! write?" is `SourceMeta::dialect` and `ExportReport::target` on the
-//! artifacts a run produced. Preservation is per-input and never advertised
+//! write?" is `SourceMeta::dialect` and the serialized export report's
+//! `identity.target` field on the artifacts a run produced. Preservation is per-input and never advertised
 //! statically, so no capability matrix appears here.
 //!
 //! The crate root is the facade: every public name is re-exported here, and

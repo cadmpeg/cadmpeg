@@ -491,18 +491,6 @@ impl Provenance<SourceLocation> {
         self.tag = tag;
         self
     }
-
-    /// Return the source format identifier.
-    #[must_use]
-    pub fn format(&self) -> &str {
-        &self.location.format
-    }
-
-    /// Return the named container stream, or `None` for the root stream.
-    #[must_use]
-    pub fn stream(&self) -> Option<&str> {
-        self.location.stream.as_ref().map(StreamName::as_str)
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -655,6 +643,7 @@ mod tests {
     #[cfg(feature = "schema")]
     use super::StreamName;
     use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
+    use cadmpeg_test_support::wire;
 
     #[cfg(feature = "schema")]
     #[test]
@@ -700,7 +689,10 @@ mod tests {
         let wire = serde_json::to_value(&root).expect("serialize");
         assert_eq!(wire, serde_json::json!({"format": "iges", "offset": 12}));
         let read: SourceProvenance = serde_json::from_value(wire).expect("root reads back");
-        assert_eq!(read.stream(), None);
+        assert_eq!(
+            wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
+            None
+        );
         assert_eq!(read, root);
 
         let named = SourceProvenance::in_stream("fcstd", crate::stream_name!("Document.xml"), 0);
@@ -710,7 +702,10 @@ mod tests {
             serde_json::json!({"format": "fcstd", "stream": "Document.xml", "offset": 0})
         );
         let read: SourceProvenance = serde_json::from_value(wire).expect("named reads back");
-        assert_eq!(read.stream(), Some("Document.xml"));
+        assert_eq!(
+            wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
+            Some("Document.xml")
+        );
 
         let error = serde_json::from_value::<SourceProvenance>(
             serde_json::json!({"format": "iges", "stream": "", "offset": 0}),

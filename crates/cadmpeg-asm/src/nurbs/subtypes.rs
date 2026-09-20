@@ -108,8 +108,7 @@ pub(super) fn find_owned_intcurve_subtype(
 /// has no `From` and no `Deref`. Every value therefore states one scope that
 /// tokenizes end to end at the width it was walked at, whose every `0x10` has a
 /// matching `0x0f` within the span, and whose final token is the close that
-/// balances it. The marker walk that refuses an unbalanced stream
-/// ([`crate::nurbs::reader::owned_marker_positions`]) is total over this type.
+/// balances it. The owned-marker walk is total over this type.
 ///
 /// The field is not reachable from another module:
 ///

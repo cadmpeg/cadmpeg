@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::collections::HashSet;
 use std::io::{Cursor, Write};
 
@@ -108,10 +110,10 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
         assert_eq!(super::parse(json.as_bytes()).is_ok(), valid, "{label}");
         let document = f3d_with_redirections_json("assembly-design", json.as_bytes());
         for container_only in [false, true] {
-            let decoded = F3dCodec.decode(
+            let decoded = EditableDecodeResult::from(F3dCodec.decode(
                 &mut Cursor::new(&document),
                 &DecodeOptions { container_only, ..DecodeOptions::default() },
-            ).expect("property refusal preserves the source document");
+            ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
                 .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
                 .collect::<Vec<_>>();

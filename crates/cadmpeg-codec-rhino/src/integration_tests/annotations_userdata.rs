@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! V5 text-extra class-userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::fixtures::plane;
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
@@ -93,14 +95,14 @@ fn text_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
     )
 }
 
-fn annotation(result: &cadmpeg_ir::codec::DecodeResult) -> &cadmpeg_ir::native::NativeRecord {
+fn annotation(result: &EditableDecodeResult) -> &cadmpeg_ir::native::NativeRecord {
     let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["annotations"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
 
 fn assert_text_and_retention<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
+    result: &'a EditableDecodeResult,
     record: &[u8],
 ) -> &'a cadmpeg_ir::native::NativeRecord {
     let annotation = annotation(result);

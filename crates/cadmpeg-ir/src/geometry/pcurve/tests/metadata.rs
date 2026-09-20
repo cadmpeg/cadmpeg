@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::geometry::pcurve::{PcurveGeneralForm, PcurveInlineForm, PcurveMetadata};
 
 #[test]
@@ -54,16 +56,68 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
         );
         assert!(PcurveGeneralForm::try_new(None, Some(range), None).is_err());
         assert!(PcurveMetadata::try_general(None, Some(range), None).is_err());
-        assert!(inline.set_parameter_range(range).is_err());
+        assert!({
+            let replacement = range;
+            edit::replace(&mut inline, |previous| {
+                crate::geometry::pcurve::PcurveInlineForm::try_new(
+                    previous.wrapper_reversed,
+                    previous.native_tail_flags,
+                    replacement,
+                    previous.fit_tolerance(),
+                )
+            })
+        }
+        .is_err());
         assert_eq!(inline.parameter_range(), [0.0, 1.0]);
-        assert!(general.set_parameter_range(Some(range)).is_err());
+        assert!({
+            let replacement = Some(range);
+            edit::replace(&mut general, |previous| {
+                crate::geometry::pcurve::PcurveGeneralForm::try_new(
+                    previous.wrapper_reversed,
+                    replacement,
+                    previous.fit_tolerance(),
+                )
+            })
+        }
+        .is_err());
         assert_eq!(general.parameter_range(), None);
     }
-    inline.set_parameter_range([1.0, 1.0]).unwrap();
-    general.set_parameter_range(Some([3.0, -2.0])).unwrap();
+    {
+        let replacement = [1.0, 1.0];
+        edit::replace(&mut inline, |previous| {
+            crate::geometry::pcurve::PcurveInlineForm::try_new(
+                previous.wrapper_reversed,
+                previous.native_tail_flags,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
+    {
+        let replacement = Some([3.0, -2.0]);
+        edit::replace(&mut general, |previous| {
+            crate::geometry::pcurve::PcurveGeneralForm::try_new(
+                previous.wrapper_reversed,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
     assert_eq!(inline.parameter_range(), [1.0, 1.0]);
     assert_eq!(general.parameter_range(), Some([3.0, -2.0]));
-    general.set_parameter_range(None).unwrap();
+    {
+        let replacement = None;
+        edit::replace(&mut general, |previous| {
+            crate::geometry::pcurve::PcurveGeneralForm::try_new(
+                previous.wrapper_reversed,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
     assert_eq!(general.parameter_range(), None);
 }
 

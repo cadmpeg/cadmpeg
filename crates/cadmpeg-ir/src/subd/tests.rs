@@ -64,11 +64,11 @@ fn subd_round_trip_and_directed_ring_validation() {
         serde_json::json!("smooth_x")
     );
     let cage = &ir.model.subds[0].cage;
-    let mut edges = cage.faces()[0].edges().to_vec();
+    let mut edges = cage.faces[0].edges.clone();
     edges[1].reversed = true;
     assert!(crate::subd::SubdCage::new(
-        cage.vertices().to_vec(),
-        cage.edges().to_vec(),
+        cage.vertices.clone(),
+        cage.edges.clone(),
         vec![SubdFace::new(edges).unwrap()],
         Vec::new()
     )
@@ -355,7 +355,7 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
         Ok(())
     })
     .unwrap();
-    assert_eq!(cage.vertices()[0].tag, SubdVertexTag::Corner);
+    assert_eq!(cage.vertices[0].tag, SubdVertexTag::Corner);
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn cage_symmetry_references_stay_in_range() {
 #[test]
 fn edge_admission_requires_distinct_endpoints() {
     assert!(SubdEdge::new([0, 0], [0.0, 0.0], SubdEdgeTag::Smooth, None, [0.0, 0.0]).is_err());
-    let mut wire = serde_json::to_value(&triangle_cage().edges()[0]).unwrap();
+    let mut wire = serde_json::to_value(&triangle_cage().edges[0]).unwrap();
     wire["vertices"] = serde_json::json!([0, 0]);
     assert!(serde_json::from_value::<SubdEdge>(wire).is_err());
     assert!(SubdEdge::new(
@@ -389,7 +389,7 @@ fn edge_admission_requires_distinct_endpoints() {
 
 #[test]
 fn edge_numeric_admission_rejects_invalid_controls() {
-    let base = serde_json::to_value(&triangle_cage().edges()[0]).unwrap();
+    let base = serde_json::to_value(&triangle_cage().edges[0]).unwrap();
     for invalid in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for index in 0..2 {
             let mut sharpness = [0.0, 0.0];
@@ -442,10 +442,10 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
             [-2.0, 3.0],
         )
         .unwrap();
-        assert_eq!(edge.vertices(), [1, 0]);
-        assert_eq!(edge.sharpness(), [0.0, f64::MAX]);
-        assert_eq!(edge.knot_interval(), interval);
-        assert_eq!(edge.sector_coefficients(), [-2.0, 3.0]);
+        assert_eq!(edge.vertices, [1, 0]);
+        assert_eq!(edge.sharpness, [0.0, f64::MAX]);
+        assert_eq!(edge.knot_interval, interval);
+        assert_eq!(edge.sector_coefficients, [-2.0, 3.0]);
         let wire = serde_json::to_value(&edge).unwrap();
         assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
     }
@@ -475,8 +475,8 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
     }
     for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
         let grip = super::SubdSecondaryGrip::new(u32::MAX, point, weight).unwrap();
-        assert_eq!(grip.point(), point);
-        assert_eq!(grip.weight(), weight);
+        assert_eq!(grip.point, point);
+        assert_eq!(grip.weight, weight);
         let wire = serde_json::to_value(&grip).unwrap();
         assert_eq!(
             wire,

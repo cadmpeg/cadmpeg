@@ -298,6 +298,7 @@ mod tests {
         object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
     };
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_test_support::{wire, EditableDecodeResult};
 
     #[test]
     fn malformed_reference_is_reported_with_its_source_record() {
@@ -385,9 +386,11 @@ mod tests {
                     support::table(archive, 0x1000_0013, std::slice::from_ref(&record)),
                 ],
             );
-            let decoded = crate::RhinoCodec
-                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-                .expect("complete occurrence decode");
+            let decoded = EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                    .expect("complete occurrence decode"),
+            );
             let ir: CadIr = serde_json::from_slice(
                 &serde_json::to_vec(decoded.ir()).expect("occurrence CADIR serialization"),
             )
@@ -474,9 +477,11 @@ mod tests {
             ],
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete product framing");
-        let decoded = crate::RhinoCodec
-            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-            .expect("later valid records recover");
+        let decoded = EditableDecodeResult::from(
+            crate::RhinoCodec
+                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                .expect("later valid records recover"),
+        );
         let ir: CadIr = serde_json::from_slice(
             &serde_json::to_vec(decoded.ir()).expect("product CADIR serialization"),
         )
@@ -500,7 +505,7 @@ mod tests {
                 .framed()
                 .expect("framed malformed occurrence");
             let provenance = loss.provenance.as_ref().expect("located product loss");
-            assert_eq!(provenance.format(), "rhino");
+            assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
             assert_eq!(provenance.offset, source.range.start as u64);
             assert!(loss.message.contains(&source.identity.source_id));
             assert_eq!(

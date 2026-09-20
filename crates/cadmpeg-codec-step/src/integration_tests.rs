@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
@@ -63,7 +65,7 @@ use crate::writer::tests::round_trips::{
 };
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("step").is_some());
@@ -155,9 +157,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             "STEP output must be deterministic for {schema:?}"
         );
         assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("STEP cube decode");
+        let result = EditableDecodeResult::from(
+            StepCodec::default()
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("STEP cube decode"),
+        );
         assert_eq!(result.ir().model.bodies.len(), 1);
         assert_eq!(result.ir().model.faces.len(), 6);
         assert_valid(&result);
@@ -185,7 +189,10 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert_eq!(
-            &plan.report().fidelity(),
+            &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+                plan.report().write_path(),
+                "fidelity"
+            ),
             &cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
         );
         let mut edited_bytes = Vec::new();
@@ -196,9 +203,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             export.write_path(),
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
-        let edited_result = codec
-            .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
-            .expect("edited STEP document decode");
+        let edited_result = EditableDecodeResult::from(
+            codec
+                .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
+                .expect("edited STEP document decode"),
+        );
         assert_valid(&edited_result);
         assert_eq!(
             edited_result.ir().model.bodies.len(),

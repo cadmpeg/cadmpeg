@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reporting of a declined verbatim replay.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
@@ -21,7 +23,10 @@ use std::io::Cursor;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
 fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &plan.report().fidelity() {
+    match &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        plan.report().write_path(),
+        "fidelity",
+    ) {
         FidelityResolution::Degraded { reason } => reason.clone(),
         other => panic!("{context}: {other:?}"),
     }
@@ -29,9 +34,11 @@ fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -
 
 #[test]
 fn encode_reports_a_version_mismatch_as_dialect_displacement() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let source_dialect = decoded
         .ir()
         .source
@@ -52,7 +59,10 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     let displacement = plan
@@ -69,9 +79,11 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
 
 #[test]
 fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let mut unclassified = decoded.ir().clone();
     let source = unclassified.source.take().unwrap();
     let format = source.format().to_owned();
@@ -94,16 +106,21 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
 }
 
 #[test]
 fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -118,7 +135,11 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(
-        report.target(),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(report),
+            "identity/target"
+        )
+        .as_ref(),
         decoded
             .ir()
             .source
@@ -155,15 +176,26 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             .unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
-        assert_eq!(report.target().map(DialectId::as_str), Some(id), "{id}");
+        assert_eq!(
+            wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+                &(report),
+                "identity/target"
+            )
+            .as_ref()
+            .map(DialectId::as_str),
+            Some(id),
+            "{id}"
+        );
     }
 }
 
 #[test]
 fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let mut edited = decoded.ir().clone();
     edited.model.points.push(
         Point::new(

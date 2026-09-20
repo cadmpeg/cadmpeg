@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -27,7 +29,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .source
@@ -47,9 +49,11 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         path,
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+    let regenerated = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap(),
+    );
     let retained = regenerated
         .source_fidelity()
         .retained_records()
@@ -65,7 +69,7 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].base_color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
@@ -525,7 +529,7 @@ fn encoder_writes_source_less_line_sketches() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let marker_lane = &sldprt_native(decoded.ir()).feature_input_lanes[0];
     assert_eq!(
         marker_lane
@@ -670,16 +674,21 @@ fn encoder_writes_source_less_line_sketches() {
                 )
             })
             .unwrap();
-        point
-            .geometry
-            .edit(|definition| {
+        edit::replace(&mut point.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Point { position } = definition else {
                     panic!("point geometry")
                 };
                 position.u = 7.0;
                 position.v = 8.0;
-            })
-            .unwrap();
+            };
+            definition.try_into()
+        })
+        .unwrap();
     }
     let mut rewritten = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -789,7 +798,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
+    let mut regenerated = EditableDecodeResult::from(regenerated);
 
     assert_eq!(regenerated.ir().model.spatial_sketches.len(), 1);
     assert_eq!(regenerated.ir().model.spatial_sketch_entities.len(), 3);

@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::edit;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1190,9 +1192,13 @@ fn step_writer_rejects_unknown_datum_reference_modifiers() {
     };
     let mut edited = references.as_slice().to_vec();
     edited[0].modifiers.push("unknown_modifier".into());
-    references
-        .replace(edited)
-        .expect("unchanged datum compartments");
+    {
+        let replacement = edited;
+        edit::replace(references, |_| {
+            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+        })
+    }
+    .expect("unchanged datum compartments");
 
     let mut output = Vec::new();
     let report = write_step(

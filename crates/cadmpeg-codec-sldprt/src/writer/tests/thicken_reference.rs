@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -26,7 +28,7 @@ fn semantic_writer_round_trips_typed_shell() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Shell {
@@ -92,7 +94,7 @@ fn semantic_writer_round_trips_typed_thicken() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
@@ -167,7 +169,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
@@ -239,7 +241,7 @@ fn semantic_writer_round_trips_typed_scale() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -369,7 +371,7 @@ fn semantic_writer_retains_partial_native_scale_construction() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Scale {
@@ -442,7 +444,7 @@ fn semantic_writer_round_trips_extrusion_with_unresolved_blind_extent() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -515,7 +517,7 @@ fn semantic_writer_round_trips_extrusion_with_unrecognized_end_condition() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -573,7 +575,7 @@ fn semantic_writer_round_trips_typed_draft() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -671,7 +673,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -746,7 +748,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
@@ -839,7 +841,7 @@ fn semantic_writer_round_trips_typed_combine() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine {
             operands,
@@ -907,7 +909,7 @@ fn semantic_writer_round_trips_delete_and_keep_body() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -989,7 +991,7 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteBody {
@@ -1009,7 +1011,7 @@ fn semantic_writer_resolves_sparse_body_delete_keep_operation() {
     let sparse = SldprtCodec
         .decode(&mut Cursor::new(sparse_encoded), &DecodeOptions::default())
         .unwrap();
-    let mut sparse = cadmpeg_test_support::EditableDecodeResult::from(sparse);
+    let mut sparse = EditableDecodeResult::from(sparse);
     let native = &sldprt_native(sparse.ir()).feature_histories[0].features[0];
     assert_eq!(native.kind, "Body-Delete/Keep ");
     assert!(!native.properties.contains_key("Bodies"));
@@ -1073,7 +1075,7 @@ fn semantic_writer_round_trips_typed_delete_face() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -1130,7 +1132,7 @@ fn semantic_writer_round_trips_typed_replace_face() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands,
@@ -1191,7 +1193,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MoveFace {
@@ -1307,7 +1309,7 @@ fn semantic_writer_round_trips_typed_dome() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Dome {
@@ -1376,7 +1378,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Dome {
@@ -1438,7 +1440,7 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     for (feature, plane) in decoded.ir().model.features[..3].iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
@@ -1518,9 +1520,11 @@ fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="A" Type="LocalizedPlane" id="2"/><Feature Name="B" Type="LocalizedPlane" id="3"/><Feature Name="C" Type="LocalizedPlane" id="4"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     for (feature, plane) in decoded.ir().model.features.iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,
@@ -1559,7 +1563,7 @@ fn semantic_writer_round_trips_typed_reference_plane() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin(),  Point3 {
@@ -1646,7 +1650,7 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1710,7 +1714,7 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
        decoded.ir().model.features[0].evaluation.definition(),
        FeatureDefinition::Operation(FeatureOperation::DatumAxis {

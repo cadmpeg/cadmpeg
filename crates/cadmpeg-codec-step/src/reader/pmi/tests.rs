@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 const EPS_PMI_NUMERIC: f64 = 1.0e-12;
 
 use std::fmt::Write as _;
@@ -24,7 +26,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
 
     assert_eq!(result.ir().model.pmi.len(), 5);
     assert!(!result
@@ -1271,8 +1273,8 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
         unreachable!()
     };
     let modifiers = references.as_slice()[0].modifiers.clone();
-    references
-        .replace(vec![
+    {
+        let replacement = vec![
             DatumReference {
                 datum: datum_a.id,
                 precedence: std::num::NonZeroU32::MIN,
@@ -1285,8 +1287,12 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
                 common_group: Some(7),
                 modifiers: vec!["least_material_requirement".into()],
             },
-        ])
-        .expect("valid common datum compartment");
+        ];
+        edit::replace(references, |_| {
+            cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
+        })
+    }
+    .expect("valid common datum compartment");
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
@@ -307,9 +309,11 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .unwrap()
         .rows[0]
         .offset;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
 
     let namespace = result
         .ir()
@@ -505,7 +509,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .find(|feature| feature.id.as_str() == "creo:model:sketch_feature#917")
         .expect("sketch feature");
     assert_eq!(
-        sketch_feature.source_content.as_slice(),
+        (&*sketch_feature.source_content),
         [
             cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
@@ -552,52 +556,80 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
             == "creo:model:sketch_feature#917"));
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         0
     );
 }
@@ -618,59 +650,81 @@ fn decode_reports_unresolved_dimension_driven_solver_variables() {
     let coverage = result.report();
 
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
-        0
-    );
-    assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        coverage
-            .coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT)
+                .as_str()
         ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -744,19 +798,31 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
     let coverage = result.report();
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_DIMENSION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_DIMENSION_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT.as_str()
+        ),
         3
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::RESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT.as_str()
+        ),
         2
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -865,27 +931,45 @@ fn decode_reports_missing_declared_constraint_table_rows() {
     let coverage = result.report();
 
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_SKAMP_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_SKAMP_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_SKAMP_ROW_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::DECODED_FEATURE_RELATION_TRIPLE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        coverage.coverage_count(crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT),
+        wire::coverage_count(
+            &(coverage),
+            crate::coverage::MISSING_FEATURE_RELATION_TRIPLE_ROW_COUNT.as_str()
+        ),
         1
     );
     for (code, message) in [
@@ -922,9 +1006,10 @@ fn decode_reports_malformed_relation_table_allocation_count() {
         .expect("decode malformed relation table");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         1
     );
     assert!(result.report().losses.iter().any(|loss| {
@@ -948,21 +1033,24 @@ fn decode_accepts_the_count_one_empty_relation_table() {
         .expect("decode empty relation table");
 
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_FEATURE_RELATION_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_RELATION_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MISSING_FEATURE_RELATION_ROW_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT),
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::MALFORMED_FEATURE_RELATION_TABLE_COUNT.as_str()
+        ),
         0
     );
     assert!(!result
@@ -989,9 +1077,11 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let feature = result
         .ir()
         .model

@@ -999,6 +999,7 @@ mod tests {
         SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
         SketchId,
     };
+    use cadmpeg_test_support::wire;
     #[test]
     fn rectangular_pattern_instances_require_exact_translated_geometry() {
         let source = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -1198,7 +1199,7 @@ mod tests {
             Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
         ));
         assert!(directions[0].count_parameter.is_some());
-        assert_eq!(pattern.counts(), [3, 1]);
+        assert_eq!([pattern.rows().len(), pattern.rows()[0].len()], [3, 1]);
     }
 
     #[test]
@@ -1391,11 +1392,17 @@ mod tests {
             panic!("partial circular pattern did not resolve");
         };
         assert_eq!(pattern.center(), center.id());
-        assert_eq!(pattern.angle().get(), std::f64::consts::PI);
-        assert_eq!(pattern.count(), 3);
+        assert_eq!(
+            wire::field::<cadmpeg_ir::scalar::Angle>(&pattern, "angle").get(),
+            std::f64::consts::PI
+        );
+        assert_eq!((pattern.instances().len() + 1), 3);
         // The seed is not an instance, so the instance list carries only the
         // rotations after it.
-        assert_eq!(pattern.seed(), std::slice::from_ref(seed.id()));
+        assert_eq!(
+            wire::field::<Vec<cadmpeg_ir::sketches::SketchEntityId>>(&pattern, "seed"),
+            std::slice::from_ref(seed.id())
+        );
         assert_eq!(
             pattern
                 .instances()
@@ -1521,7 +1528,7 @@ mod tests {
             panic!("role-agnostic circular pattern did not resolve");
         };
         assert_eq!(pattern.center(), center.id());
-        assert_eq!(pattern.count(), 3);
+        assert_eq!((pattern.instances().len() + 1), 3);
     }
 
     #[test]

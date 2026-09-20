@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
@@ -39,13 +41,15 @@ use crate::test_support::pmi::pmi_semantic_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized SLDPRT should decode")
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized SLDPRT should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(result.ir());
@@ -202,7 +206,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 #[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = decoded;
     decoded.ir_mut().model.tessellations[0].body = None;
     decoded.ir_mut().model.tessellations[0].faces.clear();
     let mut coincident = decoded.ir().model.faces[0].clone();
@@ -236,7 +240,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 
 #[test]
 fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir() {
-    let first = encode_decode_result(&source_less_cube());
+    let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().model.faces.len(), 6);
     assert_eq!(first.ir().model.edges.len(), 12);
     assert_valid(&first);
@@ -274,7 +278,7 @@ fn versioned_part() -> Vec<u8> {
 }
 
 fn plan(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
@@ -288,10 +292,13 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    plan.report()
-        .target()
-        .expect("a SLDPRT write always names its dialect")
-        .to_string()
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        plan.report(),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("a SLDPRT write always names its dialect")
+    .to_string()
 }
 
 fn classify(bytes: Vec<u8>) -> String {
@@ -358,7 +365,18 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "sldprt");
-    assert_eq!(refusal.requested(), Some("sldprt:sw-version-12000-plus"));
+    assert_eq!(
+        ({
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
+            wire["refusal"]
+                .get("requested")
+                .or_else(|| wire["refusal"].get("source"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .as_deref(),
+        Some("sldprt:sw-version-12000-plus")
+    );
     assert!(
         refusal
             .available()
@@ -367,8 +385,9 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         "{:?}",
         refusal.available()
     );
-    let reason = refusal
-        .reason()
+    let reason = serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["reason"]
+        .as_str()
+        .map(str::to_owned)
         .expect("delivery refusal carries its reason");
     assert!(
         reason.contains("sldprt:unknown"),
@@ -394,7 +413,10 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().fidelity(),
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
 
@@ -434,7 +456,10 @@ fn the_patch_path_names_the_preserved_dialect() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let cadmpeg_ir::report::export::FidelityResolution::Degraded { reason } =
-        &plan.report().fidelity()
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity",
+        )
     else {
         panic!("digest mismatch must report degraded fidelity");
     };
@@ -465,11 +490,13 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
             .expect("decode retains the source image");
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
             .expect("decoded source image has a valid digest");
-        cadmpeg_ir::RetainedSourceRecord::unavailable(
+        cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
-            record.byte_len(),
-            digest,
+            cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                byte_len: record.byte_len(),
+                sha256: digest,
+            },
         )
         .expect("source image extent")
     };
@@ -495,7 +522,10 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
         cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &cadmpeg_ir::report::export::FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }

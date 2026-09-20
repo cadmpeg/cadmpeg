@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Unregistered class-userdata retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::test_support::test_archive as support;
@@ -74,7 +76,7 @@ fn point_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
     )
 }
 
-fn assert_point_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_record(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     let retained = result
         .source_fidelity()

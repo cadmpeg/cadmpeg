@@ -330,14 +330,24 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let feature = Feature::new(
-        FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-            position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-            construction: None,
-        }),
-    );
+    let feature = Feature {
+        id: FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                construction: None,
+            }),
+        ),
+        native_ref: None,
+    };
     ir.model.features.push(feature.clone());
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("synthetic:test:configuration#suppressed")

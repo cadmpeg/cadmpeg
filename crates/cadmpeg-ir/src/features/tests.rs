@@ -167,8 +167,8 @@ fn helix_shape_round_trips_as_a_nested_key() {
 #[test]
 fn trim_cell_selection_requires_unique_in_range_ordinals() {
     let valid = TrimCellSelection::new(vec![1, 4], 5).unwrap();
-    assert_eq!(valid.removed(), &[1, 4]);
-    assert_eq!(valid.total(), 5);
+    assert_eq!(valid.removed, &[1, 4]);
+    assert_eq!(valid.total, 5);
     assert!(TrimCellSelection::new(vec![1, 1], 5).is_none());
     assert!(TrimCellSelection::new(vec![6], 5).is_none());
 }
@@ -194,7 +194,7 @@ fn trim_cells_preserve_the_nested_wire_fields_and_reject_invalid_input() {
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: TrimRegion::Cells(ref selection),
             ..
-        }) if selection.removed() == [1, 4] && selection.total() == 5
+        }) if selection.removed == [1, 4] && selection.total == 5
     ));
 
     let mut invalid = wire;
@@ -731,7 +731,7 @@ fn polygon_side_counts_reject_degenerate_polygons_at_admission() {
     }
     for value in [3, 7, u32::MAX] {
         let sides = PolygonSideCount::new(value).unwrap();
-        assert_eq!(sides.get(), value);
+        assert_eq!(sides.0, value);
         assert_eq!(
             serde_json::to_value(sides).unwrap(),
             serde_json::json!(value)

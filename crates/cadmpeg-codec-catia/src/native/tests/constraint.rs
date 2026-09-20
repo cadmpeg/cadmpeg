@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -45,67 +47,73 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode constraint range");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
-    assert!(!decoded
-        .report()
-        .coverage()
+    assert!(!wire::coverage(decoded.report())
         .contains_key("decoded_structurally_owned_constraint_range_count"));
-    assert!(!decoded
-        .report()
-        .coverage()
-        .contains_key("unresolved_constraint_range_owner_count"));
+    assert!(
+        !wire::coverage(decoded.report()).contains_key("unresolved_constraint_range_owner_count")
+    );
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()
             && loss.message.contains("1 finite")
@@ -200,51 +208,59 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(unique_file), &DecodeOptions::default())
         .expect("decode uniquely referenced constraint range");
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        uniquely_referenced.report().coverage_count(
-            crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::DECODED_CLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT.as_str()
         ),
         usize::from(source_entity.class_name().is_some())
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::UNCLASSIFIED_CONSTRAINT_RANGE_SOURCE_ENTITY_COUNT.as_str()
+        ),
         usize::from(source_entity.class_name().is_none())
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_INCOMING_REFERENCE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        uniquely_referenced
-            .report()
-            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT),
+        wire::coverage_count(
+            uniquely_referenced.report(),
+            crate::coverage::UNIQUELY_REFERENCED_RANGE_INTERVAL_COUNT.as_str()
+        ),
         1
     );
 
@@ -286,33 +302,38 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(storage_file), &DecodeOptions::default())
         .expect("decode storage-referenced constraint range");
     assert_eq!(
-        storage_referenced
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
-        1
-    );
-    assert_eq!(
-        storage_referenced.report().coverage_count(
-            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        storage_referenced.report().coverage_count(
-            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT
+        wire::coverage_count(
+            storage_referenced.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        storage_referenced
-            .report()
-            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            storage_referenced.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        storage_referenced
-            .report()
-            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            storage_referenced.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_STORAGE_REFERENCE_COUNT.as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        wire::coverage_count(
+            storage_referenced.report(),
+            crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            storage_referenced.report(),
+            crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
 
@@ -323,15 +344,17 @@ fn native_namespace_types_dimension_constraint_ranges() {
         )
         .expect("decode constraint range with both incidence forms");
     assert_eq!(
-        combined
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        wire::coverage_count(
+            combined.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        combined
-            .report()
-            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            combined.report(),
+            crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
 
@@ -358,33 +381,38 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .decode(&mut Cursor::new(multiple_file), &DecodeOptions::default())
         .expect("decode multiply referenced constraint range");
     assert_eq!(
-        multiply_referenced
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT),
+        wire::coverage_count(
+            multiply_referenced.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        multiply_referenced
-            .report()
-            .coverage_count(crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            multiply_referenced.report(),
+            crate::coverage::UNREFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        multiply_referenced
-            .report()
-            .coverage_count(crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            multiply_referenced.report(),
+            crate::coverage::UNIQUELY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        multiply_referenced
-            .report()
-            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            multiply_referenced.report(),
+            crate::coverage::MULTIPLY_REFERENCED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        multiply_referenced
-            .report()
-            .coverage_count(crate::coverage::MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT),
+        wire::coverage_count(
+            multiply_referenced.report(),
+            crate::coverage::MULTIPLY_REFERENCED_RANGE_INTERVAL_COUNT.as_str()
+        ),
         1
     );
 
@@ -552,33 +580,38 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode range interval");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT.as_str()
+        ),
         2
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT.as_str()
+        ),
         0
     );
     let no_slot = CatiaCodec
@@ -591,15 +624,17 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         )
         .expect("decode no-slot range interval");
     assert_eq!(
-        no_slot
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT),
+        wire::coverage_count(
+            no_slot.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NO_SLOT_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        no_slot
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT),
+        wire::coverage_count(
+            no_slot.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_NOMINAL_COUNT.as_str()
+        ),
         0
     );
     let unset = CatiaCodec
@@ -615,9 +650,10 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         )
         .expect("decode unset range interval");
     assert_eq!(
-        unset
-            .report()
-            .coverage_count(crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT),
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT.as_str()
+        ),
         2
     );
 
@@ -731,9 +767,10 @@ fn dimension_constraint_ranges_accept_8192_terminated_df_frames() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode 81 92-terminated dimension range");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -801,33 +838,38 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
         )
         .expect("decode unset complex constraint range");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_COMPLEX_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         0
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT),
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT.as_str()
+        ),
         1
     );
 

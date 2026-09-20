@@ -3,6 +3,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::records::operand_tag::NativeOperandTag;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
@@ -1346,7 +1348,7 @@ fn semantic_writer_round_trips_flex_operations() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let updated_ir_edit_evaluation = &mut ir_edit.model.features[0].evaluation;
@@ -1416,7 +1418,7 @@ fn semantic_writer_round_trips_all_flex_modes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Flex { mode, .. }) = definition {
@@ -1490,7 +1492,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.features.len(), 4);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
@@ -1558,7 +1560,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let native = sldprt_native(decoded.ir());
     let definition = native.feature_histories[0]
         .features
@@ -1592,7 +1594,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
             .find(|feature| feature.source_tag.as_deref() == Some("MacroFeature"))
             .unwrap();
         assert!(matches!(
-            neutral_macro.source_content.as_slice(),
+            &*neutral_macro.source_content,
             [
                 FeatureSourceContent::Text(prefix),
                 FeatureSourceContent::Parameter(_),
@@ -1676,7 +1678,7 @@ fn semantic_writer_removes_deleted_history_records() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .model
@@ -1723,7 +1725,7 @@ fn semantic_writer_reorders_nested_history_records() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     for feature in &mut decoded.ir_mut().model.features {
         match feature.name.as_deref() {
             Some("A") => feature.ordinal = 2,

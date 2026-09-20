@@ -67,8 +67,6 @@ pub const HISTORY_PARTITION_FLAG: u64 = 1;
 /// Flag bits 1 to 7, which hold the save format's revision number.
 pub const FORMAT_REVISION_FLAGS: u64 = 0xfe;
 
-const FORMAT_REVISION_SHIFT: u32 = 1;
-
 impl KernelHeader {
     /// Major component of the encoded ACIS save-format version.
     pub fn save_format_major(&self) -> Option<u32> {
@@ -84,18 +82,6 @@ impl KernelHeader {
     pub fn has_history_partition(&self) -> bool {
         self.flags
             .is_some_and(|flags| flags & HISTORY_PARTITION_FLAG != 0)
-    }
-
-    /// Save format revision from flag bits 1 to 7.
-    pub fn format_revision(&self) -> Option<u32> {
-        self.flags
-            .map(|flags| ((flags & FORMAT_REVISION_FLAGS) >> FORMAT_REVISION_SHIFT) as u32)
-    }
-
-    /// Flags outside the history and revision fields.
-    pub fn unassigned_flags(&self) -> Option<u64> {
-        self.flags
-            .map(|flags| flags & !(HISTORY_PARTITION_FLAG | FORMAT_REVISION_FLAGS))
     }
 }
 

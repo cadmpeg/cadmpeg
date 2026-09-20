@@ -10,13 +10,23 @@ use crate::features::{
 fn predecessor_document() -> CadIr {
     let mut ir = CadIr::empty();
     for (key, ordinal) in [("0-parent", 0), ("1-child", 1)] {
-        ir.model.features.push(Feature::new(
-            format!("test:parent-wire:feature#{key}")
+        ir.model.features.push(Feature {
+            id: format!("test:parent-wire:feature#{key}")
                 .try_into()
                 .unwrap(),
             ordinal,
-            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-        ));
+            name: None,
+            suppressed: None,
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
+            native_ref: None,
+        });
     }
     ir.model
         .set_feature_regeneration_parent(

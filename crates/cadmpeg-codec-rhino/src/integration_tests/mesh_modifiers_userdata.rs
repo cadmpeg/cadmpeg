@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mesh-modifier XML userdata admission and retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::{ArchiveVersion, TCODE_CRC};
 use crate::mesh_modifiers;
@@ -118,7 +120,7 @@ fn modifier_userdata(archive: ArchiveVersion, label: &str, version: i32, xml: &s
     )
 }
 
-fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_and_retention(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
         result.ir().model.points[0].position(),
