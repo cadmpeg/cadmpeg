@@ -328,7 +328,7 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
 
 #[test]
 fn conic_classification_preserves_common_coefficient_scale() {
-    for coefficient in ["1e-200", "1", "1e200"] {
+    for coefficient in ["1D-200", "1", "1D200"] {
         let parameters = format!("104,{coefficient},0,{coefficient},0,0,-{coefficient},0,1,0,0,1;");
         let decoded = IgesCodec
             .decode(

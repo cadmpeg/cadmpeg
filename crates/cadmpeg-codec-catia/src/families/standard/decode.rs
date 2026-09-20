@@ -9536,7 +9536,8 @@ fn circle_axis_from_carrier(
             (distance.is_finite()
                 && distance != 0.0
                 && close_squared_lengths(distance.hypot(circle_radius), sphere_radius))
-            .then(|| offset.scale(1.0 / distance))
+            .then(|| offset.unit_nonzero())
+            .flatten()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let torus_center = torus_surface.center();
