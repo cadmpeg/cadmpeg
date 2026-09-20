@@ -2125,6 +2125,13 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
         .take(vertices.len())
 }
 
+/// Answer the distance from `point` to the segment `start`-`end`.
+///
+/// The segment carries the parameter interval `[0, 1]`, so restricting the
+/// projection parameter to that interval is the segment's own definition
+/// rather than a correction. A projection outside the interval is not an
+/// error: it states that the point projects onto the supporting line beyond an
+/// end, and the nearest point of the segment is then that end.
 pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
     let du = end.u - start.u;
     let dv = end.v - start.v;
