@@ -221,7 +221,7 @@ impl SourceChartData {
                 let mut parameter = preamble.base_parameter();
                 let parameters = std::iter::once(parameter)
                     .chain(points.windows(2).map(|pair| {
-                        let chord_m = super::distance(pair[0], pair[1]) / 1000.0;
+                        let chord_m = pair[0].distance(pair[1]) / 1000.0;
                         parameter += chord_m * preamble.base_scale();
                         parameter
                     }))
