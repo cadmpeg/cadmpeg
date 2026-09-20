@@ -929,7 +929,7 @@ pub(super) fn initial_mesh_quotient(
 }
 
 #[cfg(test)]
-pub(crate) fn complete_mesh_endpoint_candidates_from_quotient(
+fn complete_mesh_endpoint_candidates_from_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
     max_pairs_per_edge: usize,
@@ -1631,7 +1631,7 @@ impl MeshQuotient {
     }
 
     #[cfg(test)]
-    pub(crate) fn assignment_options(
+    fn assignment_options(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -3943,7 +3943,7 @@ fn possible_face_choices_with_limit(
 }
 
 #[cfg(test)]
-pub(crate) fn possible_face_choices(
+fn possible_face_choices(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
 ) -> Vec<Vec<Vec<[usize; 2]>>> {
@@ -6414,10 +6414,7 @@ impl MeshSelectionSearch<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn remaining_equation_merge_capacity(
-        &self,
-        quotient: &mut MeshQuotient,
-    ) -> Option<usize> {
+    fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
         fn choice_component_reductions(
             choice: &[[usize; 2]],
             quotient: &mut MeshQuotient,
@@ -6628,7 +6625,7 @@ impl MeshSelectionSearch<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
+    fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
         let budget = WorkBudget::new(usize::MAX);
         self.propagate_forced_face_equations_from(quotient, None, &budget)
     }
@@ -7151,7 +7148,7 @@ impl MeshSelectionSearch<'_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
+    fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
         let budget = WorkBudget::new(limit);
         let propagation_budget = WorkBudget::new(limit);
         self.search_from_state(quotient, false, &budget, &propagation_budget);
