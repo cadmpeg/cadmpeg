@@ -1111,7 +1111,7 @@ pub(super) fn project(
                             &entries,
                             entry.form,
                             global.global_table(),
-                            transform.body_transform(),
+                            transform,
                             global.length_factor_mm(),
                             global.minimum_resolution_mm(),
                         )

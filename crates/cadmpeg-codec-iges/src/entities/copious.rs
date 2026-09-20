@@ -308,11 +308,18 @@ pub(super) fn project(
                 Point3::new(tuple[0] * factor, tuple[1] * factor, z * factor)
             })
             .collect::<Vec<_>>();
-        let points = definition_points
+        let Some(points) = definition_points
             .iter()
             .copied()
-            .map(|point| transform.point(point))
-            .collect::<Vec<_>>();
+            .map(|point| transform.apply_point(point))
+            .collect::<Option<Vec<_>>>()
+        else {
+            losses.push(entity_loss(
+                entry,
+                "placement produces non-finite copious points",
+            ));
+            continue;
+        };
         if presentation_form(entry.form) {
             losses.push(presentation_loss(
                 entry,

@@ -93,16 +93,19 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
 fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
     use super::super::*;
     let tiny = 1.0e-310;
-    assert_eq!(
-        nurbs_curve_point(
-            1,
-            &[0.0, 0.0, tiny, tiny],
-            &[Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
-            None,
-            tiny * 0.5
-        ),
-        Some(Point3::new(3.0, 0.0, 0.0))
-    );
+    let parameter = tiny * 0.5;
+    let point = nurbs_curve_point(
+        1,
+        &[0.0, 0.0, tiny, tiny],
+        &[Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+        None,
+        parameter,
+    )
+    .unwrap();
+    // The subnormal parameter can round away from the mathematical midpoint.
+    let expected = 2.0 + 2.0 * (parameter / tiny);
+    assert!((point.x - expected).abs() <= 8.0 * f64::EPSILON * expected);
+    assert_eq!((point.y, point.z), (0.0, 0.0));
     let knots = [-1.0e308, -1.0e308, -9.0e307, -9.0e307];
     let wrapped = periodic_parameter(&knots, 1, 2, true, 1.0e308).unwrap();
     assert!(wrapped.is_finite() && (knots[1]..=knots[2]).contains(&wrapped));

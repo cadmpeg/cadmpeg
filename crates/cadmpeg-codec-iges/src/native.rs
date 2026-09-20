@@ -4,9 +4,7 @@
 use crate::card::{CardScan, ScannedLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord, SourceStatus, UseFlag};
 use crate::entities::drawing::drawing_property_value;
-use crate::entities::geometry::{
-    resolve_transform, Affine, BoundaryEndpoint, BoundaryVertexDerivation,
-};
+use crate::entities::geometry::{resolve_transform, BoundaryEndpoint, BoundaryVertexDerivation};
 use crate::entities::structure::{
     array_base_type, flow_join_target_valid, placement_affine, signal_string_geometry_target,
     PlacementRejection,
@@ -21,6 +19,7 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1826,7 +1825,7 @@ fn choose_drawing_property(
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
-    transform: Affine,
+    transform: Transform,
 }
 
 // The wire adapter receives the optional field by reference, including its absence.
@@ -1927,9 +1926,9 @@ fn member_affine(
     length_factor: f64,
     precision: RealPrecision,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Affine, ()> {
+) -> Result<Transform, ()> {
     if entry.transform == 0 {
-        return Ok(Affine::identity());
+        return Ok(Transform::identity());
     }
     resolve_transform(
         entry.transform,
@@ -1959,7 +1958,7 @@ impl OccurrenceExpansion<'_, '_> {
     fn expand(
         &self,
         instance_sequence: u32,
-        parent: Affine,
+        parent: Transform,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
         depth_truncated_at: &mut Option<u32>,
@@ -2004,7 +2003,7 @@ impl OccurrenceExpansion<'_, '_> {
             malformed_placement_sequences.insert(instance_sequence);
             return Ok(None);
         };
-        let Some(definition_world) = parent
+        let Ok(definition_world) = parent
             .compose(local)
             .and_then(|world| world.compose(definition.transform))
         else {
@@ -2021,8 +2020,8 @@ impl OccurrenceExpansion<'_, '_> {
             instance_sequence,
             definition_sequence,
             Vec::new(),
-            local.rows(),
-            definition_world.rows(),
+            local.affine_rows(),
+            definition_world.affine_rows(),
         ));
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
@@ -2065,7 +2064,7 @@ impl OccurrenceExpansion<'_, '_> {
             if let Some(ctx) = self.ctx {
                 ctx.charge_collection_items(1, "iges_product_occurrences")?;
             }
-            let Some(member_world) = definition_world.compose(member_local) else {
+            let Ok(member_world) = definition_world.compose(member_local) else {
                 malformed_placement_sequences.insert(*member);
                 continue;
             };
@@ -2075,8 +2074,8 @@ impl OccurrenceExpansion<'_, '_> {
                 instance_sequence,
                 definition_sequence,
                 self.neutral_links.get(member).cloned().unwrap_or_default(),
-                member_local.rows(),
-                member_world.rows(),
+                member_local.affine_rows(),
+                member_world.affine_rows(),
             ));
         }
         path.pop();
@@ -5278,7 +5277,7 @@ pub(crate) fn store(
                     entry.sequence,
                     OccurrenceDefinition {
                         members: Vec::new(),
-                        transform: Affine::identity(),
+                        transform: Transform::identity(),
                     },
                 ));
             };
@@ -5293,23 +5292,24 @@ pub(crate) fn store(
                     member
                 })
                 .collect();
-            let transform = occurrence_length_factor.map_or(Affine::identity(), |length_factor| {
-                match resolve_transform(
-                    entry.transform,
-                    &entries,
-                    &by_directory,
-                    length_factor,
-                    global.real_precision(),
-                    &mut BTreeSet::new(),
-                    ctx,
-                ) {
-                    Ok(transform) => transform,
-                    Err(_) => {
-                        malformed = true;
-                        Affine::identity()
+            let transform =
+                occurrence_length_factor.map_or(Transform::identity(), |length_factor| {
+                    match resolve_transform(
+                        entry.transform,
+                        &entries,
+                        &by_directory,
+                        length_factor,
+                        global.real_precision(),
+                        &mut BTreeSet::new(),
+                        ctx,
+                    ) {
+                        Ok(transform) => transform,
+                        Err(_) => {
+                            malformed = true;
+                            Transform::identity()
+                        }
                     }
-                }
-            });
+                });
             if malformed {
                 malformed_definition_sequences.push(entry.sequence);
             }
@@ -5417,7 +5417,7 @@ pub(crate) fn store(
             }) {
                 if let Some(source_sequence) = expansion.expand(
                     root.sequence,
-                    Affine::identity(),
+                    Transform::identity(),
                     &mut Vec::new(),
                     &mut product_occurrences,
                     &mut depth_truncated_at,

@@ -362,18 +362,16 @@ pub(super) fn project(
                     continue;
                 }
             };
-            let body_transform = transform.body_transform();
-            let Some(placed_source_geometry) = placed_offset_source(
-                &CurveGeometry::Solved(source_geometry.clone()),
-                body_transform,
-            ) else {
+            let Some(placed_source_geometry) =
+                placed_offset_source(&CurveGeometry::Solved(source_geometry.clone()), transform)
+            else {
                 losses.push(entity_loss(
                     entry,
                     "placed offset source has no exact line or circle carrier",
                 ));
                 continue;
             };
-            let Some(placed_normal) = placed_offset_normal(normal, body_transform) else {
+            let Some(placed_normal) = placed_offset_normal(normal, transform) else {
                 losses.push(entity_loss(
                     entry,
                     "placed offset normal cannot be represented",

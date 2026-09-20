@@ -617,77 +617,6 @@ fn validate_declared_transform_frame(
         .ok_or(DeclaredTransformFrameError::WrongDeterminant)
 }
 
-#[derive(Clone, Copy)]
-pub(crate) struct Affine {
-    transform: cadmpeg_ir::transform::Transform,
-}
-
-impl Affine {
-    pub(crate) fn identity() -> Self {
-        Self {
-            transform: cadmpeg_ir::transform::Transform::identity(),
-        }
-    }
-
-    pub(crate) fn new(rows: [[f64; 4]; 3]) -> Option<Self> {
-        cadmpeg_ir::transform::Transform::affine(rows).map(|transform| Self { transform })
-    }
-
-    pub(crate) fn rows(self) -> [[f64; 4]; 3] {
-        let rows = self.transform.rows();
-        [rows[0], rows[1], rows[2]]
-    }
-
-    pub(crate) fn compose(self, local: Self) -> Option<Self> {
-        let rows = self.rows();
-        let local_rows = local.rows();
-        let mut composed = [[0.0; 4]; 3];
-        for (row, values) in composed.iter_mut().enumerate() {
-            for (column, value) in values.iter_mut().enumerate().take(3) {
-                *value = (0..3)
-                    .map(|index| rows[row][index] * local_rows[index][column])
-                    .sum();
-            }
-            values[3] = rows[row][3]
-                + (0..3)
-                    .map(|index| rows[row][index] * local_rows[index][3])
-                    .sum::<f64>();
-        }
-        Self::new(composed)
-    }
-
-    pub(super) fn point(self, point: Point3) -> Point3 {
-        let rows = self.rows();
-        let values = [point.x, point.y, point.z];
-        let coordinate = |row: usize| {
-            rows[row][3]
-                + values
-                    .iter()
-                    .enumerate()
-                    .map(|(column, value)| rows[row][column] * value)
-                    .sum::<f64>()
-        };
-        Point3::new(coordinate(0), coordinate(1), coordinate(2))
-    }
-
-    pub(super) fn vector(self, vector: Vector3) -> Vector3 {
-        let rows = self.rows();
-        let values = [vector.x, vector.y, vector.z];
-        let coordinate = |row: usize| {
-            values
-                .iter()
-                .enumerate()
-                .map(|(column, value)| rows[row][column] * value)
-                .sum::<f64>()
-        };
-        Vector3::new(coordinate(0), coordinate(1), coordinate(2))
-    }
-
-    pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
-        self.transform
-    }
-}
-
 pub(crate) fn resolve_transform(
     sequence: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -696,9 +625,9 @@ pub(crate) fn resolve_transform(
     precision: RealPrecision,
     path: &mut BTreeSet<u32>,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Affine, String> {
+) -> Result<Transform, String> {
     if sequence == 0 {
-        return Ok(Affine::identity());
+        return Ok(Transform::identity());
     }
     let sequence = u32::try_from(sequence)
         .map_err(|_| "transformation pointer is not a positive sequence".to_string())?;
@@ -799,7 +728,7 @@ pub(crate) fn resolve_transform(
         .ok_or_else(|| format!("transformation D{sequence} second axis cannot be normalized"))?;
         let perpendicular = first.cross(second);
         let third = perpendicular.scale(expected_determinant);
-        let local = Affine::new([
+        let local = Transform::affine([
             [first.x, second.x, third.x, values[3]],
             [first.y, second.y, third.y, values[7]],
             [first.z, second.z, third.z, values[11]],
@@ -816,7 +745,7 @@ pub(crate) fn resolve_transform(
             path,
             ctx,
         )?;
-        parent.compose(local).ok_or_else(|| {
+        parent.compose(local).map_err(|_| {
             format!("transformation D{sequence} has non-finite coefficients after composition")
         })
     })();
@@ -1474,8 +1403,14 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let basis_x = transform.vector(Vector3::new(1.0, 0.0, 0.0));
-        let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
+        let Some(basis_x) = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0)) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+            continue;
+        };
+        let Some(basis_y) = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0)) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+            continue;
+        };
         let scale_x = basis_x.norm();
         let scale_y = basis_y.norm();
         let scale_tolerance = scale_x.max(scale_y).max(1.0) * COMPUTATION_TOLERANCE;
@@ -1490,9 +1425,20 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let center = transform.point(Point3::new(values[1], values[2], values[0]));
-        let start = transform.point(Point3::new(values[3], values[4], values[0]));
-        let end = transform.point(Point3::new(values[5], values[6], values[0]));
+        let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
+        let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
+        let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
         let start_delta = start.vector_from(center);
         let end_delta = end.vector_from(center);
         let radius = start_delta.norm();
@@ -1624,7 +1570,11 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let position = transform.point(Point3::new(x * factor, y * factor, z * factor));
+        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
         if !position.is_finite() {
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
             continue;
@@ -1711,7 +1661,10 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let position = transform.point(Point3::new(x * factor, y * factor, 0.0));
+        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, 0.0)) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
         if !position.is_finite() {
             losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
@@ -1774,8 +1727,18 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let start = transform.point(Point3::new(coordinates[0], coordinates[1], coordinates[2]));
-        let end = transform.point(Point3::new(coordinates[3], coordinates[4], coordinates[5]));
+        let Some(start) =
+            transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
+        let Some(end) =
+            transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
         let delta = end.vector_from(start);
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
@@ -2018,23 +1981,23 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let control_points = native_poles
+        let Some(control_points) = native_poles
             .chunks_exact(3)
             .map(|point| {
-                transform.point(Point3::new(
+                transform.apply_point(Point3::new(
                     point[0] * factor,
                     point[1] * factor,
                     point[2] * factor,
                 ))
             })
-            .collect::<Vec<_>>();
-        if control_points.iter().any(|point| !point.is_finite()) {
+            .collect::<Option<Vec<_>>>()
+        else {
             losses.push(entity_loss(
                 entry,
                 "transformed control-point vector is non-finite",
             ));
             continue;
-        }
+        };
         let point_scale = control_points
             .iter()
             .skip(1)
@@ -2067,7 +2030,10 @@ pub(crate) fn project_geometry(
                 ));
                 continue;
             }
-            let normal = transform.vector(normal_definition);
+            let Some(normal) = transform.apply_vector(normal_definition) else {
+                losses.push(entity_loss(entry, "placement produces a non-finite vector"));
+                continue;
+            };
             let normal_length = normal.norm();
             if !normal_length.is_finite()
                 || normal_length <= 0.0

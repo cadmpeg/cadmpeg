@@ -411,10 +411,18 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
-            let start_point =
-                transform.point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor));
-            let end_point =
-                transform.point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor));
+            let Some(start_point) =
+                transform.apply_point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor))
+            else {
+                continuous = false;
+                break;
+            };
+            let Some(end_point) =
+                transform.apply_point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor))
+            else {
+                continuous = false;
+                break;
+            };
             // GE-03: IGES §2.2.4.3.19 supplies the positional comparison only.
             if previous_terminal_point.is_some_and(|previous| {
                 !points_within_resolution(previous, start_point, resolution)
@@ -485,15 +493,19 @@ pub(super) fn project(
                     }
                 }
             }
-            let bezier = (0..4)
+            let Some(bezier) = (0..4)
                 .map(|index| {
-                    transform.point(Point3::new(
+                    transform.apply_point(Point3::new(
                         x[index] * factor,
                         y[index] * factor,
                         z[index] * factor,
                     ))
                 })
-                .collect::<Vec<_>>();
+                .collect::<Option<Vec<_>>>()
+            else {
+                continuous = false;
+                break;
+            };
             if control_points.is_empty() {
                 control_points.extend(bezier);
             } else {
@@ -803,11 +815,14 @@ pub(super) fn project(
                 ];
                 for (u_local, x_row) in coordinates[0].iter().enumerate() {
                     for (v_local, x) in x_row.iter().enumerate() {
-                        let point = transform.point(Point3::new(
+                        let Some(point) = transform.apply_point(Point3::new(
                             *x * factor,
                             coordinates[1][u_local][v_local] * factor,
                             coordinates[2][u_local][v_local] * factor,
-                        ));
+                        )) else {
+                            valid = false;
+                            break 'patches;
+                        };
                         let u_index = u_patch * 3 + u_local;
                         let v_index = v_patch * 3 + v_local;
                         let index = u_index * v_count + v_index;

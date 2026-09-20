@@ -105,3 +105,20 @@ fn numerical_audit_lengths_and_nonzero_directions_keep_the_finite_range() {
         .unit_nonzero()
         .is_none());
 }
+
+#[test]
+fn numerical_audit_parameter_reflection_preserves_shifted_endpoints() {
+    for [start, end] in [
+        [1.0e16, 1.0e16 + 2.0],
+        [1.0e308, 1.1e308],
+        [-f64::MAX, f64::MAX],
+    ] {
+        assert_eq!(super::reflect_parameter(start, start, end), Some(end));
+        assert_eq!(super::reflect_parameter(end, start, end), Some(start));
+    }
+    assert_eq!(
+        super::reflect_parameter(0.0, -f64::MAX, f64::MAX),
+        Some(0.0)
+    );
+    assert!(super::reflect_parameter(-f64::MAX, 0.0, f64::MAX).is_none());
+}

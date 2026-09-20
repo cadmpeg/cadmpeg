@@ -4,8 +4,7 @@
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
     curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
-    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, Affine,
-    ProjectionOutcome,
+    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
 };
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
@@ -2018,7 +2017,7 @@ pub(crate) fn placement_affine(
     length_factor: f64,
     precision: RealPrecision,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<(u32, Affine), ()> {
+) -> Result<(u32, Transform), ()> {
     let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
     let translation_component = |index| {
         record
@@ -2042,20 +2041,20 @@ pub(crate) fn placement_affine(
     } else {
         [x_scale; 3]
     };
-    let translation = Affine::new([
+    let translation = Transform::affine([
         [1.0, 0.0, 0.0, translation_component(2)? * length_factor],
         [0.0, 1.0, 0.0, translation_component(3)? * length_factor],
         [0.0, 0.0, 1.0, translation_component(4)? * length_factor],
     ])
     .ok_or(())?;
-    let scale = Affine::new([
+    let scale = Transform::affine([
         [scales[0], 0.0, 0.0, 0.0],
         [0.0, scales[1], 0.0, 0.0],
         [0.0, 0.0, scales[2], 0.0],
     ])
     .ok_or(())?;
     let directory = if instance.transform == 0 {
-        Affine::identity()
+        Transform::identity()
     } else {
         resolve_transform(
             instance.transform,
@@ -2071,8 +2070,8 @@ pub(crate) fn placement_affine(
     Ok((
         definition,
         directory
-            .compose(translation.compose(scale).ok_or(())?)
-            .ok_or(())?,
+            .compose(translation.compose(scale).map_err(|_| ())?)
+            .map_err(|_| ())?,
     ))
 }
 

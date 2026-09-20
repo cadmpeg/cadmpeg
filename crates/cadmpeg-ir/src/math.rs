@@ -208,5 +208,19 @@ impl Point2 {
     }
 }
 
+/// Reflect a finite parameter about the midpoint of two finite bounds.
+/// The exact sum avoids overflow and cancellation in `start + end - parameter`.
+/// Returns `None` when an input or the reflected result is non-finite.
+pub fn reflect_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
+    if ![parameter, start, end].into_iter().all(f64::is_finite) {
+        return None;
+    }
+    let mut sum = sum::ExactSignedSum::default();
+    sum.add_product(start, 1.0);
+    sum.add_product(end, 1.0);
+    sum.add_product(parameter, -1.0);
+    sum.finish().map_or(Some(0.0), sum::ScaledValue::finite)
+}
+
 #[cfg(test)]
 mod tests;

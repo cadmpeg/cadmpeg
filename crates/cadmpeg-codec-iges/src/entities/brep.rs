@@ -701,7 +701,7 @@ pub(super) fn project(
             &mut BTreeSet::new(),
             ctx,
         ) {
-            Ok(transform) => (entry.transform != 0).then(|| transform.body_transform()),
+            Ok(transform) => (entry.transform != 0).then(|| transform),
             Err(message) => {
                 losses.push(entity_loss(entry, message));
                 continue;

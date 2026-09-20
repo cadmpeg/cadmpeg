@@ -1676,3 +1676,25 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
         "the refusal states both lane counts: {message}"
     );
 }
+
+#[test]
+fn numerical_audit_similarity_orientation_survives_uniform_scale() {
+    for scale in [f64::from_bits(1), 1.0e-110, 1.0, 1.0e110, f64::MAX] {
+        for orientation in [-1.0, 1.0] {
+            let transform = cadmpeg_ir::transform::Transform::affine([
+                [scale * orientation, 0.0, 0.0, 0.0],
+                [0.0, scale, 0.0, 0.0],
+                [0.0, 0.0, scale, 0.0],
+            ])
+            .unwrap();
+            assert_eq!(super::similarity_orientation(transform), Some(orientation));
+        }
+    }
+    let skew = cadmpeg_ir::transform::Transform::affine([
+        [1.0e110, 1.0e110, 0.0, 0.0],
+        [0.0, 1.0e110, 0.0, 0.0],
+        [0.0, 0.0, 1.0e110, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(super::similarity_orientation(skew), None);
+}
