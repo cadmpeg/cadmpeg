@@ -68,7 +68,7 @@ pub(super) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
 /// validation through `patch_geometry` into `patch_framed_geometry`, so they
 /// are bundled rather than threaded positionally.
 #[derive(Clone, Copy)]
-pub(in crate::writer) struct GeometryEdits<'a> {
+pub(super) struct GeometryEdits<'a> {
     pub(in crate::writer) positions: &'a BTreeMap<String, Point3>,
     pub(in crate::writer) lines: &'a BTreeMap<String, (Point3, Vector3)>,
     pub(in crate::writer) conics: &'a BTreeMap<String, (Point3, Vector3, Vector3, f64, f64)>,

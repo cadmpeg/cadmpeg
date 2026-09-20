@@ -155,14 +155,14 @@ impl DesignMeshTextureFile {
     pub(crate) fn archive_entry_name(&self) -> &str {
         &self.archive_entry_name
     }
-    pub(super) fn filename_offset(&self) -> u64 {
+    fn filename_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_texture_filename_prefix::LEN as u64
     }
 }
 
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(in crate::records) struct DesignMeshTextureResourceWire {
+struct DesignMeshTextureResourceWire {
     /// Zero-based position in the serialized flags map.
     ordinal: u32,
     /// Stable resource GUID used as the key in both texture maps.
@@ -257,7 +257,7 @@ impl DesignMeshTextureTable {
     }
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
-    pub(super) fn from_wire(
+    fn from_wire(
         record: DesignMeshRecordIdentity,
         flags_count_offset: u64,
         filename_count_offset: u64,
@@ -318,7 +318,7 @@ impl DesignMeshTextureTable {
         }
         Ok(table)
     }
-    pub(super) fn into_wire(
+    fn into_wire(
         self,
     ) -> (
         DesignMeshRecordIdentity,
@@ -394,16 +394,13 @@ impl DesignMeshSceneBounds {
     }
     // This conversion consumes the input carrier at the typed construction boundary.
     #[allow(clippy::needless_pass_by_value)]
-    pub(super) fn from_wire(
-        wire: DesignMeshSceneBoundsWire,
-        offsets: [u64; 2],
-    ) -> Result<Self, String> {
+    fn from_wire(wire: DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
         if wire.offsets != offsets {
             return Err("scene bounds offsets must match their owning record".into());
         }
         Self::new(wire.maximum, wire.minimum)
     }
-    pub(super) fn into_wire(self, offsets: [u64; 2]) -> DesignMeshSceneBoundsWire {
+    fn into_wire(self, offsets: [u64; 2]) -> DesignMeshSceneBoundsWire {
         DesignMeshSceneBoundsWire {
             maximum: self.maximum(),
             minimum: self.minimum(),
@@ -413,7 +410,7 @@ impl DesignMeshSceneBounds {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(in crate::records) struct DesignMeshSceneBoundsWire {
+struct DesignMeshSceneBoundsWire {
     /// Component-wise upper corner, serialized first.
     maximum: [f64; 3],
     /// Component-wise lower corner, serialized second.
@@ -446,7 +443,7 @@ impl DesignMeshSceneState {
             self.record.byte_offset() + crate::layout::paramesh_scene_state::FOOTER_MASK as u64;
         [start, start + 24]
     }
-    pub(super) fn from_wire(
+    fn from_wire(
         record: DesignMeshRecordIdentity,
         bounds: Option<DesignMeshSceneBoundsWire>,
     ) -> Result<Self, String> {
@@ -457,7 +454,7 @@ impl DesignMeshSceneState {
             .transpose()?;
         Ok(state)
     }
-    pub(super) fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>) {
+    fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>) {
         let bounds = self
             .bounds
             .map(|bounds| bounds.into_wire(self.bounds_offsets()));
@@ -539,13 +536,13 @@ impl DesignMeshSceneNode {
             }),
         }
     }
-    pub(super) fn state_reference_offset(&self) -> u64 {
+    fn state_reference_offset(&self) -> u64 {
         self.byte_offset() + crate::layout::paramesh_scene_node::SCENE_STATE_REFERENCE as u64
     }
-    pub(super) fn auxiliary_reference_offset(&self) -> u64 {
+    fn auxiliary_reference_offset(&self) -> u64 {
         self.byte_offset() + crate::layout::paramesh_scene_node::AUXILIARY_RECORD_REFERENCE as u64
     }
-    pub(super) fn from_wire(
+    fn from_wire(
         record: DesignMeshRecordIdentity,
         bounds: Option<DesignMeshSceneBoundsWire>,
         transform: Option<Located<MeshAffineTransform>>,
@@ -560,7 +557,7 @@ impl DesignMeshSceneNode {
             .transpose()?;
         Ok(node)
     }
-    pub(super) fn into_wire(
+    fn into_wire(
         self,
     ) -> (
         DesignMeshRecordIdentity,
@@ -637,10 +634,10 @@ impl DesignMeshGuid {
     pub(crate) fn value(&self) -> &str {
         self.value.as_str()
     }
-    pub(super) fn value_offset(&self) -> u64 {
+    fn value_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::FUSION_UUID as u64 + 4
     }
-    pub(super) fn entry_reference_offset(&self) -> u64 {
+    fn entry_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_guid_join_prefix::ENTRY_NAME_BACKLINK as u64
     }
@@ -675,10 +672,10 @@ impl DesignMeshEntryName {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub(super) fn name_offset(&self) -> u64 {
+    fn name_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4
     }
-    pub(super) fn guid_reference_offset(&self) -> u64 {
+    fn guid_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_entry_name_prefix::GUID_RECORD_REFERENCE as u64
     }
@@ -707,7 +704,7 @@ impl DesignMeshPlacement {
     pub(crate) fn transform(&self) -> MeshAffineTransform {
         self.transform
     }
-    pub(super) fn transform_offsets(&self) -> [u64; 2] {
+    fn transform_offsets(&self) -> [u64; 2] {
         [
             self.record.byte_offset()
                 + crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM as u64,
@@ -715,27 +712,27 @@ impl DesignMeshPlacement {
                 + crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM as u64,
         ]
     }
-    pub(super) fn scope_reference_offset(&self) -> u64 {
+    fn scope_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE as u64
     }
-    pub(super) fn wrapper_reference_offset(&self) -> u64 {
+    fn wrapper_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE as u64
     }
-    pub(super) fn owner_reference_offset(&self) -> u64 {
+    fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE as u64
     }
-    pub(super) fn guid_reference_offset(&self) -> u64 {
+    fn guid_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE as u64
     }
-    pub(super) fn scene_node_reference_offset(&self) -> u64 {
+    fn scene_node_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE as u64
     }
-    pub(super) fn collection_reference_offset(&self) -> u64 {
+    fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
 }
@@ -1165,10 +1162,10 @@ impl DesignMeshScope {
             frame_length,
         }
     }
-    pub(super) fn owner_record_index(&self) -> u32 {
+    fn owner_record_index(&self) -> u32 {
         self.owner_record_index.get()
     }
-    pub(super) fn owner_reference_offset(&self) -> u64 {
+    fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length()
             - crate::layout::paramesh_feature_scope_base::LEN as u64
             + crate::layout::paramesh_feature_scope_base::SCOPE_OWNER_REFERENCE as u64
@@ -1216,7 +1213,7 @@ impl DesignMeshCollection {
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
-    pub(super) fn base_record(&self) -> DesignMeshRecordIdentity {
+    fn base_record(&self) -> DesignMeshRecordIdentity {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
         DesignMeshRecordIdentity {
             class_tag: self.base_class_tag.clone(),
@@ -1225,18 +1222,18 @@ impl DesignMeshCollection {
             frame_length: self.record.frame_length() - prefix,
         }
     }
-    pub(super) fn body_count(&self) -> u64 {
+    fn body_count(&self) -> u64 {
         (self.record.frame_length()
             - crate::layout::paramesh_mesh_collection_prefix::LEN as u64
             - crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64
             - 11)
             / 11
     }
-    pub(super) fn texture_table_reference_offset(&self) -> u64 {
+    fn texture_table_reference_offset(&self) -> u64 {
         self.record.byte_offset()
             + crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE as u64
     }
-    pub(super) fn owner_reference_offset(&self) -> u64 {
+    fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
     }
 }
@@ -1325,7 +1322,7 @@ impl DesignMeshFeature {
 
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Serialize, Deserialize)]
-pub(super) struct DesignMeshFeatureWire {
+struct DesignMeshFeatureWire {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     id: String,
     /// Typed `Base Mesh Feature` scope record.
@@ -1540,7 +1537,7 @@ impl DesignMeshRecordIdentity {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
-    pub(super) fn frame_length(&self) -> u64 {
+    fn frame_length(&self) -> u64 {
         self.frame_length
     }
 }
@@ -1593,7 +1590,7 @@ impl<const LENGTH: u64> DesignMeshFixedRecord<LENGTH> {
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index.get()
     }
-    pub(super) fn byte_offset(&self) -> u64 {
+    fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
 }
@@ -1622,3 +1619,6 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

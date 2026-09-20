@@ -1492,10 +1492,6 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
     }
 }
 
-mod act_layouts;
-
-mod sketch_relation_wire;
-
 #[test]
 fn empty_reference_runs_have_one_representation() {
     use crate::records::identity::{Located, ReferenceRun};
@@ -1881,8 +1877,6 @@ fn body_binding_wire_rejects_invalid_pair_frames() {
 mod act_entities;
 
 mod native_ids;
-
-mod annotation_frames;
 
 mod persistent_text;
 

@@ -513,7 +513,7 @@ impl SketchRelation {
     }
 
     /// Return the unchecked payload for a checked edit.
-    pub(super) fn into_draft(self) -> SketchRelationDraft {
+    fn into_draft(self) -> SketchRelationDraft {
         SketchRelationDraft {
             id: self.id,
             record_index: self.record_index,
@@ -1095,3 +1095,6 @@ pub(crate) struct SketchPatternDirection {
     /// Record index of the distance parameter value record.
     pub(crate) distance_parameter: u32,
 }
+
+#[cfg(test)]
+mod tests;

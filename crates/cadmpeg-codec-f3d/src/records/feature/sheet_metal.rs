@@ -277,7 +277,7 @@ impl DesignRecipeGroupIndex {
     pub(crate) fn get(self) -> u32 {
         self.0
     }
-    pub(super) fn operand(self) -> u32 {
+    fn operand(self) -> u32 {
         self.0 + 3
     }
 }
@@ -744,3 +744,6 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

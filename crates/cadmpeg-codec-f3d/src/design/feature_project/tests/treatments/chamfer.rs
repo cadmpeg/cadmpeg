@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Chamfer projection: the edge groups the source states and the parameter
 //! lanes they pair with.
-use super::treatments::{
-    localized_fillet_group, localized_fillet_owner, localized_fillet_parameter,
-};
+use super::{localized_fillet_group, localized_fillet_owner, localized_fillet_parameter};
 use crate::design::feature_project::project_parameter_design;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_ir::features::FeatureDefinition;

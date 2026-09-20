@@ -682,7 +682,7 @@ impl ActRegistryChannel {
     pub(crate) fn name(&self) -> &str {
         &self.name
     }
-    pub(super) fn name_offset(&self) -> u64 {
+    fn name_offset(&self) -> u64 {
         self.byte_offset + 4
     }
     pub(crate) fn guid_offset(&self) -> u64 {
@@ -972,7 +972,7 @@ impl ActRootLayout {
     pub(crate) fn display_name(&self) -> &str {
         &self.display_name
     }
-    pub(super) fn record_index_offset(&self) -> u64 {
+    fn record_index_offset(&self) -> u64 {
         self.byte_offset + 7
     }
     pub(crate) fn instance_root_record_offset(&self) -> u64 {
@@ -981,7 +981,7 @@ impl ActRootLayout {
     pub(crate) fn entity_id_offset(&self) -> u64 {
         self.byte_offset + 36
     }
-    pub(super) fn tracked_entity_record_offset(&self) -> u64 {
+    fn tracked_entity_record_offset(&self) -> u64 {
         self.entity_id_offset() + self.entity_id.encode_utf16().count() as u64 * 2 + 1
     }
     pub(crate) fn registry_flag_offset(&self) -> u64 {
@@ -997,3 +997,6 @@ impl ActRootLayout {
             + 1
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -136,7 +136,7 @@ enum DesignThreadFormWire {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct DesignThreadConstructionWire {
+struct DesignThreadConstructionWire {
     /// Standard, compact, or class-specific legacy construction form.
     form: DesignThreadFormWire,
     /// Byte offset of the designation LP-UTF16 field.
@@ -255,3 +255,6 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

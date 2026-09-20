@@ -194,7 +194,7 @@ impl DesignDecalImage {
 
 /// Exact image and target binding owned by one Design `Decal` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignDecalImageWire {
+struct DesignDecalImageWire {
     /// Globally unique deterministic identifier for this native binding.
     id: String,
     /// Decal scope record index.
@@ -356,3 +356,6 @@ pub(crate) struct DesignRecordHeader {
     /// Byte offset of this header within its Design `BulkStream`.
     pub(crate) byte_offset: u64,
 }
+
+#[cfg(test)]
+mod tests;
