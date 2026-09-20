@@ -21,7 +21,7 @@ use crate::nurbs::reader::{
     Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{
-    find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span, SubtypeTables,
+    find_owned_intcurve_subtype, find_owned_subtype_marker, subtype_span,
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
@@ -617,17 +617,10 @@ pub fn procedural_curve_resolving_refs(
 /// surfaces. A plain generated `intcurve` has one direct UV block, which is
 /// the second slot in the ref-form grammar. The selector's sign is handled by
 /// the owning PCURVE decoder because it composes with the intcurve sense bit.
-pub fn pcurve_for_selector_resolving_refs(
-    toks: &[Token],
-    selector: i64,
-    table: &SubtypeTable,
-) -> Option<PcurveNurbs> {
-    pcurve_for_selector_with_chart(toks, selector, table).map(|(pcurve, _)| pcurve)
-}
-
-/// Decode a selector pcurve and report whether it remains in the standalone
-/// face surface's native parameter chart.
-pub(crate) fn pcurve_for_selector_with_chart(
+///
+/// Returns whether the pcurve remains in the standalone face surface's
+/// native parameter chart.
+pub fn pcurve_for_selector_with_chart(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
@@ -1507,8 +1500,8 @@ pub fn rolling_ball_patch_layout(
     let radii = (|| {
         let mut position = payload_start;
         take_tagged_int(span, &mut position, 0x04, int_width)?;
-        decode_rolling_ball_side(span, &mut position, int_width, None)?;
-        decode_rolling_ball_side(span, &mut position, int_width, None)?;
+        decode_rolling_ball_side(span, &mut position, int_width)?;
+        decode_rolling_ball_side(span, &mut position, int_width)?;
         position = decode_curve_block(span, position, int_width)?.end();
         Some([
             start + take_double_payload(span, &mut position)?,
@@ -1917,11 +1910,7 @@ fn embedded_surface_curve(toks: &[Token], table: &SubtypeTable) -> Option<Embedd
 /// whole domain in the other is decoded: that restriction is exactly a NURBS
 /// curve of the support's degree over the support's knot vector. Any other
 /// pcurve denotes a curve a NURBS cache can only approximate, so it is refused.
-pub fn decode_par_int_cur_isoline(
-    scope: &[u8],
-    int_width: RefWidth,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<NurbsCurve> {
+pub fn decode_par_int_cur_isoline(scope: &[u8], int_width: RefWidth) -> Option<NurbsCurve> {
     let names: [&[u8]; 2] = [b"par_int_cur", b"parcur"];
     let (start, name) = find_owned_subtype_marker(scope, &names, int_width)?;
     let mut position = start + name.len() + 3;
@@ -1931,10 +1920,10 @@ pub fn decode_par_int_cur_isoline(
     take_range_value(scope, &mut position)?;
     take_tagged_int(scope, &mut position, 0x15, int_width)?;
     let supports = [
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width)?
             .value()
             .map(|support| support.surface),
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width)?
             .value()
             .map(|support| support.surface),
     ];

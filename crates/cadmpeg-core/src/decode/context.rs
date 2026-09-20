@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode state, decompression limits, and session lifecycle.
 
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::io::SeekFrom;
 
 use crate::{CodecError, ReadSeek};
 
 use super::arena::DecodeArena;
 use super::budget::{alloc_filled, DecodeBudget, DepthGuard, ScopedReservation, WorkBudget};
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
+use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
-use super::space::{
-    resolve_address, ByteRange, ResolvedAddress, SpaceDerivation, SpaceDescriptor, SpaceId,
-};
+use super::space::{ByteRange, SpaceId};
 use super::view::View;
 
 #[derive(Clone, Copy)]
@@ -32,7 +30,7 @@ pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     container_only: bool,
     budget: DecodeBudget,
-    spaces: RefCell<Vec<SpaceDescriptor>>,
+    next_space: Cell<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -143,10 +141,7 @@ impl<'a> DecodeContext<'a> {
             arena,
             container_only,
             budget: DecodeBudget::new(*policy, length),
-            spaces: RefCell::new(vec![SpaceDescriptor {
-                label: "root".into(),
-                derivation: SpaceDerivation::Root,
-            }]),
+            next_space: Cell::new(1),
         };
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
@@ -176,16 +171,18 @@ impl<'a> DecodeContext<'a> {
             .min(proportional)
     }
 
-    fn allocate_space(&self, label: String, derivation: SpaceDerivation) -> SpaceId {
-        let mut spaces = self.spaces.borrow_mut();
-        let id = SpaceId::from_index(spaces.len());
-        spaces.push(SpaceDescriptor { label, derivation });
-        id
-    }
-
-    /// Resolves a session-local location into an owned root-to-leaf address.
-    pub fn resolve_location(&self, location: SourceLocation) -> ResolvedAddress {
-        resolve_address(&self.spaces.borrow(), location)
+    fn allocate_space(&self) -> Result<SpaceId, CodecError> {
+        let index = self.next_space.get();
+        let next = index.checked_add(1).ok_or_else(|| {
+            // Root owns zero; the remaining allocatable IDs count derived spaces.
+            self.refuse_codec_limit(
+                "decode address spaces",
+                (usize::MAX - 1) as u64,
+                index as u64,
+            )
+        })?;
+        self.next_space.set(next);
+        Ok(SpaceId::from_index(index))
     }
 
     /// Records a permanent fuse and returns the resource error to propagate.
@@ -329,30 +326,7 @@ impl<'a> DecodeContext<'a> {
 
     /// Begins an expansion whose output is charged incrementally and becomes
     /// available only after successful finalization.
-    pub fn begin_expand(
-        &self,
-        source: View<'_>,
-        spec: ExpandSpec,
-    ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
-        self.begin_expansion(source, spec, None)
-    }
-
-    /// Begins a labeled expansion so the derived space resolves to `label`.
-    pub fn begin_expand_as(
-        &self,
-        source: View<'_>,
-        spec: ExpandSpec,
-        label: impl Into<String>,
-    ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
-        self.begin_expansion(source, spec, Some(label.into()))
-    }
-
-    fn begin_expansion(
-        &self,
-        source: View<'_>,
-        spec: ExpandSpec,
-        member: Option<String>,
-    ) -> Result<ExpandWriter<'_, 'a>, CodecError> {
+    pub fn begin_expand(&self, spec: ExpandSpec) -> Result<ExpandWriter<'_, 'a>, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -402,9 +376,6 @@ impl<'a> DecodeContext<'a> {
         Ok(ExpandWriter {
             ctx: self,
             spec,
-            location: source.location(),
-            member,
-            source_end: source.end() as u64,
             buffer,
         })
     }
@@ -414,9 +385,11 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let (first, additional) = inputs
-            .split_first()
-            .ok_or_else(|| CodecError::Malformed("cannot concatenate an empty view list".into()))?;
+        if inputs.is_empty() {
+            return Err(CodecError::Malformed(
+                "cannot concatenate an empty view list".into(),
+            ));
+        }
         let total = inputs.iter().try_fold(0usize, |total, view| {
             total.checked_add(view.window().len()).ok_or_else(|| {
                 self.budget.refuse(
@@ -446,11 +419,7 @@ impl<'a> DecodeContext<'a> {
         }
         let bytes = self.arena.alloc(buffer.into_boxed_slice());
         reservation.commit()?;
-        let derivation = SpaceDerivation::Concatenated {
-            first_parent: first.space(),
-            additional_parents: additional.iter().map(|view| view.space()).collect(),
-        };
-        let space = self.allocate_space("concat".into(), derivation);
+        let space = self.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }
 
@@ -469,25 +438,6 @@ impl<'a> DecodeContext<'a> {
         parent: View<'v>,
         range: ByteRange,
     ) -> Result<View<'v>, CodecError> {
-        self.register_child_slice(parent, range, None)
-    }
-
-    /// Registers a labeled stored child range so the space resolves to `label`.
-    pub fn register_slice_as<'v>(
-        &self,
-        parent: View<'v>,
-        range: ByteRange,
-        label: impl Into<String>,
-    ) -> Result<View<'v>, CodecError> {
-        self.register_child_slice(parent, range, Some(label.into()))
-    }
-
-    fn register_child_slice<'v>(
-        &self,
-        parent: View<'v>,
-        range: ByteRange,
-        member: Option<String>,
-    ) -> Result<View<'v>, CodecError> {
         if let Some(limit) = self.budget.fused() {
             return Err(CodecError::ResourceLimit(limit));
         }
@@ -504,14 +454,7 @@ impl<'a> DecodeContext<'a> {
                     parent.space().index()
                 ))
             })?;
-        let space = self.allocate_space(
-            member.clone().unwrap_or_else(|| "stored".into()),
-            SpaceDerivation::StoredSlice {
-                member,
-                parent: parent.space(),
-                range,
-            },
-        );
+        let space = self.allocate_space()?;
         Ok(View::over_space(child.window(), space))
     }
 
@@ -553,9 +496,6 @@ pub enum ExpandSpec {
 pub struct ExpandWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
     spec: ExpandSpec,
-    location: SourceLocation,
-    member: Option<String>,
-    source_end: u64,
     buffer: Vec<u8>,
 }
 
@@ -605,22 +545,41 @@ impl<'a> ExpandWriter<'_, 'a> {
             }
         }
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let space = self.ctx.allocate_space(
-            self.member.clone().unwrap_or_else(|| "expanded".into()),
-            SpaceDerivation::Expanded {
-                member: self.member,
-                parent: self.location.space,
-                source_range: ByteRange {
-                    start: self.location.offset,
-                    end: self.source_end,
-                },
-            },
-        );
+        let space = self.ctx.allocate_space()?;
         Ok(View::over_space(bytes, space))
     }
 
     /// Returns how many bytes have been written so far.
     pub fn written(&self) -> u64 {
         self.buffer.len() as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+
+    #[test]
+    fn exhausted_space_ids_refuse_registration_without_reusing_an_id() {
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::default())
+            .expect("test input fits the policy");
+        ctx.next_space.set(usize::MAX - 1);
+        let range = ByteRange { start: 0, end: 1 };
+        let view = ctx
+            .register_slice(root, range)
+            .expect("last allocatable id");
+        assert_eq!(view.space().index(), usize::MAX - 1);
+        let error = ctx
+            .register_slice(root, range)
+            .expect_err("space IDs are exhausted");
+        let crate::CodecError::ResourceLimit(limit) = error else {
+            panic!("exhausted IDs return a resource refusal");
+        };
+        assert_eq!(limit.limit, (usize::MAX - 1) as u64);
+        assert_eq!(limit.used, (usize::MAX - 1) as u64);
+        assert_eq!(limit.additional, 1);
+        assert!(ctx.register_slice(root, range).is_err());
+        assert!(ctx.finish_session().is_err());
     }
 }

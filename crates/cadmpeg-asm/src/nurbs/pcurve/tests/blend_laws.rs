@@ -17,8 +17,7 @@ use crate::nurbs::pcurve::tests::variable_blend_side;
 use crate::nurbs::proc_curve::rolling_ball_patch_layout;
 use crate::nurbs::proc_surface::DecodedProceduralSurfaceDefinition;
 use crate::nurbs::proc_surface::EmbeddedLawExpression;
-use crate::nurbs::subtypes::SubtypeTables;
-use crate::nurbs::toks::lex_test_span;
+use crate::nurbs::toks::{lex_test_span, test_table, Cur};
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::RollingBallSupportCurve;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -56,7 +55,7 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
             for expected in [None, Some(0), Some(3)] {
                 let bytes = variable_blend_side(int_width, name, expected);
                 let mut position = 0;
-                let side = decode_rolling_ball_side(&bytes, &mut position, int_width, None)
+                let side = decode_rolling_ball_side(&bytes, &mut position, int_width)
                     .unwrap_or_else(|| {
                         panic!(
                             "variable-blend support side {name} width {int_width} extension {expected:?}"
@@ -369,7 +368,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         push_f64(&mut straight, 3.0);
         let mut position = 0;
         assert!(
-            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width, None),
+            matches!(decode_rolling_ball_curve(&straight, &mut position, int_width),
                             Some(RollingBallSupportCurve {
                                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
                                 parameter_range: [Some(-2.0), Some(3.0)],
@@ -393,7 +392,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         intcurve.extend_from_slice(&[0x0b, 0x0b]);
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
+            decode_rolling_ball_curve(&intcurve, &mut position, int_width),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
@@ -413,26 +412,22 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         reference.push(0x10);
         reference.push(0x10);
         active.extend_from_slice(&reference);
-        let tables = SubtypeTables::from_stream(&active);
+        let table = test_table(&active, int_width).expect("framed active definitions");
         let mut intcurve = Vec::new();
         push_ident(&mut intcurve, "intcurve");
         intcurve.push(0x0b);
         intcurve.extend_from_slice(&reference);
         intcurve.extend_from_slice(&[0x0b, 0x0b]);
-        let mut position = 0;
+        let tokens = lex_test_span(&intcurve, int_width).expect("framed intcurve reference");
+        let mut cur = Cur::at(&tokens, 0);
         assert!(matches!(
-            decode_rolling_ball_curve(
-                &intcurve,
-                &mut position,
-                int_width,
-                Some((&active, &tables)),
-            ),
+            crate::nurbs::blend::rolling_ball_curve(&mut cur, Some(&table)),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],
         }) if curve.degree() == 1
         ));
-        assert_eq!(position, intcurve.len());
+        assert_eq!(cur.pos(), tokens.len());
     }
 }
 
@@ -452,7 +447,7 @@ fn rolling_ball_surfaces_decode_framed_spline_supports() {
         }
         let mut position = 0;
         assert!(matches!(
-            decode_rolling_ball_surface(&bytes, &mut position, int_width, None),
+            decode_rolling_ball_surface(&bytes, &mut position, int_width),
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                 [[Some(-1.0), Some(2.0)], [Some(-3.0), Some(4.0)]],

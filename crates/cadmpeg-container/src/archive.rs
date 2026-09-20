@@ -223,7 +223,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 Self::open_expanded(
                     ctx,
                     entry,
-                    source,
                     flate2::read::DeflateDecoder::new(source.window()),
                 )
             }
@@ -236,7 +235,7 @@ impl<'a> ArchiveSnapshot<'a> {
                             entry.name
                         ))
                     })?;
-                Self::open_expanded(ctx, entry, source, decoder)
+                Self::open_expanded(ctx, entry, decoder)
             }
         }
     }
@@ -264,7 +263,7 @@ impl<'a> ArchiveSnapshot<'a> {
         entry: &EntryRecord,
         range: ByteRange,
     ) -> Result<View<'a>, CodecError> {
-        let view = ctx.register_slice_as(self.root, range, entry.name.clone())?;
+        let view = ctx.register_slice(self.root, range)?;
         if view.window().len() as u64 != entry.uncompressed_size {
             return Err(CodecError::malformed(format_args!(
                 "stored size mismatch for {}",
@@ -283,14 +282,9 @@ impl<'a> ArchiveSnapshot<'a> {
     fn open_expanded(
         ctx: &DecodeContext<'a>,
         entry: &EntryRecord,
-        source: View<'a>,
         mut decoder: impl Read,
     ) -> Result<View<'a>, CodecError> {
-        let mut writer = ctx.begin_expand_as(
-            source,
-            ExpandSpec::Exact(entry.uncompressed_size),
-            entry.name.clone(),
-        )?;
+        let mut writer = ctx.begin_expand(ExpandSpec::Exact(entry.uncompressed_size))?;
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = decoder.read(&mut chunk).map_err(|error| {
@@ -994,46 +988,7 @@ mod tests {
     }
 
     #[test]
-    fn labeled_deflate_member_resolves_for_inspect() {
-        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        archive
-            .start_file(
-                "GuiDocument.xml",
-                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
-            )
-            .expect("GuiDocument entry starts");
-        archive
-            .write_all(b"<GuiDocument SchemaVersion=\"1\"/>")
-            .expect("GuiDocument entry writes");
-        let zip_bytes = archive.finish().expect("archive finishes").into_inner();
-
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&zip_bytes, &arena, &DecodePolicy::default())
-                .expect("archive fits root policy");
-        let archive = ArchiveSnapshot::new(root).expect("archive snapshots");
-        let entry = archive.entry("GuiDocument.xml").expect("member present");
-        let view = archive
-            .open(&ctx, &entry.name)
-            .expect("GuiDocument member opens");
-        let address = ctx.resolve_location(view.location_at(5));
-        assert!(
-            address.path().ends_with("GuiDocument.xml@5"),
-            "path={}",
-            address.path()
-        );
-        let commands = address.inspect_commands("part.FCStd");
-        assert_eq!(
-            commands[0],
-            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'"
-        );
-        assert_eq!(
-            commands[1],
-            "cadmpeg inspect hex --offset 5 --len 64 -- 'part.FCStd.member'"
-        );
-    }
-    #[test]
-    fn nested_archive_addresses_replay_both_members() {
+    fn nested_archive_members_keep_distinct_address_spaces() {
         let mut inner = zip::ZipWriter::new(Cursor::new(Vec::new()));
         inner
             .start_file("Data/payload bytes.bin", SimpleFileOptions::default())
@@ -1062,11 +1017,8 @@ mod tests {
             .open(&ctx, "Data/payload bytes.bin")
             .expect("nested archive fixture");
         assert_eq!(payload.window(), b"payload bytes");
-        let address = ctx.resolve_location(payload.location_at(7));
-        assert_eq!(address.inspect_commands("project part.FCStd"), [
-            "cadmpeg inspect extract --force --output='project part.FCStd.member' -- 'project part.FCStd' 'Assets/inner archive.zip'",
-            "cadmpeg inspect extract --force --output='project part.FCStd.member.member' -- 'project part.FCStd.member' 'Data/payload bytes.bin'",
-            "cadmpeg inspect hex --offset 7 --len 64 -- 'project part.FCStd.member.member'",
-        ]);
+        assert_ne!(root.location().space, inner_view.location().space);
+        assert_ne!(inner_view.location().space, payload.location().space);
+        assert_eq!(payload.location_at(7).offset, 7);
     }
 }
