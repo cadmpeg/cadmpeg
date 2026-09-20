@@ -110,3 +110,133 @@ fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
     let wrapped = periodic_parameter(&knots, 1, 2, true, 1.0e308).unwrap();
     assert!(wrapped.is_finite() && (knots[1]..=knots[2]).contains(&wrapped));
 }
+
+#[test]
+fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
+    use super::super::*;
+    let transform = Transform::affine([
+        [1e308, -1e308, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
+        basis: Box::new(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(2.0, 2.0, 3.0),
+            )
+            .unwrap(),
+        )),
+        transform,
+    });
+    assert_eq!(curve_point(&curve, 1.0), Some(Point3::new(3.0, 2.0, 3.0)));
+    assert_eq!(
+        curve_tangent(&curve, 1.0),
+        Some(Vector3::new(3.0, 2.0, 3.0))
+    );
+    for a in [1e-200, 1.0, 1e200] {
+        let reflection =
+            Transform::affine([[-a, 0.0, 0.0, 0.0], [0.0, a, 0.0, 0.0], [0.0, 0.0, a, 0.0]])
+                .unwrap();
+        assert_eq!(reflection.orientation(), Some(-1.0));
+    }
+}
+
+#[test]
+fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
+    use super::super::*;
+    let result = nurbs_pcurve_differential(
+        1,
+        &[0.0, 0.0, 1.0, 1.0],
+        &[Point2::new(1e200, 0.0), Point2::new(2e200, 0.0)],
+        Some(&[1e200, 1e200]),
+        0.5,
+    )
+    .unwrap();
+    assert!((result.point.u / 1e200 - 1.5).abs() <= 8.0 * f64::EPSILON);
+    assert!((result.tangent.unwrap().u / 1e200 - 1.0).abs() <= 8.0 * f64::EPSILON);
+    assert_eq!(result.acceleration, Some(Point2::new(0.0, 0.0)));
+}
+
+#[test]
+fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
+    use super::super::*;
+    use crate::geometry::pcurve::{PolarHarmonicPcurve, SphericalGreatCirclePcurve};
+    for radius in [1e-200, 1.0, 1e200] {
+        let curve = PcurveGeometry::PolarHarmonic(
+            PolarHarmonicPcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(radius, 0.0),
+                Point2::new(0.0, radius),
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap(),
+        );
+        let result = pcurve_uv_differential_inner(&curve, 0.5, 0).unwrap();
+        assert!((result.point.u - 0.5).abs() <= 8.0 * f64::EPSILON);
+        assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
+    }
+    let curve = PcurveGeometry::SphericalGreatCircle(
+        SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
+    );
+    let result = pcurve_uv_differential_inner(&curve, 0.5, 0).unwrap();
+    let (sin, cos) = 0.5_f64.sin_cos();
+    let expected_first = -sin / (1e200 * cos * cos);
+    let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
+    assert!((result.tangent.unwrap().v / expected_first - 1.0).abs() <= 16.0 * f64::EPSILON);
+    assert!((result.acceleration.unwrap().v / expected_second - 1.0).abs() <= 16.0 * f64::EPSILON);
+}
+
+#[test]
+fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
+    use super::super::*;
+    for (operator, x, derivative, expected) in [
+        ("LN", 1e-310, 1e-310, 1.0),
+        ("COT", 1e-200, 1e-200, -1e200),
+        ("CSC", 1e-200, 1e-200, -1e200),
+        ("ARCSECH", 1e-310, 1e-310, -1.0),
+        (
+            "EXP",
+            -750.0,
+            1e300,
+            (-375.0_f64).exp() * ((-375.0_f64).exp() * 1e300),
+        ),
+    ] {
+        let result = scalar_unary_sweep_law_differential(
+            operator,
+            ScalarSweepDifferential {
+                value: x,
+                derivative,
+            },
+        )
+        .unwrap();
+        assert!(
+            (result.derivative / expected - 1.0).abs() <= 16.0 * f64::EPSILON,
+            "{operator}"
+        );
+    }
+}
+
+#[test]
+fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
+    use super::super::*;
+    assert_eq!(
+        polyline_point(
+            &[Point3::new(-1e308, 0.0, 0.0), Point3::new(1e308, 0.0, 0.0)],
+            &[0.0, 1.0],
+            0.5
+        ),
+        Some(Point3::new(0.0, 0.0, 0.0))
+    );
+    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    assert_eq!(
+        polyline_point(&points, &[-1e308, 1e308], 0.0),
+        Some(Point3::new(0.5, 0.0, 0.0))
+    );
+    let tangent = polyline_tangent(&points, &[-1e308, 1e308], 0.0).unwrap();
+    assert!((tangent.x / 5e-309 - 1.0).abs() <= 8.0 * f64::EPSILON);
+}
