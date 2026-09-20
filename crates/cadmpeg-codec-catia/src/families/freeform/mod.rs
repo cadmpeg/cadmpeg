@@ -2702,26 +2702,58 @@ fn solve_planar_chart_rechart(
     // Two-dimensional orthogonal Procrustes. `dot` and `cross` accumulate the
     // rotation's cosine and sine lanes; the reflected solution swaps the sign
     // of the image's second chart coordinate.
-    // Scale each chart before centering: both covariance products and differences
-    // then stay finite, while the recovered rigid map uses the original units.
-    let chart_scale =
-        |values: &[[f64; 2]]| values.iter().flatten().fold(0.0_f64, |a, b| a.max(b.abs()));
-    let stored_scale = chart_scale(sites);
-    let image_scale = chart_scale(&images);
-    if stored_scale == 0.0 || image_scale == 0.0 {
-        return None;
-    }
+    let centered = |values: &[[f64; 2]], center: [f64; 2]| -> Option<Vec<[f64; 2]>> {
+        if values
+            .iter()
+            .flatten()
+            .chain(&center)
+            .any(|value| !value.is_finite())
+        {
+            return None;
+        }
+        let mut offsets = values
+            .iter()
+            .map(|value| [value[0] - center[0], value[1] - center[1]])
+            .collect::<Vec<_>>();
+        let mut scale = offsets
+            .iter()
+            .flatten()
+            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+        if !scale.is_finite() {
+            let frame = values
+                .iter()
+                .flatten()
+                .chain(&center)
+                .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+            offsets = values
+                .iter()
+                .map(|value| {
+                    [
+                        value[0] / frame - center[0] / frame,
+                        value[1] / frame - center[1] / frame,
+                    ]
+                })
+                .collect();
+            scale = offsets
+                .iter()
+                .flatten()
+                .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+        }
+        if scale == 0.0 {
+            return None;
+        }
+        Some(
+            offsets
+                .into_iter()
+                .map(|value| [value[0] / scale, value[1] / scale])
+                .collect(),
+        )
+    };
+    let stored_offsets = centered(sites, stored_center)?;
+    let image_offsets = centered(&images, image_center)?;
     let (mut dot, mut cross) = (0.0, 0.0);
     let (mut reflected_dot, mut reflected_cross) = (0.0, 0.0);
-    for (stored, image) in sites.iter().zip(&images) {
-        let [su, sv] = [
-            stored[0] / stored_scale - stored_center[0] / stored_scale,
-            stored[1] / stored_scale - stored_center[1] / stored_scale,
-        ];
-        let [iu, iv] = [
-            image[0] / image_scale - image_center[0] / image_scale,
-            image[1] / image_scale - image_center[1] / image_scale,
-        ];
+    for ([su, sv], [iu, iv]) in stored_offsets.into_iter().zip(image_offsets) {
         dot += su * iu + sv * iv;
         cross += su * iv - sv * iu;
         reflected_dot += su * iu - sv * iv;
@@ -4297,8 +4329,13 @@ mod tests {
             )
             .unwrap(),
         ));
-        for a in [1., 1e200] {
-            let sites = [[a, 0.], [0., a], [-a, 0.], [0., -a]];
+        for (a, origin) in [(1., 0.), (1e200, 0.), (1., 1e10)] {
+            let sites = [
+                [origin + a, origin],
+                [origin, origin + a],
+                [origin - a, origin],
+                [origin, origin - a],
+            ];
             let loci = sites.map(|p| Point3::new(p[0], p[1], 0.));
             let chart = super::solve_planar_chart_rechart(&sites, &loci, &target).unwrap();
             for point in sites {

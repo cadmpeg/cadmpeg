@@ -99,7 +99,10 @@ pub(in crate::decode) fn intersect_section_line_arc(
         start.u + parameter * (end.u - start.u),
         start.v + parameter * (end.v - start.v),
     ];
-    point.iter().all(|value| value.is_finite()).then_some(point)
+    let radial = (point[0] - center.u).hypot(point[1] - center.v);
+    (point.iter().all(|value| value.is_finite())
+        && (radial - radius.get()).abs() <= EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get())
+    .then_some(point)
 }
 
 pub(in crate::decode) fn intersect_tangent_section_arcs(
@@ -145,7 +148,14 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
         first_center.u + (offset * (delta[0] / distance)) * scale,
         first_center.v + (offset * (delta[1] / distance)) * scale,
     ];
-    point.iter().all(|value| value.is_finite()).then_some(point)
+    let on_circle = |center: &Point2, radius: f64| {
+        ((point[0] - center.u).hypot(point[1] - center.v) - radius).abs()
+            <= EPS_HEIGHT_RESIDUAL * radius
+    };
+    (point.iter().all(|value| value.is_finite())
+        && on_circle(first_center, first_radius.get())
+        && on_circle(second_center, second_radius.get()))
+    .then_some(point)
 }
 
 fn intersect_section_carriers(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
@@ -847,6 +857,14 @@ mod tests {
             .try_into()
             .unwrap()
         };
+        assert_eq!(
+            super::intersect_section_line_arc(&line([-1e200, 1.], [1e200, 1.]), &arc(0., 1e-6)),
+            None
+        );
+        assert_eq!(
+            super::intersect_tangent_section_arcs(&arc(0., 1e-6), &arc(1e200, 1e200)),
+            None
+        );
         let r = 1e-6;
         assert_eq!(
             super::intersect_section_line_arc(&line([-r, 2. * r], [r, 2. * r]), &arc(0., r)),

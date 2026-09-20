@@ -8109,6 +8109,28 @@ pub(super) fn feature_parameter_uses(
         .collect()
 }
 
+fn visit_feature_history_sections(
+    container: &Container,
+    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64),
+) {
+    let sections = container.om_sections();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span()
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.location.section_offset()
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        visit(section, &section_key, entry_offset);
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -8159,25 +8181,3 @@ cadmpeg_core::named_optional_field!(
     "witness_source_offset"
 );
 cadmpeg_core::named_optional_field!(deserialize_operand_data_block, String, "operand_data_block");
-
-fn visit_feature_history_sections(
-    container: &Container,
-    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64),
-) {
-    let sections = container.om_sections();
-    for (section_ordinal, link) in feature_history_sections(container) {
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry
-                .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
-                })
-                == link.location.section_offset()
-        }) else {
-            continue;
-        };
-        let section_key = format!("{section_ordinal:010}");
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        visit(section, &section_key, entry_offset);
-    }
-}

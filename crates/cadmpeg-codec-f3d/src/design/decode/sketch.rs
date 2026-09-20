@@ -3996,9 +3996,6 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
     })
 }
 
-#[cfg(test)]
-mod tests;
-
 fn decode_sketch_streams<T>(
     scan: &ContainerScan,
     decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
@@ -4017,3 +4014,6 @@ fn decode_sketch_streams<T>(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests;

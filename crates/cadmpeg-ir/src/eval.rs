@@ -4959,7 +4959,13 @@ fn scalar_unary_sweep_law_differential(
                         return None;
                     }
                     denominator.add_product(x.abs(), x.hypot(1.0));
-                    ((1.0 / x).asinh(), -1.0)
+                    let inverse = 1.0 / x;
+                    let value = if inverse.is_finite() {
+                        inverse.asinh()
+                    } else {
+                        (std::f64::consts::LN_2 - x.abs().ln()).copysign(x)
+                    };
+                    (value, -1.0)
                 }
             };
             let derivative = match crate::math::sum::scaled_finite(operand.derivative) {
