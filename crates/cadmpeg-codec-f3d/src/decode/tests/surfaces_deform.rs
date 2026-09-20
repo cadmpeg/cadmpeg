@@ -1136,7 +1136,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
 
     let form = native.cache.form().expect("revision form");
     assert_eq!(form.revision, 23100);
-    assert_eq!(form.cache.selector(), 2);
+    assert!(form.cache.parameterization().is_some());
     assert_eq!(
         form.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
@@ -1178,7 +1178,13 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
         panic!("expected round-tripped cacheless native revision sweep")
     };
 
-    assert_eq!(native.cache.form().unwrap().cache.selector(), 2);
+    assert!(native
+        .cache
+        .form()
+        .unwrap()
+        .cache
+        .parameterization()
+        .is_some());
     assert_eq!(
         native.cache.form().unwrap().cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())

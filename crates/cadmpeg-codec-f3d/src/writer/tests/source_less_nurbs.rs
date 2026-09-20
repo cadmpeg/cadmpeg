@@ -325,7 +325,18 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.set_parameter_range([-2.0, 3.0]).unwrap();
+    {
+        let replacement = [-2.0, 3.0];
+        cadmpeg_test_support::edit::replace(inline, |previous| {
+            cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
+                previous.wrapper_reversed,
+                previous.native_tail_flags,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1059,7 +1070,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     };
     assert_eq!(form.revision, 23100);
     assert_eq!(form.flags, [true]);
-    assert_eq!(form.cache.selector(), 0);
+    assert!(!form.cache.parameterization().is_some());
     assert_eq!(form.cache.parameterization(), None);
     assert_eq!(
         form.discontinuities,
@@ -1149,7 +1160,7 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    assert_eq!(form.cache.selector(), 2);
+    assert!(form.cache.parameterization().is_some());
     assert_eq!(
         form.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())

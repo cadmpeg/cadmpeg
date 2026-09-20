@@ -1219,37 +1219,6 @@ impl PolarNurbsPoles {
             Self::Rational { poles } => Some(poles.iter().map(|pole| pole.weight.get()).collect()),
         }
     }
-
-    /// Reverse the pole order.
-    pub fn reverse(&mut self) {
-        match self {
-            Self::Polynomial { poles } => poles.reverse(),
-            Self::Rational { poles } => poles.reverse(),
-        }
-    }
-
-    /// Edit every pole in place, keeping every accepted edit.
-    ///
-    /// A refusal leaves the lane partly edited, so the caller owns the copy
-    /// that states the prior poles.
-    fn apply_poles(
-        &mut self,
-        mut edit: impl FnMut(&mut Point2, &mut f64) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        match self {
-            Self::Polynomial { poles } => {
-                for pole in poles.iter_mut() {
-                    edit(&mut pole.radial, &mut pole.axial)?;
-                }
-            }
-            Self::Rational { poles } => {
-                for pole in poles.iter_mut() {
-                    edit(&mut pole.radial, &mut pole.axial)?;
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 impl PolarPcurveNurbs {
@@ -1297,15 +1266,6 @@ impl PolarPcurveNurbs {
         &self.knots
     }
 
-    /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
-        Ok(())
-    }
-
     /// Build a polar NURBS from a source's pole and weight lanes.
     pub fn from_lanes(
         degree: u32,
@@ -1323,52 +1283,14 @@ impl PolarPcurveNurbs {
         self.poles.poles()
     }
 
-    /// Atomically edit paired poles and preserve finite coordinates.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_poles(
-        &mut self,
-        edit: impl FnMut(&mut Point2, &mut f64) -> Result<(), NurbsError>,
-    ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.clone();
-        poles.apply_poles(edit)?;
-        if poles
-            .poles()
-            .iter()
-            .all(|pole| pole.radial.is_finite() && pole.axial.is_finite())
-        {
-            self.poles = poles;
-            Ok(())
-        } else {
-            Err(NurbsError::Structure(
-                "poles contain a non-finite value".into(),
-            ))
-        }
-    }
-
     /// Rational weights in pole order.
     pub fn weights(&self) -> Option<Vec<f64>> {
         self.poles.weights()
     }
 
-    /// Replace the poles, keeping the knot cardinality.
-    pub fn set_poles(&mut self, poles: PolarNurbsPoles) -> Result<(), NurbsError> {
-        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
-        Ok(())
-    }
-
     /// Whether the NURBS parameterization is periodic.
     pub const fn periodic(&self) -> bool {
         self.periodic
-    }
-
-    /// Reverse paired poles, weights, and the signed knot parameterization together.
-    pub fn reverse_parameterization(&mut self) {
-        self.poles.reverse();
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
     }
 }
 
@@ -1461,15 +1383,6 @@ impl PcurveNurbs {
         &self.knots
     }
 
-    /// Atomically edit knot values and preserve their invariants.
-    pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
-        edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
-        Ok(())
-    }
-
     /// Build a parameter-space NURBS from a source's pole and weight lanes.
     pub fn from_lanes(
         degree: u32,
@@ -1509,12 +1422,6 @@ impl PcurveNurbs {
     /// Rational weights in pole order.
     pub fn weights(&self) -> Option<Vec<f64>> {
         self.poles.weights()
-    }
-
-    /// Replace the poles, keeping the knot cardinality.
-    pub fn set_poles(&mut self, poles: PcurveNurbsPoles) -> Result<(), NurbsError> {
-        *self = Self::new(self.degree, self.knots.clone(), poles, self.periodic)?;
-        Ok(())
     }
 
     /// Whether the parameter-space curve is periodic.
@@ -1915,12 +1822,6 @@ impl PcurveInlineForm {
     pub const fn parameter_range(&self) -> [f64; 2] {
         self.parameter_range
     }
-
-    /// Replace the parameter range while preserving the previous range on rejection.
-    pub fn set_parameter_range(&mut self, range: [f64; 2]) -> Result<(), &'static str> {
-        self.parameter_range = admit_pcurve_parameter_range(range)?;
-        Ok(())
-    }
 }
 
 /// Pcurve metadata with no ASM inline-record contract.
@@ -2013,12 +1914,6 @@ impl PcurveGeneralForm {
     #[must_use]
     pub const fn parameter_range(&self) -> Option<[f64; 2]> {
         self.parameter_range
-    }
-
-    /// Replace the parameter range while preserving the previous range on rejection.
-    pub fn set_parameter_range(&mut self, range: Option<[f64; 2]>) -> Result<(), &'static str> {
-        self.parameter_range = range.map(admit_pcurve_parameter_range).transpose()?;
-        Ok(())
     }
 }
 

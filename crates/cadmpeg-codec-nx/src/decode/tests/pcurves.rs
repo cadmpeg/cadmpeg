@@ -797,8 +797,46 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     else {
         unreachable!();
     };
-    support_surface.set_u_periodic(true);
-    candidate_surface.set_u_periodic(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(support_surface, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(candidate_surface, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
 
     assert_eq!(
         certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
@@ -991,7 +1029,26 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         surface.control_grid(),
         Some(weight_grid),
     );
-    surface.set_poles(poles.unwrap()).unwrap();
+    {
+        let replacement = poles.unwrap();
+        cadmpeg_test_support::edit::replace(surface, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .unwrap();
 
     assert_eq!(
         certified_offset_cache_fit(&support, &support, 0.0, 0.0),
@@ -1022,7 +1079,26 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         surface.control_grid(),
         Some(weight_grid),
     );
-    surface.set_poles(poles.unwrap()).unwrap();
+    {
+        let replacement = poles.unwrap();
+        cadmpeg_test_support::edit::replace(surface, |previous| {
+            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                replacement,
+                previous.normal_reversed(),
+            )
+        })
+    }
+    .unwrap();
 
     let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("absolute placement does not widen rational derivative bounds");
@@ -1414,7 +1490,17 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         else {
             panic!("fixture uses general pcurve metadata")
         };
-        metadata.set_parameter_range(Some(range)).unwrap();
+        {
+            let replacement = Some(range);
+            cadmpeg_test_support::edit::replace(metadata, |previous| {
+                cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
+                    previous.wrapper_reversed,
+                    replacement,
+                    previous.fit_tolerance(),
+                )
+            })
+        }
+        .unwrap();
         pcurve.geometry = PcurveGeometry::Ellipse(
             cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
                 Point2::new(5.0, 0.0),

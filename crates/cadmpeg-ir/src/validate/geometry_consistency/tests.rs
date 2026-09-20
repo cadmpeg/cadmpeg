@@ -450,9 +450,17 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let PcurveMetadata::General { form: metadata } = &mut ir.model.pcurves[0].metadata else {
         panic!("fixture uses general pcurve metadata")
     };
-    metadata
-        .set_parameter_range(Some([0.0, std::f64::consts::PI]))
-        .unwrap();
+    {
+        let replacement = Some([0.0, std::f64::consts::PI]);
+        cadmpeg_test_support::edit::replace(metadata, |previous| {
+            crate::geometry::pcurve::PcurveGeneralForm::try_new(
+                previous.wrapper_reversed,
+                replacement,
+                previous.fit_tolerance(),
+            )
+        })
+    }
+    .unwrap();
 
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(&ir, &mut findings);
@@ -963,16 +971,18 @@ fn pcurve_surface_mismatch_is_flagged() {
         "procedural UVs must not be evaluated on the solved cache, got: {:?}",
         procedural_report.findings
     );
-    procedural.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact(
-        crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
-            crate::geometry::ExactSpline::Legacy {
-                ranges: [[0.0, 1.0], [0.0, 1.0]],
-                extension: 0,
-                cache: None,
-            },
+    procedural.model.procedural_surfaces[0].edit_definition(|definition| {
+        *definition = ProceduralSurfaceDefinition::Exact(
+            crate::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                crate::geometry::ExactSpline::Legacy {
+                    ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    extension: 0,
+                    cache: None,
+                },
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    ));
+    });
     let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(
         !exact_report

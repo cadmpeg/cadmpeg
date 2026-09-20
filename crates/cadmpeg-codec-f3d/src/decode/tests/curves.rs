@@ -1161,14 +1161,22 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         let discontinuity_flag = &mut discontinuity_flag_value;
         let mut offsets_value = *definition_payload.offsets();
         let offsets = &mut offsets_value;
-        context
-            .edit(|_, context_parameter_range, context_discontinuities| {
+        cadmpeg_test_support::edit::with_output(context, |previous| {
+            let mut sides = previous.sides().clone();
+            let mut range = previous.parameter_range();
+            let mut discontinuities = previous.discontinuities().clone();
+            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
+                           context_parameter_range: &mut [f64; 2],
+                           context_discontinuities: &mut [Vec<f64>; 3]| {
                 (*context_parameter_range) = [-2.0, 3.0];
                 (*context_discontinuities) = [vec![0.2, 0.8], vec![], vec![0.6]];
                 *discontinuity_flag = false;
                 *offsets = [-3.0, 5.0];
-            })
-            .unwrap();
+            })(&mut sides, &mut range, &mut discontinuities);
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                .map(|candidate| (candidate, output))
+        })
+        .unwrap();
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
@@ -1268,8 +1276,13 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         let discontinuity_flag = &mut discontinuity_flag_value;
         let mut offsets_value = *definition_payload.offsets();
         let offsets = &mut offsets_value;
-        context
-            .edit(|_, context_parameter_range, context_discontinuities| {
+        cadmpeg_test_support::edit::with_output(context, |previous| {
+            let mut sides = previous.sides().clone();
+            let mut range = previous.parameter_range();
+            let mut discontinuities = previous.discontinuities().clone();
+            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
+                           context_parameter_range: &mut [f64; 2],
+                           context_discontinuities: &mut [Vec<f64>; 3]| {
                 (*context_parameter_range) = [-2.0, 5.0];
                 for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
                     for (ordinal, value) in discontinuities.iter_mut().enumerate() {
@@ -1278,8 +1291,11 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 }
                 *discontinuity_flag = false;
                 *offsets = [-2.5, 4.5];
-            })
-            .unwrap();
+            })(&mut sides, &mut range, &mut discontinuities);
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                .map(|candidate| (candidate, output))
+        })
+        .unwrap();
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
             cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
@@ -1387,8 +1403,14 @@ fn generated_mixed_offset_supports_write_source_less() {
         let mut context_value = definition_payload.context().clone();
         let context = &mut context_value;
         let edit_result = {
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     (*context_sides)[1].surface = None;
                     (*context_sides)[1].pcurve = None;
                     (*context_sides)[0].pcurve = Some(
@@ -1405,8 +1427,11 @@ fn generated_mixed_offset_supports_write_source_less() {
                         .surface
                         .clone()
                         .expect("retained first support id")
-                })
-                .unwrap()
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap()
         };
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload =
@@ -1612,12 +1637,20 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        context
-            .edit(|_, context_parameter_range, _| {
+        cadmpeg_test_support::edit::with_output(context, |previous| {
+            let mut sides = previous.sides().clone();
+            let mut range = previous.parameter_range();
+            let mut discontinuities = previous.discontinuities().clone();
+            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
+                           context_parameter_range: &mut [f64; 2],
+                           _: &mut [Vec<f64>; 3]| {
                 (*context_parameter_range) = [-1.0, 2.0];
                 *discontinuity_flag = false;
-            })
-            .unwrap()
+            })(&mut sides, &mut range, &mut discontinuities);
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                .map(|candidate| (candidate, output))
+        })
+        .unwrap()
     });
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut regenerated)

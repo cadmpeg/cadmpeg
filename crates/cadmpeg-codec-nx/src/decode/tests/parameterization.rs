@@ -884,13 +884,22 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
             else {
                 panic!("typed intersection");
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     for side in &mut (*context_sides) {
                         side.pcurve = None;
                     }
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     let pending = vec![(
@@ -936,13 +945,22 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     for side in &mut (*context_sides) {
                         side.pcurve = None;
                     }
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     let pending = vec![(
@@ -1390,14 +1408,22 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
             unreachable!()
         };
-        context
-            .edit(|context_sides, _, _| {
+        cadmpeg_test_support::edit::with_output(context, |previous| {
+            let mut sides = previous.sides().clone();
+            let mut range = previous.parameter_range();
+            let mut discontinuities = previous.discontinuities().clone();
+            let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
+                           _: &mut [f64; 2],
+                           _: &mut [Vec<f64>; 3]| {
                 (*context_sides)[0].surface = Some(blend);
                 (*context_sides)[0].pcurve = None;
                 (*context_sides)[1].surface = None;
                 (*context_sides)[1].pcurve = None;
-            })
-            .unwrap();
+            })(&mut sides, &mut range, &mut discontinuities);
+            cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                .map(|candidate| (candidate, output))
+        })
+        .unwrap();
     });
     {
         let mut ir = result.ir_mut();
@@ -1406,13 +1432,22 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     for side in &mut (*context_sides) {
                         side.pcurve = None;
                     }
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     let pending = vec![
@@ -1476,11 +1511,20 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     (*context_sides)[0].pcurve = None;
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     {
@@ -1595,8 +1639,14 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
                         panic!("NURBS support lane");
                     };
@@ -1616,8 +1666,11 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                             Ok(())
                         })
                         .unwrap();
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     let pending = vec![(
@@ -1669,8 +1722,14 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 panic!("typed intersection");
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
                         panic!("NURBS support lane");
                     };
@@ -1683,8 +1742,11 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                             Ok(())
                         })
                         .unwrap();
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     }
     let pending = vec![(
@@ -1823,7 +1885,20 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
 
     ir.model.procedural_surfaces[1].edit_definition(|definition| {
         if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
-            definition_payload.set_linear_support_extension(true);
+            {
+                let replacement = true;
+                cadmpeg_test_support::edit::replace(definition_payload, |previous| {
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        previous.support().clone(),
+                        *previous.distance(),
+                        *previous.u_sense(),
+                        *previous.v_sense(),
+                        replacement,
+                        previous.extension().clone(),
+                    )
+                })
+                .unwrap()
+            };
         }
     });
     assert!(!parameterization_equivalent_surfaces(
@@ -1833,8 +1908,34 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ));
     ir.model.procedural_surfaces[1].edit_definition(|definition| {
         if let ProceduralSurfaceDefinition::Offset(definition_payload) = definition {
-            definition_payload.set_linear_support_extension(false);
-            definition_payload.try_set_distance(31.0).unwrap();
+            {
+                let replacement = false;
+                cadmpeg_test_support::edit::replace(definition_payload, |previous| {
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        previous.support().clone(),
+                        *previous.distance(),
+                        *previous.u_sense(),
+                        *previous.v_sense(),
+                        replacement,
+                        previous.extension().clone(),
+                    )
+                })
+                .unwrap()
+            };
+            {
+                let replacement = 31.0;
+                cadmpeg_test_support::edit::replace(definition_payload, |previous| {
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        previous.support().clone(),
+                        replacement,
+                        *previous.u_sense(),
+                        *previous.v_sense(),
+                        previous.linear_support_extension(),
+                        previous.extension().clone(),
+                    )
+                })
+            }
+            .unwrap();
         }
     });
     assert!(!parameterization_equivalent_surfaces(

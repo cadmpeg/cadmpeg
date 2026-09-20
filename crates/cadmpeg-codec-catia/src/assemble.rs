@@ -1173,16 +1173,18 @@ mod route_tests {
 
         ir.model.procedural_curves[0]
             .replace_definition(ProceduralCurveDefinition::Exact { cache: None });
-        ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Exact(
-            cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                cadmpeg_ir::geometry::ExactSpline::Legacy {
-                    ranges: [[0.0, 1.0], [0.0, 1.0]],
-                    extension: 0,
-                    cache: None,
-                },
+        ir.model.procedural_surfaces[0].edit_definition(|definition| {
+            *definition = ProceduralSurfaceDefinition::Exact(
+                cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
+                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                        ranges: [[0.0, 1.0], [0.0, 1.0]],
+                        extension: 0,
+                        cache: None,
+                    },
+                )
+                .expect("finite ordered exact-spline fixture ranges"),
             )
-            .expect("finite ordered exact-spline fixture ranges"),
-        ));
+        });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }
 }

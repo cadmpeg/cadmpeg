@@ -242,7 +242,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.shape_prefix, 1);
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
-        assert_eq!(native.cache.selector(), 0);
+        assert!(!native.cache.parameterization().is_some());
         assert_eq!(native.cache.parameterization(), None);
         assert_eq!(
             native.discontinuities,
@@ -400,7 +400,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     };
     let construction = definition_payload.construction();
 
-    assert_eq!(construction.cache.selector(), 2);
+    assert!(construction.cache.parameterization().is_some());
     assert_eq!(
         construction.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
@@ -427,7 +427,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
             panic!("expected complete rolling-ball graph")
         };
 
-        assert_eq!(native.cache.selector(), 2);
+        assert!(native.cache.parameterization().is_some());
         assert_eq!(
             native.cache.parameterization(),
             Some(&expected_revision_surface_tail_parameterization())
@@ -465,7 +465,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    assert_eq!(form.cache.selector(), 2);
+    assert!(form.cache.parameterization().is_some());
     assert_eq!(
         form.cache.parameterization(),
         Some(&expected_revision_surface_tail_parameterization())
@@ -595,11 +595,11 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             .expect("parameterized blend round trip");
         let actual = &round_trip.ir().model.procedural_surfaces[0];
         assert_eq!(actual.cache_fit_tolerance(), None);
-        let (enumeration, parameterization) = match actual.definition() {
+        let (parameterized, parameterization) = match actual.definition() {
             ProceduralSurfaceDefinition::Blend(definition_payload) => {
                 match (definition_payload.native(),) {
                     (Some(native),) => (
-                        native.cache.selector(),
+                        native.cache.parameterization().is_some(),
                         native.cache.parameterization().cloned(),
                     ),
                     _ => panic!(
@@ -610,13 +610,13 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
                 let construction = definition_payload.construction();
                 (
-                    construction.cache.selector(),
+                    construction.cache.parameterization().is_some(),
                     construction.cache.parameterization().cloned(),
                 )
             }
             other => panic!("expected a parameterized blend construction: {other:?}"),
         };
-        assert_eq!(enumeration, 2);
+        assert!(parameterized);
         assert_eq!(
             parameterization,
             Some(expected_revision_surface_tail_parameterization())
@@ -842,7 +842,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.v_lower, None);
         assert_eq!(construction.cache.shape_prefix(), 11);
         assert_eq!(construction.shape_length, 6.0);
-        assert_eq!(construction.cache.selector(), 0);
+        assert!(!construction.cache.parameterization().is_some());
         assert_eq!(
             construction.discontinuities,
             [

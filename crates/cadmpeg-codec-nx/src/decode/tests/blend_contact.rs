@@ -1445,8 +1445,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            context
-                .edit(|context_sides, _, _| {
+            cadmpeg_test_support::edit::with_output(context, |previous| {
+                let mut sides = previous.sides().clone();
+                let mut range = previous.parameter_range();
+                let mut discontinuities = previous.discontinuities().clone();
+                let output = (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide;
+                                        2],
+                               _: &mut [f64; 2],
+                               _: &mut [Vec<f64>; 3]| {
                     (*context_sides)[0].pcurve = Some(
                         PcurveGeometry::Offset(
                             cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
@@ -1457,8 +1463,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                         )
                         .into(),
                     );
-                })
-                .unwrap();
+                })(&mut sides, &mut range, &mut discontinuities);
+                cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+                    .map(|candidate| (candidate, output))
+            })
+            .unwrap();
         });
     let parameters = Point2::new(0.4, 0.35);
     let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)

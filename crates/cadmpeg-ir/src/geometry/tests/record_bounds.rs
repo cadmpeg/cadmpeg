@@ -34,9 +34,19 @@ fn non_finite_record_bounds_are_rejected_without_mutating_the_surface() {
         ),
     );
 
-    assert!(surface
-        .set_record_bounds(Some([Some(f64::NAN), None, Some(0.2), None]))
-        .is_err());
+    assert!({
+        let replacement = Some([Some(f64::NAN), None, Some(0.2), None]);
+        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
+            crate::geometry::RecordBounds::try_option(replacement).map(|bounds| {
+                crate::geometry::ProceduralSurface::new(
+                    previous.id.clone(),
+                    previous.definition().clone(),
+                    bounds,
+                )
+            })
+        })
+    }
+    .is_err());
     assert_eq!(
         surface.record_bounds(),
         Some([Some(0.1), Some(0.9), None, None])

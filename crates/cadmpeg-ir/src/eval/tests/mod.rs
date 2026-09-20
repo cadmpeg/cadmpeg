@@ -114,12 +114,50 @@ fn bilinear_surface() -> NurbsSurface {
 #[test]
 fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
     let mut surface = bilinear_surface();
-    surface.set_u_periodic(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
+            crate::geometry::nurbs::NurbsSurface::new(
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
     assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
     assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
 
-    surface.set_u_periodic(false);
+    {
+        let replacement = false;
+        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
+            crate::geometry::nurbs::NurbsSurface::new(
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    replacement,
+                ),
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                previous.normal_reversed(),
+            )
+        })
+        .unwrap()
+    };
     assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
@@ -1098,7 +1136,26 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
     let construction =
         ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let mut support = bilinear_surface();
-    support.set_normal_reversed(true);
+    {
+        let replacement = true;
+        cadmpeg_test_support::edit::replace(&mut support, |previous| {
+            crate::geometry::nurbs::NurbsSurface::new(
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.u_degree(),
+                    previous.u_knots().to_vec(),
+                    previous.u_periodic(),
+                ),
+                crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                    previous.v_degree(),
+                    previous.v_knots().to_vec(),
+                    previous.v_periodic(),
+                ),
+                previous.pole_grid().clone(),
+                replacement,
+            )
+        })
+        .unwrap()
+    };
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {

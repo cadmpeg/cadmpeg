@@ -5,28 +5,8 @@ use crate::{
     examples::unit_cube,
     geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, PcurveNurbs},
     math::Point2,
-    test_support::nurbs::{pcurve, polar},
+    test_support::nurbs::pcurve,
 };
-
-#[test]
-fn a_refused_polar_pole_edit_keeps_the_prior_poles() {
-    let mut polar = polar();
-    let original = polar.clone();
-    let refusal = polar.edit_poles(|radial, axial| {
-        radial.u = 9.0;
-        *axial = 9.0;
-        Err(crate::geometry::nurbs::NurbsError::EditRefused(
-            "caller refused this pole".into(),
-        ))
-    });
-    assert_eq!(
-        refusal,
-        Err(crate::geometry::nurbs::NurbsError::EditRefused(
-            "caller refused this pole".into()
-        ))
-    );
-    assert_eq!(polar, original);
-}
 
 #[test]
 fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {

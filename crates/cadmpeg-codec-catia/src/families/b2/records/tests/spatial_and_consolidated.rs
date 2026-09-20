@@ -100,14 +100,29 @@ fn offset_support_binds_by_native_domain_knot_limits() {
         &mut crate::nurbs::LaneRefusals::new(),
     );
     let mut decoy = carriers[0].clone();
-    decoy
-        .geometry
-        .edit_v_knots(|knots| {
+    cadmpeg_test_support::edit::replace(&mut decoy.geometry, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        (|knots: &mut [f64]| {
             for knot in knots {
                 *knot += 10.0;
             }
-        })
-        .unwrap();
+        })(&mut knots);
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
     carriers.push(decoy);
     let surface = &carriers[0].geometry;
     let offset = crate::families::b2::records::B2OffsetSupport {

@@ -476,17 +476,6 @@ impl SketchGeometry {
     pub fn into_definition(self) -> SketchGeometryDefinition {
         self.0
     }
-
-    /// Replace the definition only after its numeric invariants pass.
-    pub fn edit(
-        &mut self,
-        edit: impl FnOnce(&mut SketchGeometryDefinition),
-    ) -> Result<(), &'static str> {
-        let mut definition = self.0.clone();
-        edit(&mut definition);
-        *self = definition.try_into()?;
-        Ok(())
-    }
 }
 
 impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
@@ -1379,17 +1368,6 @@ impl SpatialSketchGeometry {
     #[must_use]
     pub fn definition(&self) -> &SpatialSketchGeometryDefinition {
         &self.0
-    }
-
-    /// Replace the spatial definition only after numeric admission succeeds.
-    pub fn edit(
-        &mut self,
-        edit: impl FnOnce(&mut SpatialSketchGeometryDefinition),
-    ) -> Result<(), &'static str> {
-        let mut definition = self.0.clone();
-        edit(&mut definition);
-        *self = definition.try_into()?;
-        Ok(())
     }
 }
 

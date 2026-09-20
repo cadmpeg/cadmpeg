@@ -461,39 +461,43 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             reversed: false,
         })
     });
-    ir.model.procedural_surfaces[0].replace_definition(ProceduralSurfaceDefinition::Blend(
-        crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
-            supports,
-            Some(slice.clone()),
-            BlendRadiusLaw::Constant { signed_radius: 3.0 },
-            BlendCrossSection::Circular,
-            crate::geometry::CacheContract::from_form(Some(Box::new(RollingBallConstruction {
-                definition_index: 0,
-                sides,
-                slice,
-                slice_range: [Some(0.0), Some(1.0)],
-                offsets: [3.0, 3.0],
-                radius_selector: RollingBallRadiusSelector::None {},
-                u_range: [Some(0.0), Some(1.0)],
-                v_range: [Some(0.0), Some(1.0)],
-                shape_prefix: 0,
-                parameters: [0.0, 0.0],
-                tail: 0,
-                cache: crate::geometry::RevisionCacheForm::Parameterization(
-                    RevisionSurfaceParameterization {
-                        u_interval: [Some(0.0), Some(1.0)],
-                        v_interval: [Some(0.0), Some(1.0)],
-                        ..Default::default()
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        *definition = ProceduralSurfaceDefinition::Blend(
+            crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                supports,
+                Some(slice.clone()),
+                BlendRadiusLaw::Constant { signed_radius: 3.0 },
+                BlendCrossSection::Circular,
+                crate::geometry::CacheContract::from_form(Some(Box::new(
+                    RollingBallConstruction {
+                        definition_index: 0,
+                        sides,
+                        slice,
+                        slice_range: [Some(0.0), Some(1.0)],
+                        offsets: [3.0, 3.0],
+                        radius_selector: RollingBallRadiusSelector::None {},
+                        u_range: [Some(0.0), Some(1.0)],
+                        v_range: [Some(0.0), Some(1.0)],
+                        shape_prefix: 0,
+                        parameters: [0.0, 0.0],
+                        tail: 0,
+                        cache: crate::geometry::RevisionCacheForm::Parameterization(
+                            RevisionSurfaceParameterization {
+                                u_interval: [Some(0.0), Some(1.0)],
+                                v_interval: [Some(0.0), Some(1.0)],
+                                ..Default::default()
+                            },
+                        ),
+                        discontinuities: std::array::from_fn(|_| Vec::new()),
+                        tail_flag: false,
+                        third: None,
+                        tail_extensions: [0; 3],
                     },
-                ),
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-                tail_flag: false,
-                third: None,
-                tail_extensions: [0; 3],
-            }))),
+                ))),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    ));
+    });
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(

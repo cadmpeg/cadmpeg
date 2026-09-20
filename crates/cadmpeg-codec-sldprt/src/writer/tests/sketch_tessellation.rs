@@ -161,9 +161,9 @@ fn semantic_writer_applies_line_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        entity
-            .geometry
-            .edit(|definition| {
+        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     panic!("line sketch entity");
                 };
@@ -173,8 +173,10 @@ fn semantic_writer_applies_line_sketch_edits() {
                 if entity.endpoint_refs[1] == point_ref {
                     end.u += 1.0;
                 }
-            })
-            .unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
+        .unwrap();
     }
 
     let mut written = Vec::new();
@@ -216,9 +218,9 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        entity
-            .geometry
-            .edit(|definition| {
+        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     panic!("line sketch entity");
                 };
@@ -228,8 +230,10 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
                 if entity.endpoint_refs[1] == point_ref {
                     end.v += 2.0;
                 }
-            })
-            .unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
+        .unwrap();
     }
 
     let mut written = Vec::new();
@@ -284,15 +288,20 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.sketch_entities[0]
-            .geometry
-            .edit(|definition| {
-                let SketchGeometryDefinition::Line { start, .. } = definition else {
-                    panic!("line sketch entity");
-                };
-                start.u += 1.0;
-            })
-            .unwrap();
+        cadmpeg_test_support::edit::replace(
+            &mut ir_edit.model.sketch_entities[0].geometry,
+            |previous| {
+                let mut definition = previous.definition().clone();
+                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                    let SketchGeometryDefinition::Line { start, .. } = definition else {
+                        panic!("line sketch entity");
+                    };
+                    start.u += 1.0;
+                })(&mut definition);
+                definition.try_into()
+            },
+        )
+        .unwrap();
     }
 
     let error = crate::test_support::plan_inherited_write(
@@ -322,16 +331,21 @@ fn semantic_writer_applies_circle_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.sketch_entities[0]
-            .geometry
-            .edit(|definition| {
-                let SketchGeometryDefinition::Circle { center, radius } = definition else {
-                    panic!("circle sketch entity");
-                };
-                center.u = 250.0;
-                *radius = Length::new(750.0).unwrap();
-            })
-            .unwrap();
+        cadmpeg_test_support::edit::replace(
+            &mut ir_edit.model.sketch_entities[0].geometry,
+            |previous| {
+                let mut definition = previous.definition().clone();
+                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                    let SketchGeometryDefinition::Circle { center, radius } = definition else {
+                        panic!("circle sketch entity");
+                    };
+                    center.u = 250.0;
+                    *radius = Length::new(750.0).unwrap();
+                })(&mut definition);
+                definition.try_into()
+            },
+        )
+        .unwrap();
     }
 
     let mut written = Vec::new();
@@ -367,25 +381,30 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.sketch_entities[0]
-            .geometry
-            .edit(|definition| {
-                let SketchGeometryDefinition::Ellipse {
-                    center,
-                    major_angle,
-                    major_radius,
-                    minor_radius,
-                    ..
-                } = definition
-                else {
-                    panic!("ellipse sketch entity");
-                };
-                center.v = 125.0;
-                *major_angle = Angle::new(0.25).unwrap();
-                *major_radius = Length::new(1500.0).unwrap();
-                *minor_radius = Length::new(500.0).unwrap();
-            })
-            .unwrap();
+        cadmpeg_test_support::edit::replace(
+            &mut ir_edit.model.sketch_entities[0].geometry,
+            |previous| {
+                let mut definition = previous.definition().clone();
+                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                    let SketchGeometryDefinition::Ellipse {
+                        center,
+                        major_angle,
+                        major_radius,
+                        minor_radius,
+                        ..
+                    } = definition
+                    else {
+                        panic!("ellipse sketch entity");
+                    };
+                    center.v = 125.0;
+                    *major_angle = Angle::new(0.25).unwrap();
+                    *major_radius = Length::new(1500.0).unwrap();
+                    *minor_radius = Length::new(500.0).unwrap();
+                })(&mut definition);
+                definition.try_into()
+            },
+        )
+        .unwrap();
     }
 
     let mut written = Vec::new();
@@ -435,8 +454,9 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                 )
             })
             .expect("arc sketch entity");
-        arc.geometry
-            .edit(|definition| {
+        cadmpeg_test_support::edit::replace(&mut arc.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Arc {
                     center,
                     radius,
@@ -450,17 +470,19 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                 *radius = Length::new(800.0).unwrap();
                 *start_angle = Angle::new(0.25).unwrap();
                 *end_angle = Angle::new(1.25).unwrap();
-            })
-            .unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
+        .unwrap();
         let endpoint_refs = arc.endpoint_refs.clone();
         let endpoints = [
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 0.25f64.cos(), 800.0 * 0.25f64.sin()),
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
         ];
         for entity in &mut ir_edit.model.sketch_entities {
-            entity
-                .geometry
-                .edit(|definition| {
+            cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+                let mut definition = previous.definition().clone();
+                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                     let SketchGeometryDefinition::Line { start, end } = definition else {
                         return;
                     };
@@ -472,8 +494,10 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                             *end = target;
                         }
                     }
-                })
-                .unwrap();
+                })(&mut definition);
+                definition.try_into()
+            })
+            .unwrap();
         }
     }
 
@@ -510,9 +534,9 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        entity
-            .geometry
-            .edit(|definition| {
+        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     return;
                 };
@@ -532,10 +556,23 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                         curve.control_points(),
                         Some(weights),
                     );
-                    curve.set_poles(poles.unwrap()).unwrap();
+                    {
+                        let replacement = poles.unwrap();
+                        cadmpeg_test_support::edit::replace(curve, |previous| {
+                            cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
+                                previous.degree(),
+                                previous.knots().to_vec(),
+                                replacement,
+                                previous.periodic(),
+                            )
+                        })
+                    }
+                    .unwrap();
                 }
-            })
-            .unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
+        .unwrap();
     }
 
     let mut written = Vec::new();
