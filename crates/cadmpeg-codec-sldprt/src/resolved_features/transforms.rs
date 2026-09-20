@@ -249,12 +249,17 @@ fn affine_sketch_frame_marker_transform(
     };
     let first = tangent(*first_axis);
     let second = tangent(*second_axis);
-    let matrix = [
-        (dot(first, u_axis) * SCALE).round() as i64,
-        (dot(second, u_axis) * SCALE).round() as i64,
-        (dot(first, v_axis) * SCALE).round() as i64,
-        (dot(second, v_axis) * SCALE).round() as i64,
-    ];
+    let first_row = quantize(
+        Point2::new(dot(first, u_axis) * SCALE, dot(second, u_axis) * SCALE),
+        1.0,
+    )
+    .cells()?;
+    let second_row = quantize(
+        Point2::new(dot(first, v_axis) * SCALE, dot(second, v_axis) * SCALE),
+        1.0,
+    )
+    .cells()?;
+    let matrix = [first_row.0, first_row.1, second_row.0, second_row.1];
     let mut zero_world_delta = [0.0; 3];
     zero_world_delta[*first_axis] = -origin[*first_axis];
     zero_world_delta[*second_axis] = -origin[*second_axis];

@@ -1476,3 +1476,22 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
         );
     }
 }
+
+#[test]
+fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
+    for focal in [1e-200, 1.0, 1e308] {
+        let geometry = SolvedCurveGeometry::Parabola(
+            cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+                focal,
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            normalize_occt_curve_range(&geometry, Some([-focal, focal])),
+            Some([-0.5, 0.5])
+        );
+    }
+}

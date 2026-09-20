@@ -630,3 +630,41 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     )
     .is_none());
 }
+
+#[test]
+fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+            0.1,
+        )
+        .unwrap(),
+    ));
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    };
+    let start = Point3::new(0.1, 0., 0.);
+    for (end, accepted) in [
+        (
+            Point3::new(0.1 * 1.0_f64.cos(), 0.1 * 1.0_f64.sin(), 0.),
+            false,
+        ),
+        (Point3::new(0.1, 0., 1.), true),
+    ] {
+        let result = crate::families::standard::decode::standard_pcurve_geometry(
+            &surface,
+            &support,
+            start,
+            end,
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+        );
+        assert_eq!(result.is_some(), accepted);
+    }
+}

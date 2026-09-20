@@ -6593,7 +6593,7 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
             .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
             .collect::<Vec<_>>();
         let max_residual = residuals.iter().copied().fold(0.0, f64::max);
-        if max_residual > EPS_CIRCLE_RESIDUAL * radius.max(1.0) {
+        if max_residual > EPS_CIRCLE_RESIDUAL * radius {
             continue;
         }
         let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
@@ -6718,7 +6718,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
         else {
             continue;
         };
-        let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
+        let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm;
         if !group.iter().all(|(circle, _, _)| {
             let Fc05AngleParameterRelation::Consistent {
                 sense,
@@ -6731,8 +6731,8 @@ pub(crate) fn fc05_cylinder_cap_pairs(
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
                 && sense == parameter_sense
-                && (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
-                && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
+                && (direction[0] - reference_direction_row_frame[0]).abs() <= EPS_RADIUS_AGREEMENT
+                && (direction[1] - reference_direction_row_frame[1]).abs() <= EPS_RADIUS_AGREEMENT
         }) {
             continue;
         }

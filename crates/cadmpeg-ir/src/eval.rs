@@ -28,6 +28,7 @@ use crate::geometry::{
 };
 use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
+use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -1279,13 +1280,22 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
 
 /// `base + Σ factorᵢ · directionᵢ` in model space.
 fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
-    let mut out = base;
-    for (factor, direction) in terms {
-        out.x += factor * direction.x;
-        out.y += factor * direction.y;
-        out.z += factor * direction.z;
-    }
-    out
+    let coordinate = |base: f64, component: fn(&Vector3) -> f64| match crate::math::sum::product_sum(
+        std::iter::once(Some([1.0, base])).chain(
+            terms
+                .iter()
+                .map(|(factor, vector)| Some([*factor, component(vector)])),
+        ),
+    ) {
+        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Zero => 0.0,
+        crate::math::sum::ProductSum::Undefined => f64::NAN,
+    };
+    Point3::new(
+        coordinate(base.x, |v| v.x),
+        coordinate(base.y, |v| v.y),
+        coordinate(base.z, |v| v.z),
+    )
 }
 
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
@@ -2439,23 +2449,12 @@ fn periodic_parameter(
     if !periodic || (start..=end).contains(&parameter) {
         return Some(parameter);
     }
-    let period = end - start;
-    if !period.is_finite() || period <= 0.0 {
-        return None;
-    }
-    let relative = parameter - start;
-    let offset = if relative.is_finite() {
-        relative.rem_euclid(period)
-    } else {
-        (parameter.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
-    };
-    let wrapped = start + offset;
-    wrapped.is_finite().then_some(wrapped)
+    crate::math::wrap_parameter(parameter, start, end)
 }
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Point3> {
-    curve_point_inner(geometry, t, 0)
+    curve_point_inner(geometry, t, 0).filter(Point3::is_finite)
 }
 
 /// Evaluate the exact first derivative of a directly stored curve.
@@ -2642,8 +2641,14 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
             Some(vector_sum(&[
-                (2.0 * focal_distance * t, *major_direction),
-                (2.0 * focal_distance, axis.cross(*major_direction)),
+                (
+                    product_quotient([2.0, focal_distance, t], [])?,
+                    *major_direction,
+                ),
+                (
+                    product_quotient([2.0, focal_distance], [])?,
+                    axis.cross(*major_direction),
+                ),
             ]))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
@@ -2652,8 +2657,11 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
             Some(vector_sum(&[
-                (major_radius * t.sinh(), *major_direction),
-                (minor_radius * t.cosh(), axis.cross(*major_direction)),
+                (scaled_sinh_cosh(major_radius, t)?.0, *major_direction),
+                (
+                    scaled_sinh_cosh(minor_radius, t)?.1,
+                    axis.cross(*major_direction),
+                ),
             ]))
         }
         SolvedCurveGeometry::Nurbs(nurbs) => {
@@ -2713,7 +2721,10 @@ fn curve_second_derivative_inner(
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance();
-            Some(vector_sum(&[(2.0 * focal_distance, *major_direction)]))
+            Some(vector_sum(&[(
+                product_quotient([2.0, focal_distance], [])?,
+                *major_direction,
+            )]))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let axis = hyperbola_curve.axis();
@@ -2721,8 +2732,11 @@ fn curve_second_derivative_inner(
             let major_radius = hyperbola_curve.major_radius();
             let minor_radius = hyperbola_curve.minor_radius();
             Some(vector_sum(&[
-                (major_radius * t.cosh(), *major_direction),
-                (minor_radius * t.sinh(), axis.cross(*major_direction)),
+                (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
+                (
+                    scaled_sinh_cosh(minor_radius, t)?.0,
+                    axis.cross(*major_direction),
+                ),
             ]))
         }
         SolvedCurveGeometry::Nurbs(nurbs) => {
@@ -3943,7 +3957,7 @@ fn direct_curve_parameter_near_point(
                 return None;
             }
             let (_, transverse, _) = components(*vertex, *axis, *major_direction);
-            transverse / (2.0 * focal_distance)
+            crate::math::multiply_divide(transverse, 0.5, focal_distance)?
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();
@@ -4099,8 +4113,14 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             Some(offset(
                 *vertex,
                 &[
-                    (focal_distance * t * t, *major_direction),
-                    (2.0 * focal_distance * t, axis.cross(*major_direction)),
+                    (
+                        product_quotient([focal_distance, t, t], [])?,
+                        *major_direction,
+                    ),
+                    (
+                        product_quotient([2.0, focal_distance, t], [])?,
+                        axis.cross(*major_direction),
+                    ),
                 ],
             ))
         }
@@ -4113,8 +4133,11 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             Some(offset(
                 *center,
                 &[
-                    (major_radius * t.cosh(), *major_direction),
-                    (minor_radius * t.sinh(), axis.cross(*major_direction)),
+                    (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
+                    (
+                        scaled_sinh_cosh(minor_radius, t)?.0,
+                        axis.cross(*major_direction),
+                    ),
                 ],
             ))
         }
@@ -5717,7 +5740,10 @@ fn minor_circular_arc_point(
     )
     .unit()?;
     let axis = first_radius.cross(second_radius).unit()?;
-    let angle = first_radius.dot(second_radius).clamp(-1.0, 1.0).acos();
+    let angle = first_radius
+        .cross(second_radius)
+        .norm()
+        .atan2(first_radius.dot(second_radius));
     let section_angle = u * angle;
     let radial = vector_sum(&[
         (section_angle.cos(), first_radius),
@@ -6060,48 +6086,43 @@ fn circular_arc_partials(
     let (second_radius, second_radius_v) =
         unit_vector_with_derivative(second_delta, second_delta_v)?;
     let cosine = first_radius.dot(second_radius).clamp(-1.0, 1.0);
-    let sine = (1.0 - cosine * cosine).max(0.0).sqrt();
-    if sine <= f64::EPSILON {
-        return None;
-    }
-    let angle = cosine.acos();
+    let cross = first_radius.cross(second_radius);
+    let sine = cross.norm();
+    let axis = cross.unit_nonzero()?;
+    let angle = sine.atan2(cosine);
     let cosine_v = first_radius_v.dot(second_radius) + first_radius.dot(second_radius_v);
-    let angle_v = -cosine_v / sine;
-    let first_angle = (1.0 - u) * angle;
-    let second_angle = u * angle;
-    let first_sine = first_angle.sin();
-    let second_sine = second_angle.sin();
-    let first_weight = first_sine / sine;
-    let second_weight = second_sine / sine;
-    let radial = vector_sum(&[(first_weight, first_radius), (second_weight, second_radius)]);
-    let radial_u = vector_sum(&[
-        (-angle * first_angle.cos() / sine, first_radius),
-        (angle * second_angle.cos() / sine, second_radius),
+    let cross_v = vector_sum(&[
+        (1.0, first_radius_v.cross(second_radius)),
+        (1.0, first_radius.cross(second_radius_v)),
     ]);
-    let sine_squared = sine * sine;
-    let first_weight_angle =
-        ((1.0 - u) * first_angle.cos() * sine - first_sine * cosine) / sine_squared;
-    let second_weight_angle = (u * second_angle.cos() * sine - second_sine * cosine) / sine_squared;
+    let sine_v = axis.dot(cross_v);
+    let angle_v = cosine * sine_v - sine * cosine_v;
+    let axis_v = vector_sum(&[(1.0, cross_v), (-sine_v, axis)]).scale(1.0 / sine);
+    let transverse = axis.cross(first_radius);
+    let transverse_v = vector_sum(&[
+        (1.0, axis_v.cross(first_radius)),
+        (1.0, axis.cross(first_radius_v)),
+    ]);
+    let (section_sine, section_cosine) = (u * angle).sin_cos();
+    let radial = vector_sum(&[(section_cosine, first_radius), (section_sine, transverse)]);
+    let angular_direction =
+        vector_sum(&[(-section_sine, first_radius), (section_cosine, transverse)]);
     let radial_v = vector_sum(&[
-        (first_weight, first_radius_v),
-        (second_weight, second_radius_v),
-        (
-            angle_v,
-            vector_sum(&[
-                (first_weight_angle, first_radius),
-                (second_weight_angle, second_radius),
-            ]),
-        ),
+        (section_cosine, first_radius_v),
+        (section_sine, transverse_v),
+        (u * angle_v, angular_direction),
     ]);
-    Some(SurfacePartials {
+    let partials = SurfacePartials {
         point: offset(center, &[(radius, radial)]),
-        du: scale_vector(radial_u, radius),
+        du: angular_direction.scale(radius * angle),
         dv: vector_sum(&[
             (1.0, center_tangent),
             (radius_derivative, radial),
             (radius, radial_v),
         ]),
-    })
+    };
+    (partials.point.is_finite() && partials.du.is_finite() && partials.dv.is_finite())
+        .then_some(partials)
 }
 
 fn cacheless_variable_blend_point(
@@ -7287,14 +7308,8 @@ fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {
 }
 
 fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
-    terms
-        .iter()
-        .fold(Vector3::new(0.0, 0.0, 0.0), |mut vector, (factor, term)| {
-            vector.x += factor * term.x;
-            vector.y += factor * term.y;
-            vector.z += factor * term.z;
-            vector
-        })
+    let point = offset(Point3::new(0.0, 0.0, 0.0), terms);
+    Vector3::new(point.x, point.y, point.z)
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
@@ -7473,72 +7488,50 @@ fn pcurve_uv_differential_inner(
                 ),
             )
         }
-        PcurveGeometry::Parabola(parabola_pcurve) => {
-            let vertex = parabola_pcurve.vertex();
-            let x_axis = parabola_pcurve.x_axis();
-            let y_axis = parabola_pcurve.y_axis();
-            let focal_distance = parabola_pcurve.focal_distance();
+        PcurveGeometry::Parabola(parabola) => {
+            let vertex = parabola.vertex();
+            let x = parabola.x_axis();
+            let y = parabola.y_axis();
+            let focal = parabola.focal_distance();
+            let axial = product_quotient([t, t], [4.0, focal])?;
+            let derivative = |axis| product_quotient([t, axis], [2.0, focal]).unwrap_or(f64::NAN);
+            let second = |axis| product_quotient([axis], [2.0, focal]).unwrap_or(f64::NAN);
             (
-                offset2(
-                    *vertex,
-                    &[(t * t / (4.0 * focal_distance), *x_axis), (t, *y_axis)],
-                ),
-                Point2::new(
-                    t / (2.0 * focal_distance) * x_axis.u + y_axis.u,
-                    t / (2.0 * focal_distance) * x_axis.v + y_axis.v,
-                ),
-                Point2::new(
-                    x_axis.u / (2.0 * focal_distance),
-                    x_axis.v / (2.0 * focal_distance),
-                ),
+                offset2(*vertex, &[(axial, *x), (t, *y)]),
+                Point2::new(derivative(x.u) + y.u, derivative(x.v) + y.v),
+                Point2::new(second(x.u), second(x.v)),
             )
         }
-
-        PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
-            let center = hyperbola_pcurve.center();
-            let x_axis = hyperbola_pcurve.x_axis();
-            let y_axis = hyperbola_pcurve.y_axis();
-            let major_radius = hyperbola_pcurve.major_radius();
-            let minor_radius = hyperbola_pcurve.minor_radius();
-            let cosine = t.cosh();
-            let sine = t.sinh();
+        PcurveGeometry::Hyperbola(hyperbola) => {
+            let x = hyperbola.x_axis();
+            let y = hyperbola.y_axis();
+            let (major_sinh, major_cosh) = scaled_sinh_cosh(hyperbola.major_radius(), t)?;
+            let (minor_sinh, minor_cosh) = scaled_sinh_cosh(hyperbola.minor_radius(), t)?;
+            let zero = Point2::new(0.0, 0.0);
             (
-                offset2(
-                    *center,
-                    &[
-                        (major_radius * cosine, *x_axis),
-                        (minor_radius * sine, *y_axis),
-                    ],
-                ),
-                Point2::new(
-                    major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
-                    major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
-                ),
-                Point2::new(
-                    major_radius * cosine * x_axis.u + minor_radius * sine * y_axis.u,
-                    major_radius * cosine * x_axis.v + minor_radius * sine * y_axis.v,
-                ),
+                offset2(*hyperbola.center(), &[(major_cosh, *x), (minor_sinh, *y)]),
+                offset2(zero, &[(major_sinh, *x), (minor_cosh, *y)]),
+                offset2(zero, &[(major_cosh, *x), (minor_sinh, *y)]),
             )
         }
-        PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
-            let center = hyperbolic_pcurve.center();
-            let cosine = hyperbolic_pcurve.cosine();
-            let sine = hyperbolic_pcurve.sine();
-            let cosine_parameter = t.cosh();
-            let sine_parameter = t.sinh();
+        PcurveGeometry::Hyperbolic(hyperbolic) => {
+            let cosine = hyperbolic.cosine();
+            let sine = hyperbolic.sine();
+            let coordinate = |center, cosine, sine| -> Option<[f64; 3]> {
+                let (cosine_sinh, cosine_cosh) = scaled_sinh_cosh(cosine, t)?;
+                let (sine_sinh, sine_cosh) = scaled_sinh_cosh(sine, t)?;
+                Some([
+                    crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?,
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh])?,
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh])?,
+                ])
+            };
+            let u = coordinate(hyperbolic.center().u, cosine.u, sine.u)?;
+            let v = coordinate(hyperbolic.center().v, cosine.v, sine.v)?;
             (
-                offset2(
-                    *center,
-                    &[(cosine_parameter, *cosine), (sine_parameter, *sine)],
-                ),
-                Point2::new(
-                    sine_parameter * cosine.u + cosine_parameter * sine.u,
-                    sine_parameter * cosine.v + cosine_parameter * sine.v,
-                ),
-                Point2::new(
-                    cosine_parameter * cosine.u + sine_parameter * sine.u,
-                    cosine_parameter * cosine.v + sine_parameter * sine.v,
-                ),
+                Point2::new(u[0], v[0]),
+                Point2::new(u[1], v[1]),
+                Point2::new(u[2], v[2]),
             )
         }
         PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve) => {
@@ -7688,11 +7681,18 @@ fn pcurve_uv_differential_inner(
 }
 
 fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
-    terms.iter().fold(base, |mut point, (factor, direction)| {
-        point.u += factor * direction.u;
-        point.v += factor * direction.v;
-        point
-    })
+    let coordinate = |base: f64, component: fn(&Point2) -> f64| match crate::math::sum::product_sum(
+        std::iter::once(Some([1.0, base])).chain(
+            terms
+                .iter()
+                .map(|(factor, vector)| Some([*factor, component(vector)])),
+        ),
+    ) {
+        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Zero => 0.0,
+        crate::math::sum::ProductSum::Undefined => f64::NAN,
+    };
+    Point2::new(coordinate(base.u, |p| p.u), coordinate(base.v, |p| p.v))
 }
 
 #[cfg(test)]

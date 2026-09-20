@@ -311,11 +311,7 @@ fn uv_records(bytes: &[u8]) -> HashMap<u16, Vec<UvRecord>> {
 }
 
 fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a.iter()
-        .zip(&b)
-        .map(|(x, y)| (x - y) * (x - y))
-        .sum::<f64>()
-        .sqrt()
+    Point3::from(a).distance(Point3::from(b))
 }
 
 /// Build the derived polyline curve for one validated composite.
@@ -544,6 +540,29 @@ pub(super) fn scan_intersection_carriers(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn numerical_ranges_short_chart_chord_preserves_parameter_increment() {
+        let endpoints = [[0., 0., 0.], [1e-200, 0., 0.]];
+        let chart = super::Chart {
+            endpoints,
+            interior_points: Vec::new(),
+            base_parameter: 0.,
+            base_scale: 1e200,
+            chordal_error: 1e-210,
+        };
+        let (_, parameters, reversed) = super::solved_curve(
+            &chart,
+            endpoints[0],
+            endpoints[1],
+            0,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .unwrap();
+        assert_eq!(parameters, vec![0., 1.]);
+        assert!(!reversed);
+    }
+
     use super::super::LEN_TO_MM;
     use super::{
         chart_candidates, chart_records, scan_intersection_carriers, uv_at, uv_records, UvWidth,

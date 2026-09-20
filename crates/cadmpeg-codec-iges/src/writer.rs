@@ -6432,15 +6432,13 @@ fn hyperbola_point(
     minor_radius: f64,
     parameter: f64,
 ) -> Result<[f64; 2], CodecError> {
-    let point = [
-        major_radius * parameter.cosh(),
-        minor_radius * parameter.sinh(),
-    ];
-    point
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(point)
-        .ok_or_else(|| CodecError::Malformed("IGES hyperbola endpoint is non-finite".into()))
+    (|| {
+        Some([
+            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?.1,
+            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?.0,
+        ])
+    })()
+    .ok_or_else(|| CodecError::Malformed("IGES hyperbola endpoint is non-finite".into()))
 }
 
 fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {

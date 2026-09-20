@@ -236,6 +236,95 @@ pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {
     }
 }
 
+/// Evaluate a quotient of products with up to four finite factors per side.
+/// A zero denominator or a nonfinite result returns `None`. Intermediate
+/// products keep their exponent range until the final division.
+pub fn product_quotient<const N: usize, const D: usize>(
+    numerator: [f64; N],
+    denominator: [f64; D],
+) -> Option<f64> {
+    if N > 4 || D > 4 {
+        return None;
+    }
+    let sum::ProductSum::Value(denominator) = sum::product_sum(std::iter::once(Some(denominator)))
+    else {
+        return None;
+    };
+    match sum::product_sum(std::iter::once(Some(numerator))) {
+        sum::ProductSum::Value(value) => value.quotient(denominator),
+        sum::ProductSum::Zero => Some(0.0),
+        sum::ProductSum::Undefined => None,
+    }
+}
+
+/// The finite products `(scale * sinh(parameter), scale * cosh(parameter))`.
+/// Large parameters are exponentiated in thirds before the products are
+/// combined; a small scale can then retain otherwise overflowing values.
+pub fn scaled_sinh_cosh(scale: f64, parameter: f64) -> Option<(f64, f64)> {
+    if !scale.is_finite() || !parameter.is_finite() {
+        return None;
+    }
+    if scale == 0.0 {
+        return Some((0.0, 0.0));
+    }
+    let sinh = parameter.sinh();
+    let cosh = parameter.cosh();
+    if cosh.is_finite() {
+        return Some((
+            multiply_divide(scale, sinh, 1.0)?,
+            multiply_divide(scale, cosh, 1.0)?,
+        ));
+    }
+    let third = parameter.abs() / 3.0;
+    let exponential = third.exp();
+    let tail = (parameter.abs() - third - third).exp();
+    let magnitude = product_quotient([scale, exponential, exponential, tail], [2.0])?;
+    // At this parameter magnitude, the omitted exp(-abs(parameter)) term
+    // is too small to change either rounded product for any finite scale.
+    Some((magnitude * parameter.signum(), magnitude))
+}
+
+/// Interpolate between finite endpoints at a fraction in `[0, 1]`.
+/// The weighted sum does not form an overflowing endpoint difference.
+pub fn interpolate(start: f64, end: f64, fraction: f64) -> Option<f64> {
+    if !(0.0..=1.0).contains(&fraction) {
+        return None;
+    }
+    sum::finite_dot([1.0 - fraction, fraction], [start, end])
+}
+
+/// Map a finite parameter into the half-open finite interval `[start, end)`.
+/// A period wider than f64's range is evaluated in a half-scale chart.
+pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
+    if ![parameter, start, end].into_iter().all(f64::is_finite) || start >= end {
+        return None;
+    }
+    if (start..end).contains(&parameter) {
+        return Some(parameter);
+    }
+    if parameter == end {
+        return Some(start);
+    }
+    let period = end - start;
+    if !period.is_finite() {
+        return multiply_divide(
+            wrap_parameter(parameter * 0.5, start * 0.5, end * 0.5)?,
+            2.0,
+            1.0,
+        );
+    }
+    let relative = parameter - start;
+    let offset = if relative.is_finite() {
+        relative.rem_euclid(period)
+    } else {
+        (parameter.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
+    };
+    let wrapped = start + offset;
+    wrapped
+        .is_finite()
+        .then_some(if wrapped >= end { start } else { wrapped })
+}
+
 /// Reflect a finite parameter about the midpoint of two finite bounds.
 /// The exact sum avoids overflow and cancellation in `start + end - parameter`.
 /// Returns `None` when an input or the reflected result is non-finite.

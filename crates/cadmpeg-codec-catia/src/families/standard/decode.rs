@@ -7396,7 +7396,7 @@ fn standard_pcurve_geometry(
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);
             let offset = midpoint.vector_from(start);
-            chord.cross(offset).norm() <= 2e-3 * chord.norm().max(1.0)
+            chord.unit_nonzero()?.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
             (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
@@ -7406,7 +7406,7 @@ fn standard_pcurve_geometry(
                 let origin = line_curve.origin();
                 let direction = line_curve.direction();
                 let offset = midpoint.vector_from(*origin);
-                (*direction).cross(offset).norm() <= 2e-3 * (*direction).norm().max(1.0)
+                direction.unit_nonzero()?.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
             }
             _ => false,
         },

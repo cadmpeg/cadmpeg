@@ -132,3 +132,38 @@ fn numerical_audit_product_quotient_preserves_representable_results() {
     }
     assert!(super::multiply_divide(1.0, 1.0, 0.0).is_none());
 }
+
+#[test]
+fn numerical_ranges_products_keep_intermediate_exponents() {
+    use super::{product_quotient, scaled_sinh_cosh};
+    assert_eq!(
+        product_quotient([1e200, 1e200], [4.0, 1e200]),
+        Some(2.5e199)
+    );
+    assert_eq!(product_quotient([2.0, 1e308, 0.5], []), Some(1e308));
+    assert_eq!(product_quotient([1.0], [0.0]), None);
+    assert_eq!(product_quotient([f64::NAN], [1.0]), None);
+    assert_eq!(product_quotient([f64::MAX, 2.0], []), None);
+    for parameter in [-720.0_f64, 720.0] {
+        let expected = (parameter.abs() + 1e-10_f64.ln()).exp() * 0.5;
+        let (sinh, cosh) = scaled_sinh_cosh(1e-10, parameter).unwrap();
+        assert!((cosh / expected - 1.0).abs() < 1024.0 * f64::EPSILON);
+        assert_eq!(sinh, parameter.signum() * cosh);
+    }
+    assert_eq!(scaled_sinh_cosh(0.0, 2000.0), Some((0.0, 0.0)));
+    assert_eq!(scaled_sinh_cosh(1.0, 2000.0), None);
+    assert_eq!(scaled_sinh_cosh(2.0, 0.0), Some((0.0, 2.0)));
+}
+#[test]
+fn numerical_ranges_interpolation_and_wrapping_avoid_endpoint_subtraction_overflow() {
+    use super::{interpolate, wrap_parameter};
+    assert_eq!(interpolate(-1e308, 1e308, 0.5), Some(0.0));
+    assert_eq!(interpolate(-1e308, 1e308, 0.0), Some(-1e308));
+    assert_eq!(interpolate(-1e308, 1e308, 1.0), Some(1e308));
+    assert_eq!(interpolate(0.0, 1.0, f64::NAN), None);
+    assert_eq!(wrap_parameter(1e308, -1e308, 0.0), Some(-1e308));
+    assert_eq!(wrap_parameter(1.5e308, -1e308, 1e308), Some(-5e307));
+    assert_eq!(wrap_parameter(1.0, -1.0, 1.0), Some(-1.0));
+    assert_eq!(wrap_parameter(0.5, -1.0, 1.0), Some(0.5));
+    assert_eq!(wrap_parameter(1.0, 0.0, 0.0), None);
+}
