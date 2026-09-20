@@ -211,3 +211,25 @@ fn analytic_curve_angles_preserve_extreme_radii() {
         }
     }
 }
+
+#[test]
+fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    ));
+    let point = |angle: f64| Point3::new(angle.cos(), angle.sin(), 0.0);
+    let range = crate::families::standard::decode::standard_analytic_curve_parameter_range;
+    let actual = range(&geometry, point(0.0), point(0.001), Some(point(0.0005))).unwrap();
+    assert_eq!(actual[0], 0.0);
+    assert!((actual[1] - 0.001).abs() <= 8.0 * f64::EPSILON * 0.001);
+    assert_eq!(
+        range(&geometry, point(0.0), point(0.0), Some(point(1.0))),
+        Some([0.0, std::f64::consts::TAU])
+    );
+}

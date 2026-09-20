@@ -4078,7 +4078,11 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
     use cadmpeg_ir::scalar::Angle;
 
     let trace = transform[0][0] + transform[1][1] + transform[2][2];
-    let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
+    let sine = 0.5
+        * (transform[2][1] - transform[1][2])
+            .hypot(transform[0][2] - transform[2][0])
+            .hypot(transform[1][0] - transform[0][1]);
+    let angle = sine.atan2(((trace - 1.0) * 0.5).clamp(-1.0, 1.0));
     if angle.abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12 {
         return None;
     }

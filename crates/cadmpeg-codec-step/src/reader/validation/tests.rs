@@ -218,3 +218,47 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         );
     }
 }
+
+#[test]
+fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
+    use cadmpeg_ir::{
+        math::Point3,
+        tessellation::{Tessellation, TessellationMesh},
+    };
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.bodies.len(), 1);
+    for scale in [1.0e-90, 1.0, 1.0e90] {
+        let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
+            .map(|p| Point3::new(p[0] * scale, p[1] * scale, p[2] * scale))
+            .to_vec();
+        let mesh = TessellationMesh::from_list_lanes(
+            points,
+            vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+            None,
+        )
+        .unwrap();
+        let mut tessellation = Tessellation::new(
+            "test:step:tessellation#numerical-followup",
+            mesh,
+            Vec::new(),
+        )
+        .unwrap();
+        tessellation.body = Some(ir.model.bodies[0].id.clone());
+        ir.model.tessellations = vec![tessellation];
+        let properties = super::mesh_properties(&ir).unwrap();
+        assert!(
+            (properties.volume / scale / scale / scale - 1.0 / 3.0).abs() <= 8.0 * f64::EPSILON
+        );
+        for (actual, expected) in [
+            (properties.centroid.x / scale, 0.5),
+            (properties.centroid.y / scale, 0.25),
+            (properties.centroid.z / scale, 0.25),
+        ] {
+            assert!((actual - expected).abs() <= 8.0 * f64::EPSILON);
+        }
+    }
+}

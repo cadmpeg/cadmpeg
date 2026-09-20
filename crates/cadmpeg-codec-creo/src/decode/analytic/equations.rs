@@ -10,6 +10,7 @@ use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
 
+const EPS_PLANE_CIRCLE_PARALLEL: f64 = 1.0e-9;
 const EPS_PLANE_RESIDUAL: f64 = 1.0e-6;
 const EPS_ROOT_CLUSTER: f64 = 1.0e-7;
 const EPS_PARAM_UNIQUE: f64 = 1.0e-7;
@@ -1195,40 +1196,29 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     else {
         return Vec::new();
     };
-    let line_direction = cross(plane_normal, circle_normal);
-    let denominator = dot(line_direction, line_direction);
-    if denominator <= 1e-18 || radius <= 0.0 {
+    let direction = cross(plane_normal, circle_normal);
+    let sine = direction[0].hypot(direction[1]).hypot(direction[2]);
+    if sine <= EPS_PLANE_CIRCLE_PARALLEL || !radius.is_finite() || radius <= 0.0 {
         return Vec::new();
     }
-    let plane_distance = dot(plane_normal, plane.origin);
-    let circle_distance = dot(circle_normal, center);
-    let weighted = std::array::from_fn(|index| {
-        plane_distance * circle_normal[index] - circle_distance * plane_normal[index]
-    });
-    let line_origin = cross(weighted, line_direction).map(|value| value / denominator);
-    let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - center[index]);
-    let parameter_at_nearest = -dot(relative, line_direction) / denominator;
-    let nearest: [f64; 3] = std::array::from_fn(|index| {
-        line_origin[index] + parameter_at_nearest * line_direction[index]
-    });
-    let center_to_nearest: [f64; 3] = std::array::from_fn(|index| nearest[index] - center[index]);
-    let remaining = radius.mul_add(radius, -dot(center_to_nearest, center_to_nearest));
-    let scale = radius.max(1.0);
-    if remaining < -EPS_NEAR_ZERO * scale * scale {
+    let direction = direction.map(|value| value / sine);
+    let radial_direction = cross(circle_normal, direction);
+    let relative = std::array::from_fn(|index| plane.origin[index] - center[index]);
+    let distance = dot(plane_normal, relative) / sine;
+    let radial_fraction = (distance / radius).abs();
+    if !radial_fraction.is_finite() || radial_fraction > 1.0 + EPS_NEAR_ZERO {
         return Vec::new();
     }
-    let parameter_delta = if remaining.abs() <= EPS_NEAR_ZERO * scale * scale {
-        0.0
-    } else {
-        remaining.sqrt() / denominator.sqrt()
-    };
-    let mut points = vec![std::array::from_fn(|index| {
-        nearest[index] - parameter_delta * line_direction[index]
-    })];
-    if parameter_delta > EPS_NEAR_ZERO * scale {
-        points.push(std::array::from_fn(|index| {
-            nearest[index] + parameter_delta * line_direction[index]
-        }));
+    let radial_fraction = radial_fraction.min(1.0);
+    let half_chord = radius * ((1.0 - radial_fraction).sqrt() * (1.0 + radial_fraction).sqrt());
+    let nearest: [f64; 3] =
+        std::array::from_fn(|index| center[index] + distance * radial_direction[index]);
+    let mut points = Vec::new();
+    for signed_chord in [-half_chord, half_chord] {
+        let point = std::array::from_fn(|index| nearest[index] + signed_chord * direction[index]);
+        if point.iter().all(|value| value.is_finite()) && !points.contains(&point) {
+            points.push(point);
+        }
     }
     points
 }
@@ -1556,5 +1546,29 @@ mod tests {
         assert!(cone(4.0, 1.5, FRAC_PI_2 + 0.25).is_none());
         assert!(cone(4.0, 1.5, -0.25).is_none());
         assert!(cone(4.0, 1.5, f64::NAN).is_none());
+    }
+
+    const SMALL_SECTION_CIRCLE_RADIUS: f64 = 1.0e-7;
+    #[test]
+    fn numerical_seventh_plane_circle_preserves_intersection_multiplicity() {
+        for radius in [SMALL_SECTION_CIRCLE_RADIUS, 1.0, 1.0e200] {
+            let cut = |x| {
+                super::intersect_plane_with_circle(
+                    PlaneEquation {
+                        origin: [x, 0.0, 0.0],
+                        normal: [1.0, 0.0, 0.0],
+                    },
+                    [0.0; 3],
+                    [0.0, 0.0, 1.0],
+                    radius,
+                )
+            };
+            let points = cut(0.0);
+            assert_eq!(points.len(), 2);
+            assert!(points.contains(&[0.0, radius, 0.0]));
+            assert!(points.contains(&[0.0, -radius, 0.0]));
+            assert_eq!(cut(radius).len(), 1);
+            assert!(cut(2.0 * radius).is_empty());
+        }
     }
 }

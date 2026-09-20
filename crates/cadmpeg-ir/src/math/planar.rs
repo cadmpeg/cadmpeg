@@ -152,33 +152,46 @@ pub fn circle_intersections(
     {
         return None;
     }
-    let (delta, scale) = scaled_displacement(first, second, first_radius.max(second_radius));
+    // Work from the smaller circle so its radius survives independently of the
+    // separation and the other radius. The returned point set is unordered.
+    if first_radius > second_radius {
+        return circle_intersections(second, second_radius, first, first_radius);
+    }
+    let (delta, scale) = scaled_displacement(first, second, 0.0);
     let distance = delta.u.hypot(delta.v);
     if distance == 0.0 {
         return (first_radius != second_radius).then(Vec::new);
     }
-    let r = first_radius / scale;
-    let s = second_radius / scale;
-    if distance > r + s || distance < (r - s).abs() {
+    let mut denominator = ExactSignedSum::default();
+    denominator.add_factors([2.0, distance, scale]);
+    let denominator = denominator.finish()?;
+    let mut numerator = ExactSignedSum::default();
+    for (start, end) in [(first.u, second.u), (first.v, second.v)] {
+        numerator.add_product(start, start);
+        numerator.add_product(end, end);
+        numerator.add_factors([-2.0, start, end]);
+    }
+    numerator.add_product(first_radius, first_radius);
+    numerator.add_product(-second_radius, second_radius);
+    let Some(along) = numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(denominator))
+    else {
+        return Some(Vec::new());
+    };
+    let radial_fraction = (along / first_radius).abs();
+    if radial_fraction > 1.0 + 64.0 * f64::EPSILON {
         return Some(Vec::new());
     }
-    let along = 0.5 * (distance + (r - s) * (r + s) / distance);
-    let height_squared = (r - along) * (r + along);
-    let error = 64.0 * f64::EPSILON * (r * r + along * along);
-    if height_squared < -error {
-        return Some(Vec::new());
-    }
-    let height = height_squared.max(0.0).sqrt();
+    let radial_fraction = radial_fraction.min(1.0);
+    let height = first_radius * ((1.0 - radial_fraction).sqrt() * (1.0 + radial_fraction).sqrt());
     let unit = Point2::new(delta.u / distance, delta.v / distance);
     let mut points = Vec::new();
     for height in [height, -height] {
         let point = Point2::new(
-            super::sum::finite_dot([1.0, scale], [first.u, along * unit.u - height * unit.v])?,
-            super::sum::finite_dot([1.0, scale], [first.v, along * unit.v + height * unit.u])?,
+            super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v])?,
+            super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u])?,
         );
-        if !point.is_finite() {
-            return None;
-        }
         if !points.contains(&point) {
             points.push(point);
         }
@@ -280,6 +293,27 @@ mod tests {
                 Some(Ordering::Greater)
             );
             assert_eq!(orientation(a, b, Point2::new(0., -r)), Some(Ordering::Less));
+        }
+    }
+
+    #[test]
+    fn numerical_seventh_unequal_circles_preserve_the_small_circle() {
+        for large in [1.0e20, 1.0e200, 1.0e300] {
+            for reversed in [false, true] {
+                let small_center = Point2::new(0.0, 0.0);
+                let large_center = Point2::new(large, 0.0);
+                let points = if reversed {
+                    circle_intersections(large_center, large, small_center, 1.0)
+                } else {
+                    circle_intersections(small_center, 1.0, large_center, large)
+                }
+                .unwrap();
+                assert_eq!(points.len(), 2);
+                for point in points {
+                    assert!((point.u * large - 0.5).abs() <= 8.0 * f64::EPSILON);
+                    assert!((point.v.abs() - 1.0).abs() <= 8.0 * f64::EPSILON);
+                }
+            }
         }
     }
 }

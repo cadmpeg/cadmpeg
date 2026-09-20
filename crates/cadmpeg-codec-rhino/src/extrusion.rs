@@ -614,7 +614,11 @@ fn mitered_local(
         c * axis.x * axis.y * point.x + (1.0 - c * axis.x * axis.x) * point.y,
         point.z,
     );
-    Ok(rodrigues(scaled, axis, normal.z.acos()))
+    Ok(rodrigues(
+        scaled,
+        axis,
+        normal.x.hypot(normal.y).atan2(normal.z),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1624,5 +1628,14 @@ pub(crate) mod tests {
             &mut crate::mesh::MeshBudget::new(),
         )
         .is_ok());
+    }
+
+    const SMALL_MITER_TILT: f64 = 1.0e-8;
+    #[test]
+    fn numerical_seventh_miter_preserves_a_shallow_plane_tilt() {
+        let normal = super::active_miter(true, Vector3::new(SMALL_MITER_TILT, 0.0, 1.0)).unwrap();
+        let point = super::mitered_local(Vector3::new(1.0e8, 0.0, 0.0), Some(normal), 0).unwrap();
+        assert!((point.z + 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!(normal.dot(point).abs() <= 8.0 * f64::EPSILON);
     }
 }

@@ -287,3 +287,56 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert!(model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).is_none());
     assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());
 }
+
+#[test]
+fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
+    let off_diagonal = 2.0 / 3.0;
+    let diagonal = -1.0 / 3.0;
+    let formula = LawFormula::Named {
+        name: cadmpeg_core::nonblank_literal!("ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)"),
+        variables: vec![LawExpression::TransformVec {
+            vectors: [
+                Vector3::new(diagonal, off_diagonal, off_diagonal),
+                Vector3::new(off_diagonal, diagonal, off_diagonal),
+                Vector3::new(off_diagonal, off_diagonal, diagonal),
+                Vector3::new(0.0, 0.0, 0.0),
+            ],
+            scale: 1.0,
+            flags: [true, false, false],
+        }],
+    };
+    let transform = crate::eval::sweep_rail_transform(&formula).unwrap();
+    let point = transform
+        .apply_point(Point3::new(f64::MAX, f64::MAX, f64::MAX))
+        .unwrap();
+    let vector = transform
+        .apply_vector(Vector3::new(f64::MAX, f64::MAX, f64::MAX))
+        .unwrap();
+    for value in [point.x, point.y, point.z, vector.x, vector.y, vector.z] {
+        assert!((value / f64::MAX - 1.0).abs() <= 4.0 * f64::EPSILON);
+    }
+}
+
+#[test]
+fn numerical_seventh_normalized_derivative_keeps_finite_results() {
+    use crate::eval::unit_vector_with_derivative;
+    for magnitude in [1.0, 1.0e200, f64::MAX] {
+        let (_, derivative) = unit_vector_with_derivative(
+            Vector3::new(1.0, 1.0, 1.0),
+            Vector3::new(magnitude, magnitude, magnitude),
+        )
+        .unwrap();
+        assert_eq!(derivative, Vector3::new(0.0, 0.0, 0.0));
+        let (unit, derivative) = unit_vector_with_derivative(
+            Vector3::new(magnitude, magnitude, 0.0),
+            Vector3::new(0.0, 0.0, 0.0),
+        )
+        .unwrap();
+        assert!((unit.norm() - 1.0).abs() <= 4.0 * f64::EPSILON);
+        assert_eq!(derivative, Vector3::new(0.0, 0.0, 0.0));
+    }
+    let (_, derivative) =
+        unit_vector_with_derivative(Vector3::new(3.0, 0.0, 0.0), Vector3::new(7.0, 6.0, 0.0))
+            .unwrap();
+    assert_eq!(derivative, Vector3::new(0.0, 2.0, 0.0));
+}

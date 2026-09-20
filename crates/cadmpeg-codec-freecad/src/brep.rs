@@ -4826,7 +4826,6 @@ fn normalize_periodic_knots(
             "periodic B-spline has insufficient interior knots".into(),
         ));
     }
-    let period = last - first;
     let mut normalized =
         Vec::with_capacity(knots.len().checked_add(2 * padding).ok_or_else(|| {
             CodecError::Malformed("periodic B-spline knot limit exceeded".into())
@@ -4834,14 +4833,19 @@ fn normalize_periodic_knots(
     normalized.extend(
         knots[before_last - padding..before_last]
             .iter()
-            .map(|knot| knot - period),
+            .map(|knot| first - (last - knot)),
     );
     normalized.extend_from_slice(&knots);
     normalized.extend(
         knots[first_multiplicity..first_multiplicity + padding]
             .iter()
-            .map(|knot| knot + period),
+            .map(|knot| last + (knot - first)),
     );
+    if normalized.iter().any(|knot| !knot.is_finite()) {
+        return Err(CodecError::Malformed(
+            "periodic B-spline extension exceeds finite knot range".into(),
+        ));
+    }
     Ok((normalized, padding))
 }
 
@@ -6692,5 +6696,15 @@ pub(crate) mod tests {
                 matches!((matched_payload.transposed(),), (true,)),
             _ => false,
         });
+    }
+
+    #[test]
+    fn numerical_seventh_periodic_knots_keep_finite_exterior_knots() {
+        let (knots, padding) =
+            super::normalize_periodic_knots(vec![-1e308, -9e307, 9e307, 1e308], 1, true).unwrap();
+        assert_eq!(padding, 1);
+        assert!((knots[0] / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!((knots[5] / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
+        assert!(super::normalize_periodic_knots(vec![-1e308, 0.0, 1e308], 1, true).is_err());
     }
 }

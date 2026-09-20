@@ -193,6 +193,31 @@ mod tests {
             Some(Point2::new(7.0, -7.0))
         );
     }
+
+    #[test]
+    fn numerical_seventh_common_weights_preserve_closest_point() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        for weight in [1.0e-200, 1.0, 1.0e200] {
+            let controls = [
+                [-0.25 * weight, 0.0, 0.0, weight],
+                [0.75 * weight, 0.0, 0.0, weight],
+            ];
+            let distance = super::homogeneous_residual_distance(&controls, 0.0, [0.0, 1.0]);
+            assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
+            let curve = NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                Some(vec![weight; 2]),
+                false,
+            )
+            .unwrap();
+            let parameter =
+                super::closest_nurbs_curve_parameter(&curve, Point3::new(0.25, 0.0, 0.0), None)
+                    .unwrap();
+            assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
+        }
+    }
 }
 
 pub(super) fn decoded_surface_point_inner_with_budget(
@@ -2276,6 +2301,24 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     // For residual R/W, half the squared-distance derivative has numerator
     // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
     // stationary parameters of the rational span.
+    // A common homogeneous factor cannot change stationary parameters.
+    let scale = controls
+        .iter()
+        .flatten()
+        .try_fold(0.0_f64, |scale, value| {
+            value.is_finite().then_some(scale.max(value.abs()))
+        })?;
+    let exponent = cadmpeg_ir::math::power_of_two_bound(scale)?;
+    let controls = controls
+        .iter()
+        .map(|control| {
+            let mut normalized = *control;
+            for value in &mut normalized {
+                *value = cadmpeg_ir::math::scale_power_of_two(*value, -exponent)?;
+            }
+            Some(normalized)
+        })
+        .collect::<Option<Vec<_>>>()?;
     let weight = controls
         .iter()
         .map(|control| control[DIMENSION - 1])
@@ -2626,10 +2669,8 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     }
     values[0][..DIMENSION - 1]
         .iter()
-        .map(|value| value * value)
-        .sum::<f64>()
-        .sqrt()
-        / values[0][DIMENSION - 1]
+        .map(|value| value / values[0][DIMENSION - 1])
+        .fold(0.0, f64::hypot)
 }
 
 fn closest_parameter_candidates(

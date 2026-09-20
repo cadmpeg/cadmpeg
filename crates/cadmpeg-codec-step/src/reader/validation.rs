@@ -334,7 +334,22 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
         .tessellations
         .iter()
         .filter(|mesh| mesh.body.as_ref() == Some(&body));
-    let mut origin = None;
+    let origin = meshes.clone().find_map(|mesh| {
+        mesh.triangles()
+            .first()
+            .and_then(|triangle| mesh.vertices().get(triangle[0] as usize))
+            .copied()
+    })?;
+    let extent = meshes
+        .clone()
+        .flat_map(|mesh| mesh.vertices())
+        .fold(0.0_f64, |scale, point| {
+            scale
+                .max((point.x - origin.x).abs())
+                .max((point.y - origin.y).abs())
+                .max((point.z - origin.z).abs())
+        });
+    let exponent = cadmpeg_ir::math::power_of_two_bound(extent)?;
     let mut area = 0.0;
     let mut area_centroid = [0.0; 3];
     let mut signed_volume = 0.0;
@@ -358,10 +373,16 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
                     .entry((first.min(second), first.max(second)))
                     .or_default() += 1;
             }
-            let reference = *origin.get_or_insert(a);
-            let relative =
-                |p: Point3| Point3::new(p.x - reference.x, p.y - reference.y, p.z - reference.z);
-            let [a, b, c] = [a, b, c].map(relative);
+            let relative = |point: Point3| {
+                Some(Point3::new(
+                    cadmpeg_ir::math::scale_power_of_two(point.x - origin.x, -exponent)?,
+                    cadmpeg_ir::math::scale_power_of_two(point.y - origin.y, -exponent)?,
+                    cadmpeg_ir::math::scale_power_of_two(point.z - origin.z, -exponent)?,
+                ))
+            };
+            let [Some(a), Some(b), Some(c)] = [a, b, c].map(relative) else {
+                return None;
+            };
             coordinate_scale = coordinate_scale
                 .max(a.x.abs())
                 .max(a.y.abs())
@@ -415,18 +436,23 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
             area_centroid[2] / area,
         )
     };
-    let origin = origin?;
     let centroid = Point3::new(
-        origin.x + centroid.x,
-        origin.y + centroid.y,
-        origin.z + centroid.z,
+        origin.x + cadmpeg_ir::math::scale_power_of_two(centroid.x, exponent)?,
+        origin.y + cadmpeg_ir::math::scale_power_of_two(centroid.y, exponent)?,
+        origin.z + cadmpeg_ir::math::scale_power_of_two(centroid.z, exponent)?,
     );
     if !area.is_finite() || !signed_volume.is_finite() || !centroid.is_finite() {
         return None;
     }
+    let area = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent)?;
+    let volume = if signed_volume == 0.0 {
+        0.0
+    } else {
+        cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)?
+    };
     Some(MeshProperties {
         area,
-        volume: signed_volume.abs(),
+        volume,
         centroid,
     })
 }

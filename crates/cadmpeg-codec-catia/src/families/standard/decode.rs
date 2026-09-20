@@ -8084,11 +8084,17 @@ fn standard_analytic_curve_parameter_range(
     end: Point3,
     witness: Option<Point3>,
 ) -> Option<[f64; 2]> {
-    if start.distance_squared(end).sqrt() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE {
+    let start_angle = standard_analytic_curve_angle(geometry, start)?;
+    let end_angle = standard_analytic_curve_angle(geometry, end)?;
+    // A short chord does not establish a closed edge. The same source vertex does.
+    if start == end {
+        if let Some(witness) = witness {
+            standard_analytic_curve_angle(geometry, witness)?;
+        }
         return Some([0.0, std::f64::consts::TAU]);
     }
-    let start = standard_analytic_curve_angle(geometry, start)?;
-    let short_end = unwrap_angle(standard_analytic_curve_angle(geometry, end)?, start);
+    let start = start_angle;
+    let short_end = unwrap_angle(end_angle, start);
     let end = witness.map_or(Some(short_end), |witness| {
         witness_arc_end(
             start,
