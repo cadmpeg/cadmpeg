@@ -715,6 +715,15 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
 # the shared crates a CADIR document states the shape of; a codec crate's own
 # records stay outside it, because they generate no schema and state their
 # shape through `NativeRecord`.
+#
+# A member the mirror carries with `#[serde(flatten)]` publishes no property of
+# its own: the properties are the members of the flattened type, so that type is
+# a mirror as well and its members carry the same rule. The flattened type is
+# resolved by name, the declaration in the mirror's own file first and a
+# declaration elsewhere in the same crate next, which is the resolution a path
+# the attribute could spell would take. A type named from another crate is not
+# resolved, and neither is a type the flattened type reaches through anything
+# other than a further `#[serde(flatten)]`.
 WIRE_MIRROR_DOC_ROOTS = (
     "crates/cadmpeg-ir",
     "crates/cadmpeg-core",
@@ -723,6 +732,8 @@ WIRE_MIRROR_DOC_ROOTS = (
 )
 SERDE_ATTRIBUTE = re.compile(r"#\s*\[\s*serde\s*\(")
 SERDE_MIRROR_TARGET = re.compile(r"(?<![\w.])(?:try_from|from)\s*=\s*\"(?P<target>[^\"]+)\"")
+SERDE_FLATTEN = re.compile(r"(?<![\w.])flatten\b")
+TYPE_PATH = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
 NAMED_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 TYPE_DECL = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<kind>struct|enum)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
@@ -835,12 +846,90 @@ def mirror_members(lines: list[str], masked: list[str], kind: str, index: int):
         yield match.group("name"), after
 
 
+def member_attribute_blocks(lines: list[str], masked: list[str], index: int, floor: int):
+    """Yield the source text of each attribute block above the member at ``index``.
+
+    The walk steps over blank lines, ordinary comments and doc comments, so an
+    attribute under a doc comment is still read as the member's own.
+    """
+    line = index - 1
+    while line > floor:
+        text = lines[line].strip()
+        if not text or text.startswith("//"):
+            line -= 1
+            continue
+        if not masked[line].rstrip().endswith("]"):
+            return
+        depth = 0
+        start = line
+        while start > floor:
+            depth += masked[start].count("]") - masked[start].count("[")
+            if depth <= 0:
+                break
+            start -= 1
+        yield "".join(lines[start:line + 1])
+        line = start - 1
+
+
+def member_type_text(masked: list[str], index: int, end: int) -> str:
+    """The type a field declares, from its colon to the comma that ends it."""
+    match = MIRROR_FIELD.match(masked[index])
+    if match is None:
+        return ""
+    pieces: list[str] = []
+    depth = 0
+    for line in range(index, end):
+        text = masked[line][match.end():] if line == index else masked[line]
+        for character in text:
+            if character in "<([{":
+                depth += 1
+            elif character in ">)]}":
+                depth -= 1
+                if depth < 0:
+                    return "".join(pieces)
+            elif character == "," and depth == 0:
+                return "".join(pieces)
+            pieces.append(character)
+        pieces.append(" ")
+    return "".join(pieces)
+
+
+def flattened_member_types(lines: list[str], masked: list[str], kind: str, index: int) -> set[str]:
+    """Type names the declaration at ``index`` publishes through `serde(flatten)`.
+
+    A flattened member states no property of its own, so the names here are the
+    types that hold the properties the wire carries in its place.
+    """
+    body = index
+    while body < len(masked) and "{" not in masked[body]:
+        if ";" in masked[body]:
+            return set()
+        body += 1
+    if body >= len(masked):
+        return set()
+    end = find_matching_brace_end(masked, body)
+    names: set[str] = set()
+    for _, line in mirror_members(lines, masked, kind, index):
+        flattened = any(
+            SERDE_ATTRIBUTE.search(block) is not None and SERDE_FLATTEN.search(block) is not None
+            for block in member_attribute_blocks(lines, masked, line, index)
+        )
+        if not flattened:
+            continue
+        for match in TYPE_PATH.finditer(member_type_text(masked, line, end)):
+            names.add(match.group("name"))
+    return names
+
+
 def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
     """Report a serde wire mirror member that carries no doc comment.
 
     The mirror is the shape the wire states, and the published JSON schema
     reads each member's doc as that property's `description`. A member with no
     doc leaves the schema silent about the value the wire carries.
+
+    A type the mirror flattens holds the properties that member publishes, so
+    it is a mirror too and its members carry the same rule.
 
     The scan reads the whole tree: a declaration names its mirror by type name,
     and the mirror itself is often declared in another file, so no per-file
@@ -851,6 +940,7 @@ def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
     targets: dict[Path, set[str]] = {}
     in_file: dict[Path, dict[str, list[tuple[str, int]]]] = {}
     in_crate: dict[str, dict[str, list[tuple[Path, str, int]]]] = {}
+    kinds: dict[tuple[Path, int], str] = {}
     for path in files:
         lines = sources[path].splitlines()
         code, _ = production_source(sources[path])
@@ -862,21 +952,36 @@ def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
             named |= mirror_targets(attrs)
             in_file.setdefault(path, {}).setdefault(name, []).append((kind, index))
             in_crate.setdefault(crate, {}).setdefault(name, []).append((path, kind, index))
+            kinds[(path, index)] = kind
         targets[path] = named
     # A target name is a type path the compiler resolves where the attribute
     # stands, so the declaration in the same file answers first. A crate that
     # holds its mirrors in child modules answers next, and nothing outside the
     # crate can be named without a path the attribute would spell.
+    def resolve(path: Path, target: str) -> list[tuple[Path, int]]:
+        local = in_file.get(path, {}).get(target)
+        if local is not None:
+            return [(path, index) for _, index in local]
+        crate = relative_path(path).split("/")[1]
+        return [(other, index) for other, _, index in in_crate.get(crate, {}).get(target, [])]
+
     mirrors: set[tuple[Path, int]] = set()
     for path, named in targets.items():
-        crate = relative_path(path).split("/")[1]
         for target in named:
-            local = in_file.get(path, {}).get(target)
-            if local is not None:
-                mirrors.update((path, index) for _, index in local)
-                continue
-            for other, _, index in in_crate.get(crate, {}).get(target, []):
-                mirrors.add((other, index))
+            mirrors.update(resolve(path, target))
+    # A flattened member publishes the flattened type's properties, so that type
+    # is a mirror as well. The walk repeats until it finds nothing new, which
+    # carries the rule through a mirror that flattens a type that flattens
+    # another.
+    pending = list(mirrors)
+    while pending:
+        path, index = pending.pop()
+        lines, masked = parsed[path]
+        for target in flattened_member_types(lines, masked, kinds[(path, index)], index):
+            for found in resolve(path, target):
+                if found not in mirrors:
+                    mirrors.add(found)
+                    pending.append(found)
     findings: list[Finding] = []
     for path in files:
         relative = relative_path(path)

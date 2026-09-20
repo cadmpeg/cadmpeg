@@ -584,6 +584,30 @@ class WireMirrorDocs(TempSourceCase):
                 ])
                 (self.root / "crates" / crate / "src" / "shared.rs").unlink()
 
+    def test_a_type_the_mirror_flattens_carries_the_rule(self) -> None:
+        self.write(f"{self.IR}/flat.rs", '\n'.join([
+            '#[serde(try_from = "FlatWire")]', "pub struct Flat { value: u8 }", "",
+            "struct FlatWire {", "    /// The identity the wire states.",
+            "    #[serde(flatten)]", "    identity: FlatIdentityWire,", "}", "",
+            "struct FlatIdentityWire {", "    name: String,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/flat.rs", 11),
+        ])
+        self.assertIn("`name`", findings[0].message)
+        self.assertIn("`FlatIdentityWire`", findings[0].message)
+
+    def test_a_documented_flattened_type_states_the_whole_shape(self) -> None:
+        self.write(f"{self.IR}/flat.rs", '\n'.join([
+            '#[serde(try_from = "FlatWire")]', "pub struct Flat { value: u8 }", "",
+            "struct FlatWire {", "    /// The identity the wire states.",
+            "    #[serde(flatten)]", "    identity: Option<FlatIdentityWire>,", "}", "",
+            "struct FlatIdentityWire {", "    /// The name the wire states.",
+            "    name: String,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
     def test_a_tuple_mirror_and_a_crate_outside_the_rule_state_nothing(self) -> None:
         self.write(f"{self.IR}/tuple.rs", '#[serde(try_from = "TupleWire")]\n'
                                           "pub struct Tuple(u8);\n"
