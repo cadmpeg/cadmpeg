@@ -221,3 +221,19 @@ fn helix_surface_preserves_finite_directed_ranges_and_signed_profiles() {
     assert!(HelixLineProfile::try_new(Vector3::new(0.0, 0.0, 0.0)).is_err());
     assert!(HelixLineProfile::try_new(Vector3::new(2.0, 0.0, 0.0)).is_ok());
 }
+
+#[test]
+fn numerical_followup_circular_helix_admits_finite_radial_scales() {
+    use crate::geometry::{HelixFrame, HelixPathConstruction};
+    use crate::math::{Point3, Vector3};
+    for radius in [1.0, 1e200, 1e-200] {
+        let frame = HelixFrame {
+            center: Point3::new(0., 0., 0.),
+            major: Vector3::new(radius, 0., 0.),
+            minor: Vector3::new(0., radius, 0.),
+            pitch: Vector3::new(0., 0., 1.),
+            axis: Vector3::new(0., 0., 1.),
+        };
+        assert!(HelixPathConstruction::try_new([0., 1.], frame, 0.).is_ok());
+    }
+}

@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS curves, surfaces, pole layouts, and knot invariants.
 
+/// Homogeneous Bezier extraction and boundary certificates.
+pub mod bezier;
+/// Rational control-polygon speed bounds.
+pub mod bounds;
+
 use crate::math::Point3;
 use crate::scalar::NonZeroReal;
 #[cfg(feature = "schema")]

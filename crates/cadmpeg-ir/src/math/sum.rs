@@ -206,7 +206,7 @@ impl ExactSignedSum {
         self.add_factors([left, right]);
     }
 
-    fn add_factors<const N: usize>(&mut self, factors: [f64; N]) {
+    pub(crate) fn add_factors<const N: usize>(&mut self, factors: [f64; N]) {
         // All callers supply at most four factors, the tensor-product point case.
         assert!(N <= 4);
         let mut product = [1_u64, 0, 0, 0];

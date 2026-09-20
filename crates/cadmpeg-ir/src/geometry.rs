@@ -1944,8 +1944,8 @@ impl HelixPathConstruction {
             pitch,
             axis,
         } = frame;
-        let major_length = (major.x.powi(2) + major.y.powi(2) + major.z.powi(2)).sqrt();
-        let minor_length = (minor.x.powi(2) + minor.y.powi(2) + minor.z.powi(2)).sqrt();
+        let major_length = major.norm();
+        let minor_length = minor.norm();
         if !(major_length > 0.0
             && (major_length - minor_length).abs()
                 <= EPS_HELIX_SURFACE_RADIUS_RELATIVE * major_length.max(1.0))

@@ -1860,54 +1860,22 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
-    let degree = curve.degree();
-    let degree_usize = degree as usize;
-    let knots = curve.knots();
-    let control_points = curve.control_points();
-    let weights = curve.weights();
-    let count = control_points.len();
-    let weights = match weights {
-        Some(weights) => weights,
-        None => alloc_filled(count, 1.0, "f3d_nurbs_weights").ok()?,
-    };
-    if knots.iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(knots)
-        || control_points
-            .iter()
-            .zip(&weights)
-            .any(|(point, weight)| !point.is_finite() || !weight.is_finite() || *weight <= 0.0)
-    {
-        return None;
-    }
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
-    let maximum_numerator = control_points
+    let points = curve
+        .control_points()
         .iter()
-        .zip(&weights)
-        .map(|(point, weight)| weight * point.u.hypot(point.v))
-        .fold(0.0_f64, f64::max);
-    let mut numerator_speed = 0.0_f64;
-    let mut weight_speed = 0.0_f64;
-    for index in 0..count - 1 {
-        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
-        if denominator == 0.0 {
-            continue;
-        }
-        let factor = f64::from(degree) / denominator;
-        let first = Point2::new(
-            weights[index] * control_points[index].u,
-            weights[index] * control_points[index].v,
-        );
-        let second = Point2::new(
-            weights[index + 1] * control_points[index + 1].u,
-            weights[index + 1] * control_points[index + 1].v,
-        );
-        numerator_speed =
-            numerator_speed.max(factor * (second.u - first.u).hypot(second.v - first.v));
-        weight_speed = weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
-    }
-    let bound = numerator_speed / minimum_weight
-        + maximum_numerator * weight_speed / minimum_weight.powi(2);
-    bound.is_finite().then_some(bound)
+        .map(|p| [p.u, p.v])
+        .collect::<Vec<_>>();
+    let weights = match curve.weights() {
+        Some(weights) => weights,
+        None => alloc_filled(points.len(), 1.0, "f3d_nurbs_weights").ok()?,
+    };
+    cadmpeg_ir::geometry::nurbs::bounds::speed_bound(
+        curve.degree(),
+        curve.knots(),
+        &points,
+        &weights,
+        [0.0, 0.0],
+    )
 }
 
 fn circular_arc_profile_segments(

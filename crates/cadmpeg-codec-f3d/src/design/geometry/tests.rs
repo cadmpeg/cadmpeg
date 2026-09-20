@@ -1125,3 +1125,18 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
         assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
     }
 }
+
+#[test]
+fn numerical_followup_profile_speed_bound_retains_common_weights() {
+    for weight in [1.0, 1e-200, 1e200] {
+        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point2::new(0., 0.), Point2::new(1., 0.)],
+            Some(vec![weight; 2]),
+            false,
+        )
+        .unwrap();
+        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
+    }
+}
