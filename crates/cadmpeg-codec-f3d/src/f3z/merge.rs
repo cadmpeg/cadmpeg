@@ -215,7 +215,7 @@ impl MergeSession<'_, '_> {
 /// Places every root-level occurrence from a merged member inside the
 /// occurrence that owns that member. Child occurrence parents already carry
 /// the member-local hierarchy and are left unchanged.
-pub(super) fn reparent_component_roots(
+fn reparent_component_roots(
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
     parent: &cadmpeg_ir::ids::OccurrenceId,
 ) {
@@ -232,10 +232,7 @@ pub(super) fn reparent_component_roots(
 }
 
 /// Places one component's feature history after the histories already merged.
-pub(super) fn append_feature_history(
-    parent: &Model,
-    component: &mut Model,
-) -> Result<(), CodecError> {
+fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), CodecError> {
     let Some(component_minimum) = component
         .features
         .iter()
@@ -303,7 +300,7 @@ fn rescope_fidelity(
     Ok(rescoped)
 }
 
-pub(super) fn occurrence_key(reference: &XrefReference) -> String {
+fn occurrence_key(reference: &XrefReference) -> String {
     if reference.neutron_role.is_empty() {
         return format!(
             "ordinal-{}/occurrence-{}",
@@ -348,7 +345,7 @@ fn apply_occurrence_transform(
 }
 
 /// Composes a component-local transform after its archive occurrence transform.
-pub(super) fn compose_transforms(
+fn compose_transforms(
     outer: cadmpeg_ir::transform::Transform,
     inner: cadmpeg_ir::transform::Transform,
 ) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
@@ -365,8 +362,8 @@ fn rescope(text: &str, occurrence: &str) -> Option<String> {
 }
 
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
-pub(super) struct OccurrenceScope<'a> {
-    pub(super) occurrence: &'a str,
+struct OccurrenceScope<'a> {
+    occurrence: &'a str,
 }
 
 impl EntityRewrite for OccurrenceScope<'_> {
@@ -386,7 +383,7 @@ impl EntityRewrite for OccurrenceScope<'_> {
 }
 
 /// Appends all known component-native arenas after occurrence-local rescoping.
-pub(super) fn extend_native(
+fn extend_native(
     root: &mut Native,
     mut component: Native,
     occurrence: &str,
@@ -624,6 +621,7 @@ fn scope_named_values(value: &mut Value, names: &[&str], occurrence: &str) {
 #[cfg(test)]
 mod tests {
     mod fidelity;
+    mod occurrence;
 
     use super::{apply_occurrence_transform, compose_transforms};
     use cadmpeg_ir::document::Model;
