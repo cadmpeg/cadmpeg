@@ -337,8 +337,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     let origin = meshes.clone().find_map(|mesh| {
         mesh.triangles()
             .first()
-            .and_then(|triangle| mesh.vertices().get(triangle[0] as usize))
-            .copied()
+            .and_then(|triangle| mesh.vertices().get(triangle[0] as usize).copied())
     })?;
     let extent = meshes
         .clone()
