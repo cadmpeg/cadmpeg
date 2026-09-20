@@ -2630,18 +2630,9 @@ pub(super) fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Op
     else {
         return None;
     };
-    let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
-    let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
-    let first_length = first_direction[0].hypot(first_direction[1]);
-    let second_length = second_direction[0].hypot(second_direction[1]);
-    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
-        return None;
-    }
-    Some(
-        ((first_direction[0] * second_direction[0] + first_direction[1] * second_direction[1])
-            / (first_length * second_length))
-            .clamp(-1.0, 1.0)
-            .acos(),
+    super::relation_records::line_line_angle(
+        [[first_start.u, first_start.v], [first_end.u, first_end.v]],
+        [[second_start.u, second_start.v], [second_end.u, second_end.v]],
     )
 }
 

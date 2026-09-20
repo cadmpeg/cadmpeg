@@ -1965,7 +1965,7 @@ pub(crate) fn project_generated_hole_axes(
     surfaces: &[Surface],
 ) {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
-    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -2019,7 +2019,7 @@ pub(crate) fn project_generated_hole_axes(
                 if local_identities.is_empty() {
                     continue;
                 }
-                let mut axes = HashMap::<[i64; 6], HolePlacement>::new();
+                let mut axes = HashMap::<[GridCoordinate; 6], HolePlacement>::new();
                 for (face, identity) in face_identities {
                     if identity.feature_source_id != source
                         || !local_identities.contains(&identity.local_id)
@@ -2094,7 +2094,7 @@ pub(crate) fn project_generated_hole_axes(
                             quantize(axis.y),
                             quantize(axis.z),
                         ],
-                        HolePlacement::Directed { .. } => [0; 6],
+                        HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
                     })
                     .collect::<Vec<_>>()
             });
@@ -2733,9 +2733,39 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
         && left_allow_multi_profile_faces == right_allow_multi_profile_faces
 }
 
-fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
+/// Outside i64 grid range, adjacent finite coordinates are farther apart than
+/// one grid cell. Preserve their bits instead of saturating distinct cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum GridCoordinate {
+    BelowRange(u64),
+    Cell(i64),
+    AboveRange(u64),
+}
+
+impl GridCoordinate {
+    fn new(value: f64, quantum: f64) -> Self {
+        let cell = (value / quantum).round();
+        if cell < i64::MIN as f64 {
+            Self::BelowRange(!value.to_bits())
+        } else if cell >= -(i64::MIN as f64) {
+            Self::AboveRange(value.to_bits())
+        } else {
+            Self::Cell(cell as i64)
+        }
+    }
+
+    fn coordinate(self, quantum: f64) -> f64 {
+        match self {
+            Self::BelowRange(bits) => f64::from_bits(!bits),
+            Self::Cell(cell) => cell as f64 * quantum,
+            Self::AboveRange(bits) => f64::from_bits(bits),
+        }
+    }
+}
+
+fn hole_axis_key(placement: &HolePlacement) -> Option<[GridCoordinate; 6]> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
-    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
     let HolePlacement::Axis { origin, axis } = placement else {
         return None;
     };
@@ -2746,6 +2776,7 @@ fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
         origin.y - station * axis.y,
         origin.z - station * axis.z,
     );
+    if !closest.is_finite() || !axis.is_finite() { return None; }
     Some([
         quantize(closest.x),
         quantize(closest.y),
@@ -3138,7 +3169,7 @@ fn plane_owned_bore_placements(
     topology: &HoleTopology<'_>,
 ) -> Option<Vec<HolePlacement>> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
-    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
     let mut placements = cylindrical_bore_axes(radius, topology)
         .into_iter()
         .filter(|(_, axis)| axis.dot(plane_normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY)
@@ -3160,7 +3191,7 @@ fn plane_owned_bore_placements(
         })
         .try_fold(
             HashMap::<
-                [i64; 3],
+                [GridCoordinate; 3],
                 (
                     cadmpeg_ir::features::FinitePoint3,
                     cadmpeg_ir::features::FeatureDirection3,
@@ -3206,7 +3237,7 @@ fn carrier_placements(
     axes: impl IntoIterator<Item = (Point3, Vector3)>,
 ) -> Option<Vec<HolePlacement>> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
-    let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
+    let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
     let mut carriers = axes
         .into_iter()
         .map(|(origin, axis)| {
@@ -3715,8 +3746,8 @@ fn match_marker_loci_to_bore_axes(
     }
 
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-    let quantize_scalar = |value: f64| (value / QUANTUM).round() as i64;
-    let mut grouped = HashMap::<[i64; 3], HashMap<[i64; 3], Vec<(Point3, Vector3)>>>::new();
+    let quantize_scalar = |value: f64| GridCoordinate::new(value, QUANTUM);
+    let mut grouped = HashMap::<[GridCoordinate; 3], HashMap<[GridCoordinate; 3], Vec<(Point3, Vector3)>>>::new();
     for surface in surfaces {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
@@ -3735,6 +3766,7 @@ fn match_marker_loci_to_bore_axes(
             origin.y - closest_distance * canonical.y,
             origin.z - closest_distance * canonical.z,
         );
+        if !closest.is_finite() || !canonical.is_finite() { continue; }
         grouped
             .entry([
                 quantize_scalar(canonical.x),
@@ -3751,7 +3783,7 @@ fn match_marker_loci_to_bore_axes(
             .push((origin, axis));
     }
 
-    let mut solutions = HashMap::<Vec<[i64; 6]>, Vec<HolePlacement>>::new();
+    let mut solutions = HashMap::<Vec<[GridCoordinate; 6]>, Vec<HolePlacement>>::new();
     for lines in grouped.into_values() {
         let mut candidates = lines
             .into_iter()
@@ -3779,9 +3811,9 @@ fn match_marker_loci_to_bore_axes(
             .iter()
             .map(|([x, y, z], ..)| {
                 Point3::new(
-                    *x as f64 * QUANTUM,
-                    *y as f64 * QUANTUM,
-                    *z as f64 * QUANTUM,
+                    x.coordinate(QUANTUM),
+                    y.coordinate(QUANTUM),
+                    z.coordinate(QUANTUM),
                 )
             })
             .collect::<Vec<_>>();
@@ -3812,7 +3844,7 @@ fn match_marker_loci_to_bore_axes(
                         quantize_scalar(axis.y),
                         quantize_scalar(axis.z),
                     ],
-                    HolePlacement::Directed { .. } => [0; 6],
+                    HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
                 })
                 .collect::<Vec<_>>();
             solutions.insert(key, placements);
@@ -3853,7 +3885,7 @@ fn match_marker_loci_to_bore_axes(
                         quantize_scalar(axis.y),
                         quantize_scalar(axis.z),
                     ],
-                    HolePlacement::Directed { .. } => [0; 6],
+                    HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
                 })
                 .collect::<Vec<_>>();
             solutions.insert(key, placements);

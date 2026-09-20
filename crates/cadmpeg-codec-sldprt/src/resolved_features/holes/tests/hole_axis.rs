@@ -1065,3 +1065,14 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     });
     assert!(seeded_drilled_bore_candidates(&features, &[0, 1], 4.0, &topology).is_none());
 }
+
+#[test]
+fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    for positions in [[1.0e12, 2.0e12], [-2.0e12, -1.0e12], [1.0e300, 2.0e300]] {
+        let placements = crate::resolved_features::holes::carrier_placements(
+            positions.map(|x| (Point3::new(x, 0.0, 0.0), axis))).unwrap();
+        assert_eq!(placements.len(), 2);
+        assert_ne!(hole_axis_key(&placements[0]), hole_axis_key(&placements[1]));
+    }
+}
