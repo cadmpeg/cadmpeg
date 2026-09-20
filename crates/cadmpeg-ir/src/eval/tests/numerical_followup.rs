@@ -150,3 +150,73 @@ fn numerical_followup_hyperbolic_laws_preserve_values_and_chain_derivatives() {
     .unwrap();
     assert!(tail.derivative > 0.0 && tail.derivative.is_finite());
 }
+
+#[test]
+fn analytic_line_search_preserves_subnormal_scale_residuals() {
+    let line = SolvedCurveGeometry::Line(
+        crate::geometry::LineCurve::try_new(Point3::new(0., 0., 0.), Vector3::new(1., 0., 0.))
+            .unwrap(),
+    );
+    assert_eq!(
+        direct_curve_parameter_near_point(&line, Point3::new(0., 1e-200, 0.), 0., 0.),
+        None
+    );
+}
+
+#[test]
+fn inverse_laws_preserve_scaled_chain_derivatives() {
+    for (operator, sign) in [
+        ("ARCTAN", 1.),
+        ("ARCOT", -1.),
+        ("ARCSEC", 1.),
+        ("ARCCSC", -1.),
+        ("ARCCSCH", -1.),
+    ] {
+        for x in [-1e200, 1e200] {
+            let result = scalar_unary_sweep_law_differential(
+                operator,
+                ScalarSweepDifferential {
+                    value: x,
+                    derivative: 1e300,
+                },
+            )
+            .unwrap();
+            assert!(
+                (result.derivative / (sign * 1e-100) - 1.).abs() <= 8. * f64::EPSILON,
+                "{operator}"
+            );
+        }
+    }
+}
+
+#[test]
+fn reciprocal_hyperbolic_laws_preserve_exponential_tails() {
+    for x in [-720.0_f64, 720.] {
+        for operator in ["SECH", "CSCH"] {
+            let result = scalar_unary_sweep_law_differential(
+                operator,
+                ScalarSweepDifferential {
+                    value: x,
+                    derivative: 1e300,
+                },
+            )
+            .unwrap();
+            let expected_magnitude = 2. * (-360.0_f64).exp() * (1e300 * (-360.0_f64).exp());
+            let sign = if operator == "SECH" { -x.signum() } else { -1. };
+            assert!(
+                (result.derivative / (sign * expected_magnitude) - 1.).abs() <= 8. * f64::EPSILON
+            );
+            assert!(result.value != 0. && result.value.is_finite());
+        }
+    }
+    let result = scalar_unary_sweep_law_differential(
+        "COTH",
+        ScalarSweepDifferential {
+            value: 400.,
+            derivative: 1e300,
+        },
+    )
+    .unwrap();
+    let expected = -4. * (-400.0_f64).exp() * (1e300 * (-400.0_f64).exp());
+    assert!((result.derivative / expected - 1.).abs() <= 8. * f64::EPSILON);
+}

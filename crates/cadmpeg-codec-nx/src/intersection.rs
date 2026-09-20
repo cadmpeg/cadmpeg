@@ -513,7 +513,7 @@ fn enrich(
         .iter()
         .zip(chart_endpoints)
         .any(|(term, endpoint)| {
-            term.is_some_and(|term| distance(term, endpoint) > chart.fit_tolerance)
+            term.is_some_and(|term| Point3::distance(term, endpoint) > chart.fit_tolerance)
         })
     {
         return Err(Rejection::EndpointMismatch);
@@ -533,7 +533,7 @@ fn enrich(
             .into_iter()
             .filter(|permutation| {
                 permutation.iter().enumerate().all(|(ordinal, topology)| {
-                    distance(chart_endpoints[ordinal], topology_endpoints[*topology])
+                    Point3::distance(chart_endpoints[ordinal], topology_endpoints[*topology])
                         <= chart.fit_tolerance
                 })
             })
@@ -763,7 +763,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                         .iter()
                         .zip(candidate.samples.points().iter())
                         .all(|(first, second)| {
-                            distance(*first, *second)
+                            Point3::distance(*first, *second)
                                 <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
                         })
                     && entry
@@ -1112,11 +1112,6 @@ fn point_m(stream: &[u8], at: usize) -> Option<FinitePoint> {
         view.f64_be()? * 1000.0,
     ];
     FinitePoint::try_from(mm).ok()
-}
-
-fn distance(first: Point3, second: Point3) -> f64 {
-    ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
-        .sqrt()
 }
 
 #[cfg(test)]

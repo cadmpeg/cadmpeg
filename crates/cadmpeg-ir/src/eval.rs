@@ -3477,10 +3477,7 @@ fn model_curve_point_by_id_inner(
             let [Some(first), Some(second)] = points else {
                 return None;
             };
-            let separation = ((first.x - second.x).powi(2)
-                + (first.y - second.y).powi(2)
-                + (first.z - second.z).powi(2))
-            .sqrt();
+            let separation = first.distance(second);
             (separation.is_finite() && separation <= tolerance).then_some(first)
         }
         _ => {
@@ -3824,10 +3821,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(evaluated) = model_curve_point_by_id(index, curve_id, parameter) else {
             continue;
         };
-        let distance = ((evaluated.x - point.x).powi(2)
-            + (evaluated.y - point.y).powi(2)
-            + (evaluated.z - point.z).powi(2))
-        .sqrt();
+        let distance = evaluated.distance(point);
         if distance.is_finite() && distance <= tolerance {
             candidates.push(parameter);
         }
@@ -4007,10 +4001,7 @@ fn direct_curve_parameter_near_point(
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => return None,
     };
     let evaluated = curve_point_solved(geometry, parameter)?;
-    let error = ((evaluated.x - point.x).powi(2)
-        + (evaluated.y - point.y).powi(2)
-        + (evaluated.z - point.z).powi(2))
-    .sqrt();
+    let error = evaluated.distance(point);
     (parameter.is_finite() && error.is_finite() && error <= tolerance).then_some(parameter)
 }
 
@@ -4935,7 +4926,92 @@ fn scalar_unary_sweep_law_differential(
     operand: ScalarSweepDifferential,
 ) -> Option<ScalarSweepDifferential> {
     let x = operand.value;
+    if !x.is_finite() || !operand.derivative.is_finite() {
+        return None;
+    }
     match operator {
+        "ARCTAN" | "ARCOT" | "ARCSEC" | "ARCCSC" | "ARCCSCH" => {
+            let mut denominator = ExactSignedSum::default();
+            let (value, sign) = match operator {
+                "ARCTAN" | "ARCOT" => {
+                    denominator.add_product(x, x);
+                    denominator.add_product(1.0, 1.0);
+                    if operator == "ARCTAN" {
+                        (x.atan(), 1.0)
+                    } else {
+                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0)
+                    }
+                }
+                "ARCSEC" | "ARCCSC" => {
+                    if x.abs() <= 1.0 {
+                        return None;
+                    }
+                    let factor = (((x.abs() - 1.0) / x.abs()) * (1.0 + 1.0 / x.abs())).sqrt();
+                    denominator.add_factors([x.abs(), x.abs(), factor]);
+                    if operator == "ARCSEC" {
+                        ((1.0 / x).acos(), 1.0)
+                    } else {
+                        ((1.0 / x).asin(), -1.0)
+                    }
+                }
+                _ => {
+                    if x == 0.0 {
+                        return None;
+                    }
+                    denominator.add_product(x.abs(), x.hypot(1.0));
+                    ((1.0 / x).asinh(), -1.0)
+                }
+            };
+            let derivative = match crate::math::sum::scaled_finite(operand.derivative) {
+                Some(numerator) => sign * numerator.quotient(denominator.finish()?)?,
+                None if operand.derivative == 0.0 => 0.0,
+                None => return None,
+            };
+            return finite_sweep_differential(value, derivative);
+        }
+        "COTH" | "SECH" | "CSCH" => {
+            if x == 0.0 && operator != "SECH" {
+                return None;
+            }
+            let tail = (-x.abs()).exp();
+            let sinh_denominator = -(-2.0 * x.abs()).exp_m1();
+            let mut numerator = ExactSignedSum::default();
+            let mut denominator = ExactSignedSum::default();
+            let value = match operator {
+                "COTH" => {
+                    numerator.add_factors([-4.0, tail, tail, operand.derivative]);
+                    denominator.add_product(sinh_denominator, sinh_denominator);
+                    1.0 / x.tanh()
+                }
+                "SECH" => {
+                    let half_tail = (-0.5 * x.abs()).exp();
+                    numerator.add_factors([
+                        -2.0 * x.tanh(),
+                        half_tail,
+                        half_tail,
+                        operand.derivative,
+                    ]);
+                    denominator.add_product(1.0 + tail * tail, 1.0);
+                    2.0 * tail / (1.0 + tail * tail)
+                }
+                _ => {
+                    let half_tail = (-0.5 * x.abs()).exp();
+                    numerator.add_factors([
+                        -2.0 * (1.0 + tail * tail),
+                        half_tail,
+                        half_tail,
+                        operand.derivative,
+                    ]);
+                    denominator.add_product(sinh_denominator, sinh_denominator);
+                    (2.0 * tail / sinh_denominator).copysign(x)
+                }
+            };
+            let derivative = match numerator.finish() {
+                Some(value) => value.quotient(denominator.finish()?)?,
+                None => 0.0,
+            };
+            return finite_sweep_differential(value, derivative);
+        }
         "TANH" => {
             let exponential = (-x.abs()).exp();
             let mut numerator = ExactSignedSum::default();
@@ -4996,18 +5072,6 @@ fn scalar_unary_sweep_law_differential(
         }
         "COSH" => x.sinh(),
         "SINH" => x.cosh(),
-        "COTH" => {
-            let sinh = x.sinh();
-            (sinh != 0.0).then_some(-1.0 / (sinh * sinh))?
-        }
-        "SECH" => {
-            let value = 1.0 / x.cosh();
-            -value * x.tanh()
-        }
-        "CSCH" => {
-            let sinh = x.sinh();
-            (sinh != 0.0).then_some(-(1.0 / sinh) * (x.cosh() / sinh))?
-        }
         "ARCCOS" => {
             let denominator = (1.0 - x * x).sqrt();
             (denominator > 0.0).then_some(-1.0 / denominator)?
@@ -5016,22 +5080,11 @@ fn scalar_unary_sweep_law_differential(
             let denominator = (1.0 - x * x).sqrt();
             (denominator > 0.0).then_some(1.0 / denominator)?
         }
-        "ARCTAN" => 1.0 / (1.0 + x * x),
-        "ARCOT" => -1.0 / (1.0 + x * x),
-        "ARCSEC" => {
-            let denominator = (x * x - 1.0).sqrt();
-            (x.abs() > 1.0 && denominator > 0.0).then_some(1.0 / (x.abs() * denominator))?
-        }
-        "ARCCSC" => {
-            let denominator = (x * x - 1.0).sqrt();
-            (x.abs() > 1.0 && denominator > 0.0).then_some(-1.0 / (x.abs() * denominator))?
-        }
         "ARCTANH" => (x.abs() < 1.0).then_some(1.0 / (1.0 - x * x))?,
         "ARCSECH" => {
             let denominator = (1.0 - x * x).sqrt();
             (x > 0.0 && x < 1.0 && denominator > 0.0).then_some(-1.0 / (x * denominator))?
         }
-        "ARCCSCH" => (x != 0.0).then_some(-1.0 / (x.abs() * (1.0 + x * x).sqrt()))?,
         "ABS" => {
             if x > 0.0 {
                 1.0
@@ -5057,18 +5110,10 @@ fn scalar_unary_sweep_law_differential(
             "CSC" => 1.0 / x.sin(),
             "COSH" => x.cosh(),
             "SINH" => x.sinh(),
-            "COTH" => 1.0 / x.tanh(),
-            "SECH" => 1.0 / x.cosh(),
-            "CSCH" => 1.0 / x.sinh(),
             "ARCCOS" => x.acos(),
             "ARCSIN" => x.asin(),
-            "ARCTAN" => x.atan(),
-            "ARCOT" => std::f64::consts::FRAC_PI_2 - x.atan(),
-            "ARCSEC" => (1.0 / x).acos(),
-            "ARCCSC" => (1.0 / x).asin(),
             "ARCTANH" => x.atanh(),
             "ARCSECH" => (1.0 / x).acosh(),
-            "ARCCSCH" => (1.0 / x).asinh(),
             "ABS" => x.abs(),
             "EXP" => x.exp(),
             "LN" => x.ln(),
