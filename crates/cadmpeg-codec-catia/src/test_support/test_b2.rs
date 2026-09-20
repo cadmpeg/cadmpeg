@@ -222,7 +222,7 @@ pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn owner_numeric_tail() -> Vec<u8> {
+fn owner_numeric_tail() -> Vec<u8> {
     owner_numeric_tail_for([-0.0, 4.5], [12.25, 7.0])
 }
 

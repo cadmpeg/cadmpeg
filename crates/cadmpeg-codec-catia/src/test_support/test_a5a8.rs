@@ -240,7 +240,7 @@ pub(crate) fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
     a5_pcurve_stream_with_support_and_uv(0x1234, u, v)
 }
 
-pub(crate) fn a5_pcurve_stream_with_support_and_uv(
+pub(super) fn a5_pcurve_stream_with_support_and_uv(
     support_id: u32,
     u: [f64; 2],
     v: [f64; 2],
@@ -319,7 +319,7 @@ pub(crate) fn a6_surface_stream() -> Vec<u8> {
     wide
 }
 
-pub(crate) fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
+pub(super) fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
     a5_surface_record_with_tail(poles, &a5_surface_tail())
 }
 
@@ -335,7 +335,7 @@ pub(crate) fn a5_surface_stream_with_tail(tail: &[u8]) -> Vec<u8> {
     )
 }
 
-pub(crate) fn a5_surface_record_with_tail(poles: [[f64; 3]; 4], tail: &[u8]) -> Vec<u8> {
+fn a5_surface_record_with_tail(poles: [[f64; 3]; 4], tail: &[u8]) -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa5, 0x03, 0x34]);
     record.extend_from_slice(&0u32.to_le_bytes());
@@ -358,11 +358,7 @@ pub(crate) fn a5_surface_record_with_tail(poles: [[f64; 3]; 4], tail: &[u8]) -> 
     record
 }
 
-pub(crate) fn a5_surface_parameter_tail(
-    flags: [u8; 3],
-    continuation: &[f64],
-    suffix: &[u8],
-) -> Vec<u8> {
+fn a5_surface_parameter_tail(flags: [u8; 3], continuation: &[f64], suffix: &[u8]) -> Vec<u8> {
     let mut tail = vec![0x05, 0x05, 0x05, 0x05];
     for value in [0.0f64, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0] {
         tail.extend_from_slice(&le_f64(value));

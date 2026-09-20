@@ -26,7 +26,7 @@ use crate::wire::bytes::{f64_le, f64_point, f64_vector};
 
 /// A directly decoded analytic carrier in the zero-entity `a9 03` stream.
 #[derive(Debug, Clone)]
-pub(crate) struct ZeroEntitySurface {
+pub(in crate::families::zero_entity) struct ZeroEntitySurface {
     /// Offset of the framed record in the file.
     pub(super) pos: usize,
     /// The decoded surface carrier.

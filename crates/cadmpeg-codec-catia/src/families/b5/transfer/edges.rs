@@ -67,7 +67,7 @@ pub(super) fn merge_curve_plan(
     }
 }
 
-pub(super) fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
+fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     plan.parameter_range.or_else(|| {
         let Some(SolvedCurveGeometry::Nurbs(curve)) = plan.geometry.solved() else {
             return None;

@@ -517,9 +517,9 @@ pub(crate) fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CircularHelixCache {
     /// Piecewise-linear curve cache on the construction's angle interval.
-    pub curve: NurbsCurve,
+    pub(crate) curve: NurbsCurve,
     /// Maximum radial sagitta deviation in model length units.
-    pub fit_tolerance: f64,
+    pub(crate) fit_tolerance: f64,
 }
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.

@@ -79,7 +79,7 @@ pub(crate) fn neutral_model_is_admissible(
 ///
 /// A carrier is one record instance, so a report about them names the
 /// identities, not only how many there are.
-pub(crate) fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<String>, Vec<String>) {
+fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<String>, Vec<String>) {
     let mut resolved_curves = ir
         .model
         .curves
@@ -215,7 +215,7 @@ pub(crate) fn unresolved_carrier_ids(ir: &CadIr) -> (Vec<String>, Vec<String>) {
 
 /// How many curve and surface carriers the transfer left unresolved.
 #[cfg(test)]
-pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
+fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
     let (curves, surfaces) = unresolved_carrier_ids(ir);
     (curves.len(), surfaces.len())
 }

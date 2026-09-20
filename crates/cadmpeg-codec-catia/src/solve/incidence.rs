@@ -1510,7 +1510,7 @@ pub(crate) enum IncidenceSolve<T> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CoordinateRootPolicy {
+pub(super) enum CoordinateRootPolicy {
     RequireUnique,
     DeferToVisitor,
 }
@@ -3169,7 +3169,7 @@ fn deferred_boundary_cycle_assignment(
     None
 }
 
-pub(crate) fn deferred_boundary_cycle_matches(
+pub(super) fn deferred_boundary_cycle_matches(
     mesh: &MeshDeferredBoundaryCycle,
     incidence: &[(usize, bool)],
     missing: &HashSet<usize>,
@@ -4400,7 +4400,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
+pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],

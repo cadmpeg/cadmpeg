@@ -137,7 +137,7 @@ impl TryFrom<u8> for CatiaOwnerIdentityClass {
 
 /// One fixed-nine owner identity resolved within its allocation source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaOwnerIdentityTarget {
+struct CatiaOwnerIdentityTarget {
     /// Zero-based identity slot in the fixed-nine packet.
     slot: u8,
     /// Decoded backward distance.
@@ -200,7 +200,7 @@ struct CatiaOwnerBoundaryEdge {
 
 /// Owner-local boundary evidence derived from a closed fixed-nine cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaOwnerBoundaryCycle {
+struct CatiaOwnerBoundaryCycle {
     /// Source-scoped class-`0x5f` face node that precedes this boundary
     /// allocation and closes its checked identity, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]

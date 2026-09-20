@@ -229,10 +229,7 @@ pub(super) fn oriented_circle_plan(
     })
 }
 
-pub(super) fn isoparametric_angle_coordinate(
-    pcurve: &B5Pcurve,
-    surface: &B5Surface,
-) -> Option<(usize, f64)> {
+fn isoparametric_angle_coordinate(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<(usize, f64)> {
     match surface {
         B5Surface::Cylinder { angular_scale, .. }
             if constant_coordinate(&pcurve.control_points, 1).is_some() =>
@@ -583,7 +580,7 @@ pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Optio
     }
 }
 
-pub(super) fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
+fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
     let value = points.first()?[dimension];
     points
         .iter()

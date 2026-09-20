@@ -30,7 +30,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Returns the absolute cursor offset.
-    pub(crate) fn position(&self) -> usize {
+    pub(super) fn position(&self) -> usize {
         self.view.position()
     }
 
@@ -40,7 +40,7 @@ impl<'a> Cursor<'a> {
     /// `e5`) recognises the lead bytes `0x38`, `0x18`, `0x10`, `0x08` and any
     /// `0x80..=0xff`. The extended dialect (used by `b5`) additionally
     /// recognises `0x30`, `0x28`, and `0x20`. See `wire::tokens::object_ref`.
-    pub(crate) fn object_ref(&mut self, extended: bool) -> Option<u32> {
+    pub(super) fn object_ref(&mut self, extended: bool) -> Option<u32> {
         let mut view = self.view;
         let lead = view.u8()?;
         let value = match lead {
@@ -72,7 +72,7 @@ impl<'a> Cursor<'a> {
     /// A lead byte with `lead % 4 == 1` encodes `(lead - 1) / 4` in one byte.
     /// A nonzero lead with `lead % 4 == 0` encodes a `lead / 4`-byte
     /// little-endian value (width at most four). See `wire::tokens::compact_uint`.
-    pub(crate) fn compact_uint(&mut self) -> Option<u32> {
+    pub(super) fn compact_uint(&mut self) -> Option<u32> {
         let mut view = self.view;
         let lead = view.u8()?;
         let value = if lead % 4 == 1 {

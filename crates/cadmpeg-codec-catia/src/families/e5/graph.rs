@@ -141,7 +141,7 @@ pub(super) struct E5BoundEntry {
 
 /// One knot of a degree-5 E5 UV jet.
 #[derive(Debug, Clone, PartialEq)]
-pub(in crate::families) struct E5PcurveJetSite {
+pub(in crate::families::e5) struct E5PcurveJetSite {
     /// Distinct knot.
     pub(super) knot: f64,
     /// Multiplicity of this distinct knot.
@@ -186,7 +186,7 @@ impl E5PcurveJetSite {
 /// `0xaa` (NURBS)
 /// record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
-pub(in crate::families) enum E5Pcurve {
+pub(super) enum E5Pcurve {
     /// Class `0x96`: `<surface_ref>, origin_u, origin_v, dir_u, dir_v,
     /// param_lo, param_hi` stored as f64.
     Line {

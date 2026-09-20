@@ -15,7 +15,7 @@ impl A8KnotLane {
 
     /// Multiplicity of each distinct knot.
     #[cfg(test)]
-    pub(crate) fn multiplicities(&self) -> &[u32] {
+    pub(super) fn multiplicities(&self) -> &[u32] {
         &self.multiplicities
     }
 

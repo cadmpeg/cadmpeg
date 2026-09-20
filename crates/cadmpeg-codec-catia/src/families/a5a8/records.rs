@@ -425,7 +425,7 @@ impl A8SurfaceHeader {
 
 #[derive(Debug, Clone)]
 /// Degree-5 UV jet stored in an `a8 <flag> 20` object record.
-pub(crate) struct A8Pcurve {
+pub(in crate::families) struct A8Pcurve {
     /// Inline object identifier.
     pub(in crate::families) object_id: u32,
     /// Referenced support-surface object identifier.
@@ -523,7 +523,7 @@ pub(in crate::families) struct A5FreeformJet {
 
 /// Consolidated degree-5 rolling-ball jet.
 #[derive(Debug, Clone)]
-pub(crate) struct A5FreeformCurve {
+pub(in crate::families) struct A5FreeformCurve {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Schema token immediately before the payload.
@@ -628,7 +628,7 @@ pub(in crate::families) struct GuideCurveSite {
 
 /// Width-coded guide-curve and reference-direction jet.
 #[derive(Debug, Clone)]
-pub(crate) struct A5GuideCurve {
+pub(in crate::families) struct A5GuideCurve {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Width-coded header token.
@@ -647,7 +647,7 @@ impl A5GuideCurve {
 
 /// One non-rational degree-5 NURBS curve stored in an `a5 13 16` frame.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct A5NurbsCurve {
+pub(in crate::families) struct A5NurbsCurve {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Width-coded record token.

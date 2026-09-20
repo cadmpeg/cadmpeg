@@ -76,7 +76,7 @@ pub(crate) fn standard_catpart_with_opened_parser_version_relation_expression(
     )
 }
 
-pub(crate) fn standard_catpart_with_parser_version_relation_expression_roles(
+fn standard_catpart_with_parser_version_relation_expression_roles(
     prefix_role: &str,
     parser_version_role: &str,
     state_role: Option<&str>,
@@ -263,7 +263,7 @@ pub(crate) fn standard_catpart_with_lead54_relation_program_instance_class(
     )
 }
 
-pub(crate) fn standard_catpart_with_relation_program_payload(
+fn standard_catpart_with_relation_program_payload(
     head: &[u8],
     instance_payload: &[u8],
     context_class: &str,
