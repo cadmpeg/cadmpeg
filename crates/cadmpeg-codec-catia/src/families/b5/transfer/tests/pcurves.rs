@@ -1354,13 +1354,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
         false,
     )
     .expect("valid tensor surface");
-    let curve = crate::nurbs::nurbs_surface_isocurve(
-        &surface,
-        0.25,
-        true,
-        &mut crate::nurbs::LaneRefusals::new(),
-        "test record",
-    )
+    let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(&surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, 0.25)
     .expect("u isocurve");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), surface.v_knots());

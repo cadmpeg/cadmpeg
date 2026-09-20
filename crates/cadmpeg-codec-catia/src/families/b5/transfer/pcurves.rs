@@ -559,7 +559,7 @@ pub(super) fn lifted_curve_geometry(
                 .ok()?,
             )))
         }
-        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface, refusal)
+        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface)
             .map(SolvedCurveGeometry::Nurbs)
             .map(CurveGeometry::Solved),
         B5Surface::Revolution { .. } => None,
@@ -569,13 +569,11 @@ pub(super) fn lifted_curve_geometry(
 pub(super) fn nurbs_isocurve(
     pcurve: &B5Pcurve,
     surface: &NurbsSurface,
-    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
-    let record = format!("b5 isoparametric pcurve record #{}", pcurve.object_id);
     if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        crate::nurbs::nurbs_surface_isocurve(surface, u, true, refusal, &record)
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, u)
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        crate::nurbs::nurbs_surface_isocurve(surface, v, false, refusal, &record)
+        cadmpeg_ir::eval::nurbs_surface_isocurve(surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V, v)
     } else {
         None
     }

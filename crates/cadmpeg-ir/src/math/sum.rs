@@ -24,11 +24,7 @@ pub(crate) fn finite_dot<const N: usize>(
     let Some(value) = sum.finish() else {
         return Some(0.0);
     };
-    let exponent = value.exponent.0;
-    let outer = exponent.clamp(-1022, 1023);
-    let result =
-        (value.sign * value.mantissa * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
-    result.is_finite().then_some(result)
+    value.finite()
 }
 
 // The smallest exponent a finite `f64` significand carries. Every exponent
@@ -36,12 +32,11 @@ pub(crate) fn finite_dot<const N: usize>(
 // and makes the product shift below a `usize` with no conversion.
 const MIN_SIGNIFICAND_EXPONENT: i32 = -1074;
 
-// A product of two finite f64 values has an integer significand with at most
-// 106 bits. The smallest product exponent is the sum of two smallest
-// significand exponents and the largest is 1942; this range leaves 66 words
-// for three exact signed products and their sum.
-const EXACT_PRODUCT_EXPONENT: i32 = 2 * MIN_SIGNIFICAND_EXPONENT;
-const EXACT_SUM_WORDS: usize = 66;
+// Four finite factors need at most 212 significand bits. The accumulator
+// includes their entire exponent range, 64 low guard bits for rounded scaled
+// terms, and enough high carry bits for any addressable collection of terms.
+const EXACT_PRODUCT_EXPONENT: i32 = 4 * MIN_SIGNIFICAND_EXPONENT - 64;
+const EXACT_SUM_WORDS: usize = 138;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ExactSignedSum {
@@ -127,9 +122,30 @@ pub(crate) struct ScaledValue {
 }
 
 impl ScaledValue {
+    pub(crate) fn exponent(self) -> i32 {
+        self.exponent.0
+    }
+
+    pub(crate) fn rescale(self, exponent: i32) -> Option<f64> {
+        scale_power_of_two(
+            self.sign * self.mantissa,
+            self.exponent.0.checked_sub(exponent)?,
+        )
+    }
+
     /// The value, rescaled into the frame whose exponent is `scale_exponent`.
     pub(crate) fn scaled_by(self, scale_exponent: ScaledExponent) -> f64 {
         self.sign * self.mantissa * 2.0_f64.powi(self.exponent.difference(scale_exponent))
+    }
+    pub(crate) fn finite(self) -> Option<f64> {
+        scale_power_of_two(self.sign * self.mantissa, self.exponent.0)
+    }
+
+    pub(crate) fn quotient(self, denominator: Self) -> Option<f64> {
+        scale_power_of_two(
+            self.sign * denominator.sign * (self.mantissa / denominator.mantissa),
+            self.exponent.difference(denominator.exponent),
+        )
     }
 }
 
@@ -187,24 +203,86 @@ fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
 
 impl ExactSignedSum {
     pub(crate) fn add_product(&mut self, left: f64, right: f64) {
-        let Some((left_negative, left_significand, left_exponent)) = finite_significand(left)
-        else {
-            return;
+        self.add_factors([left, right]);
+    }
+
+    fn add_factors<const N: usize>(&mut self, factors: [f64; N]) {
+        // All callers supply at most four factors, the tensor-product point case.
+        assert!(N <= 4);
+        let mut product = [1_u64, 0, 0, 0];
+        let mut negative = false;
+        let mut exponent = 0_i32;
+        for factor in factors {
+            let Some((sign, significand, biased)) = finite_significand(factor) else {
+                return;
+            };
+            negative ^= sign;
+            exponent += MIN_SIGNIFICAND_EXPONENT + i32::from(biased);
+            let mut carry = 0_u128;
+            for word in &mut product {
+                let value = u128::from(*word) * u128::from(significand) + carry;
+                *word = value as u64;
+                carry = value >> 64;
+            }
+        }
+        let shift = (exponent - EXACT_PRODUCT_EXPONENT) as usize;
+        let target = if negative {
+            &mut self.negative
+        } else {
+            &mut self.positive
         };
-        let Some((right_negative, right_significand, right_exponent)) = finite_significand(right)
-        else {
-            return;
+        add_shifted(
+            target,
+            u128::from(product[0]) | (u128::from(product[1]) << 64),
+            shift,
+        );
+        add_shifted(
+            target,
+            u128::from(product[2]) | (u128::from(product[3]) << 64),
+            shift + 128,
+        );
+    }
+
+    /// Add a rounded extended-range sum times a finite coefficient. Rational
+    /// quotient derivatives use this to subtract weight derivatives before division.
+    pub(crate) fn add_scaled_product(
+        &mut self,
+        value: Option<ScaledValue>,
+        factor: f64,
+    ) -> Option<()> {
+        if !factor.is_finite() {
+            return None;
+        }
+        let Some(value) = value else {
+            return Some(());
         };
-        let product = u128::from(left_significand) * u128::from(right_significand);
-        // Both exponents are biased by `MIN_SIGNIFICAND_EXPONENT`, so their sum
-        // is the product exponent already offset from `EXACT_PRODUCT_EXPONENT`.
-        let shift = usize::from(left_exponent) + usize::from(right_exponent);
-        let target = if left_negative ^ right_negative {
+        let Some((negative, significand, exponent)) =
+            finite_significand(value.sign * value.mantissa)
+        else {
+            return Some(());
+        };
+        let Some((factor_negative, factor_significand, factor_exponent)) =
+            finite_significand(factor)
+        else {
+            return Some(());
+        };
+        let product = u128::from(significand) * u128::from(factor_significand);
+        let shift = value.exponent.0
+            + 2 * MIN_SIGNIFICAND_EXPONENT
+            + i32::from(exponent)
+            + i32::from(factor_exponent)
+            - EXACT_PRODUCT_EXPONENT;
+        let shift = usize::try_from(shift).ok()?;
+        if shift + 128 >= EXACT_SUM_WORDS * 64 {
+            return None;
+        }
+        let target = if negative ^ factor_negative {
             &mut self.negative
         } else {
             &mut self.positive
         };
         add_shifted(target, product, shift);
+        Some(())
     }
 
     pub(crate) fn finish(self) -> Option<ScaledValue> {
@@ -329,6 +407,50 @@ pub(crate) fn fast_dot<const N: usize>(
         return None;
     }
     Some(sum)
+}
+
+/// Scale only after splitting the exponent at the finite power-of-two limits.
+fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
+    let outer = exponent.clamp(-1022, 1023);
+    let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
+    result.is_finite().then_some(result)
+}
+
+/// Sum products without losing a finite result to an intermediate exponent.
+/// Ordinary inputs use f64 arithmetic; range loss and cancellation replay the
+/// same terms through the exact accumulator. The inner None is an exact zero.
+pub(crate) fn product_sum<const N: usize>(
+    terms: impl Iterator<Item = Option<[f64; N]>> + Clone,
+) -> Option<Option<ScaledValue>> {
+    let mut sum = 0.0_f64;
+    let mut largest = 0.0_f64;
+    let mut exact = false;
+    for factors in terms.clone() {
+        let factors = factors?;
+        if factors.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        if factors.contains(&0.0) {
+            continue;
+        }
+        let mut product = 1.0;
+        for factor in factors {
+            product *= factor;
+            exact |= !product.is_normal();
+        }
+        sum += product;
+        largest = largest.max(product.abs());
+        exact |= !sum.is_finite();
+    }
+    exact |= largest != 0.0 && sum.abs() / largest < f64::EPSILON;
+    if !exact {
+        return Some(scaled_finite(sum));
+    }
+    let mut sum = ExactSignedSum::default();
+    for factors in terms {
+        sum.add_factors(factors?);
+    }
+    Some(sum.finish())
 }
 
 #[cfg(test)]
