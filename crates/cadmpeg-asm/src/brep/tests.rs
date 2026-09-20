@@ -79,8 +79,8 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
-    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), *origin).norm() < 1.0e-12);
+    let radius = cylinder_surface.radius().get();
+    assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin.get()).norm() < 1.0e-12);
     assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
@@ -273,8 +273,8 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
                 if {
                     let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = cylinder_surface.radius();
-                    *origin == Point3::new(2.0, 2.0, -4.0)
+        let radius = cylinder_surface.radius().get();
+                    origin.get() == Point3::new(2.0, 2.0, -4.0)
                         && *axis == Vector3::new(0.0, 0.0, 1.0)
                         && radius == 2.0
                 })

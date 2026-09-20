@@ -205,7 +205,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
 
     let axis = Vector3::new(0.0, 0.0, -1.0);
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -390,7 +390,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
             };
             let origin = cylinder_surface.origin();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let mut origin = *origin;
 
             origin.z = 20.0;

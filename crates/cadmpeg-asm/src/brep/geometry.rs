@@ -696,11 +696,11 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             ) => {
-                let plane_origin = plane_surface.origin();
-                let plane_normal = plane_surface.normal();
-                let cylinder_origin = cylinder_surface.origin();
-                let cylinder_axis = cylinder_surface.axis();
-                let cylinder_radius = cylinder_surface.radius();
+                let plane_origin = plane_surface.origin().get();
+                let plane_normal = *plane_surface.normal();
+                let cylinder_origin = cylinder_surface.origin().get();
+                let cylinder_axis = *cylinder_surface.axis();
+                let cylinder_radius = cylinder_surface.radius().get();
                 (
                     plane_origin,
                     plane_normal,
@@ -713,11 +713,11 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
             ) => {
-                let cylinder_origin = cylinder_surface_2.origin();
-                let cylinder_axis = cylinder_surface_2.axis();
-                let cylinder_radius = cylinder_surface_2.radius();
-                let plane_origin = plane_surface_2.origin();
-                let plane_normal = plane_surface_2.normal();
+                let cylinder_origin = cylinder_surface_2.origin().get();
+                let cylinder_axis = *cylinder_surface_2.axis();
+                let cylinder_radius = cylinder_surface_2.radius().get();
+                let plane_origin = plane_surface_2.origin().get();
+                let plane_normal = *plane_surface_2.normal();
                 (
                     plane_origin,
                     plane_normal,
@@ -733,16 +733,16 @@ fn analytic_rolling_ball_surface(
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
-    let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
+    let scale = major_radius.max(radius).max(cylinder_radius).max(1.0);
     let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
-    let center_offset = point_vector(*cylinder_origin, center);
+    let center_offset = point_vector(cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
     if 1.0 - axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
         || 1.0 - axis.dot(cylinder_axis).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
-        || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
+        || (point_vector(plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
-        || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
+        || ((major_radius - cylinder_radius).abs() - radius).abs() > tolerance
     {
         return None;
     }

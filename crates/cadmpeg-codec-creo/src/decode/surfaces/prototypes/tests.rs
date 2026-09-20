@@ -329,7 +329,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     let origin = *cylinder_surface.origin();
     let axis = *cylinder_surface.axis();
     let ref_direction = *cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [0.0, 0.0, 1.0].into());
     assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
@@ -359,7 +359,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert!(
         matches!(nonvisible_surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             radius == 50.8
         })
     );

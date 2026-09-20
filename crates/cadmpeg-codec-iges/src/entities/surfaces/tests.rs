@@ -1368,7 +1368,7 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
         else {
             panic!("expected cylindrical offset carrier")
         };
-        let radius = cylinder_surface.radius();
+        let radius = cylinder_surface.radius().get();
         assert_eq!(radius, expected_radius);
         assert!(
             result.report().losses.is_empty(),

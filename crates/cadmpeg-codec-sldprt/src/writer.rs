@@ -3128,7 +3128,7 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             (
                 0x33,
                 vec![

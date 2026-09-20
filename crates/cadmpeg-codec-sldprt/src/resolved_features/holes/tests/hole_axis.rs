@@ -98,7 +98,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     let mut origin = *origin;
     origin.z = 20.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

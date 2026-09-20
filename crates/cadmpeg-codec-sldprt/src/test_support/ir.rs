@@ -151,19 +151,15 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = cylinder_surface.origin();
-                let axis = cylinder_surface.axis();
-                let ref_direction = cylinder_surface.ref_direction();
+                let frame = cylinder_surface.frame();
                 let radius = cylinder_surface.radius();
-                let mut origin = *origin;
+                let mut origin = cylinder_surface.origin().get();
                 origin.x += dx;
-                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    origin,
-                    *axis,
-                    *ref_direction,
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    frame,
                     radius,
-                )
-                .unwrap();
+                );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin();

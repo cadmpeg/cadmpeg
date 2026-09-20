@@ -3091,8 +3091,8 @@ pub(super) fn analytic_surface_offset(
                 && support_ref == offset_ref
         } =>
         {
-            let support_radius = cylinder_surface.radius();
-            let offset_radius = cylinder_surface_2.radius();
+            let support_radius = cylinder_surface.radius().get();
+            let offset_radius = cylinder_surface_2.radius().get();
             Some(offset_radius - support_radius)
         }
         (

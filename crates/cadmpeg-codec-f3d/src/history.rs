@@ -8789,7 +8789,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let radius = match &surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                    cylinder_surface.radius()
+                    cylinder_surface.radius().get()
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                     sphere_surface.radius()
@@ -8836,7 +8836,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             };
             let origin = *cylinder_surface.origin();
             let axis = *cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             Some(crate::history_records::AsmHistoricalCylinder {
                 surface: stable_ref(surface.id.as_str())?,
                 origin,

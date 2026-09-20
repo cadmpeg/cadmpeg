@@ -1416,7 +1416,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
             assert_eq!(radius, 2.0);
@@ -1438,7 +1438,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         matches!(crate::families::b2::records::b2_cylinders(&large)[0]
         .surface_geometry()
         .unwrap(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-            if { cylinder_surface.radius() == 2_000_000.0 })
+            if { cylinder_surface.radius().get() == 2_000_000.0 })
     );
 
     let tiny = 1e-200_f64;

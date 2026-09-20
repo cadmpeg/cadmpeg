@@ -3285,10 +3285,9 @@ pub(super) fn validate_surface_edits(
             Some(SolvedSurfaceGeometry::Plane(plane_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Plane(_))) } =>
             {
-                let origin = plane_surface.origin();
                 let normal = plane_surface.normal();
                 let u_axis = plane_surface.u_axis();
-                origin.is_finite() && orthonormal_pair(*normal, *u_axis)
+                orthonormal_pair(*normal, *u_axis)
             }
             Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Sphere(_))) } =>
@@ -3320,14 +3319,9 @@ pub(super) fn validate_surface_edits(
             Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Cylinder(_))) } =>
             {
-                let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
                 let ref_direction = cylinder_surface.ref_direction();
-                let radius = cylinder_surface.radius();
-                origin.is_finite()
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && radius != 0.0
+                orthonormal_pair(*axis, *ref_direction)
             }
             Some(SolvedSurfaceGeometry::Cone(cone_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Cone(_))) } =>

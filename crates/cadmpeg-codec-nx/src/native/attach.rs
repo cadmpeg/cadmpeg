@@ -7496,14 +7496,7 @@ fn cylindrical_face_witnesses(
         };
         let origin = cylinder_surface.origin();
         let axis = cylinder_surface.axis();
-        let radius = cylinder_surface.radius();
-        if ![origin.x, origin.y, origin.z, radius]
-            .into_iter()
-            .all(f64::is_finite)
-            || radius <= 0.0
-        {
-            return None;
-        }
+        let radius = cylinder_surface.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         let axial_offset = dot_vector(Vector3::new(origin.x, origin.y, origin.z), axis);
         let line_origin = Point3::new(

@@ -119,7 +119,7 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
         panic!("cylinder")
     };
     let origin = cylinder_surface.origin();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     assert_eq!(origin.x, 1_001_000.0);
     assert_eq!(radius, f64::from_bits(1) * 1000.0);
 

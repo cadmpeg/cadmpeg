@@ -470,7 +470,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             Some(CarrierEquation::Cylinder(CylinderEquation {
                 origin: [origin.x, origin.y, origin.z],
                 axis: [axis.x, axis.y, axis.z],

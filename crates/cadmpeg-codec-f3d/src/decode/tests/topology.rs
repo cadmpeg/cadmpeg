@@ -953,7 +953,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let axis = *cylinder_surface.axis();
             let ref_direction = *cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));

@@ -1878,7 +1878,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
         if {
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             radius == 2.0
         })
     );

@@ -628,7 +628,7 @@ fn refine_consolidated_analytic_surfaces(
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
                     (same_point(*origin, cylinder.origin)
                         && same_axis(*axis, cylinder.axis.get())
@@ -7578,7 +7578,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let axial = point.vector_from(*origin).dot(*axis);
             let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
             (radial - radius).abs()
@@ -7799,7 +7799,7 @@ fn standard_spline_cylinder_plane(
             ) => {
                 let cylinder_origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 let plane_origin = plane_surface.origin();
                 let plane_normal = plane_surface.normal();
                 (
@@ -7818,7 +7818,7 @@ fn standard_spline_cylinder_plane(
                 let plane_normal = plane_surface_2.normal();
                 let cylinder_origin = cylinder_surface_2.origin();
                 let axis = cylinder_surface_2.axis();
-                let radius = cylinder_surface_2.radius();
+                let radius = cylinder_surface_2.radius().get();
                 (
                     *axis,
                     *cylinder_origin,
@@ -7926,10 +7926,10 @@ fn standard_spline_perpendicular_cylinders(
             ) => {
                 let origin = cylinder_surface.origin();
                 let axis = cylinder_surface.axis();
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 let second_origin = cylinder_surface_2.origin();
                 let second_axis = cylinder_surface_2.axis();
-                let second_radius = cylinder_surface_2.radius();
+                let second_radius = cylinder_surface_2.radius().get();
                 (
                     *axis,
                     *origin,
@@ -7943,14 +7943,7 @@ fn standard_spline_perpendicular_cylinders(
         };
     let first_axis = unit_vector(first_axis)?;
     let second_axis = unit_vector(second_axis)?;
-    let first_radius = first_radius.abs();
-    let second_radius = second_radius.abs();
-    if !first_radius.is_finite()
-        || !second_radius.is_finite()
-        || first_radius <= 0.0
-        || second_radius <= 0.0
-        || (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
-    {
+    if (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
         return None;
     }
     let axis_dot = first_axis.dot(second_axis);
@@ -9496,7 +9489,7 @@ fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let offset = center.vector_from(*origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);

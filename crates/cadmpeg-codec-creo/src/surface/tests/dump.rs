@@ -1332,10 +1332,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         )) if {
             matches!(
                 (
-                    cylinder_surface.origin(),
+                    cylinder_surface.origin().get(),
                     cylinder_surface.axis(),
                     cylinder_surface.ref_direction(),
-                    &cylinder_surface.radius(),
+                    &cylinder_surface.radius().get(),
                 ),
                 (
                     cadmpeg_ir::math::Point3 {
@@ -1347,15 +1347,15 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                     _,
                     _,
                 )
-            ) && cylinder_surface.radius() == 1.0
+            ) && cylinder_surface.radius().get() == 1.0
         } =>
         {
             matches!(
                 (
-                    cylinder_surface.origin(),
+                    cylinder_surface.origin().get(),
                     cylinder_surface.axis(),
                     cylinder_surface.ref_direction(),
-                    &cylinder_surface.radius(),
+                    &cylinder_surface.radius().get(),
                 ),
                 (
                     cadmpeg_ir::math::Point3 {

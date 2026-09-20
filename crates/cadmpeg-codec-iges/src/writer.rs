@@ -4913,12 +4913,7 @@ fn surface_entities(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
-            if !radius.is_finite() || radius <= 0.0 {
-                return Err(CodecError::Malformed(
-                    "IGES cylinder radius must be positive and finite".into(),
-                ));
-            }
+            let radius = cylinder_surface.radius().get();
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
             let surface = Entity {

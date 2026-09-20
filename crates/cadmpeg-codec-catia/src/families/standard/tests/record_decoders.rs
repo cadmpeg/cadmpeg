@@ -72,7 +72,7 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
                 (radius,)
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let radius = cylinder_surface.radius();
+                let radius = cylinder_surface.radius().get();
                 (radius,)
             }
             _ => {

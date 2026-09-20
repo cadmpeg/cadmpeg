@@ -1075,7 +1075,7 @@ fn linear_pcurve_carrier(
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1099,15 +1099,12 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-            if {
-                let radius = cylinder_surface.radius();
-                start[1] == end[1] && radius.is_finite() && radius > 0.0
-            } =>
+            if start[1] == end[1] =>
         {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius();
+            let radius = cylinder_surface.radius().get();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     offset_point(*origin, *axis, start[1]),

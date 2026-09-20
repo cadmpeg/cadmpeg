@@ -16,7 +16,7 @@
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};
-use crate::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveReal};
+use crate::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::units::{OrthonormalFrame3, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -135,7 +135,7 @@ impl TryFrom<PlaneSurfaceWire> for PlaneSurface {
 #[serde(try_from = "CylinderSurfaceWire", into = "CylinderSurfaceWire")]
 pub struct CylinderSurface {
     origin: FinitePoint3,
-    radius: PositiveReal,
+    radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
 
@@ -154,6 +154,59 @@ struct CylinderSurfaceWire {
 }
 
 impl CylinderSurface {
+    /// Build a cylinder from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// A raw radius has no way in:
+    ///
+    /// ```compile_fail
+    /// use cadmpeg_ir::geometry::analytic::CylinderSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let cylinder = CylinderSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite origin and positive radius");
+    /// let wider = CylinderSurface::new(cylinder.origin(), cylinder.frame(), 4.0);
+    /// ```
+    ///
+    /// An admitted one does:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::CylinderSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    /// use cadmpeg_ir::scalar::PositiveLength;
+    ///
+    /// let cylinder = CylinderSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite origin and positive radius");
+    /// let wider = CylinderSurface::new(
+    ///     cylinder.origin(),
+    ///     cylinder.frame(),
+    ///     PositiveLength::new(4.0).expect("positive finite"),
+    /// );
+    /// assert_eq!(wider.radius().get(), 4.0);
+    /// ```
+    #[must_use]
+    pub const fn new(
+        origin: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radius: PositiveLength,
+    ) -> Self {
+        Self {
+            origin,
+            radius,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         origin: Point3,
@@ -164,19 +217,21 @@ impl CylinderSurface {
         let frame = OrthonormalFrame3::new(axis, ref_direction)
             .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
         let origin = FinitePoint3::new(origin).ok_or("CylinderSurface.origin must be finite")?;
-        let radius = PositiveReal::new(radius)
+        let radius = PositiveLength::new(radius)
             .ok_or("CylinderSurface.radius must be positive and finite")?;
-        Ok(Self {
-            origin,
-            radius,
-            frame,
-        })
+        Ok(Self::new(origin, frame, radius))
     }
 
     /// Return the origin.
     #[must_use]
-    pub const fn origin(&self) -> &Point3 {
-        self.origin.as_raw()
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -193,18 +248,18 @@ impl CylinderSurface {
 
     /// Return the radius.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> PositiveLength {
+        self.radius
     }
 }
 
 impl From<CylinderSurface> for CylinderSurfaceWire {
     fn from(value: CylinderSurface) -> Self {
         Self {
-            origin: *value.origin(),
+            origin: value.origin().get(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
-            radius: value.radius(),
+            radius: value.radius().get(),
         }
     }
 }

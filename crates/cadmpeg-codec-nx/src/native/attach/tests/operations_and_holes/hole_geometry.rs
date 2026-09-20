@@ -361,7 +361,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let origin = cylinder_surface.origin();
     let axis = cylinder_surface.axis();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
     let mut origin = *origin;
     origin.y = 91.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -391,7 +391,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
 
     let axis = Vector3::new(0.0, -1.0, 0.0);
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -562,7 +562,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     let origin = cylinder_surface.origin();
     let ref_direction = cylinder_surface.ref_direction();
-    let radius = cylinder_surface.radius();
+    let radius = cylinder_surface.radius().get();
 
     let axis = Vector3::new(0.0, 0.0, 1.0);
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
