@@ -759,9 +759,11 @@ fn decode_preserves_configuration_local_parameter_values() {
         ),
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(!decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("parameter expression(s) cannot regenerate")));

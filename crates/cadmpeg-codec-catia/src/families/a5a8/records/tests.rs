@@ -1543,9 +1543,11 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
         crate::container::scan_bytes(file.clone()).variant,
         Variant::FloatPackedInnerNoFbb
     );
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .expect("decode rolling-ball object stream");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("decode rolling-ball object stream"),
+    );
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };

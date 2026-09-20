@@ -47,9 +47,11 @@ fn scan_discovers_curve_halfedge_topology() {
     );
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
     assert_eq!(row.fields()["curve_id"], 7);
     assert_eq!(row.fields()["type_byte"], 8);
@@ -179,9 +181,11 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.opaque_spans[0].offset, 13);
     assert_eq!(parameters.opaque_spans[0].raw, [0xff]);
     assert_eq!(parameters.body.last(), Some(&0xff));
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
     assert_eq!(record.fields()["curve_id"], 7);
     assert_eq!(record.fields()["type_byte"], 8);

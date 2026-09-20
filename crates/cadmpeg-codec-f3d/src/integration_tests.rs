@@ -28,13 +28,15 @@ use crate::test_support::zip_test::{
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized Fusion archive should decode")
+fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
+    cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized Fusion archive should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
@@ -88,9 +90,11 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
         &cadmpeg_core::dialect::Admission::Admitted
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(document), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(document), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(decoded.report().dialects(), inspected_dialects);
     let source = decoded.ir().source.as_ref().unwrap();
     assert_eq!(source.dialect(), Some(&inspected));
@@ -239,15 +243,17 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
 #[test]
 fn container_only_pipeline_retains_native_sections_without_semantic_projection() {
     let bytes = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("container-only F3D decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container-only F3D decode"),
+    );
     assert!(result.report().container_only());
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.bodies.is_empty());
@@ -316,7 +322,7 @@ fn a_version_only_manifest_drift_decodes_as_unverified_and_charges_the_recovery(
 // --------------------------------------------------------------------------
 
 fn plan(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &cadmpeg_test_support::EditableDecodeResult,
     fidelity: bool,
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
@@ -482,9 +488,11 @@ fn the_patch_path_names_the_preserved_dialect() {
 
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let redecoded = F3dCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .expect("the patched archive decodes");
+    let redecoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .expect("the patched archive decodes"),
+    );
     assert_eq!(
         redecoded
             .report()
@@ -545,9 +553,11 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
 
-        let redecoded = F3dCodec
-            .decode(&mut Cursor::new(written), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("{label} output must decode, got {error}"));
+        let redecoded = cadmpeg_test_support::EditableDecodeResult::from(
+            F3dCodec
+                .decode(&mut Cursor::new(written), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{label} output must decode, got {error}")),
+        );
         let classified = redecoded
             .report()
             .dialects()

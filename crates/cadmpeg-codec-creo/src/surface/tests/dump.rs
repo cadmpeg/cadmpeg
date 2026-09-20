@@ -279,9 +279,11 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     payload.extend_from_slice(&[0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode surface parameters");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode surface parameters"),
+    );
 
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"];
     assert_eq!(records.len(), 1);
@@ -627,9 +629,11 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let expected_offset =
         container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset as u64;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
         namespace.arenas()["plane_local_systems"][0].fields()["surface_id"],

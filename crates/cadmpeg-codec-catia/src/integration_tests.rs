@@ -24,13 +24,15 @@ use crate::test_support::test_topology::fbb_only_quad_unmatched_edge_topology_st
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized CATPart should decode")
+fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
+    cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized CATPart should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
     assert_every_entity_has_v1_annotation(result.ir(), &result.source_fidelity().annotations);
@@ -264,15 +266,17 @@ fn container_only_pipeline_retains_each_variant_without_semantic_transfer() {
         a8_catpart(),
     ];
     for bytes in fixtures {
-        let result = CatiaCodec
-            .decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions {
-                    container_only: true,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("container-only CATPart decode");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            CatiaCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        container_only: true,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("container-only CATPart decode"),
+        );
         assert!(result.report().container_only());
         assert!(!result.report().geometry_transferred());
         assert!(result.ir().model.points.is_empty());
@@ -327,21 +331,25 @@ fn every_decode_path_populates_v1_annotations() {
         inner_no_directory_a8_catpart(),
     ];
     for fixture in fixtures {
-        let decoded = CatiaCodec
-            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
-            .unwrap();
+        let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+            CatiaCodec
+                .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+                .unwrap(),
+        );
         assert_every_entity_has_v1_annotation(decoded.ir(), &decoded.source_fidelity().annotations);
     }
 
-    let container_only = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart()),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .unwrap();
+    let container_only = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart()),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .unwrap(),
+    );
     assert_every_entity_has_v1_annotation(
         container_only.ir(),
         &container_only.source_fidelity().annotations,

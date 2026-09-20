@@ -39,13 +39,15 @@ use crate::test_support::pmi::pmi_semantic_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized SLDPRT should decode")
+fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
+    cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized SLDPRT should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(result.ir());
@@ -202,7 +204,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 #[test]
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = decoded;
     decoded.ir_mut().model.tessellations[0].body = None;
     decoded.ir_mut().model.tessellations[0].faces.clear();
     let mut coincident = decoded.ir().model.faces[0].clone();
@@ -236,7 +238,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 
 #[test]
 fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir() {
-    let first = encode_decode_result(&source_less_cube());
+    let first =
+        cadmpeg_test_support::EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().model.faces.len(), 6);
     assert_eq!(first.ir().model.edges.len(), 12);
     assert_valid(&first);
@@ -274,7 +277,7 @@ fn versioned_part() -> Vec<u8> {
 }
 
 fn plan(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &cadmpeg_test_support::EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {

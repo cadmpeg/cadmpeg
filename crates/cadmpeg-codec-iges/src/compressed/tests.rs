@@ -148,9 +148,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     assert_eq!(lines[directory_start + 4][64..72], *b"       1");
     assert_eq!(lines[directory_start + 5][64..72], *b"       3");
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["representation"],
@@ -209,9 +211,11 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
 #[test]
 fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let source = compressed_points_file();
-    let result = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),

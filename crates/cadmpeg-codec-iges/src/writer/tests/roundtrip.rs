@@ -93,6 +93,7 @@ fn lossless_exports_round_trip_to_identical_ir() {
         else {
             continue;
         };
+        let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
         if try_lossless_round_trip(&stem, decoded.ir(), decoded.ir(), None)
             || try_lossless_round_trip(
                 &stem,

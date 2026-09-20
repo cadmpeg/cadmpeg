@@ -199,7 +199,9 @@ fn container_only_stops_before_geometry() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec.decode(&mut cur, &opts).unwrap(),
+    );
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
     // The reconstructed BREP stream is preserved as an unknown passthrough.

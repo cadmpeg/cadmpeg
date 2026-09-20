@@ -410,7 +410,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Encodes an unedited decode result via the verbatim-replay branch.
 fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_result(bytes).ok()?);
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -450,7 +450,7 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
 }
 
 fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = decode_result(bytes).ok()?;
+    let result = cadmpeg_test_support::EditableDecodeResult::from(decode_result(bytes).ok()?);
     if result.ir().model.points.is_empty() {
         return None;
     }

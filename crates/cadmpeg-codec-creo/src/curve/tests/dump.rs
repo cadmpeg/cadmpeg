@@ -35,9 +35,11 @@ fn decode_preserves_counted_curve_expression_programs() {
         [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6]
     );
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields()["entity_id"], 0x094c);
@@ -149,9 +151,11 @@ fn decode_preserves_curve_expression_source_section() {
         .to_vec();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_expressions"];
 
     assert_eq!(records.len(), 1);

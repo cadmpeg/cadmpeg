@@ -38,9 +38,11 @@ fn decode_builds_valid_topology_and_geometry() {
 
     let f3d = f3d_with_smbh(&synthetic_geometry_smbh());
     let mut cur = Cursor::new(f3d);
-    let result = F3dCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
 
     assert!(result.report().geometry_transferred());
     assert!(result
@@ -274,9 +276,11 @@ fn generated_degenerate_curve_decodes_regenerates_and_writes_source_less() {
     use cadmpeg_ir::math::Point3;
 
     let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated degenerate curve decode");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("generated degenerate curve decode"),
+    );
     let curve = decoded
         .ir()
         .model

@@ -47,9 +47,11 @@ fn inherit(
 #[test]
 fn inherit_replays_a_non_default_version_verbatim() {
     let source = point_file_at_version_flag(9);
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = inherit(decoded.ir(), Some(decoded.source_fidelity())).unwrap();
 
     assert!(matches!(

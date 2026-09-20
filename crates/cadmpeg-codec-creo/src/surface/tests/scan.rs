@@ -89,9 +89,11 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     assert_eq!(replay.control_points, [Some([-3.0, 3.0]); 4]);
     assert_eq!(replay.terminal_reference, 37);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()
         ["tabulated_cylinder_curve_replays"][0];
     assert_eq!(native.fields()["surface_id"], 7);
@@ -691,9 +693,11 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         prototype.field("srf_flip_dat").map(|field| &field.value),
         Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf7, 0x05]))
     );
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_prototypes"][0];
     assert_eq!(native.fields()["declared_family"], "cylinder");
     assert_eq!(native.fields()["family"], "cylinder");

@@ -201,9 +201,11 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
 #[test]
 fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("generated Protein decode");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("generated Protein decode"),
+    );
 
     let mut invalid = decoded.ir().clone();
     invalid.model.appearances[0]

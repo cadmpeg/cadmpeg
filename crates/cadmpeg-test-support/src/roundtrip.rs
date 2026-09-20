@@ -61,12 +61,14 @@ pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> Expor
 where
     C: Codec + Encoder,
 {
-    let decoded = Codec::decode(
-        codec,
-        &mut std::io::Cursor::new(fixture.to_vec()),
-        &DecodeOptions::default(),
-    )
-    .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
+    let decoded = crate::EditableDecodeResult::from(
+        Codec::decode(
+            codec,
+            &mut std::io::Cursor::new(fixture.to_vec()),
+            &DecodeOptions::default(),
+        )
+        .unwrap_or_else(|error| panic!("{label}: decode failed: {error}")),
+    );
     let plan = Encoder::plan(
         codec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),

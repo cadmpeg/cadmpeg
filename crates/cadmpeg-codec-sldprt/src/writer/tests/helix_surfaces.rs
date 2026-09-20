@@ -1030,9 +1030,11 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
     );
     let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CutWithSurface {

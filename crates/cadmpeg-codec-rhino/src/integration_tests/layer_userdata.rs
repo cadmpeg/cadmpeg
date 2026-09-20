@@ -265,7 +265,7 @@ fn document_with_stamp(
 }
 
 fn assert_layer_record_retained(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &cadmpeg_test_support::EditableDecodeResult,
     layer: &[u8],
     message: &str,
 ) {

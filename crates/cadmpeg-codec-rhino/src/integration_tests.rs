@@ -39,12 +39,14 @@ mod unit_binding;
 mod unknown_userdata;
 mod v5_hatch_extra_userdata;
 mod views_userdata;
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    RhinoCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized 3DM archive should decode")
+fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
+    cadmpeg_test_support::EditableDecodeResult::from(
+        RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized 3DM archive should decode"),
+    )
 }
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("rhino").is_some());
@@ -65,15 +67,17 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);
         assert_valid(&result);
-        let container = RhinoCodec
-            .decode(
-                &mut Cursor::new(bytes),
-                &DecodeOptions {
-                    container_only: true,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("container-only 3DM decode");
+        let container = cadmpeg_test_support::EditableDecodeResult::from(
+            RhinoCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        container_only: true,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("container-only 3DM decode"),
+        );
         assert!(container.report().container_only());
         assert!(container.ir().model.points.is_empty());
     }

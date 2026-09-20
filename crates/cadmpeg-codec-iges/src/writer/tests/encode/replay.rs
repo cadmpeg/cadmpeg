@@ -32,9 +32,11 @@ fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -
 
 #[test]
 fn encode_reports_a_version_mismatch_as_dialect_displacement() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let source_dialect = decoded
         .ir()
         .source
@@ -75,9 +77,11 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
 
 #[test]
 fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let mut unclassified = decoded.ir().clone();
     let source = unclassified.source.take().unwrap();
     let format = source.format().to_owned();
@@ -110,9 +114,11 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
 
 #[test]
 fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -174,9 +180,11 @@ fn a_synthesized_export_states_the_target_it_wrote() {
 
 #[test]
 fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let mut edited = decoded.ir().clone();
     edited.model.points.push(
         Point::new(

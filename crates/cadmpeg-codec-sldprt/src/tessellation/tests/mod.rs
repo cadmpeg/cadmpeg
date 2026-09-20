@@ -1578,9 +1578,11 @@ fn decode_reports_display_list_geometry() {
     let f = sldprt_with_body_and_display_list(&triangle_body());
     let mut cur = Cursor::new(f);
 
-    let result = SldprtCodec
-        .decode(&mut cur, &DecodeOptions::default())
-        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut cur, &DecodeOptions::default())
+            .unwrap(),
+    );
     let source = result.ir().source.as_ref().expect("source metadata");
 
     assert_eq!(

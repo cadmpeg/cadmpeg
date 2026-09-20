@@ -160,11 +160,14 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
     let point = object_record(1, POINT_CLASS, &point_payload([1.0, 2.0, 3.0]));
     let bytes = archive(&[large.clone(), point.clone()]);
     let scan = crate::container::scan_owned(bytes).expect("complete archive scan");
-    let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
-    });
+    let result = cadmpeg_test_support::EditableDecodeResult::from(crate::decode::with_expand(
+        &scan,
+        |expand| {
+            let mut context = crate::decode::DecodeContext::new(&scan, expand);
+            context.set_retention_limits(point.len(), point.len());
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+        },
+    ));
 
     let retained = &result.source_fidelity().retained_records();
     assert_eq!(
@@ -202,11 +205,14 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
 
     let two_points = archive(&[point.clone(), point.clone()]);
     let scan = crate::container::scan_owned(two_points).expect("complete archive scan");
-    let result = crate::decode::with_expand(&scan, |expand| {
-        let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.set_retention_limits(point.len(), point.len());
-        crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
-    });
+    let result = cadmpeg_test_support::EditableDecodeResult::from(crate::decode::with_expand(
+        &scan,
+        |expand| {
+            let mut context = crate::decode::DecodeContext::new(&scan, expand);
+            context.set_retention_limits(point.len(), point.len());
+            crate::decode::seal_for_test(context.commit().expect("test decode commit"), false)
+        },
+    ));
     assert_eq!(
         result
             .source_fidelity()
@@ -843,7 +849,10 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
     ];
     for failure in failures {
         let point = object_record(1, POINT_CLASS, &point_payload([6.0, 7.0, 8.0]));
-        let result = decode(&archive(&[failure.clone(), point]));
+        let result = cadmpeg_test_support::EditableDecodeResult::from(decode(&archive(&[
+            failure.clone(),
+            point,
+        ])));
         assert_eq!(result.ir().model.points.len(), 1, "{:?}", result.report());
         assert_eq!(
             result

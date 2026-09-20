@@ -260,9 +260,11 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
                 crc_table(archive, 0x1000_0026, std::slice::from_ref(&history_record)),
             ],
         );
-        let result = crate::RhinoCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("complete history document");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            crate::RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("complete history document"),
+        );
         let feature = &result.ir().model.features[0];
         if retained {
             assert_eq!(

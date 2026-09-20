@@ -47,9 +47,11 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         path,
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap(),
+    );
     let retained = regenerated
         .source_fidelity()
         .retained_records()

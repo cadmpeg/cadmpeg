@@ -118,7 +118,7 @@ fn modifier_userdata(archive: ArchiveVersion, label: &str, version: i32, xml: &s
     )
 }
 
-fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_and_retention(result: &cadmpeg_test_support::EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
         result.ir().model.points[0].position(),

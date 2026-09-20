@@ -564,7 +564,9 @@ fn decode_yields_metadata_and_honest_report() {
     let codec = F3dCodec;
     let f3d = synthetic_f3d(true);
     let mut cur = Cursor::new(f3d);
-    let result = codec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        codec.decode(&mut cur, &DecodeOptions::default()).unwrap(),
+    );
 
     assert!(!result.report().geometry_transferred());
     assert!(result.ir().model.faces.is_empty());

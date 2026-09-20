@@ -19,12 +19,14 @@ use std::io::Cursor;
 #[test]
 fn f3z_archive_merges_identity_occurrences() {
     let component = f3d_with_smbh(&synthetic_geometry_smbh());
-    let component_alone = F3dCodec
-        .decode(
-            &mut Cursor::new(component.clone()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let component_alone = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(component.clone()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive(
         "root.f3d",
@@ -33,9 +35,11 @@ fn f3z_archive_merges_identity_occurrences() {
             ("comp.f3d", component.as_slice()),
         ],
     );
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert!(decoded.report().geometry_transferred());
     assert!(
         decoded
@@ -172,9 +176,11 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
         ],
     );
 
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("admitted duplicate-role references remain independently mergeable");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .expect("admitted duplicate-role references remain independently mergeable"),
+    );
     assert_eq!(decoded.ir().model.bodies.len(), 2);
     let first = decoded.ir().model.bodies[0].id.as_str();
     let second = decoded.ir().model.bodies[1].id.as_str();
@@ -286,12 +292,14 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 fn f3z_archive_without_merged_components_preserves_root_replay() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(archive.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(archive.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
 
     assert!(decoded
         .source_fidelity()

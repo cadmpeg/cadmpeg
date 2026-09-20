@@ -36,9 +36,11 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
-    let result = F3dCodec
-        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-        .expect("mesh-surface decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("mesh-surface decode"),
+    );
 
     assert_eq!(result.ir().model.faces.len(), 1);
     assert!(matches!(

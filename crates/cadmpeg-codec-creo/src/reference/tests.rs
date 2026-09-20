@@ -441,9 +441,11 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     assert_eq!(scan.references.circles[0].center, [0.0; 3]);
     assert_eq!(scan.references.circles[0].radius, 1.0);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if { circle_curve.radius() == 1.0 })
@@ -551,9 +553,11 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(scan.references.conics.len(), 1);
     assert_eq!(scan.references.ellipses.len(), 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if { (ellipse_curve.major_radius() == 1.0) && (ellipse_curve.minor_radius() == 1.0) })

@@ -190,9 +190,11 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
 #[test]
 pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode parsed STEP document");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode parsed STEP document"),
+    );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "step");
     let unknowns = result.ir().native_unknowns("step").unwrap();
@@ -223,9 +225,11 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 #[test]
 fn decode_retains_signature_opaque_without_verification_result() {
     let bytes = include_bytes!("../signature/tests/data/sg04_openssl_detached.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode signature witness");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode signature witness"),
+    );
 
     let signature = result
         .ir()
@@ -258,9 +262,11 @@ fn decode_retains_signature_opaque_without_verification_result() {
 #[test]
 fn decode_user_defined_entities_as_named_opaque_records() {
     let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode user-defined entity witness");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode user-defined entity witness"),
+    );
 
     assert_eq!(result.ir().model.entity_count(), 0);
     let unknowns = result.ir().native_unknowns("step").unwrap();
@@ -487,9 +493,11 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
             "ENDSEC;\nEND-ISO-10303-21;",
             "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
         );
-    let decoded = StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode unowned pcurve");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode unowned pcurve"),
+    );
     let unknowns = decoded
         .ir()
         .native_unknowns("step")

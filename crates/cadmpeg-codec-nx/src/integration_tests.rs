@@ -56,13 +56,15 @@ use super::NxCodec;
 
 mod dialect;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
-    NxCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("synthesized NX part should decode")
+fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
+    cadmpeg_test_support::EditableDecodeResult::from(
+        NxCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized NX part should decode"),
+    )
 }
 
-fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
+fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("nx").is_some());
