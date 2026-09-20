@@ -146,6 +146,15 @@ impl fmt::Display for Uuid {
     }
 }
 
+/// Render comma-separated native property values in their stored order.
+pub(crate) fn comma_list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
+    values
+        .into_iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Reads one mixed-endian UUID from the bounded reader.
 pub(crate) fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
