@@ -335,3 +335,217 @@ fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
         }
     }
 }
+
+fn law_support_context() -> crate::geometry::IntcurveSupportContext {
+    crate::geometry::IntcurveSupportContext::try_new(
+        [
+            crate::geometry::IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            },
+            crate::geometry::IntcurveSupportSide {
+                surface: None,
+                pcurve: None,
+            },
+        ],
+        [0.0, 1.0],
+        [Vec::new(), Vec::new(), Vec::new()],
+    )
+    .expect("finite ordered support context")
+}
+
+fn named_law(variable: crate::geometry::LawExpression) -> crate::geometry::LawFormula {
+    crate::geometry::LawFormula::Named {
+        name: cadmpeg_core::nonblank_literal!("primary_law"),
+        variables: vec![variable],
+    }
+}
+
+fn law_definition(
+    primary: crate::geometry::FiniteLawFormula,
+    additional: Vec<crate::geometry::FiniteLawFormula>,
+) -> ProceduralCurveDefinition {
+    ProceduralCurveDefinition::Law {
+        context: law_support_context(),
+        version: None,
+        extension: 3,
+        primary,
+        additional,
+        cache: None,
+    }
+}
+
+/// Every law-expression shape that carries a scalar, each with one slot set to
+/// the degenerate value and the rest admitted.
+fn degenerate_law_expressions(value: f64) -> Vec<crate::geometry::LawExpression> {
+    use crate::geometry::LawExpression;
+    let mut scalars = [0.0; 13];
+    scalars[7] = value;
+    vec![
+        LawExpression::Double { value },
+        LawExpression::Point {
+            value: crate::math::Point3::new(0.0, value, 0.0),
+        },
+        LawExpression::Vector {
+            value: Vector3::new(value, 0.0, 0.0),
+        },
+        LawExpression::Transform {
+            scalars,
+            enums: [0; 3],
+        },
+        LawExpression::TransformVec {
+            vectors: [
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, value, 0.0),
+            ],
+            scale: 1.0,
+            flags: [false; 3],
+        },
+        LawExpression::TransformVec {
+            vectors: [
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 0.0),
+            ],
+            scale: value,
+            flags: [false; 3],
+        },
+        LawExpression::Edge {
+            curve: crate::geometry::LoftPathCurve {
+                id: source(),
+                endpoints: None,
+            },
+            parameters: [0.0, value],
+        },
+        LawExpression::Spline {
+            native_id: 1,
+            knots: vec![0.0, value],
+            controls: vec![1.0],
+            point: crate::math::Point3::new(0.0, 0.0, 0.0),
+        },
+        LawExpression::Spline {
+            native_id: 1,
+            knots: vec![0.0, 1.0],
+            controls: vec![value],
+            point: crate::math::Point3::new(0.0, 0.0, 0.0),
+        },
+        LawExpression::Spline {
+            native_id: 1,
+            knots: vec![0.0, 1.0],
+            controls: vec![1.0],
+            point: crate::math::Point3::new(value, 0.0, 0.0),
+        },
+        LawExpression::Algebraic {
+            operator: "+".to_owned(),
+            operands: vec![
+                LawExpression::Integer { value: 1 },
+                LawExpression::Algebraic {
+                    operator: "*".to_owned(),
+                    operands: vec![LawExpression::Double { value }],
+                },
+            ],
+        },
+    ]
+}
+
+#[test]
+fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
+    use crate::geometry::{FiniteLawFormula, LawExpression, LawFormula};
+
+    let primary = named_law(LawExpression::Edge {
+        curve: crate::geometry::LoftPathCurve {
+            id: source(),
+            endpoints: None,
+        },
+        parameters: [-0.5, 1.5],
+    });
+    let admitted = law_definition(
+        FiniteLawFormula::try_new(primary.clone()).expect("finite primary law"),
+        vec![FiniteLawFormula::try_new(LawFormula::Null {}).expect("finite additional law")],
+    );
+
+    // The carrier is transparent: the wire states the formula itself.
+    let wire = serde_json::to_value(&admitted).expect("serializes");
+    assert_eq!(wire["kind"], "law");
+    assert_eq!(wire["extension"], serde_json::json!(3));
+    assert_eq!(wire["primary"]["kind"], "named");
+    assert_eq!(wire["primary"]["name"], "primary_law");
+    assert_eq!(
+        wire["primary"]["variables"][0]["parameters"],
+        serde_json::json!([-0.5, 1.5])
+    );
+    assert_eq!(wire["additional"], serde_json::json!([{"kind": "null"}]));
+    assert_eq!(
+        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).expect("round trip"),
+        admitted
+    );
+
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for expression in degenerate_law_expressions(value) {
+            let formula = named_law(expression);
+            assert!(
+                FiniteLawFormula::try_new(formula.clone()).is_err(),
+                "{formula:?}"
+            );
+            assert!(!formula.values_are_finite(), "{formula:?}");
+        }
+    }
+
+    // The wire route. The reader is the derived `Deserialize`, which reads a
+    // `LawFormula` and admits it through `TryFrom`, so the admission is
+    // exercised on the value that reader hands it.
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for expression in degenerate_law_expressions(value) {
+            assert!(FiniteLawFormula::try_from(named_law(expression)).is_err());
+        }
+    }
+    let deep = nested_algebraic_law(LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST + 1);
+    assert!(FiniteLawFormula::try_from(deep.clone()).is_err());
+
+    // No CADIR document states either refused value. JSON spells neither NaN
+    // nor an infinity, and a formula past the depth bound nests deeper than the
+    // reader's own recursion limit.
+    for literal in ["1e400", "-1e400"] {
+        let error = serde_json::from_str::<f64>(literal)
+            .expect_err("JSON states no infinity")
+            .to_string();
+        assert!(error.contains("number out of range"), "{literal}: {error}");
+    }
+    assert!(serde_json::Number::from_f64(f64::NAN).is_none());
+    let error =
+        serde_json::from_str::<LawFormula>(&serde_json::to_string(&deep).expect("serializes"))
+            .expect_err("past the reader recursion limit")
+            .to_string();
+    assert!(error.contains("recursion limit exceeded"), "{error}");
+}
+
+/// The recursion bound the law-expression walk states.
+const LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST: usize = 64;
+
+fn nested_algebraic_law(depth: usize) -> crate::geometry::LawFormula {
+    let mut expression = crate::geometry::LawExpression::Double { value: 1.0 };
+    for _ in 0..depth {
+        expression = crate::geometry::LawExpression::Algebraic {
+            operator: "+".to_owned(),
+            operands: vec![expression],
+        };
+    }
+    named_law(expression)
+}
+
+#[test]
+fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
+    use crate::geometry::FiniteLawFormula;
+
+    assert!(
+        FiniteLawFormula::try_new(nested_algebraic_law(LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST))
+            .is_ok()
+    );
+    assert!(FiniteLawFormula::try_new(nested_algebraic_law(
+        LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST + 1
+    ))
+    .is_err());
+}

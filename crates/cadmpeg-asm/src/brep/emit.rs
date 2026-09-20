@@ -3786,15 +3786,18 @@ fn emit_law_curve(
             .map(|nurbs| cadmpeg_ir::geometry::SupportPcurve::from(PcurveGeometry::Nurbs { nurbs }))
     });
     let mut map_formula = |path: cadmpeg_ir::ids::IdentityKey, formula: EmbeddedLawFormula| {
-        map_law_formula(formula, |index, expression| {
-            map_law_expression(
-                &mut *out,
-                format,
-                scope.clone(),
-                brep_key!(path.clone(), ":", index),
-                expression,
-            )
-        })
+        cadmpeg_ir::geometry::FiniteLawFormula::try_new(map_law_formula(
+            formula,
+            |index, expression| {
+                map_law_expression(
+                    &mut *out,
+                    format,
+                    scope.clone(),
+                    brep_key!(path.clone(), ":", index),
+                    expression,
+                )
+            },
+        ))
     };
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Law {
         context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
@@ -3807,13 +3810,13 @@ fn emit_law_curve(
         )?,
         version,
         extension: embedded.extension,
-        primary: map_formula(cadmpeg_ir::identity_key!("primary"), embedded.primary),
+        primary: map_formula(cadmpeg_ir::identity_key!("primary"), embedded.primary)?,
         additional: embedded
             .additional
             .into_iter()
             .enumerate()
             .map(|(index, formula)| map_formula(brep_key!("additional:", index), formula))
-            .collect(),
+            .collect::<Result<Vec<_>, _>>()?,
         cache: None,
     })
 }

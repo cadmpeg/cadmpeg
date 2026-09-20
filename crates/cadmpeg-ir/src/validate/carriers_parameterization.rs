@@ -639,7 +639,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    for variable in formula.variables() {
+                    for variable in formula.formula().variables() {
                         collect(variable, &mut curves);
                     }
                 }

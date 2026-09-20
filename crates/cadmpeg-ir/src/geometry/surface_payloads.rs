@@ -1552,9 +1552,7 @@ impl LawSurfacePayload {
     pub fn try_new(
         construction: Box<LawSurfaceConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let formula_valid = |formula: &crate::geometry::LawFormula| {
-            formula.variables().iter().all(|value| law_valid(value, 0))
-        };
+        let formula_valid = crate::geometry::LawFormula::values_are_finite;
         let tail_valid = match &construction.tail {
             crate::geometry::LawSurfaceTail::Summary { parameters, .. } => {
                 parameters.iter().flatten().all(|value| value.is_finite())
@@ -1643,11 +1641,7 @@ impl SkinSurfacePayload {
                 subdata.row_values_are_finite()
             }
         };
-        let formula_valid = construction
-            .formula
-            .variables()
-            .iter()
-            .all(|variable| law_valid(variable, 0));
+        let formula_valid = construction.formula.values_are_finite();
         let scalars_valid = construction.parameter.is_finite()
             && construction.trailing_parameter.is_finite()
             && construction.direction.is_finite()
@@ -1711,12 +1705,10 @@ impl NetSurfacePayload {
             .sections
             .iter()
             .all(crate::geometry::LoftSection::values_are_finite);
-        let formulas_valid = construction.formulas.iter().all(|formula| {
-            formula
-                .variables()
-                .iter()
-                .all(|variable| law_valid(variable, 0))
-        });
+        let formulas_valid = construction
+            .formulas
+            .iter()
+            .all(crate::geometry::LawFormula::values_are_finite);
         let scalars_valid = construction
             .frame_parameters
             .iter()
@@ -1785,12 +1777,7 @@ impl SweepSurfacePayload {
         native: Option<Box<SweepSurfaceConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
         if let Some(construction) = &native {
-            let formula_valid = |formula: &crate::geometry::LawFormula| {
-                formula
-                    .variables()
-                    .iter()
-                    .all(|variable| law_valid(variable, 0))
-            };
+            let formula_valid = crate::geometry::LawFormula::values_are_finite;
             let layout_valid = match &construction.layout {
                 crate::geometry::SweepSurfaceLayout::ProfileFirst {
                     directions,
@@ -1896,8 +1883,8 @@ impl SweepSurfacePayload {
                         && directions.iter().all(Vector3::is_finite)
                         && law_direction.is_finite()
                         && path_parameter.is_finite()
-                        && law_valid(first_law, 0)
-                        && law_valid(second_law, 0)
+                        && first_law.values_are_finite()
+                        && second_law.values_are_finite()
                         && formula_valid(formula)
                 }
             };
@@ -2597,38 +2584,6 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
                         && point.location.is_finite()
                         && point.normal.is_finite()
                 })
-        }
-    }
-}
-
-fn law_valid(expression: &crate::geometry::LawExpression, depth: usize) -> bool {
-    if depth > 64 {
-        return false;
-    }
-    match expression {
-        crate::geometry::LawExpression::Null {}
-        | crate::geometry::LawExpression::Integer { .. } => true,
-        crate::geometry::LawExpression::Text { .. } => true,
-        crate::geometry::LawExpression::Double { value } => value.is_finite(),
-        crate::geometry::LawExpression::Point { value } => value.is_finite(),
-        crate::geometry::LawExpression::Vector { value } => value.is_finite(),
-        crate::geometry::LawExpression::Transform { scalars, .. } => {
-            scalars.iter().all(|value| value.is_finite())
-        }
-        crate::geometry::LawExpression::TransformVec { vectors, scale, .. } => {
-            scale.is_finite() && vectors.iter().all(Vector3::is_finite)
-        }
-        crate::geometry::LawExpression::Edge { parameters, .. } => {
-            parameters.iter().all(|value| value.is_finite())
-        }
-        crate::geometry::LawExpression::Spline {
-            knots,
-            controls,
-            point,
-            ..
-        } => knots.iter().chain(controls).all(|value| value.is_finite()) && point.is_finite(),
-        crate::geometry::LawExpression::Algebraic { operands, .. } => {
-            operands.iter().all(|operand| law_valid(operand, depth + 1))
         }
     }
 }

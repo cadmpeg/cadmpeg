@@ -557,19 +557,25 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     assert_eq!(version.stamp(), 20900);
     assert_eq!(version.post_enum(), 0);
     assert_eq!(*version.parameter_range(), [None, None]);
-    assert!(matches!(primary, LawFormula::Named { name, .. } if name.as_str() == primary_name));
+    assert!(
+        matches!(primary.formula(), LawFormula::Named { name, .. } if name.as_str() == primary_name)
+    );
     assert!(matches!(
-        primary.variables()[0],
+        primary.formula().variables()[0],
         LawExpression::TransformVec { .. }
     ));
     assert_eq!(additional.len(), 4);
-    assert!(matches!(additional[0], LawFormula::Null {}));
-    assert!(matches!(additional[1], LawFormula::Null {}));
-    assert!(matches!(&additional[2], LawFormula::Named { name, .. } if name.as_str() == raw_name));
-    assert!(matches!(&additional[3], LawFormula::Named { name, .. }
-        if name.as_str() == "TRANS(VEC(X,X2,X3),TRANS1)"));
+    assert!(matches!(additional[0].formula(), LawFormula::Null {}));
+    assert!(matches!(additional[1].formula(), LawFormula::Null {}));
+    assert!(
+        matches!(additional[2].formula(), LawFormula::Named { name, .. } if name.as_str() == raw_name)
+    );
+    assert!(
+        matches!(additional[3].formula(), LawFormula::Named { name, .. }
+        if name.as_str() == "TRANS(VEC(X,X2,X3),TRANS1)")
+    );
     assert!(matches!(
-        additional[3].variables()[0],
+        additional[3].formula().variables()[0],
         LawExpression::TransformVec { .. }
     ));
 
