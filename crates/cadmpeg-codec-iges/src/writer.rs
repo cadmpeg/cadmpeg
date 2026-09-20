@@ -5902,7 +5902,11 @@ fn curve_entity(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
                     number(coefficients[1]),
-                    number(coefficients[2]),
+                    if coefficients[2] == -1.0 {
+                        "-1".to_owned()
+                    } else {
+                        number(coefficients[2])
+                    },
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),
@@ -5973,7 +5977,11 @@ fn curve_entity(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
                     number(-coefficients[1]),
-                    number(coefficients[2]),
+                    if coefficients[2] == -1.0 {
+                        "-1".to_owned()
+                    } else {
+                        number(coefficients[2])
+                    },
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),
