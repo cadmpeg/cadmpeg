@@ -355,10 +355,10 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     assert_eq!(context.parameter_range(), [-1.0, 2.0]);
     assert_eq!(*extension, 0);
     assert!(
-        matches!(primary, cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
+        matches!(primary.formula(), cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
     );
     assert!(matches!(
-        primary.variables()[0],
+        primary.formula().variables()[0],
         LawExpression::Edge { parameters, .. } if parameters == [-0.5, 1.5]
     ));
     assert_eq!(additional.len(), 2);
@@ -378,7 +378,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
         matches!(
             curve.definition(),
             ProceduralCurveDefinition::Law { primary, .. }
-                if matches!(primary.variables()[0], LawExpression::Edge { .. })
+                if matches!(primary.formula().variables()[0], LawExpression::Edge { .. })
         )
     }));
 }

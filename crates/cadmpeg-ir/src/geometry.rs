@@ -928,8 +928,16 @@ impl ProceduralSurfaceDefinition {
         }
     }
 
-    fn revision_cache_mut(&mut self) -> Option<&mut RevisionCacheForm> {
-        match self {
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so no construction lends its admitted interior for writing.
+    fn write_revision_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+        write: ToleranceWrite,
+    ) -> RevisionCacheWrite {
+        let form = match self {
             Self::Exact(payload) => payload.revision_cache_mut(),
             Self::Taper(payload) => payload.revision_cache_mut(),
             Self::Extrusion(payload) => payload.revision_cache_mut(),
@@ -966,7 +974,8 @@ impl ProceduralSurfaceDefinition {
             | Self::Ruled { .. }
             | Self::RollingBallJet(_)
             | Self::Unknown { .. } => None,
-        }
+        };
+        write_revision_form_tolerance(form, value, write)
     }
 
     /// Whether the construction owns a revision-gated cache form, which then
@@ -974,6 +983,59 @@ impl ProceduralSurfaceDefinition {
     #[must_use]
     pub fn owns_revision_cache(&self) -> bool {
         self.revision_cache().is_some() || matches!(self, Self::VariableBlend(..))
+    }
+}
+
+/// What a write to a revision-gated cache form found.
+enum RevisionCacheWrite {
+    /// The form states a solved cache, whose tolerance the write states.
+    Written,
+    /// The form states a parameterization, which has no solved cache.
+    Parameterized,
+    /// The construction owns no revision-gated cache form.
+    NoForm,
+}
+
+impl RevisionCacheWrite {
+    /// The outcome the fit-tolerance setter states for this write.
+    const fn into_set_result(self) -> Result<(), CacheContractError> {
+        match self {
+            Self::Written => Ok(()),
+            Self::Parameterized => Err(CacheContractError::Parameterized),
+            Self::NoForm => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
+        }
+    }
+}
+
+/// Whether a tolerance write states the value or only raises to it.
+#[derive(Clone, Copy)]
+enum ToleranceWrite {
+    /// State the value in place of the tolerance the form carries.
+    State,
+    /// Keep the tolerance the form carries unless the value exceeds it.
+    Raise,
+}
+
+/// State the fit tolerance of an optional solved cache form.
+fn write_revision_form_tolerance<P>(
+    form: Option<&mut RevisionCacheForm<P>>,
+    value: FitTolerance,
+    write: ToleranceWrite,
+) -> RevisionCacheWrite {
+    form.map_or(RevisionCacheWrite::NoForm, |form| {
+        form.write_fit_tolerance(value, write)
+    })
+}
+
+/// The outcome of clearing the fit tolerance of a revision-gated cache form: a
+/// solved cache cannot lose the tolerance it states, and a parameterized form
+/// states none to lose.
+const fn clear_revision_form_tolerance<P>(
+    form: Option<&RevisionCacheForm<P>>,
+) -> Result<(), CacheContractError> {
+    match form {
+        Some(RevisionCacheForm::SolvedCache { .. }) => Err(CacheContractError::MissingSolved),
+        Some(RevisionCacheForm::Parameterization(_)) | None => Ok(()),
     }
 }
 
@@ -1344,7 +1406,12 @@ impl ProceduralSurfaceDefinition {
             return set_variable_blend_cache(payload.cache_mut(), value);
         }
         if self.owns_revision_cache() {
-            return set_revision_cache(self.revision_cache_mut(), value);
+            return match value {
+                Some(value) => self
+                    .write_revision_fit_tolerance(value, ToleranceWrite::State)
+                    .into_set_result(),
+                None => clear_revision_form_tolerance(self.revision_cache()),
+            };
         }
         self.set_legacy_cache(value.map(LegacyCache::new))
     }
@@ -1453,7 +1520,12 @@ impl ProceduralCurveDefinition {
         value: Option<FitTolerance>,
     ) -> Result<(), CacheContractError> {
         if self.owns_revision_cache() {
-            return set_revision_cache(self.revision_cache_mut(), value);
+            return match value {
+                Some(value) => self
+                    .write_revision_fit_tolerance(value, ToleranceWrite::State)
+                    .into_set_result(),
+                None => clear_revision_form_tolerance(self.revision_cache()),
+            };
         }
         match value {
             Some(value) => self.set_legacy_cache(LegacyCache::new(value)),
@@ -1471,14 +1543,9 @@ impl ProceduralCurveDefinition {
     /// unchanged, and so do a form whose layout states no legacy slot and a
     /// form whose legacy slot is empty.
     pub fn raise_cache_fit_tolerance(&mut self, value: FitTolerance) {
-        match self.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
-                if value.get() > fit_tolerance.get() {
-                    *fit_tolerance = value;
-                }
-            }
-            Some(RevisionCacheForm::Parameterization(_)) => {}
-            None => {
+        match self.write_revision_fit_tolerance(value, ToleranceWrite::Raise) {
+            RevisionCacheWrite::Written | RevisionCacheWrite::Parameterized => {}
+            RevisionCacheWrite::NoForm => {
                 if let Some(Some(cache)) = self.legacy_cache_slot_mut() {
                     if value.get() > cache.fit_tolerance.get() {
                         cache.fit_tolerance = value;
@@ -1503,17 +1570,12 @@ impl ProceduralCurveDefinition {
         &mut self,
         value: FitTolerance,
     ) -> Result<(), CacheContractError> {
-        match self.revision_cache_mut() {
-            Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => {
-                if value.get() > fit_tolerance.get() {
-                    *fit_tolerance = value;
-                }
-                Ok(())
-            }
-            Some(RevisionCacheForm::Parameterization(_)) => {
+        match self.write_revision_fit_tolerance(value, ToleranceWrite::Raise) {
+            RevisionCacheWrite::Written => Ok(()),
+            RevisionCacheWrite::Parameterized => {
                 Err(CacheContractError::Layout(PARAMETERIZED_NO_SOLVED_CACHE))
             }
-            None => match self.legacy_cache_slot_mut() {
+            RevisionCacheWrite::NoForm => match self.legacy_cache_slot_mut() {
                 Some(slot @ None) => {
                     *slot = Some(LegacyCache::new(value));
                     Ok(())
@@ -1549,26 +1611,6 @@ fn set_variable_blend_cache(
         (VariableBlendCache::Stale {}, Some(_)) => Err(CacheContractError::Layout(
             "a stale variable-blend cache states no fit tolerance",
         )),
-    }
-}
-
-fn set_revision_cache<P>(
-    cache: Option<&mut RevisionCacheForm<P>>,
-    value: Option<FitTolerance>,
-) -> Result<(), CacheContractError> {
-    match (cache, value) {
-        (Some(RevisionCacheForm::Parameterization(_)), Some(_)) => {
-            Err(CacheContractError::Parameterized)
-        }
-        (Some(RevisionCacheForm::SolvedCache { fit_tolerance }), Some(value)) => {
-            *fit_tolerance = value;
-            Ok(())
-        }
-        (Some(RevisionCacheForm::SolvedCache { .. }), None) => {
-            Err(CacheContractError::MissingSolved)
-        }
-        (Some(RevisionCacheForm::Parameterization(_)) | None, None) => Ok(()),
-        (None, Some(_)) => Err(CacheContractError::Layout(NO_LEGACY_SLOT)),
     }
 }
 
@@ -3195,6 +3237,23 @@ pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
 }
 
 impl<P> RevisionCacheForm<P> {
+    /// State the fit tolerance this form carries for its solved cache.
+    fn write_fit_tolerance(
+        &mut self,
+        value: FitTolerance,
+        write: ToleranceWrite,
+    ) -> RevisionCacheWrite {
+        match self {
+            Self::SolvedCache { fit_tolerance } => {
+                if matches!(write, ToleranceWrite::State) || value.get() > fit_tolerance.get() {
+                    *fit_tolerance = value;
+                }
+                RevisionCacheWrite::Written
+            }
+            Self::Parameterization(_) => RevisionCacheWrite::Parameterized,
+        }
+    }
+
     /// Native selector emitted for this cache form.
     #[must_use]
     pub const fn selector(&self) -> i64 {
@@ -5720,7 +5779,59 @@ impl LawFormula {
             Self::Named { variables, .. } => variables,
         }
     }
+
+    /// Whether every scalar the formula's variables carry is finite.
+    ///
+    /// The one law walk: the curve carrier [`FiniteLawFormula`] and the law,
+    /// skin, net and sweep surface admissions all refuse through it.
+    #[must_use]
+    pub fn values_are_finite(&self) -> bool {
+        self.variables()
+            .iter()
+            .all(LawExpression::values_are_finite)
+    }
 }
+
+/// A law formula whose expression tree carries only finite scalars.
+///
+/// The carrier of the `law_int_cur` formulas. It serializes as the formula it
+/// holds, so the curve wire states the formula alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "LawFormula")]
+pub struct FiniteLawFormula(LawFormula);
+
+impl TryFrom<LawFormula> for FiniteLawFormula {
+    type Error = &'static str;
+
+    fn try_from(formula: LawFormula) -> Result<Self, Self::Error> {
+        Self::try_new(formula)
+    }
+}
+
+impl FiniteLawFormula {
+    /// Admit a law formula whose expression tree carries only finite scalars.
+    pub fn try_new(formula: LawFormula) -> Result<Self, &'static str> {
+        if formula.values_are_finite() {
+            Ok(Self(formula))
+        } else {
+            Err(LAW_FORMULA_NOT_FINITE)
+        }
+    }
+
+    /// The admitted law formula.
+    #[must_use]
+    pub const fn formula(&self) -> &LawFormula {
+        &self.0
+    }
+}
+
+/// Refusal of a law formula that carries a non-finite scalar.
+const LAW_FORMULA_NOT_FINITE: &str = "law formula constants must be finite";
+
+/// Recursion bound of the law-expression walk. An expression nested deeper than
+/// this is refused.
+const LAW_EXPRESSION_DEPTH_LIMIT: usize = 64;
 
 /// Complete recursive construction stored by a native law spline surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5856,6 +5967,42 @@ pub enum LawExpression {
         /// Ordered operands.
         operands: Vec<LawExpression>,
     },
+}
+
+impl LawExpression {
+    /// Whether every scalar this expression and its operands carry is finite.
+    ///
+    /// An operand tree deeper than [`LAW_EXPRESSION_DEPTH_LIMIT`] is refused.
+    #[must_use]
+    pub fn values_are_finite(&self) -> bool {
+        self.values_are_finite_at_depth(0)
+    }
+
+    fn values_are_finite_at_depth(&self, depth: usize) -> bool {
+        if depth > LAW_EXPRESSION_DEPTH_LIMIT {
+            return false;
+        }
+        match self {
+            Self::Null {} | Self::Integer { .. } | Self::Text { .. } => true,
+            Self::Double { value } => value.is_finite(),
+            Self::Point { value } => value.is_finite(),
+            Self::Vector { value } => value.is_finite(),
+            Self::Transform { scalars, .. } => scalars.iter().all(|value| value.is_finite()),
+            Self::TransformVec { vectors, scale, .. } => {
+                scale.is_finite() && vectors.iter().all(Vector3::is_finite)
+            }
+            Self::Edge { parameters, .. } => parameters.iter().all(|value| value.is_finite()),
+            Self::Spline {
+                knots,
+                controls,
+                point,
+                ..
+            } => knots.iter().chain(controls).all(|value| value.is_finite()) && point.is_finite(),
+            Self::Algebraic { operands, .. } => operands
+                .iter()
+                .all(|operand| operand.values_are_finite_at_depth(depth + 1)),
+        }
+    }
 }
 
 /// One profile entry in the expanded skin layout.
@@ -7416,9 +7563,11 @@ pub enum ProceduralCurveDefinition {
         /// Native ASM extension integer.
         extension: i64,
         /// Primary recursive law formula.
-        primary: LawFormula,
+        #[cfg_attr(feature = "schema", schemars(with = "LawFormula"))]
+        primary: FiniteLawFormula,
         /// Counted additional recursive law formulas.
-        additional: Vec<LawFormula>,
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<LawFormula>"))]
+        additional: Vec<FiniteLawFormula>,
         /// Solved-cache fit contract this construction states itself.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache: Option<LegacyCache>,
@@ -7529,8 +7678,8 @@ enum ProceduralCurveDefinitionWire {
         )]
         version: Option<LawCurveVersionForm>,
         extension: i64,
-        primary: LawFormula,
-        additional: Vec<LawFormula>,
+        primary: FiniteLawFormula,
+        additional: Vec<FiniteLawFormula>,
         /// Solved-cache fit contract this construction states itself.
         #[serde(
             default,
@@ -7651,16 +7800,23 @@ impl ProceduralCurveDefinition {
         }
     }
 
-    fn revision_cache_mut(
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so no construction lends its admitted interior for writing.
+    fn write_revision_fit_tolerance(
         &mut self,
-    ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
-        match self {
+        value: FitTolerance,
+        write: ToleranceWrite,
+    ) -> RevisionCacheWrite {
+        let form = match self {
             Self::SurfaceCurve { family } => family.revision_cache_mut(),
             Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
             Self::Spring(payload) => payload.revision_cache_mut(),
             Self::Deformable(payload) => Some(payload.revision_cache_mut()),
             _ => None,
-        }
+        };
+        write_revision_form_tolerance(form, value, write)
     }
 }
 

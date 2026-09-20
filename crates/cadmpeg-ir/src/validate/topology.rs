@@ -1242,7 +1242,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
                 for formula in std::iter::once(primary).chain(additional) {
-                    for variable in formula.variables() {
+                    for variable in formula.formula().variables() {
                         check(variable, ids, procedural, findings);
                     }
                 }

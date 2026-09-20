@@ -4919,14 +4919,14 @@ pub(crate) fn native_procedural_curve(
             native_intcurve_support_context(bytes, target, context)?;
         }
         native_i64(bytes, *extension);
-        native_law_formula(bytes, target, primary)?;
+        native_law_formula(bytes, target, primary.formula())?;
         native_i64(
             bytes,
             i64::try_from(additional.len())
                 .map_err(|_| CodecError::NotImplemented("law formula count exceeds i64".into()))?,
         );
         for formula in additional {
-            native_law_formula(bytes, target, formula)?;
+            native_law_formula(bytes, target, formula.formula())?;
         }
         bytes.push(0x10);
         return Ok(true);
