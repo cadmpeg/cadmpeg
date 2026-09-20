@@ -1064,10 +1064,10 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction)
+            point_valid(vertex) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center();

@@ -375,7 +375,7 @@ fn parabola_projection_preserves_common_large_coefficient_scale() {
         else {
             panic!("expected parabola")
         };
-        assert_eq!(parabola.focal_distance(), 0.25);
+        assert_eq!(parabola.focal_distance().get(), 0.25);
         assert!(result.report().losses.is_empty());
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
     }

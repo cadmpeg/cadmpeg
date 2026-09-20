@@ -1503,10 +1503,10 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                 Point3::new(vertex.x * scale, vertex.y * scale, vertex.z * scale),
                 *axis,

@@ -470,11 +470,11 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             )
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
-            let pl = placement(e, *vertex, *axis, *major_direction);
+            let focal_distance = parabola_curve.focal_distance().get();
+            let pl = placement(e, vertex, *axis, *major_direction);
             e.emit("PARABOLA", &format!("'',{pl},{}", real(focal_distance)))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
