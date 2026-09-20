@@ -144,13 +144,7 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => true,
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => true,
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            major_radius.is_finite()
-                && minor_radius.is_finite()
-                && major_radius > 0.0
-                && minor_radius > 0.0
-                && major_radius == minor_radius
+            ellipse_curve.major_radius().get() == ellipse_curve.minor_radius().get()
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             curve.degree() == 1

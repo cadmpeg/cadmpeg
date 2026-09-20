@@ -377,13 +377,13 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             .map_err(CodecError::malformed)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                placed_point(transform, *center)?,
+                placed_point(transform, center)?,
                 placed_vector(transform, *axis)?,
                 placed_vector(transform, *major_direction)?,
                 major_radius,

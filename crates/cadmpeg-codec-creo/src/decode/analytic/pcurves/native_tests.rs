@@ -118,8 +118,8 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(
         matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
-                    let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     major_radius > minor_radius
                 })
     );

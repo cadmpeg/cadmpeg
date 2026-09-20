@@ -424,12 +424,12 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
-                    let center = ellipse_curve.center();
+                    let center = ellipse_curve.center().get();
         let axis = ellipse_curve.axis();
         let major_direction = ellipse_curve.major_direction();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *major_direction == Vector3::new(1.0, 0.0, 0.0)
                         && major_radius == 30.0

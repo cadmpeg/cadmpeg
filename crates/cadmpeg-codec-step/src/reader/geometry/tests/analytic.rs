@@ -433,8 +433,8 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
     assert!(
         matches!(ellipse.geometry.solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
-                    let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     major_radius == 6.0 && minor_radius == 2.0
                 })
     );
@@ -497,8 +497,8 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
             if {
                 let major_direction = ellipse_curve.major_direction();
-    let major_radius = ellipse_curve.major_radius();
-    let minor_radius = ellipse_curve.minor_radius();
+    let major_radius = ellipse_curve.major_radius().get();
+    let minor_radius = ellipse_curve.minor_radius().get();
                 *major_direction == Vector3::new(0.0, 1.0, 0.0)
                     && major_radius == 6.0
                     && minor_radius == 2.0
@@ -515,8 +515,8 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         matches!(ordered.geometry.solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let major_direction = ellipse_curve.major_direction();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     *major_direction == Vector3::new(1.0, 0.0, 0.0)
                         && major_radius == 6.0
                         && minor_radius == 2.0

@@ -123,8 +123,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(oblique, cylinder), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cylinder_ellipse"))
                 if {
-                    let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     (major_radius - 2.0 * 2.0_f64.sqrt()).abs() < EPS_CARRIER_INTERSECTION && minor_radius == 2.0
                 })
     );
@@ -401,10 +401,10 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cap, elliptical_cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_parallel_ellipse"))
                 if {
-                    let center = ellipse_curve.center();
-        let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
-                    *center == Point3::new(0.0, 0.0, 3.0)
+                    let center = ellipse_curve.center().get();
+        let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
+                    center == Point3::new(0.0, 0.0, 3.0)
                         && (major_radius - 5.0).abs() < EPS_CARRIER_INTERSECTION
                         && (minor_radius - 2.5).abs() < EPS_CARRIER_INTERSECTION
                 })
@@ -460,8 +460,8 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_ellipse_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)), "plane_cone_ellipse"))
                 if {
-                    let major_radius = ellipse_curve.major_radius();
-        let minor_radius = ellipse_curve.minor_radius();
+                    let major_radius = ellipse_curve.major_radius().get();
+        let minor_radius = ellipse_curve.minor_radius().get();
                     major_radius > minor_radius && minor_radius > 0.0
                 })
     );

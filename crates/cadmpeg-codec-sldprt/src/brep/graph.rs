@@ -2734,16 +2734,14 @@ fn derive_planar_pcurves(
                 )
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                let center = ellipse_curve.center();
+                let center = ellipse_curve.center().get();
                 let axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
-                let major_radius = ellipse_curve.major_radius();
-                let minor_radius = ellipse_curve.minor_radius();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
                 let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
                 if axis_dot.abs() < 1.0 - EPS_AXIS_ALIGNMENT
-                    || plane_distance(*center).abs() > EPS_PLANAR_DISTANCE
-                    || major_radius <= 0.0
-                    || minor_radius <= 0.0
+                    || plane_distance(center).abs() > EPS_PLANAR_DISTANCE
                 {
                     continue;
                 }
@@ -2751,7 +2749,7 @@ fn derive_planar_pcurves(
                     continue;
                 };
                 PcurveGeometry::Ellipse(match cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
-                    uv(*center),
+                    uv(center),
                     major_direction,
                     if axis_dot < 0.0 {
                         cadmpeg_ir::math::Point2::new(major_direction.v, -major_direction.u)
@@ -2943,11 +2941,11 @@ fn derive_cylindrical_pcurves(
                 )
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                let center = ellipse_curve.center();
+                let center = ellipse_curve.center().get();
                 let ellipse_axis = ellipse_curve.axis();
                 let major_direction = ellipse_curve.major_direction();
-                let major_radius = ellipse_curve.major_radius();
-                let minor_radius = ellipse_curve.minor_radius();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
                 let minor_direction = cadmpeg_ir::math::Vector3::new(
                     ellipse_axis.y * major_direction.z - ellipse_axis.z * major_direction.y,
                     ellipse_axis.z * major_direction.x - ellipse_axis.x * major_direction.z,

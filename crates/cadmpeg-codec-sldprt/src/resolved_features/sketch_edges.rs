@@ -194,11 +194,11 @@ pub(super) fn project_edge(
             }
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            let center = project_point(*center, origin, u_axis, v_axis);
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let center = project_point(center, origin, u_axis, v_axis);
             let major_u = major_direction.dot(u_axis);
             let major_v = major_direction.dot(v_axis);
             let major_angle = major_v.atan2(major_u);

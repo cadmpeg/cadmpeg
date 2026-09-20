@@ -576,11 +576,11 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 native_f64(records, 1.0);
             }
             Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-                let center = *ellipse_curve.center();
+                let center = ellipse_curve.center().get();
                 let axis = *ellipse_curve.axis();
                 let major_direction = *ellipse_curve.major_direction();
-                let major_radius = ellipse_curve.major_radius();
-                let minor_radius = ellipse_curve.minor_radius();
+                let major_radius = ellipse_curve.major_radius().get();
+                let minor_radius = ellipse_curve.minor_radius().get();
                 native_curve_base(records, "ellipse")?;
                 native_point(
                     records,

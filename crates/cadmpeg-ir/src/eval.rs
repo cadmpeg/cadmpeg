@@ -2641,8 +2641,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             Some(vector_sum(&[
                 (-major_radius * t.sin(), *major_direction),
                 (minor_radius * t.cos(), axis.cross(*major_direction)),
@@ -2723,8 +2723,8 @@ fn curve_second_derivative_inner(
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             Some(vector_sum(&[
                 (-major_radius * t.cos(), *major_direction),
                 (-minor_radius * t.sin(), axis.cross(*major_direction)),
@@ -3926,15 +3926,12 @@ fn direct_curve_parameter_near_point(
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
-            if major_radius == 0.0 || minor_radius == 0.0 {
-                return None;
-            }
-            let (x, y, _) = components(*center, *axis, *major_direction);
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
+            let (x, y, _) = components(center, *axis, *major_direction);
             let canonical = (y / minor_radius).atan2(x / major_radius);
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
@@ -4082,13 +4079,13 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             ))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             Some(offset(
-                *center,
+                center,
                 &[
                     (major_radius * t.cos(), *major_direction),
                     (minor_radius * t.sin(), axis.cross(*major_direction)),

@@ -2050,8 +2050,8 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             radius.abs()
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             major_radius.abs().max(minor_radius.abs())
         }
         _ => return None,

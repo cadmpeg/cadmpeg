@@ -965,8 +965,8 @@ impl TryFrom<CircleCurveWire> for CircleCurve {
 #[serde(try_from = "EllipseCurveWire", into = "EllipseCurveWire")]
 pub struct EllipseCurve {
     center: FinitePoint3,
-    major_radius: PositiveReal,
-    minor_radius: PositiveReal,
+    major_radius: PositiveLength,
+    minor_radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
 
@@ -992,6 +992,73 @@ impl EllipseCurve {
         self.frame.reverse_axis();
     }
 
+    /// Build an ellipse from checked parts. Two positive radii do not state
+    /// their order, so the remaining relationship is checked here.
+    ///
+    /// An ellipse rebuilds from its own parts:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::EllipseCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let ellipse = EllipseCurve::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     4.0,
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and ordered radii");
+    /// let moved = EllipseCurve::try_from_parts(
+    ///     ellipse.center(),
+    ///     ellipse.frame(),
+    ///     ellipse.major_radius(),
+    ///     ellipse.minor_radius(),
+    /// )
+    /// .expect("the stored radii keep their order");
+    /// assert_eq!(moved, ellipse);
+    /// ```
+    ///
+    /// Exchanging them is refused, because the argument types state positivity
+    /// and not the order:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::EllipseCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let ellipse = EllipseCurve::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     4.0,
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and ordered radii");
+    /// assert!(EllipseCurve::try_from_parts(
+    ///     ellipse.center(),
+    ///     ellipse.frame(),
+    ///     ellipse.minor_radius(),
+    ///     ellipse.major_radius(),
+    /// )
+    /// .is_err());
+    /// ```
+    pub fn try_from_parts(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        major_radius: PositiveLength,
+        minor_radius: PositiveLength,
+    ) -> Result<Self, &'static str> {
+        if major_radius.get() < minor_radius.get() {
+            return Err("EllipseCurve.major_radius must be at least minor_radius");
+        }
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            frame,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,
@@ -1002,26 +1069,24 @@ impl EllipseCurve {
     ) -> Result<Self, &'static str> {
         let frame = OrthonormalFrame3::new(axis, major_direction)
             .ok_or("EllipseCurve.axis/major_direction must form an orthonormal frame")?;
-        if major_radius < minor_radius {
-            return Err("EllipseCurve.major_radius must be at least minor_radius");
-        }
         let center = FinitePoint3::new(center).ok_or("EllipseCurve.center must be finite")?;
-        let major_radius = PositiveReal::new(major_radius)
+        let major_radius = PositiveLength::new(major_radius)
             .ok_or("EllipseCurve.major_radius must be positive and finite")?;
-        let minor_radius = PositiveReal::new(minor_radius)
+        let minor_radius = PositiveLength::new(minor_radius)
             .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
-        Ok(Self {
-            center,
-            major_radius,
-            minor_radius,
-            frame,
-        })
+        Self::try_from_parts(center, frame, major_radius, minor_radius)
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -1038,25 +1103,25 @@ impl EllipseCurve {
 
     /// Return the major radius.
     #[must_use]
-    pub const fn major_radius(&self) -> f64 {
-        self.major_radius.get()
+    pub const fn major_radius(&self) -> PositiveLength {
+        self.major_radius
     }
 
     /// Return the minor radius.
     #[must_use]
-    pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius.get()
+    pub const fn minor_radius(&self) -> PositiveLength {
+        self.minor_radius
     }
 }
 
 impl From<EllipseCurve> for EllipseCurveWire {
     fn from(value: EllipseCurve) -> Self {
         Self {
-            center: *value.center(),
+            center: value.center().get(),
             axis: *value.axis(),
             major_direction: *value.major_direction(),
-            major_radius: value.major_radius(),
-            minor_radius: value.minor_radius(),
+            major_radius: value.major_radius().get(),
+            minor_radius: value.minor_radius().get(),
         }
     }
 }

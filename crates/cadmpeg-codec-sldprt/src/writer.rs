@@ -3575,11 +3575,11 @@ pub(super) fn curve_values(
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center();
+            let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius();
-            let minor_radius = ellipse_curve.minor_radius();
+            let major_radius = ellipse_curve.major_radius().get();
+            let minor_radius = ellipse_curve.minor_radius().get();
             (
                 0x20,
                 vec![
