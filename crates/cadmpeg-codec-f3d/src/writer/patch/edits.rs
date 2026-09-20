@@ -3073,7 +3073,7 @@ pub(super) fn validate_curve_edits(
                 },
             ));
         }
-        let valid = match (before, after) {
+        match (before, after) {
             // A circle and an ellipse hold their two directions in one
             // `OrthonormalFrame3`, which admits them, so a same-kind edit to
             // either carries no condition this writer can still refuse.
@@ -3085,36 +3085,51 @@ pub(super) fn validate_curve_edits(
                     | SolvedCurveGeometry::Circle(_)
                     | SolvedCurveGeometry::Ellipse(_),
                 ),
-            ) => true,
+            ) => {}
             (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
-                (id.starts_with("f3d:brep:entity#")
+                // `NurbsCurve` admission states finite poles and finite
+                // nonzero weights, so this writer refuses only what the byte
+                // patcher cannot write: a carrier it does not address, a knot
+                // layout of another shape, a changed rational form or pole
+                // count, and a weight the native lane cannot carry.
+                if !(id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
-                    && valid_edited_curve_structure(before, after)
-                    && before.weights().is_some() == after.weights().is_some()
-                    && before.control_points().len() == after.control_points().len()
-                    && after
-                        .control_points()
-                        .iter()
-                        .copied()
-                        .all(|point| point.is_finite())
-                    && after.weights().is_none_or(|weights| {
-                        weights
-                            .iter()
-                            .all(|weight| weight.is_finite() && *weight > 0.0)
-                    })
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} is not a patchable NURBS carrier"
+                    )));
+                }
+                if !valid_edited_curve_structure(before, after) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} changes the NURBS knot layout"
+                    )));
+                }
+                if before.weights().is_some() != after.weights().is_some() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} changes the NURBS rational form"
+                    )));
+                }
+                if before.pole_count() != after.pole_count() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} changes the NURBS control-point count"
+                    )));
+                }
+                if after
+                    .weights()
+                    .is_some_and(|weights| weights.iter().any(|weight| *weight < 0.0))
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D curve {id} has a negative NURBS weight"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to curve {id}"
                 )));
             }
-        };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "edited F3D curve {id} has an invalid frame or radius"
-            )));
         }
     }
     Ok(edited)
@@ -3265,7 +3280,7 @@ pub(super) fn validate_surface_edits(
                 },
             ));
         }
-        let valid = match (before, after) {
+        match (before, after) {
             // A plane, sphere, torus and cylinder hold their two directions in
             // one `OrthonormalFrame3`, which admits them, so a same-kind edit
             // to any of them carries no condition this writer can still refuse.
@@ -3277,51 +3292,89 @@ pub(super) fn validate_surface_edits(
                     | SolvedSurfaceGeometry::Torus(_)
                     | SolvedSurfaceGeometry::Cylinder(_),
                 ),
-            ) => true,
+            ) => {}
             (_, Some(SolvedSurfaceGeometry::Cone(cone_surface))) => {
-                let radius = cone_surface.radius().get();
-                let half_angle = cone_surface.half_angle().get();
-                radius != 0.0 && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+                // `NonNegativeLength` admits zero and `Angle` admits every
+                // finite angle, so the cone carrier states neither condition.
+                // The record holds the reference direction scaled by the
+                // radius, which a zero radius erases.
+                if cone_surface.radius().get() == 0.0 {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D cone surface {id} has a zero cross-section radius"
+                    )));
+                }
+                if !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone_surface.half_angle().get()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D cone surface {id} has a half angle outside [0, pi/2)"
+                    )));
+                }
             }
             (
                 Some(SolvedSurfaceGeometry::Nurbs(before)),
                 Some(SolvedSurfaceGeometry::Nurbs(after)),
             ) => {
-                (id.starts_with("f3d:brep:entity#")
+                // `NurbsSurface` admission states finite poles and finite
+                // nonzero weights, so this writer refuses only what the byte
+                // patcher cannot write: a carrier it does not address, a knot
+                // layout of another shape, a changed rational form or pole
+                // count, and a weight the native lane cannot carry.
+                if !(id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
-                    && valid_edited_nurbs_direction(
-                        before.u_knots(),
-                        after.u_degree(),
-                        after.u_knots(),
-                        after.u_count(),
-                    )
-                    && valid_edited_nurbs_direction(
-                        before.v_knots(),
-                        after.v_degree(),
-                        after.v_knots(),
-                        after.v_count(),
-                    )
-                    && before.u_count() == after.u_count()
-                    && before.v_count() == after.v_count()
-                    && before.weights().is_some() == after.weights().is_some()
-                    && after.poles().into_iter().all(|point| point.is_finite())
-                    && after.pole_weights().is_none_or(|weights| {
-                        weights
-                            .into_iter()
-                            .all(|weight| weight.is_finite() && weight > 0.0)
-                    })
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} is not a patchable NURBS carrier"
+                    )));
+                }
+                if !valid_edited_nurbs_direction(
+                    before.u_knots(),
+                    after.u_degree(),
+                    after.u_knots(),
+                    after.u_count(),
+                ) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} changes the NURBS u knot layout"
+                    )));
+                }
+                if !valid_edited_nurbs_direction(
+                    before.v_knots(),
+                    after.v_degree(),
+                    after.v_knots(),
+                    after.v_count(),
+                ) {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} changes the NURBS v knot layout"
+                    )));
+                }
+                if before.u_count() != after.u_count() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} changes the NURBS u control-point count"
+                    )));
+                }
+                if before.v_count() != after.v_count() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} changes the NURBS v control-point count"
+                    )));
+                }
+                if before.weights().is_some() != after.weights().is_some() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} changes the NURBS rational form"
+                    )));
+                }
+                if after
+                    .pole_weights()
+                    .is_some_and(|weights| weights.into_iter().any(|weight| weight < 0.0))
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "edited F3D surface {id} has a negative NURBS weight"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D regeneration does not support edits to surface {id}"
                 )));
             }
-        };
-        if !valid {
-            return Err(CodecError::malformed(format_args!(
-                "edited F3D surface {id} requires a finite orthonormal frame and valid radius"
-            )));
         }
         edited.insert(id.to_owned());
     }
@@ -3798,54 +3851,123 @@ mod tests {
     use crate::native::F3dNative;
     use crate::records::references::DesignMaterialAssignment;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, ConeSurface, LineCurve};
-    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    fn curve(geometry: SolvedCurveGeometry) -> Vec<Curve> {
+    fn curve(id: &str, geometry: SolvedCurveGeometry) -> Vec<Curve> {
         vec![Curve {
-            id: CurveId::mint("f3d:brep:entity#7").expect("identity grammar"),
+            id: CurveId::mint(id).expect("identity grammar"),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
         }]
     }
 
-    fn cone_surface(radius: f64) -> Vec<Surface> {
+    fn surface(id: &str, geometry: SolvedSurfaceGeometry) -> Vec<Surface> {
         vec![Surface {
-            id: SurfaceId::mint("f3d:brep:entity#9").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            id: SurfaceId::mint(id).expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(geometry),
+            source_object: None,
+        }]
+    }
+
+    fn cone_surface(radius: f64, half_angle: f64) -> Vec<Surface> {
+        surface(
+            "f3d:brep:entity#9",
+            SolvedSurfaceGeometry::Cone(
                 ConeSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     radius,
                     1.0,
-                    std::f64::consts::FRAC_PI_4,
+                    half_angle,
                 )
                 .expect("orthonormal frame, nonnegative radius and finite half angle"),
-            )),
-            source_object: None,
-        }]
+            ),
+        )
+    }
+
+    /// The first `count` poles of a fixed degree-1 control polygon.
+    fn poles(count: usize) -> Vec<Point3> {
+        [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ]
+        .get(..count)
+        .expect("at most three poles")
+        .to_vec()
+    }
+
+    fn nurbs_curve(
+        knots: Vec<f64>,
+        pole_count: usize,
+        weights: Option<Vec<f64>>,
+    ) -> SolvedCurveGeometry {
+        SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(1, knots, poles(pole_count), weights, false)
+                .expect("degree, knots and control points agree"),
+        )
+    }
+
+    fn nurbs_surface(
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_count: usize,
+        v_count: usize,
+        weights: Option<Vec<Vec<f64>>>,
+    ) -> SolvedSurfaceGeometry {
+        SolvedSurfaceGeometry::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(1, u_knots, false),
+                NurbsSurfaceAxis::new(1, v_knots, false),
+                NurbsSurfaceLanes::new((0..u_count).map(|_| poles(v_count)).collect(), weights),
+                false,
+            )
+            .expect("degrees, knots and control grid agree"),
+        )
+    }
+
+    /// An all-ones weight grid whose last row's first pole carries `last`.
+    fn weight_grid(u_count: usize, v_count: usize, last: f64) -> Vec<Vec<f64>> {
+        let mut rows = (0..u_count)
+            .map(|_| (0..v_count).map(|_| 1.0).collect::<Vec<f64>>())
+            .collect::<Vec<_>>();
+        if let Some(row) = rows.last_mut() {
+            if let Some(weight) = row.first_mut() {
+                *weight = last;
+            }
+        }
+        rows
     }
 
     #[test]
     fn a_curve_kind_change_is_refused_with_the_message_of_the_kind_it_becomes() {
-        let baseline = curve(SolvedCurveGeometry::Circle(
-            CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
-            )
-            .expect("orthonormal frame and positive radius"),
-        ));
-        let line = curve(SolvedCurveGeometry::Line(
-            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
-                .expect("finite origin and nonzero direction"),
-        ));
+        let baseline = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("orthonormal frame and positive radius"),
+            ),
+        );
+        let line = curve(
+            "f3d:brep:entity#7",
+            SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("finite origin and nonzero direction"),
+            ),
+        );
         let error = validate_curve_edits(&baseline, &line)
             .expect_err("a circle carrier cannot become a line");
         assert!(
@@ -3855,16 +3977,10 @@ mod tests {
             "{error}"
         );
 
-        let nurbs = curve(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                None,
-                false,
-            )
-            .expect("degree, knots and control points agree"),
-        ));
+        let nurbs = curve(
+            "f3d:brep:entity#7",
+            nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+        );
         let error = validate_curve_edits(&baseline, &nurbs)
             .expect_err("a circle carrier cannot become a NURBS carrier");
         assert!(
@@ -3877,18 +3993,7 @@ mod tests {
 
     #[test]
     fn a_same_kind_nurbs_curve_edit_that_changes_the_knot_multiplicity_is_malformed() {
-        let nurbs = |knots: Vec<f64>| {
-            curve(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    1,
-                    knots,
-                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                    None,
-                    false,
-                )
-                .expect("degree, knots and control points agree"),
-            ))
-        };
+        let nurbs = |knots: Vec<f64>| curve("f3d:brep:entity#7", nurbs_curve(knots, 2, None));
         let error = validate_curve_edits(
             &nurbs(vec![0.0, 0.0, 1.0, 1.0]),
             &nurbs(vec![0.0, 0.5, 1.0, 1.0]),
@@ -3897,19 +4002,348 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("edited F3D curve f3d:brep:entity#7 has an invalid frame or radius"),
+                .contains("edited F3D curve f3d:brep:entity#7 changes the NURBS knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_nurbs_curve_edit_on_a_carrier_the_patcher_does_not_address_is_malformed() {
+        let id = "f3d:brep:procedural_surface#7:profile";
+        let error = validate_curve_edits(
+            &curve(id, nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None)),
+            &curve(id, nurbs_curve(vec![0.0, 0.0, 2.0, 2.0], 2, None)),
+        )
+        .expect_err("only the addressed NURBS carriers are patchable");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:procedural_surface#7:profile is not a patchable NURBS carrier"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_rational_form_is_malformed() {
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, 1.0])),
+            ),
+        )
+        .expect_err("a polynomial carrier cannot gain a weight lane");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 changes the NURBS rational form"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_pole_count_is_malformed() {
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None),
+            ),
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0, 1.0], 3, None),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D curve f3d:brep:entity#7 changes the NURBS control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_curve_edit_that_writes_a_negative_weight_is_malformed() {
+        let error = validate_curve_edits(
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, 1.0])),
+            ),
+            &curve(
+                "f3d:brep:entity#7",
+                nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, -1.0])),
+            ),
+        )
+        .expect_err("a native weight lane carries positive weights");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D curve f3d:brep:entity#7 has a negative NURBS weight"),
             "{error}"
         );
     }
 
     #[test]
     fn a_same_kind_cone_edit_that_removes_the_radius_is_malformed() {
-        let error = validate_surface_edits(&cone_surface(2.0), &cone_surface(0.0))
-            .expect_err("a cone carrier keeps a nonzero radius");
+        let error = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_4),
+            &cone_surface(0.0, std::f64::consts::FRAC_PI_4),
+        )
+        .expect_err("a cone carrier keeps a nonzero radius");
+        assert!(
+            error.to_string().contains(
+                "edited F3D cone surface f3d:brep:entity#9 has a zero cross-section radius"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_cone_edit_that_opens_the_half_angle_to_a_right_angle_is_malformed() {
+        let error = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_4),
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_2),
+        )
+        .expect_err("a cone carrier keeps an acute half angle");
+        assert!(
+            error.to_string().contains(
+                "edited F3D cone surface f3d:brep:entity#9 has a half angle outside [0, pi/2)"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_nurbs_surface_edit_on_a_carrier_the_patcher_does_not_address_is_malformed() {
+        let id = "f3d:brep:procedural_surface#9:profile";
+        let error = validate_surface_edits(
+            &surface(
+                id,
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                id,
+                nurbs_surface(
+                    vec![0.0, 0.0, 2.0, 2.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("only the addressed NURBS carriers are patchable");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:procedural_surface#9:profile is not a patchable NURBS carrier"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_knot_multiplicity_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.5, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its u knot multiplicities");
         assert!(
             error
                 .to_string()
-                .contains("edited F3D surface f3d:brep:entity#9 requires a finite orthonormal frame and valid radius"),
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS u knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_knot_multiplicity_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.5, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its v knot multiplicities");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS v knot layout"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_pole_count_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    3,
+                    2,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its u control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 changes the NURBS u control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_pole_count_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0, 1.0],
+                    2,
+                    3,
+                    None,
+                ),
+            ),
+        )
+        .expect_err("a NURBS carrier keeps its v control-point count");
+        assert!(
+            error.to_string().contains(
+                "edited F3D surface f3d:brep:entity#9 changes the NURBS v control-point count"
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_rational_form_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    None,
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    Some(weight_grid(2, 2, 1.0)),
+                ),
+            ),
+        )
+        .expect_err("a polynomial carrier cannot gain a weight grid");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 changes the NURBS rational form"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_same_kind_nurbs_surface_edit_that_writes_a_negative_weight_is_malformed() {
+        let error = validate_surface_edits(
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    Some(weight_grid(2, 2, 1.0)),
+                ),
+            ),
+            &surface(
+                "f3d:brep:entity#9",
+                nurbs_surface(
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    2,
+                    2,
+                    Some(weight_grid(2, 2, -1.0)),
+                ),
+            ),
+        )
+        .expect_err("a native weight grid carries positive weights");
+        assert!(
+            error
+                .to_string()
+                .contains("edited F3D surface f3d:brep:entity#9 has a negative NURBS weight"),
             "{error}"
         );
     }
