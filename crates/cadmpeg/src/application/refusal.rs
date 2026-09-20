@@ -555,7 +555,7 @@ impl ConversionRefusal {
     /// Semantic model refusals exit 1. Decode failure and binary-stdout remain
     /// exit 2 because they are operational failures.
     #[must_use]
-    pub(super) fn exit_code(&self) -> u8 {
+    fn exit_code(&self) -> u8 {
         self.code().disposition().exit_code
     }
 }
@@ -600,6 +600,7 @@ mod tests {
     use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
     use super::{ApplicationError, CheckOperation, ConversionRefusal, RefusalCode};
+    use crate::application::transcoder::TargetSelection;
     use cadmpeg_core::target::TargetRefusal;
     use cadmpeg_ir::codec::DecodeFailure;
     use cadmpeg_ir::report::check::ValidationReport;
@@ -777,5 +778,26 @@ mod tests {
         };
         assert_eq!(report_value(&refusal)["stage"], "check");
         assert_eq!(refusal.code().to_string(), "check_failed");
+    }
+
+    #[test]
+    fn an_unwritable_format_is_a_typed_plan_refusal() {
+        let error = TargetSelection::resolve(Some("catia:v5"), None).unwrap_err();
+        let refusal = error
+            .refusal()
+            .expect("unsupported output formats are semantic plan refusals");
+        assert!(matches!(
+            refusal,
+            ConversionRefusal::UnsupportedOutputFormat { .. }
+        ));
+        assert_eq!(
+            refusal.code(),
+            crate::application::refusal::RefusalCode::UnsupportedOutputFormat
+        );
+        assert_eq!(
+            serde_json::to_value(refusal.report()).unwrap()["stage"],
+            "plan"
+        );
+        assert_eq!(refusal.exit_code(), 1);
     }
 }
