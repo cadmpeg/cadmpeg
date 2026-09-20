@@ -1,0 +1,16 @@
+
+running 11 tests
+test f3d_intersection::tests::numerical_audit_line_circle_intersections_are_scale_invariant ... ok
+test f3d_rotation::tests::numerical_audit_half_turn_recovers_axis_with_zero_x ... ok
+test creo::tests::numerical_audit_trim_line_circle_rejects_disjoint_small_carriers ... ok
+test iges_orientation::tests::numerical_audit_similarity_orientation_survives_uniform_scale ... ok
+test nx::tests::numerical_audit_least_squares_checks_rank_independent_of_column_scale ... ok
+test freecad::tests::numerical_audit_quaternion_frame_is_invariant_under_nonzero_scaling ... ok
+test iges_real::tests::numerical_audit_binary_real_keeps_representable_exponent_boundary ... ok
+test rhino_mesh::tests::numerical_audit_quad_uses_shorter_large_diagonal ... ok
+test sld_angles::tests::numerical_audit_line_angles_are_finite_for_large_directions ... ok
+test sld_holes::tests::numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes ... ok
+test sld_integer::tests::configuration_numeric_override_inherits_parameter_dimension ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
