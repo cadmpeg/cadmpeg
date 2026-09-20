@@ -122,3 +122,13 @@ fn numerical_audit_parameter_reflection_preserves_shifted_endpoints() {
     );
     assert!(super::reflect_parameter(-f64::MAX, 0.0, f64::MAX).is_none());
 }
+
+#[test]
+fn numerical_audit_product_quotient_preserves_representable_results() {
+    assert_eq!(super::multiply_divide(0.0, 1.0e200, 1.0e-200), Some(0.0));
+    for value in [f64::from_bits(1), 1.0e-200, 1.0, 1.0e200, f64::MAX] {
+        let result = super::multiply_divide(value, value, value).unwrap();
+        assert!((result / value - 1.0).abs() <= 4.0 * f64::EPSILON);
+    }
+    assert!(super::multiply_divide(1.0, 1.0, 0.0).is_none());
+}
