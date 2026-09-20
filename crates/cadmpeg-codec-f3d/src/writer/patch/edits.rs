@@ -3294,16 +3294,18 @@ pub(super) fn validate_surface_edits(
                 // half angle as a sine and a cosine whose signs carry the axis
                 // and normal senses, and the ASM surface reader rebuilds the
                 // angle as `sine.abs().atan2(cosine.abs())`, whose range is
-                // [0, pi/2]. A negative half angle and one above pi/2 are
-                // shapes no f3d document holds.
+                // [0, pi/2]. The patcher writes the sine and the cosine of the
+                // half angle, and `atan2(1.0, cos(pi/2))` is exactly `pi/2`, so
+                // the closed endpoint survives the round trip. A negative half
+                // angle and one above pi/2 are shapes no f3d document holds.
                 if cone_surface.radius().get() == 0.0 {
                     return Err(CodecError::malformed(format_args!(
                         "edited F3D cone surface {id} has a zero cross-section radius"
                     )));
                 }
-                if !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone_surface.half_angle().get()) {
+                if !(0.0..=std::f64::consts::FRAC_PI_2).contains(&cone_surface.half_angle().get()) {
                     return Err(CodecError::malformed(format_args!(
-                        "edited F3D cone surface {id} has a half angle outside [0, pi/2)"
+                        "edited F3D cone surface {id} has a half angle outside [0, pi/2]"
                     )));
                 }
             }
@@ -4125,17 +4127,30 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_cone_edit_that_opens_the_half_angle_to_a_right_angle_is_malformed() {
+    fn a_same_kind_cone_edit_that_opens_the_half_angle_past_a_right_angle_is_malformed() {
         let error = validate_surface_edits(
             &cone_surface(2.0, std::f64::consts::FRAC_PI_4),
-            &cone_surface(2.0, std::f64::consts::FRAC_PI_2),
+            &cone_surface(2.0, std::f64::consts::PI),
         )
-        .expect_err("a cone carrier keeps an acute half angle");
+        .expect_err("a cone carrier keeps a half angle no wider than a right angle");
         assert!(
             error.to_string().contains(
-                "edited F3D cone surface f3d:brep:entity#9 has a half angle outside [0, pi/2)"
+                "edited F3D cone surface f3d:brep:entity#9 has a half angle outside [0, pi/2]"
             ),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn a_radius_edit_on_a_cone_carrier_with_a_right_baseline_half_angle_is_admitted() {
+        let edited = validate_surface_edits(
+            &cone_surface(2.0, std::f64::consts::FRAC_PI_2),
+            &cone_surface(3.0, std::f64::consts::FRAC_PI_2),
+        )
+        .expect("a right baseline half angle refuses no radius edit");
+        assert_eq!(
+            edited,
+            std::collections::BTreeSet::from(["f3d:brep:entity#9".to_owned()])
         );
     }
 
