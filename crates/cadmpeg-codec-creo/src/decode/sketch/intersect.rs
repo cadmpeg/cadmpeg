@@ -50,17 +50,30 @@ pub(in crate::decode) fn intersect_section_lines(
     first: &SketchGeometry,
     second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
-    let (a, u) = section_line_origin_direction(first)?;
-    let (b, v) = section_line_origin_direction(second)?;
-    let u = cadmpeg_ir::math::Vector3::new(u.u, u.v, 0.0).unit_nonzero()?;
-    let v = cadmpeg_ir::math::Vector3::new(v.u, v.v, 0.0).unit_nonzero()?;
-    let determinant = u.x.mul_add(v.y, -u.y * v.x);
+    let (first_origin, first_span) = section_line_origin_direction(first)?;
+    let (second_origin, second_span) = section_line_origin_direction(second)?;
+    let first_direction =
+        cadmpeg_ir::math::Vector3::new(first_span.u, first_span.v, 0.0).unit_nonzero()?;
+    let second_direction =
+        cadmpeg_ir::math::Vector3::new(second_span.u, second_span.v, 0.0).unit_nonzero()?;
+    let determinant = first_direction
+        .x
+        .mul_add(second_direction.y, -first_direction.y * second_direction.x);
     if determinant.abs() <= EPS_LINE_INTERSECTION {
         return None;
     }
-    let delta = Point2::new(b.u - a.u, b.v - a.v);
-    let t = delta.u.mul_add(v.y, -delta.v * v.x) / determinant;
-    let point = [a.u + t * u.x, a.v + t * u.y];
+    let delta = Point2::new(
+        second_origin.u - first_origin.u,
+        second_origin.v - first_origin.v,
+    );
+    let parameter = delta
+        .u
+        .mul_add(second_direction.y, -delta.v * second_direction.x)
+        / determinant;
+    let point = [
+        first_origin.u + parameter * first_direction.x,
+        first_origin.v + parameter * first_direction.y,
+    ];
     point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
@@ -845,17 +858,17 @@ mod tests {
                 end: Point2::new(b[0], b[1]),
             }
             .try_into()
-            .unwrap()
+            .expect("line carrier with distinct endpoints")
         };
         let arc = |x, r| -> SketchGeometry {
             SketchGeometryDefinition::Arc {
                 center: Point2::new(x, 0.),
-                radius: Length::new(r).unwrap(),
-                start_angle: Angle::new(0.).unwrap(),
-                end_angle: Angle::new(std::f64::consts::TAU).unwrap(),
+                radius: Length::new(r).expect("positive finite arc radius"),
+                start_angle: Angle::new(0.).expect("finite start angle"),
+                end_angle: Angle::new(std::f64::consts::TAU).expect("finite end angle"),
             }
             .try_into()
-            .unwrap()
+            .expect("arc carrier with positive radius")
         };
         assert_eq!(
             super::intersect_section_line_arc(&line([-1e200, 1.], [1e200, 1.]), &arc(0., 1e-6)),
