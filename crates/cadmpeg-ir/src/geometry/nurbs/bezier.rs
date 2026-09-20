@@ -182,24 +182,26 @@ pub fn boundaries_within_resolution(
     let threshold = threshold.finish();
     for index in 0..=product_degree {
         let mut cross = [ExactSignedSum::default(); 3];
-        for first_index in index.saturating_sub(degree)..=index.min(degree) {
-            let second_index = index - first_index;
+        // `index` runs to twice the degree, and each factor keeps its own degree.
+        // The pair `(first_index, second_index)` contributes when the two indices
+        // sum to `index` and both stay inside the control net: a larger
+        // `first_index` than `index` has no partner, and a smaller one than
+        // `index - degree` asks for a second index past the end.
+        for (first_index, first_control) in first.iter().enumerate() {
+            let Some(second_index) = index.checked_sub(first_index) else {
+                break;
+            };
+            let Some(second_control) = second.get(second_index) else {
+                continue;
+            };
             let coefficient = binomial(degree, first_index) * binomial(degree, second_index)
                 / binomial(product_degree, index);
             if !coefficient.is_finite() {
                 return None;
             }
             for (axis, component) in cross.iter_mut().enumerate() {
-                component.add_factors([
-                    coefficient,
-                    first[first_index][axis],
-                    second[second_index][3],
-                ]);
-                component.add_factors([
-                    -coefficient,
-                    second[second_index][axis],
-                    first[first_index][3],
-                ]);
+                component.add_factors([coefficient, first_control[axis], second_control[3]]);
+                component.add_factors([-coefficient, second_control[axis], first_control[3]]);
             }
         }
         for component in cross {
