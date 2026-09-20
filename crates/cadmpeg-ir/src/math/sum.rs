@@ -127,7 +127,7 @@ impl ScaledValue {
     }
 
     pub(crate) fn rescale(self, exponent: i32) -> Option<f64> {
-        scale_power_of_two(
+        super::scale_power_of_two(
             self.sign * self.mantissa,
             self.exponent.0.checked_sub(exponent)?,
         )
@@ -138,11 +138,11 @@ impl ScaledValue {
         self.sign * self.mantissa * 2.0_f64.powi(self.exponent.difference(scale_exponent))
     }
     pub(crate) fn finite(self) -> Option<f64> {
-        scale_power_of_two(self.sign * self.mantissa, self.exponent.0)
+        super::scale_power_of_two(self.sign * self.mantissa, self.exponent.0)
     }
 
     pub(crate) fn quotient(self, denominator: Self) -> Option<f64> {
-        scale_power_of_two(
+        super::scale_power_of_two(
             self.sign * denominator.sign * (self.mantissa / denominator.mantissa),
             self.exponent.difference(denominator.exponent),
         )
@@ -408,7 +408,7 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
             continue;
         }
         let factor = scaled_finite(factor)?;
-        *product = scale_power_of_two(
+        *product = super::scale_power_of_two(
             ratio * factor.sign * factor.mantissa,
             exponent + factor.exponent.0,
         )?;
@@ -445,20 +445,6 @@ pub(crate) fn fast_dot<const N: usize>(
         return None;
     }
     Some(sum)
-}
-
-/// Scale only after splitting the exponent at the finite power-of-two limits.
-///
-/// `2.0_f64.powi(e)` is normal only for `e` in `[-1022, 1023]`. The split
-/// states `exponent` as one factor inside that band plus a remainder, so an
-/// exponent outside the band is the case this function exists for and not an
-/// error: the remainder scales `value` first, then the band factor completes
-/// the scale. Range loss in either factor leaves a non-finite product, which
-/// `is_finite` states.
-pub(super) fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
-    let outer = exponent.clamp(-1022, 1023);
-    let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
-    result.is_finite().then_some(result)
 }
 
 /// The outcome of [`product_sum`].

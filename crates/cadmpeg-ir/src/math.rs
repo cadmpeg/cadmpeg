@@ -170,9 +170,9 @@ impl Vector3 {
         // component stays in `[0.5, 1)`, which is what the norm needs.
         let exponent = sum::scaled_finite(scale)?.exponent();
         let scaled = Vector3::new(
-            sum::scale_power_of_two(self.x, -exponent)?,
-            sum::scale_power_of_two(self.y, -exponent)?,
-            sum::scale_power_of_two(self.z, -exponent)?,
+            scale_power_of_two(self.x, -exponent)?,
+            scale_power_of_two(self.y, -exponent)?,
+            scale_power_of_two(self.z, -exponent)?,
         );
         let length = scaled.norm();
         Some(Vector3::new(
@@ -220,6 +220,20 @@ impl Point2 {
     pub const fn is_finite(&self) -> bool {
         self.u.is_finite() && self.v.is_finite()
     }
+}
+
+/// Scale only after splitting the exponent at the finite power-of-two limits.
+///
+/// `2.0_f64.powi(e)` is normal only for `e` in `[-1022, 1023]`. The split
+/// states `exponent` as one factor inside that band plus a remainder, so an
+/// exponent outside the band is the case this function exists for and not an
+/// error: the remainder scales `value` first, then the band factor completes
+/// the scale. Range loss in either factor leaves a non-finite product, which
+/// `is_finite` states.
+pub fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
+    let outer = exponent.clamp(-1022, 1023);
+    let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
+    result.is_finite().then_some(result)
 }
 
 /// Compute `left * right / denominator` without intermediate range loss.
