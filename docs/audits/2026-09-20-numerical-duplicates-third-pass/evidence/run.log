@@ -1,0 +1,65 @@
+
+running 22 tests
+test catia::anisotropic_surface ... CATIA point on plane: best squared residual=5e-2; known UV=(3e-11,0.4); exact point=Point3 { x: 0.3, y: 0.4, z: 0.0 }
+ok
+test catia_chart::identity_rechart ... CATIA identity chart scale=1e0: accepted=true
+CATIA identity chart scale=1e200: accepted=false
+ok
+test creo::missed_circle ... Creo missed circle: Some([0.0, 2e-6]); closest distance=2e-6; radius=1e-6
+ok
+test creo::nontangent_circles ... Creo two crossing circles claimed tangent=Some([5e-7, 0.0]); true intersections=(0.5e-6,+/-sqrt(3)*0.5e-6)
+ok
+test creo::small_perpendicular_lines ... Creo perpendicular lines crossing origin: None; expected Some([0,0])
+ok
+test creo_profile::large_intersections ... Creo profile: line-circle=false, circle-circle=false; both have two intersections
+ok
+test f3d::crossing_circles ... F3D crossing circles radius=1e0: Some([Point2 { u: 0.5, v: 0.8660254037844386 }, Point2 { u: 0.5, v: -0.8660254037844386 }]); expected 2 points
+F3D crossing circles radius=1e-200: None; expected 2 points
+F3D crossing circles radius=1e200: Some([]); expected 2 points
+ok
+test f3d::distance_range ... F3D distance=0e0, expected=1e-200
+F3D distance=inf, expected=1e200
+ok
+test f3d::separated_segments ... F3D separated parallel segments intersect=true; separation=2e-100
+ok
+test iges::residual_range ... iges distance=0e0, expected=1e-200
+iges distance=inf, expected=1e200
+ok
+test inventor::finite_parallel ... Inventor exact collinear finite carrier accepted=false
+ok
+test ir::line_false_witness ... IR analytic line: returned=Some(0.0); actual residual=1e-200; tolerance=0
+ok
+test ir::remaining_unary_laws ... IR ARCTAN: derivative=0 expected magnitude~1e-100
+IR ARCOT: derivative=-0 expected magnitude~1e-100
+IR ARCSEC: derivative=0 expected magnitude~1e-100
+IR ARCCSC: derivative=-0 expected magnitude~1e-100
+IR ARCCSCH: derivative=-0 expected magnitude~1e-100
+IR COTH(400): derivative=-0 expected~-1.47e-47
+IR SECH(720): Some(ScalarSweepDifferential { value: 0.0, derivative: -0.0 }); expected value~4.064e-313 derivative~-4.064e-13
+IR CSCH(720): None; expected value~4.064e-313 derivative~-4.064e-13
+ok
+test nx::finite_phase ... NX periodic lift=inf; finite congruent nearest representative is 1e308
+ok
+test nx::tangent_scale ... NX rank-three matrix scale=1e0: nullvector=Some([-0.7071067811865475, -0.0, -0.7071067811865475, -0.0]); expected a normalized (1,0,1,0)
+NX rank-three matrix scale=1e-5: nullvector=None; expected a normalized (1,0,1,0)
+NX rank-three matrix scale=1e100: nullvector=None; expected a normalized (1,0,1,0)
+ok
+test nx_distance::residual_range ... nx_distance distance=0e0, expected=1e-200
+nx_distance distance=inf, expected=1e200
+ok
+test rhino::nonperiodic_knots ... Rhino nonperiodic knots admitted periodic=true; paired gaps 0 and 1e307 differ
+ok
+test rhino::plane_parameter_range ... Rhino identity plane parameter map: got=0e0, expected=1e-200
+Rhino identity plane parameter map: got=inf, expected=1e200
+ok
+test sld::nonparallel_distance ... SLD perpendicular lines admitted as parallel: distance=Some(1.0); expected None
+ok
+test sld::saturated_keys ... SLD separated points 1e14 and 2e14 quantum=1e-6: keys=(9223372036854775807, 0),(9223372036854775807, 0)
+ok
+test sld_ellipse::off_ellipse_accepted ... SLD ellipse centered at -1e308 contains +1e308=true; radii=(1,0.5)
+ok
+test step::small_shear ... STEP 60-degree columns accepted as similarity: 3d=true, 2d=true
+ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

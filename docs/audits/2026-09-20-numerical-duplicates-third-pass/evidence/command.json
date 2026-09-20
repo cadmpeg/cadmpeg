@@ -1,0 +1,1 @@
+["rustc", "--edition=2021", "--test", "/tmp/cadmpeg-numeric-audit-3/probes/probe.rs", "-L", "dependency=target/debug/deps", "-o", "/tmp/cadmpeg-numeric-audit-3/probes/probe", "--extern", "cadmpeg_ir=target/debug/deps/libcadmpeg_ir-be1cfdb37b87d455.rlib"]
