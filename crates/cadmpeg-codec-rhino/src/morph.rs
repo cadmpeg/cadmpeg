@@ -186,57 +186,27 @@ fn scale_interval(
     ])
 }
 
-fn optional_curve(
+fn optional_localizer<T>(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
-    scale: MillimeterScale,
     archive: ArchiveVersion,
-) -> Result<Option<NurbsCurve>, GeometryError> {
+    kind: &str,
+    parse: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
+) -> Result<Option<T>, GeometryError> {
     let (mut child, next, major, minor) = anonymous(
         data,
         reader.position(),
         reader.end(),
         archive,
-        "localizer curve",
+        &format!("localizer {kind}"),
     )?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: child.position() - 8,
-            message: format!("unsupported localizer-curve version {major}.{minor}"),
+            message: format!("unsupported localizer-{kind} version {major}.{minor}"),
         });
     }
-    let value = child
-        .bool()?
-        .then(|| crate::surfaces::read_nurbs_curve(&mut child, scale))
-        .transpose()?;
-    child.skip_remaining()?;
-    reader.skip(next - reader.position())?;
-    Ok(value)
-}
-
-fn optional_surface(
-    data: &[u8],
-    reader: &mut BoundedReader<'_>,
-    scale: MillimeterScale,
-    archive: ArchiveVersion,
-) -> Result<Option<NurbsSurface>, GeometryError> {
-    let (mut child, next, major, minor) = anonymous(
-        data,
-        reader.position(),
-        reader.end(),
-        archive,
-        "localizer surface",
-    )?;
-    if major != 1 || minor < 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: child.position() - 8,
-            message: format!("unsupported localizer-surface version {major}.{minor}"),
-        });
-    }
-    let value = child
-        .bool()?
-        .then(|| crate::surfaces::read_nurbs_surface(&mut child, scale))
-        .transpose()?;
+    let value = child.bool()?.then(|| parse(&mut child)).transpose()?;
     child.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(value)
@@ -262,8 +232,12 @@ fn localizer(
     let vector = vector(&mut value)?.0;
     let offset = value.position();
     let interval = scale_interval(interval(&mut value)?.0, scale, offset)?;
-    let curve = optional_curve(data, &mut value, scale, archive)?;
-    let surface = optional_surface(data, &mut value, scale, archive)?;
+    let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
+        crate::surfaces::read_nurbs_curve(child, scale)
+    })?;
+    let surface = optional_localizer(data, &mut value, archive, "surface", |child| {
+        crate::surfaces::read_nurbs_surface(child, scale)
+    })?;
     value.skip_remaining()?;
     reader.skip(next - reader.position())?;
     Ok(Localizer {

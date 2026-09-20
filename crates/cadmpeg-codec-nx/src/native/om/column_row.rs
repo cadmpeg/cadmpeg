@@ -79,140 +79,127 @@ pub(in crate::native) struct DataBlockTargetIndexRow {
 
 /// Decode complete index rows from offset-store column storage.
 pub(in crate::native) fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
+    project_column_rows(
+        container,
+        |storage, section, block_count, source_base| {
             crate::om::column_row::scan::index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset(),
-                    )?;
+                    let offset = row.offset();
                     let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section_ordinal, block_count, atom.value())
+                        control_index_data_block(section, block_count, atom.value())
                     })?;
-                    Some((frame, opening))
-                })
-                .enumerate()
-                .map(|(ordinal, (frame, opening))| DataBlockIndexRow {
-                    id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    frame,
-                    source_entry: entry.name.clone(),
-                    opening_data_block: opening.0,
-                    opening_block_offset: opening.1,
+                    Some((offset, frame))
                 })
                 .collect()
-        })
-        .collect()
+        },
+        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockIndexRow {
+            id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
+            section_ordinal: section_ordinal as u32,
+            ordinal: ordinal as u32,
+            frame,
+            source_entry,
+            opening_data_block: opening.0,
+            opening_block_offset: opening.1,
+        },
+    )
 }
 
 /// Decode complete in-range linked index rows from column storage.
 pub(in crate::native) fn data_block_linked_index_rows(
     container: &Container,
 ) -> Vec<DataBlockLinkedIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
+    project_column_rows(
+        container,
+        |storage, section, block_count, source_base| {
             crate::om::column_row::scan::linked_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset(),
-                    )?;
+                    let offset = row.offset();
                     let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section_ordinal, block_count, atom.value())
+                        control_index_data_block(section, block_count, atom.value())
                     })?;
-                    Some((frame, opening))
-                })
-                .enumerate()
-                .map(|(ordinal, (frame, opening))| DataBlockLinkedIndexRow {
-                    id: format!(
-                        "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
-                    ),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    frame,
-                    source_entry: entry.name.clone(),
-                    opening_data_block: opening.0,
-                    opening_block_offset: opening.1,
+                    Some((offset, frame))
                 })
                 .collect()
-        })
-        .collect()
+        },
+        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockLinkedIndexRow {
+            id: format!("nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"),
+            section_ordinal: section_ordinal as u32,
+            ordinal: ordinal as u32,
+            frame,
+            source_entry,
+            opening_data_block: opening.0,
+            opening_block_offset: opening.1,
+        },
+    )
 }
 
 /// Decode complete in-range target-index rows from column storage.
 pub(in crate::native) fn data_block_target_index_rows(
     container: &Container,
 ) -> Vec<DataBlockTargetIndexRow> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let source_base =
-                entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
-            let block_count = records.len() + 1;
+    project_column_rows(
+        container,
+        |storage, section, block_count, source_base| {
             crate::om::column_row::scan::target_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let opening = column_storage_block_at(
-                        section_ordinal,
-                        records,
-                        storage_offset + row.offset(),
-                    )?;
+                    let offset = row.offset();
                     let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section_ordinal, block_count, atom.value())
+                        control_index_data_block(section, block_count, atom.value())
                     })?;
-                    Some((frame, opening))
-                })
-                .enumerate()
-                .map(|(ordinal, (frame, opening))| DataBlockTargetIndexRow {
-                    id: format!(
-                        "nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"
-                    ),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    frame,
-                    source_entry: entry.name.clone(),
-                    opening_data_block: opening.0,
-                    opening_block_offset: opening.1,
+                    Some((offset, frame))
                 })
                 .collect()
-        })
-        .collect()
+        },
+        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockTargetIndexRow {
+            id: format!("nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"),
+            section_ordinal: section_ordinal as u32,
+            ordinal: ordinal as u32,
+            frame,
+            source_entry,
+            opening_data_block: opening.0,
+            opening_block_offset: opening.1,
+        },
+    )
+}
+
+/// One owner for section framing, source locations and admitted row ordinals.
+fn project_column_rows<F, T>(
+    container: &Container,
+    scan: impl Fn(&[u8], usize, usize, u64) -> Vec<(usize, F)>,
+    project: impl Fn(usize, usize, F, String, (String, u32)) -> T,
+) -> Vec<T> {
+    let mut result = Vec::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        let Some((_, storage, records)) = section.as_offset_only() else {
+            continue;
+        };
+        let Some(storage_offset) = records.first().map(|record| record.offset) else {
+            continue;
+        };
+        let source_base = entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
+        let rows = scan(storage, section_ordinal, records.len() + 1, source_base);
+        for (ordinal, (frame, opening)) in rows
+            .into_iter()
+            .filter_map(|(offset, frame)| {
+                let opening =
+                    column_storage_block_at(section_ordinal, records, storage_offset + offset)?;
+                Some((frame, opening))
+            })
+            .enumerate()
+        {
+            result.push(project(
+                section_ordinal,
+                ordinal,
+                frame,
+                entry.name.clone(),
+                opening,
+            ));
+        }
+    }
+    result
 }

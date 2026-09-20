@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
-use cadmpeg_core::container::ContainerRole;
-
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
@@ -29,27 +27,13 @@ pub(crate) fn decode_canvas_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
-    let mut images = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = ids::native_scope(&entry.name);
-        images.extend(
-            scopes
-                .iter()
-                .filter(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
-                        && ids::native_stream(&scope.id) == Some(stream.as_str())
-                })
-                .filter_map(|scope| parse_canvas_image(bytes, &entry.name, scope)),
-        );
-    }
-    images.sort_by(|a, b| a.id.cmp(&b.id));
-    images.dedup_by(|a, b| a.id == b.id);
-    Ok(images)
+    super::image::decode_scoped_images(
+        scan,
+        scopes,
+        crate::records::feature::scope::DesignFeatureKind::Canvas,
+        parse_canvas_image,
+        |image| image.id.as_str(),
+    )
 }
 
 /// Project uniquely bound Canvas images into neutral raster resources and

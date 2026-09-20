@@ -2920,48 +2920,100 @@ fn xml_stream_text(payload: &[u8]) -> Option<&str> {
     std::str::from_utf8(document).ok()
 }
 
-/// Decode class definitions from every framed OM section.
-pub(super) fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
+#[derive(Clone, Copy)]
+enum RegistryKind {
+    Class,
+    Field,
+}
+
+struct RegistryDefinition {
+    id: String,
+    name: String,
+    ordinal: u32,
+    trailing_code: u8,
+    registry_suffix: Vec<u8>,
+    section_offset: u64,
+    source_entry: String,
+    source_offset: u64,
+}
+
+/// Merge both section forms with framed definitions taking precedence.
+fn registry_definitions<T>(
+    container: &Container,
+    kind: RegistryKind,
+    project: impl Fn(RegistryDefinition) -> T,
+) -> Vec<T> {
+    let framed = container
+        .om_sections()
+        .into_iter()
+        .map(|(entry, section)| (entry, section.offset, section.types, section.fields, true));
+    let indexed = container
+        .indexed_om_sections()
+        .into_iter()
+        .map(|(entry, section)| {
+            (
+                entry,
+                section.base_offset(),
+                section.types,
+                section.fields,
+                false,
+            )
+        });
     let mut definitions = BTreeMap::new();
-    for (entry, section) in container.om_sections() {
+    for (entry, section_offset, types, fields, replace) in framed.chain(indexed) {
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, definition) in section.types.iter().cloned().enumerate() {
+        let (label, declarations) = match kind {
+            RegistryKind::Class => (
+                "class",
+                types
+                    .iter()
+                    .map(|d| (d.offset, d.name, d.registry_tail))
+                    .collect::<Vec<_>>(),
+            ),
+            RegistryKind::Field => (
+                "field",
+                fields
+                    .iter()
+                    .map(|d| (d.offset, d.name, d.registry_tail))
+                    .collect::<Vec<_>>(),
+            ),
+        };
+        for (ordinal, (offset, name, tail)) in declarations.into_iter().enumerate() {
+            let key = (entry_index, offset);
+            if !replace && definitions.contains_key(&key) {
+                continue;
+            }
             definitions.insert(
-                (entry_index, definition.offset),
-                ClassDefinition {
-                    id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
-                    name: definition.name.to_string(),
+                key,
+                project(RegistryDefinition {
+                    id: format!("nx:om-entry-{entry_index}:{label}#{offset}"),
+                    name: name.to_owned(),
                     ordinal: ordinal as u32,
-                    trailing_code: definition.registry_tail[0],
-                    registry_suffix: definition.registry_tail[1..].to_vec(),
-                    section_offset: entry_offset + section.offset as u64,
+                    trailing_code: tail[0],
+                    registry_suffix: tail[1..].to_vec(),
+                    section_offset: entry_offset + section_offset as u64,
                     source_entry: entry.name.clone(),
-                    source_offset: entry_offset + definition.offset as u64,
-                },
+                    source_offset: entry_offset + offset as u64,
+                }),
             );
         }
     }
-    for (entry, section) in container.indexed_om_sections() {
-        let entry_index = entry.index();
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_offset = entry_offset + section.base_offset() as u64;
-        for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            definitions
-                .entry((entry_index, definition.offset))
-                .or_insert_with(|| ClassDefinition {
-                    id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
-                    name: definition.name.to_string(),
-                    ordinal: ordinal as u32,
-                    trailing_code: definition.registry_tail[0],
-                    registry_suffix: definition.registry_tail[1..].to_vec(),
-                    section_offset,
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + definition.offset as u64,
-                });
-        }
-    }
     definitions.into_values().collect()
+}
+
+/// Decode class definitions from every framed OM section.
+pub(super) fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
+    registry_definitions(container, RegistryKind::Class, |d| ClassDefinition {
+        id: d.id,
+        name: d.name,
+        ordinal: d.ordinal,
+        trailing_code: d.trailing_code,
+        registry_suffix: d.registry_suffix,
+        section_offset: d.section_offset,
+        source_entry: d.source_entry,
+        source_offset: d.source_offset,
+    })
 }
 
 struct RegistryLayout<'a> {
@@ -2986,46 +3038,16 @@ fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
 
 /// Decode member definitions from every framed OM section.
 pub(super) fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
-    let mut definitions = BTreeMap::new();
-    for (entry, section) in container.om_sections() {
-        let entry_index = entry.index();
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            definitions.insert(
-                (entry_index, definition.offset),
-                FieldDefinition {
-                    id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
-                    name: definition.name.to_string(),
-                    ordinal: ordinal as u32,
-                    trailing_code: definition.registry_tail[0],
-                    registry_suffix: definition.registry_tail[1..].to_vec(),
-                    section_offset: entry_offset + section.offset as u64,
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + definition.offset as u64,
-                },
-            );
-        }
-    }
-    for (entry, section) in container.indexed_om_sections() {
-        let entry_index = entry.index();
-        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_offset = entry_offset + section.base_offset() as u64;
-        for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
-            definitions
-                .entry((entry_index, definition.offset))
-                .or_insert_with(|| FieldDefinition {
-                    id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
-                    name: definition.name.to_string(),
-                    ordinal: ordinal as u32,
-                    trailing_code: definition.registry_tail[0],
-                    registry_suffix: definition.registry_tail[1..].to_vec(),
-                    section_offset,
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + definition.offset as u64,
-                });
-        }
-    }
-    definitions.into_values().collect()
+    registry_definitions(container, RegistryKind::Field, |d| FieldDefinition {
+        id: d.id,
+        name: d.name,
+        ordinal: d.ordinal,
+        trailing_code: d.trailing_code,
+        registry_suffix: d.registry_suffix,
+        section_offset: d.section_offset,
+        source_entry: d.source_entry,
+        source_offset: d.source_offset,
+    })
 }
 
 /// Catalog every externally bounded NX OM entity record.

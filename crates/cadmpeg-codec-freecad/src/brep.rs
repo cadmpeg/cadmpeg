@@ -2211,9 +2211,22 @@ fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecErro
         )));
     }
     let locations = parse_locations(&tokens, &section_counts)?;
-    let curve2ds = parse_curve2ds(&tokens, &section_counts)?;
-    let curves = parse_curves(&tokens, &section_counts)?;
-    let surfaces = parse_surfaces(&tokens, &section_counts)?;
+    let curve2ds = parse_geometry_table(
+        &tokens,
+        &section_counts,
+        "Curve2ds",
+        "Curves",
+        parse_curve2d,
+    )?;
+    let curves =
+        parse_geometry_table(&tokens, &section_counts, "Curves", "Polygon3D", parse_curve)?;
+    let surfaces = parse_geometry_table(
+        &tokens,
+        &section_counts,
+        "Surfaces",
+        "Triangulations",
+        parse_surface,
+    )?;
     let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
@@ -3704,30 +3717,35 @@ fn parse_locations(
     Ok(locations)
 }
 
-fn parse_curve2ds(
+fn parse_geometry_table<T>(
     tokens: &[&str],
     section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextCurve2d>, CodecError> {
+    table: &str,
+    next_table: &str,
+    mut parse: impl FnMut(&mut TokenCursor<'_>, usize, usize) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError> {
     let start = tokens
         .iter()
-        .position(|token| *token == "Curve2ds")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curve2ds table".into()))?
+        .position(|token| *token == table)
+        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {table} table")))?
         + 2;
     let end = tokens
         .iter()
-        .position(|token| *token == "Curves")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curves table".into()))?;
-    let count = section_counts.get("Curve2ds").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..end]);
-    // Each parameter curve consumes at least its one type token.
-    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, "text Curve2ds")?);
+        .position(|token| *token == next_table)
+        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {next_table} table")))?;
+    let count = section_counts.get(table).copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(tokens.get(start..end).ok_or_else(|| {
+        CodecError::Malformed(format!("text B-rep {table} table has invalid bounds"))
+    })?);
+    // Every row consumes at least its type token.
+    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, &format!("text {table}"))?);
     for index in 0..count {
-        curves.push(parse_curve2d(&mut cursor, 0, index + 1)?);
+        curves.push(parse(&mut cursor, 0, index + 1)?);
     }
     if !cursor.is_empty() {
-        return Err(CodecError::Malformed(
-            "text B-rep Curve2ds table contains trailing tokens".into(),
-        ));
+        return Err(CodecError::Malformed(format!(
+            "text B-rep {table} table contains trailing tokens"
+        )));
     }
     Ok(curves)
 }
@@ -4532,34 +4550,6 @@ fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], Co
     Ok(range)
 }
 
-fn parse_surfaces(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextSurface>, CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == "Surfaces")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Surfaces table".into()))?
-        + 2;
-    let end = tokens
-        .iter()
-        .position(|token| *token == "Triangulations")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Triangulations table".into()))?;
-    let count = section_counts.get("Surfaces").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..end]);
-    // Each surface consumes at least its one type token.
-    let mut surfaces = Vec::with_capacity(cursor.bounded(count, 1, "text Surfaces")?);
-    for index in 0..count {
-        surfaces.push(parse_surface(&mut cursor, 0, index + 1)?);
-    }
-    if !cursor.is_empty() {
-        return Err(CodecError::Malformed(
-            "text B-rep Surfaces table contains trailing tokens".into(),
-        ));
-    }
-    Ok(surfaces)
-}
-
 fn parse_surface(
     cursor: &mut TokenCursor<'_>,
     depth: usize,
@@ -4958,34 +4948,6 @@ fn normalize_periodic_surface(
         false,
     )
     .map_err(|error| CodecError::Malformed(error.to_string()))
-}
-
-fn parse_curves(
-    tokens: &[&str],
-    section_counts: &BTreeMap<String, usize>,
-) -> Result<Vec<TextCurve>, CodecError> {
-    let start = tokens
-        .iter()
-        .position(|token| *token == "Curves")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curves table".into()))?
-        + 2;
-    let end = tokens
-        .iter()
-        .position(|token| *token == "Polygon3D")
-        .ok_or_else(|| CodecError::Malformed("text B-rep has no Polygon3D table".into()))?;
-    let count = section_counts.get("Curves").copied().unwrap_or(0);
-    let mut cursor = TokenCursor::new(&tokens[start..end]);
-    // Each 3D curve consumes at least its one type token.
-    let mut curves = Vec::with_capacity(cursor.bounded(count, 1, "text Curves")?);
-    for index in 0..count {
-        curves.push(parse_curve(&mut cursor, 0, index + 1)?);
-    }
-    if !cursor.is_empty() {
-        return Err(CodecError::Malformed(
-            "text B-rep Curves table contains trailing tokens".into(),
-        ));
-    }
-    Ok(curves)
 }
 
 fn parse_curve(
