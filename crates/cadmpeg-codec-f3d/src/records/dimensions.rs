@@ -682,7 +682,7 @@ impl DesignDimensionAnnotationFrame {
     }
 
     /// Derived owner reference offset.
-    pub(super) fn owner_reference_offset(&self) -> u64 {
+    fn owner_reference_offset(&self) -> u64 {
         self.paired_byte_offset() + 20
     }
 
@@ -1116,3 +1116,6 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

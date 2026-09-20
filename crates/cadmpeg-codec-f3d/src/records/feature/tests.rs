@@ -1812,13 +1812,9 @@ mod scalars;
 
 mod fillet_law;
 
-mod thread;
-
 mod combine;
 
 mod copied_bodies;
-
-mod sheet_metal_indices;
 
 #[test]
 fn required_surface_operations_reject_absence() {

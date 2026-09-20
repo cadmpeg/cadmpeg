@@ -18,7 +18,7 @@ use crate::writer::primitives::{
 use crate::{decode, F3dCodec};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(crate) mod edits;
-pub(super) mod geometry;
+mod geometry;
 pub(crate) mod records;
 use edits::{
     validate_act_appearance_bindings, validate_act_entity_edits, validate_act_guid_edits,
@@ -725,3 +725,6 @@ pub(crate) fn write_semantic(
     writer.write_all(&output)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

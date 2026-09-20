@@ -6,7 +6,6 @@
     clippy::uninlined_format_args
 )]
 
-mod chamfer;
 mod coil;
 mod dispatcher;
 mod extrude;

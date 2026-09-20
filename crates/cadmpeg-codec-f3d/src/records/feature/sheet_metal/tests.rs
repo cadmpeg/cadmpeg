@@ -50,9 +50,9 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
     assert!(
         DesignEdgeFlangeEdge::from_columns(vec![1], vec![u32::MAX], &[u32::MAX], vec![3]).is_err()
     );
-    assert!(super::super::sheet_metal::DesignRecipeGroupIndex::try_from(u32::MAX).is_err());
+    assert!(super::DesignRecipeGroupIndex::try_from(u32::MAX).is_err());
     assert_eq!(
-        super::super::sheet_metal::DesignRecipeGroupIndex::try_from(u32::MAX - 3)
+        super::DesignRecipeGroupIndex::try_from(u32::MAX - 3)
             .unwrap()
             .operand(),
         u32::MAX

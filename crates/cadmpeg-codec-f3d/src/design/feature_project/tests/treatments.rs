@@ -1045,7 +1045,7 @@ fn localized_fillet_scope() -> DesignParameterScope {
     .unwrap()
 }
 
-pub(super) fn localized_fillet_group(
+fn localized_fillet_group(
     record_index: u32,
     ordinal: u32,
     members: Vec<u32>,
@@ -1103,7 +1103,7 @@ fn localized_fillet_operand_groups() -> [DesignConstructionOperandGroup; 2] {
     ]
 }
 
-pub(super) fn localized_fillet_parameter(
+fn localized_fillet_parameter(
     owner_index: u32,
     record_index: u32,
     source_kind: &str,
@@ -1124,7 +1124,7 @@ pub(super) fn localized_fillet_parameter(
     parameter
 }
 
-pub(super) fn localized_fillet_owner(
+fn localized_fillet_owner(
     record_index: u32,
     parameter_record_index: u32,
     local_ordinal: u32,
@@ -1968,3 +1968,5 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)]).is_none()
     );
 }
+
+mod chamfer;

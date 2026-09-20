@@ -80,7 +80,7 @@ impl DesignCanvasGeometryPayload {
             self.v_axis,
         )
     }
-    pub(super) fn bytes(&self) -> [u8; 77] {
+    fn bytes(&self) -> [u8; 77] {
         let mut bytes = [0; 77];
         bytes[..4].copy_from_slice(&self.opacity.to_le_bytes());
         let mut at = 5;
@@ -140,7 +140,7 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     }
 }
 impl DesignCanvasBounds {
-    pub(super) fn segments(self) -> [[Point2; 2]; 2] {
+    fn segments(self) -> [[Point2; 2]; 2] {
         match self.form {
             DesignCanvasBoundaryForm::Horizontal(segments)
             | DesignCanvasBoundaryForm::Vertical(segments) => segments,
@@ -195,7 +195,7 @@ impl DesignCanvasPrologue {
     pub(crate) fn visible(self) -> bool {
         self.visible
     }
-    pub(super) fn bytes(self) -> [u8; 15] {
+    fn bytes(self) -> [u8; 15] {
         let mut bytes = [0; 15];
         bytes[10] = u8::from(self.first_flag);
         bytes[14] = u8::from(self.visible);
@@ -414,7 +414,7 @@ impl DesignCanvasImage {
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct DesignCanvasImageWire {
+struct DesignCanvasImageWire {
     /// Globally unique deterministic identifier for this native binding.
     id: String,
     /// Canvas scope record index.
@@ -683,3 +683,6 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

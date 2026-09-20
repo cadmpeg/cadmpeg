@@ -735,7 +735,7 @@ pub(super) fn validate_wire_topology_edits(
     Ok(edits)
 }
 
-pub(in crate::writer) enum ProceduralSurfaceEdit {
+pub(super) enum ProceduralSurfaceEdit {
     Extrusion {
         parameter_interval: [f64; 2],
         direction: Vector3,
@@ -744,17 +744,17 @@ pub(in crate::writer) enum ProceduralSurfaceEdit {
     BlendRadii([f64; 2]),
 }
 
-pub(in crate::writer) struct NurbsSurfaceEdit {
+pub(super) struct NurbsSurfaceEdit {
     pub(super) surface: NurbsSurface,
     pub(super) periodic: Option<[bool; 2]>,
 }
 
-pub(in crate::writer) struct NurbsCurveEdit {
+pub(super) struct NurbsCurveEdit {
     pub(super) curve: NurbsCurve,
     pub(super) periodic: Option<bool>,
 }
 
-pub(in crate::writer) enum PcurveEdit {
+pub(super) enum PcurveEdit {
     Inline {
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
@@ -771,7 +771,7 @@ pub(in crate::writer) enum PcurveEdit {
 }
 
 #[derive(Clone)]
-pub(in crate::writer) struct ProceduralCurveEdit {
+pub(super) struct ProceduralCurveEdit {
     definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     fit_tolerance: Option<f64>,
 }
@@ -2593,7 +2593,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     }
 }
 
-pub(in crate::writer) fn encode_sketch_relation_state(
+pub(super) fn encode_sketch_relation_state(
     relation_id: &str,
     raw_bytes: &[u8],
     state: u64,
