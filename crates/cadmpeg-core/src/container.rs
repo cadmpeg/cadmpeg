@@ -432,8 +432,11 @@ impl ContainerEntry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EntryIdentityWire {
+    /// Entry name/path within the container.
     name: String,
+    /// Codec-defined role classification.
     role: ContainerRole,
+    /// Extra codec-extracted attributes, sorted by key.
     #[serde(default)]
     #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
     attributes: BTreeMap<String, String>,
@@ -447,12 +450,14 @@ struct EntryIdentityWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CompressedSizesWire {
+    /// Stored size in bytes, absent when the codec does not report it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_stored"
     )]
     stored: Option<u64>,
+    /// Expanded size in bytes, absent when the codec does not report it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -536,55 +541,78 @@ impl From<VerbatimSizeWire> for VerbatimSize {
 #[serde(tag = "compression")]
 #[serde(deny_unknown_fields)]
 enum ContainerEntryWire {
+    /// A container directory node that holds no bytes of its own.
     #[serde(rename = "storage")]
     Directory {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
     },
+    /// Bytes stored verbatim, which this container spells `none`.
     #[serde(rename = "none")]
     VerbatimNone {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the size.
         size: VerbatimSizeWire,
     },
+    /// Bytes stored verbatim, which this container spells `stored`.
     #[serde(rename = "stored")]
     VerbatimStored {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the size.
         size: VerbatimSizeWire,
     },
+    /// Bytes stored compressed with deflate.
     #[serde(rename = "deflate")]
     Deflate {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the entry's two sizes.
         #[serde(flatten)]
         sizes: CompressedSizesWire,
     },
+    /// Bytes stored compressed with zstd.
     #[serde(rename = "zstd")]
     Zstd {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the entry's two sizes.
         #[serde(flatten)]
         sizes: CompressedSizesWire,
     },
+    /// Bytes stored compressed with JPEG.
     #[serde(rename = "jpeg")]
     Jpeg {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the entry's two sizes.
         #[serde(flatten)]
         sizes: CompressedSizesWire,
     },
+    /// Bytes stored compressed with Unix compress.
     #[serde(rename = "unix-compress")]
     UnixCompress {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the entry's two sizes.
         #[serde(flatten)]
         sizes: CompressedSizesWire,
     },
+    /// Bytes stored compressed with zlib.
     #[serde(rename = "zlib")]
     Zlib {
+        /// The entry fields every storage kind carries.
         #[serde(flatten)]
         identity: EntryIdentityWire,
+        /// What the container reports about the entry's two sizes.
         #[serde(flatten)]
         sizes: CompressedSizesWire,
     },

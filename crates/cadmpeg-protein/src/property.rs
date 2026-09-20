@@ -116,8 +116,13 @@ enum PropertyValueWire {
 
 #[derive(Serialize, Deserialize)]
 struct DecodedPropertyWire {
+    /// Byte offset of the value payload, after a scalar unit tag or at a count prefix.
     value_offset: usize,
+    /// Decoded carrier payload; a reference carrier states `reference`, and
+    /// repeated reference carriers state `multiple` of them.
     value: PropertyValueWire,
+    /// Connected asset identifiers in serialized order; empty for a carrier
+    /// the schema does not declare connectable.
     connections: Vec<String>,
 }
 

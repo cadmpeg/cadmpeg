@@ -571,6 +571,19 @@ class WireMirrorDocs(TempSourceCase):
         self.write(f"{self.IR}/other.rs", "struct Wire {\n    value: u8,\n}\n")
         self.assertEqual(self.findings("undocumented_wire_mirror"), [])
 
+    def test_every_crate_in_scope_reports_an_undocumented_member(self) -> None:
+        for crate in ("cadmpeg-ir", "cadmpeg-core", "cadmpeg-asm", "cadmpeg-protein"):
+            with self.subTest(crate=crate):
+                self.write(f"crates/{crate}/src/shared.rs", '\n'.join([
+                    '#[serde(try_from = "SharedWire")]', "pub struct Shared { value: u8 }",
+                    "", "struct SharedWire {", "    value: u8,", "}", "",
+                ]))
+                findings = self.findings("undocumented_wire_mirror")
+                self.assertEqual([(f.path, f.line) for f in findings], [
+                    (f"crates/{crate}/src/shared.rs", 5),
+                ])
+                (self.root / "crates" / crate / "src" / "shared.rs").unlink()
+
     def test_a_tuple_mirror_and_a_crate_outside_the_rule_state_nothing(self) -> None:
         self.write(f"{self.IR}/tuple.rs", '#[serde(try_from = "TupleWire")]\n'
                                           "pub struct Tuple(u8);\n"

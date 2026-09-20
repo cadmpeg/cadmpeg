@@ -712,9 +712,15 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
 # `#[serde(from = "…")]` container attribute names. The mirror spells the wire
 # shape of the admitted type, and its member documentation is what the
 # published JSON schema reads as each property's `description`. The rule covers
-# the crates whose types that schema carries; a codec-private record generates
-# no schema and states its shape through `NativeRecord`.
-WIRE_MIRROR_DOC_ROOTS = ("crates/cadmpeg-ir",)
+# the shared crates a CADIR document states the shape of; a codec crate's own
+# records stay outside it, because they generate no schema and state their
+# shape through `NativeRecord`.
+WIRE_MIRROR_DOC_ROOTS = (
+    "crates/cadmpeg-ir",
+    "crates/cadmpeg-core",
+    "crates/cadmpeg-asm",
+    "crates/cadmpeg-protein",
+)
 SERDE_ATTRIBUTE = re.compile(r"#\s*\[\s*serde\s*\(")
 SERDE_MIRROR_TARGET = re.compile(r"(?<![\w.])(?:try_from|from)\s*=\s*\"(?P<target>[^\"]+)\"")
 NAMED_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
