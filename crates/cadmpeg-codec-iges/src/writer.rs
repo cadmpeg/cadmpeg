@@ -5769,7 +5769,9 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
             "IGES conic coefficient range is not representable",
         ));
     }
-    let shift = 0_i32.clamp(lower, upper);
+    // Center the coefficient exponents so subnormal rounding cannot discard
+    // the radius significand merely because zero was the preferred shift.
+    let shift = (-(minimum + maximum) / 2).clamp(lower, upper);
     let scale = |value: f64, exponent: i32| {
         let first = exponent.clamp(-1022, 1023);
         (value * 2.0_f64.powi(exponent - first)) * 2.0_f64.powi(first)

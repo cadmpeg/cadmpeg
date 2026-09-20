@@ -989,7 +989,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
 
 #[test]
 fn conic_coefficients_preserve_extreme_finite_radii() {
-    for radius in [1e-200, 1.0, 1e200] {
+    for radius in [1e-308, 1e-200, 1.0, 1e200, 1e308] {
         let [a, c, f] = super::conic_coefficients(radius, radius).unwrap();
         assert!(a.is_finite() && a > 0.0 && c == a && f.is_finite() && f < 0.0);
         let recovered = (-f).sqrt() / a.sqrt();
