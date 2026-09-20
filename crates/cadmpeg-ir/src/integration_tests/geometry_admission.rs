@@ -124,7 +124,7 @@ fn polar_weights(
 }
 
 #[test]
-fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
+fn weight_rules_admit_a_signed_nonzero_weight_in_every_nurbs_carrier() {
     let mut curve = curve();
     let mut surface = surface();
     let mut pcurve = pcurve();
@@ -162,7 +162,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     }
     .unwrap();
     {
-        let replacement = pcurve_weights(&pcurve, vec![1e-200; 2]).unwrap();
+        let replacement = pcurve_weights(&pcurve, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut pcurve, |previous| {
             crate::geometry::pcurve::PcurveNurbs::new(
                 previous.degree(),
@@ -174,7 +174,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     }
     .unwrap();
     {
-        let replacement = polar_weights(&polar, vec![1e-200; 2]).unwrap();
+        let replacement = polar_weights(&polar, vec![1e-200, -1e-200]).unwrap();
         edit::replace(&mut polar, |previous| {
             crate::geometry::pcurve::PolarPcurveNurbs::new(
                 previous.degree(),
@@ -191,8 +191,8 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
         assert!(pcurve_weights(&pcurve, vec![invalid, 1.0]).is_err());
         assert!(polar_weights(&polar, vec![invalid, 1.0]).is_err());
     }
-    assert!(pcurve_weights(&pcurve, vec![-1.0, 1.0]).is_err());
-    assert!(polar_weights(&polar, vec![-1.0, 1.0]).is_err());
+    assert!(pcurve_weights(&pcurve, vec![-1.0, 1.0]).is_ok());
+    assert!(polar_weights(&polar, vec![-1.0, 1.0]).is_ok());
     assert_eq!(
         serde_json::from_value::<NurbsCurve>(serde_json::to_value(&curve).unwrap()).unwrap(),
         curve
@@ -211,8 +211,8 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     );
 
     // A weight travels in its pole row, so a weight list beside the poles is
-    // an unknown key and a zero or wrongly signed weight is refused at the
-    // pole's own scalar mint.
+    // an unknown key and a zero weight is refused at the pole's own scalar
+    // mint.
     let mut wire = serde_json::to_value(&curve).unwrap();
     wire["weights"] = serde_json::json!([0.0, 1.0]);
     assert!(serde_json::from_value::<NurbsCurve>(wire).is_err());
@@ -223,10 +223,10 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     wire["poles"]["rows"][0][0]["weight"] = serde_json::json!(0.0);
     assert!(serde_json::from_value::<NurbsSurface>(wire).is_err());
     let mut wire = serde_json::to_value(&pcurve).unwrap();
-    wire["poles"]["points"][0]["weight"] = serde_json::json!(-1.0);
+    wire["poles"]["points"][0]["weight"] = serde_json::json!(0.0);
     assert!(serde_json::from_value::<PcurveNurbs>(wire).is_err());
     let mut wire = serde_json::to_value(&polar).unwrap();
-    wire["poles"]["poles"][0]["weight"] = serde_json::json!(-1.0);
+    wire["poles"]["poles"][0]["weight"] = serde_json::json!(0.0);
     assert!(serde_json::from_value::<PolarPcurveNurbs>(wire).is_err());
 }
 
@@ -317,7 +317,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             Ok(())
         })
         .is_err());
-    assert!(pcurve_weights(&pcurve, vec![1.0, -1.0]).is_err());
+    assert!(pcurve_weights(&pcurve, vec![1.0, 0.0]).is_err());
     assert!(pcurve_weights(&pcurve, vec![1.0]).is_err());
     assert_eq!(pcurve, original);
 
@@ -363,7 +363,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         )
     })
     .is_err());
-    assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
+    assert!(polar_weights(&polar, vec![1.0, 0.0]).is_err());
     assert!(polar_weights(&polar, vec![1.0]).is_err());
     assert_eq!(polar, original);
 }
