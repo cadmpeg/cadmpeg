@@ -95,6 +95,8 @@ fn endpoint_agrees_with_coefficient_carrier(
     distance == 0.0 || distance < resolution
 }
 
+// Opposite coefficient signs directly express a positive squared radius.
+#[allow(clippy::if_not_else)]
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],

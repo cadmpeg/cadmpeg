@@ -2185,11 +2185,10 @@ pub(super) fn solve_damped_least_squares_4x4(
         };
         let linear_error = (0..4)
             .map(|row| {
-                let residual = (0..4)
+                (0..4)
                     .map(|column| matrix[row][column] * scaled_step[column])
                     .sum::<f64>()
-                    - rhs[row];
-                residual
+                    - rhs[row]
             })
             .fold(0.0_f64, f64::hypot);
         if linear_error.is_finite() && linear_error < initial_error {
