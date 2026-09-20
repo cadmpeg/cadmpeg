@@ -114,9 +114,10 @@ impl FiniteVector3 {
 }
 
 checked_feature_geometry!(
-    /// A direction with finite nonzero norm.
+    /// A direction whose squared norm is finite and nonzero, so its length and
+    /// every product of two of its components are representable.
     FeatureDirection3, Vector3, value,
-    value.norm().is_finite() && value.norm() > 0.0,
+    value.dot(value).is_finite() && value.dot(value) > 0.0,
     "FeatureDirection3 norm must be finite and nonzero"
 );
 
