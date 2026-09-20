@@ -963,7 +963,7 @@ pub(super) fn emit_topology(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn retain_unresolved_topology_carriers(
+pub(super) fn retain_unresolved_topology_carriers(
     ir: &mut CadIr,
     stream_index: usize,
     graph: &Graph,
@@ -1033,7 +1033,7 @@ pub(crate) fn retain_unresolved_topology_carriers(
     }
 }
 
-pub(crate) fn annotate_node(
+pub(super) fn annotate_node(
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
     stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -1043,7 +1043,7 @@ pub(crate) fn annotate_node(
     annotations.note(id, stream, node.pos as u64).tag(tag);
 }
 
-pub(crate) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
+pub(super) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
     match geometry {
         SolvedSurfaceGeometry::Plane(_) => "PLANE",
         SolvedSurfaceGeometry::Cylinder(_) => "CYLINDER",
@@ -1057,7 +1057,7 @@ pub(crate) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
     }
 }
 
-pub(crate) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
+pub(super) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
     match geometry {
         SolvedCurveGeometry::Line(_) => "LINE",
         SolvedCurveGeometry::Circle(_) => "CIRCLE",
@@ -1140,7 +1140,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     Some(vertex)
 }
 
-pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
+pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             let range = [raw[0] * 1000.0, raw[1] * 1000.0];
@@ -1167,7 +1167,7 @@ pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
 }
 
 #[cfg(test)]
-pub(crate) fn orient_edge_range(
+pub(super) fn orient_edge_range(
     ir: &CadIr,
     curve: &CurveId,
     range: [f64; 2],
@@ -1188,7 +1188,7 @@ pub(crate) fn orient_edge_range(
 }
 
 #[cfg(test)]
-pub(crate) fn orient_edge_range_with_budget(
+fn orient_edge_range_with_budget(
     ir: &CadIr,
     curve: &CurveId,
     range: [f64; 2],
@@ -1334,7 +1334,7 @@ fn orient_edge_range_for_geometry_with_budget(
     }
 }
 
-pub(crate) fn unknown_stream(
+pub(super) fn unknown_stream(
     ctx: &DecodeContext<'_>,
     si: usize,
     stream: &Stream,
@@ -1343,11 +1343,11 @@ pub(crate) fn unknown_stream(
     Ok(unknown_stream_record(si, stream, Some(data)))
 }
 
-pub(crate) fn unknown_stream_metadata(si: usize, stream: &Stream) -> UnknownRecord {
+pub(super) fn unknown_stream_metadata(si: usize, stream: &Stream) -> UnknownRecord {
     unknown_stream_record(si, stream, None)
 }
 
-pub(crate) fn retain_unknown_stream_data(
+pub(super) fn retain_unknown_stream_data(
     ctx: &DecodeContext<'_>,
     stream: &Stream,
     unknown: &mut UnknownRecord,
@@ -1374,7 +1374,7 @@ fn unknown_stream_record(si: usize, stream: &Stream, data: Option<Vec<u8>>) -> U
 }
 
 /// Builds source metadata from classified layers and the container scan.
-pub(crate) fn source_meta(
+pub(super) fn source_meta(
     scan: &Scan,
     dialects: &DialectLayers,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {

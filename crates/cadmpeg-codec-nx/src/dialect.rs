@@ -142,7 +142,7 @@ fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
 impl NxDialect {
     /// Every reportable dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 2] = [Self::Splmsstr, Self::LegacyCfb];
+    const ALL: [Self; 2] = [Self::Splmsstr, Self::LegacyCfb];
 
     /// The registry-generated id for this variant.
     pub(crate) const fn id(self) -> DialectId {
@@ -156,7 +156,7 @@ impl NxDialect {
     ///
     /// One source for the label and the id, so a summary cannot name a
     /// container the classification disagrees with.
-    pub(crate) const fn container_kind(self) -> cadmpeg_ir::ContainerKind {
+    const fn container_kind(self) -> cadmpeg_ir::ContainerKind {
         match self {
             Self::Splmsstr => cadmpeg_ir::ContainerKind::Splmsstr,
             Self::LegacyCfb => cadmpeg_ir::ContainerKind::Cfb,
@@ -183,7 +183,7 @@ impl NxDialect {
     ///
     /// The layout is the dispatch itself: whichever parser built the container
     /// selected its enum variant.
-    pub(crate) fn of_container(container: &Container<'_>) -> Self {
+    fn of_container(container: &Container<'_>) -> Self {
         match container.layout {
             crate::container::ContainerLayout::Modern { .. } => Self::Splmsstr,
             crate::container::ContainerLayout::LegacyCfb { .. } => Self::LegacyCfb,
@@ -192,7 +192,7 @@ impl NxDialect {
 }
 
 /// Canonical report rendering of the version byte read by either container arm.
-pub(crate) fn format_version_byte(version: u8) -> String {
+fn format_version_byte(version: u8) -> String {
     version.to_string()
 }
 

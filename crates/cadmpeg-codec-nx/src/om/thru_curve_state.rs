@@ -47,7 +47,7 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
-    pub(crate) fn state_lane_len(&self) -> usize {
+    pub(super) fn state_lane_len(&self) -> usize {
         match self {
             Self::Standard(members) => members.len() + 4,
             Self::Extended { .. } => 18,
@@ -66,7 +66,7 @@ impl<T> ThruCurveBranchItems<T> {
         }
     }
 
-    pub(crate) fn map_indexed<U>(
+    pub(super) fn map_indexed<U>(
         self,
         mut f: impl FnMut(usize, T) -> U,
     ) -> ThruCurveBranchItems<U> {

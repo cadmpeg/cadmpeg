@@ -8,7 +8,7 @@ use crate::printable_string::PrintableString;
 pub(crate) struct ProductText<S>(PrintableString<S>);
 
 impl<S: AsRef<str>> ProductText<S> {
-    pub(crate) fn new(value: S) -> Result<Self, &'static str> {
+    fn new(value: S) -> Result<Self, &'static str> {
         let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
         if !value.as_str().starts_with("NX ") || value.as_str().len() > 253 {
@@ -63,11 +63,11 @@ impl<'a> ProductRecord<'a> {
         (bytes.get(text_end) == Some(&0)).then_some(Self { form, text })
     }
 
-    pub(crate) fn text(self) -> ProductText<&'a str> {
+    pub(super) fn text(self) -> ProductText<&'a str> {
         self.text
     }
 
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         let header_len = match self.form {
             ProductRecordForm::Modern => 3,
             ProductRecordForm::LegacyFeature => 2,

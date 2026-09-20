@@ -32,14 +32,14 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 
 /// Geometry work accounting plus the cache of successful blend-geometry
 /// certificates earned within the same accounting scope.
-pub(crate) struct GeometryWorkBudget<'a> {
+pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
 }
 
 impl<'a> GeometryWorkBudget<'a> {
     #[cfg(test)]
-    pub(crate) fn new(limit: usize) -> Self {
+    pub(super) fn new(limit: usize) -> Self {
         Self::from_work_budget(WorkBudget::new(limit))
     }
 

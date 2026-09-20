@@ -40,7 +40,7 @@ impl PrecisionState {
         })
     }
     #[cfg(test)]
-    pub(crate) fn xmt(&self) -> u32 {
+    pub(super) fn xmt(&self) -> u32 {
         self.xmt
     }
     pub(super) fn references(&self) -> [u32; 3] {

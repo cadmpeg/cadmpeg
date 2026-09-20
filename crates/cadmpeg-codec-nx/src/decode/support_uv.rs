@@ -104,7 +104,7 @@ fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) ->
 }
 
 #[cfg(test)]
-pub(super) fn new_support_uv_budget() -> SupportUvBudget<'static> {
+fn new_support_uv_budget() -> SupportUvBudget<'static> {
     WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
 }
 
@@ -315,7 +315,7 @@ pub(super) struct SerializedSupportUv {
 
 #[cfg(test)]
 impl SerializedSupportUv {
-    pub(crate) fn from_values(values: [Option<Vec<[f64; 2]>>; 2]) -> Self {
+    pub(super) fn from_values(values: [Option<Vec<[f64; 2]>>; 2]) -> Self {
         let values = values.map(|lane| {
             lane.and_then(|values| {
                 let count = values.len();
@@ -328,7 +328,7 @@ impl SerializedSupportUv {
         }
     }
 
-    pub(crate) fn from_ext11(ext11: [Option<Vec<[f64; 2]>>; 2]) -> Self {
+    pub(super) fn from_ext11(ext11: [Option<Vec<[f64; 2]>>; 2]) -> Self {
         let ext11 = ext11.map(|lane| {
             lane.and_then(|values| {
                 let count = values.len();
@@ -552,7 +552,7 @@ fn serialized_support_uv_seed_for_side(
 }
 
 #[cfg(test)]
-pub(crate) fn complete_ext11_support_uv(
+pub(super) fn complete_ext11_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) -> Result<(), cadmpeg_ir::geometry::nurbs::NurbsError> {
@@ -740,7 +740,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
 }
 
 #[cfg(test)]
-pub(crate) fn invalidate_inconsistent_support_uv(
+pub(super) fn invalidate_inconsistent_support_uv(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
 ) {
@@ -1862,7 +1862,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
 }
 
 #[cfg(test)]
-pub(crate) fn parameterization_equivalent_surfaces(
+pub(super) fn parameterization_equivalent_surfaces(
     ir: &CadIr,
     first: &SurfaceId,
     second: &SurfaceId,

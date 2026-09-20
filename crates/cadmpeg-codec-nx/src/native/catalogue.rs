@@ -77,8 +77,7 @@ use super::structure::{
 };
 use super::toggle::{SavedToggleEntry, SavedToggleStream};
 
-pub(crate) type CatalogueRow =
-    FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
+type CatalogueRow = FamilyRow<NativeModel, AnnotationBuilder, NativeNamespace, Exactness>;
 
 /// Serialize a record family into its arena when non-empty.
 fn emit_arena<T: Serialize>(
@@ -3698,7 +3697,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
 ];
 
 /// Executable catalogue over the frozen NX family table.
-pub(crate) const NATIVE_CATALOGUE: Catalogue<
+pub(super) const NATIVE_CATALOGUE: Catalogue<
     'static,
     NativeModel,
     AnnotationBuilder,

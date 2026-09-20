@@ -145,12 +145,12 @@ impl OmRollForwardStateTable {
     }
 
     #[cfg(test)]
-    pub(crate) fn table_footer(&self) -> GroupTableFooter {
+    pub(super) fn table_footer(&self) -> GroupTableFooter {
         self.table_footer
     }
 
     #[cfg(test)]
-    pub(crate) fn table_end_offset(&self) -> u64 {
+    pub(super) fn table_end_offset(&self) -> u64 {
         self.table_end_offset
     }
 }

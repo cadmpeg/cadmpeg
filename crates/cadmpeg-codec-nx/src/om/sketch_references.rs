@@ -38,7 +38,7 @@ impl SketchReferenceCount {
     }
 
     /// The count byte: `0` for the implicit form, the stated count otherwise.
-    pub(crate) fn count_byte(self) -> u8 {
+    fn count_byte(self) -> u8 {
         match self {
             Self::Implicit => 0,
             Self::Declared(count) => count.get(),
@@ -97,7 +97,7 @@ impl SketchReferenceField {
         }))
     }
 
-    pub(crate) fn declared_count(&self) -> SketchReferenceCount {
+    pub(super) fn declared_count(&self) -> SketchReferenceCount {
         match &self.0 {
             References::Implicit(_) => SketchReferenceCount::Implicit,
             References::Explicit { count, .. } => SketchReferenceCount::Declared(*count),
@@ -105,7 +105,7 @@ impl SketchReferenceField {
     }
 
     #[cfg(test)]
-    pub(crate) fn references(&self) -> &[PayloadObjectReference] {
+    pub(super) fn references(&self) -> &[PayloadObjectReference] {
         match &self.0 {
             References::Implicit(terminal) => std::slice::from_ref(terminal),
             References::Explicit { references, .. } => references,
@@ -164,7 +164,7 @@ impl SketchReferencePosition {
     pub(crate) fn declared_count(self) -> SketchReferenceCount {
         self.declared_count
     }
-    pub(crate) fn terminal(self) -> bool {
+    fn terminal(self) -> bool {
         self.ordinal == self.declared_count.effective().get() - 1
     }
 }

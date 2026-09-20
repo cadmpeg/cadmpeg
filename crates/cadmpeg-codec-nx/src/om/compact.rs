@@ -82,7 +82,7 @@ pub(crate) struct PositionedIndex<'a, T, O> {
 pub(crate) struct ExtendedCompactIndex([u8; 2]);
 
 impl ExtendedCompactIndex {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes {
             [high @ 0x80..=0xfe, low, ..] => Some(Self([*high, *low])),
             _ => None,
@@ -113,7 +113,7 @@ impl ExtendedCompactIndex {
 pub(crate) struct WrappedCompactIndex(ExtendedCompactIndex);
 
 impl WrappedCompactIndex {
-    pub(crate) fn read(raw: u32) -> Option<Self> {
+    pub(super) fn read(raw: u32) -> Option<Self> {
         let [marker, high, low, terminal] = raw.to_be_bytes();
         (marker == 0x3d && terminal == 0).then_some(())?;
         ExtendedCompactIndex::read(&[high, low]).map(Self)
@@ -143,13 +143,13 @@ pub(crate) struct LocatedCompactIndex<O = usize, T = CompactIndexAtom> {
 }
 
 impl LocatedCompactIndex {
-    pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
         Some(Self {
             atom: CompactIndexAtom::read(bytes.get(offset..)?)?,
             offset,
         })
     }
-    pub(crate) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
+    pub(super) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
         (0..N)
             .map(|_| {
                 let token = Self::read(bytes, *at)?;
@@ -164,8 +164,8 @@ impl LocatedCompactIndex {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NullableCompactIndex {
-    pub(crate) atom: Option<CompactIndexAtom>,
-    pub(crate) offset: usize,
+    pub(super) atom: Option<CompactIndexAtom>,
+    offset: usize,
 }
 
 impl NullableCompactIndex {
@@ -207,7 +207,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect())
     }
 
-    pub(crate) fn try_map<U>(
+    pub(super) fn try_map<U>(
         self,
         f: impl FnMut(T) -> Option<U>,
     ) -> Option<CountedIndexMembers<U, RESERVED>> {

@@ -283,12 +283,7 @@ pub(crate) fn display_jt_string_property_stream() -> Vec<u8> {
 
 /// Frame one JT logical element: length-prefixed `[type_id][base_type][object_id]
 /// [body]`, matching `parse_jt_element_sequence`.
-pub(crate) fn jt_scene_element(
-    type_id: [u8; 16],
-    base_type: u8,
-    object_id: u32,
-    body: &[u8],
-) -> Vec<u8> {
+fn jt_scene_element(type_id: [u8; 16], base_type: u8, object_id: u32, body: &[u8]) -> Vec<u8> {
     let mut element = Vec::new();
     let byte_len = 16 + 1 + 4 + body.len();
     element.extend_from_slice(&(byte_len as u32).to_le_bytes());

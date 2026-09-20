@@ -13,7 +13,7 @@ pub(crate) struct SurfaceCurveState {
     tolerance: f64,
 }
 impl SurfaceCurveState {
-    pub(crate) fn new(
+    pub(super) fn new(
         surface: u32,
         pcurve: u32,
         original: u32,

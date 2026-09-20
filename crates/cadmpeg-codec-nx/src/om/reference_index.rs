@@ -15,7 +15,7 @@ enum Encoding {
 pub(crate) struct ReferenceIndexToken(Encoding);
 
 impl ReferenceIndexToken {
-    pub(crate) fn read_payload(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read_payload(bytes: &[u8]) -> Option<Self> {
         match bytes {
             [0xf0, value, ..] => Some(Self(Encoding::PayloadByte([0xf0, *value]))),
             [0xf1, high, low, ..] if *high != 0 => {
@@ -25,7 +25,7 @@ impl ReferenceIndexToken {
         }
     }
 
-    pub(crate) fn read_feature(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read_feature(bytes: &[u8]) -> Option<Self> {
         match bytes {
             [value @ 0..=0x7f, ..] => Some(Self(Encoding::Direct(*value))),
             [high @ 0x80..=0x8f, low, ..] => Some(Self(Encoding::Compact([*high, *low]))),
@@ -70,7 +70,7 @@ impl ReferenceIndexToken {
 pub(crate) struct FeatureReferenceToken(ReferenceIndexToken);
 
 impl FeatureReferenceToken {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         ReferenceIndexToken::read_feature(bytes).map(Self)
     }
 
@@ -122,7 +122,7 @@ impl TryFrom<ReferenceIndexWire> for FeatureReferenceToken {
 pub(crate) struct CanonicalFeatureReferenceToken(FeatureReferenceToken);
 
 impl CanonicalFeatureReferenceToken {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let token = FeatureReferenceToken::read(bytes)?;
         let width = match token.value() {
             0..=0x7f => 1,
@@ -154,7 +154,7 @@ impl CanonicalFeatureReferenceToken {
 pub(crate) struct PayloadIndexToken(ReferenceIndexToken);
 
 impl PayloadIndexToken {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         ReferenceIndexToken::read_payload(bytes).map(Self)
     }
 

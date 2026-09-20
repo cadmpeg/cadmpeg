@@ -273,12 +273,7 @@ pub(crate) fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
 
 /// Append one feature-history operation record (label header + object-index
 /// slots + typed payload) to a record area under construction.
-pub(crate) fn push_feature_operation(
-    bytes: &mut Vec<u8>,
-    object_indices: &[u8],
-    label: &str,
-    payload: &[u8],
-) {
+fn push_feature_operation(bytes: &mut Vec<u8>, object_indices: &[u8], label: &str, payload: &[u8]) {
     const HEADER: &[u8] = &[
         0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
     ];
@@ -314,7 +309,7 @@ pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u
 /// An offset-store indexed OM section carrying `records` as its object-id-less
 /// data blocks. The single product record lives in the control block (index 0)
 /// so the section validates; `records[i]` resolves to `block#{i + 1}`.
-pub(crate) fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
+fn composed_offset_store(records: &[&[u8]]) -> Vec<u8> {
     let mut bytes = vec![0xaa; 8];
     let class_name = b"UGS::ModlFeature";
     bytes.push((class_name.len() + 1) as u8);
@@ -407,7 +402,7 @@ pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
     payload
 }
 
-pub(crate) type ComposedInputs = (
+type ComposedInputs = (
     Vec<(&'static [u8], &'static str, Vec<u8>)>,
     Vec<u8>,
     Vec<u8>,
@@ -420,7 +415,7 @@ pub(crate) type ComposedInputs = (
 /// A 31-character lowercase-hex identity (no `f`, so no `0x66` name markers)
 /// shared by the datum-CSYS descriptor in `block3` and the datum-plane
 /// descriptor in `block5`, joining them through `datum_plane_csys_identity_uses`.
-pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
+const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
 
 /// Build the operation list and six offset-store data blocks for the composed
 /// feature-history fixture.
@@ -433,7 +428,7 @@ pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde01234567
 /// Operations: `SKETCH` referencing the named point (object indices 1,2),
 /// `SKETCH` referencing the geometry (6,4), `DATUM_CSYS` (eight refs to 3) and
 /// `DATUM_PLANE`.
-pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
+pub(super) fn composed_feature_history_inputs() -> ComposedInputs {
     let sketch_named = vec![
         0x01, 0x00, 0x01, 0x02, 0xf0, 0x01, 0x00, 0x00, 0xf0, 0x02, 0x01, 0x00, 0x00, 0x00,
     ];

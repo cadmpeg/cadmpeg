@@ -8,7 +8,7 @@ const FIELD_START_PROBE_LIMIT: usize = 256;
 
 /// Encoding family of a value in an OM registry declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RegistryTokenForm {
+pub(super) enum RegistryTokenForm {
     /// One direct byte in `00..7f`.
     Direct,
     /// `80..8f` followed by one low byte, with a one-based decoded value.
@@ -38,7 +38,7 @@ impl RegistryToken {
         }
     }
 
-    pub(crate) fn form(self) -> RegistryTokenForm {
+    pub(super) fn form(self) -> RegistryTokenForm {
         match self.0 {
             RegistryValue::Direct(_) => RegistryTokenForm::Direct,
             RegistryValue::Compact(_) => RegistryTokenForm::Compact,
@@ -46,7 +46,7 @@ impl RegistryToken {
         }
     }
 
-    pub(crate) fn width(self) -> usize {
+    pub(super) fn width(self) -> usize {
         match self.form() {
             RegistryTokenForm::Direct => 1,
             RegistryTokenForm::Compact => 2,
@@ -59,22 +59,22 @@ impl RegistryToken {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ClassRegistryLayout {
     /// Registry storage code.
-    pub storage_code: RegistryToken,
+    pub(crate) storage_code: RegistryToken,
     /// One-based base-class ordinal; absent for the root.
-    pub base_class: Option<NonZeroU32>,
+    pub(crate) base_class: Option<NonZeroU32>,
     /// Eight-byte member-layout fingerprint.
-    pub schema_fingerprint: [u8; 8],
+    pub(crate) schema_fingerprint: [u8; 8],
     /// Registry reference-list ordinal.
-    pub reference: NonZeroU32,
+    pub(crate) reference: NonZeroU32,
 }
 
 /// Complete member-registry head following one member name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FieldRegistryLayout {
     /// Registry storage code.
-    pub storage_code: RegistryToken,
+    pub(crate) storage_code: RegistryToken,
     /// One-based declaring-class ordinal.
-    pub owner_class: NonZeroU32,
+    pub(crate) owner_class: NonZeroU32,
 }
 
 /// Class declarations and the first byte of the following member registry.
@@ -83,8 +83,8 @@ pub(crate) struct FieldRegistryLayout {
 /// registry, while the class list itself does not contain the reference-list
 /// declarations that precede it.
 pub(super) struct TypeRegistry<'a> {
-    pub definitions: Vec<TypeDefinition<'a>>,
-    pub field_start: usize,
+    pub(super) definitions: Vec<TypeDefinition<'a>>,
+    pub(super) field_start: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -99,7 +99,7 @@ impl RegistryDeclaration<'_> {
     }
 }
 
-pub(crate) fn registry_token_at(tail: &[u8], offset: usize) -> Option<RegistryToken> {
+pub(super) fn registry_token_at(tail: &[u8], offset: usize) -> Option<RegistryToken> {
     let prefix = *tail.get(offset)?;
     let value = match prefix {
         0x00..=0x7f => RegistryValue::Direct(prefix),

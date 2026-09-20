@@ -28,10 +28,10 @@ impl<'de> Deserialize<'de> for UnicodeValue {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct UnicodeLane<'a>(&'a [u8]);
+pub(super) struct UnicodeLane<'a>(&'a [u8]);
 
 impl<'a> UnicodeLane<'a> {
-    pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
+    pub(super) fn new(bytes: &'a [u8]) -> Option<Self> {
         if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
             return None;
         }
@@ -50,7 +50,7 @@ impl<'a> UnicodeLane<'a> {
         (!high_surrogate).then_some(Self(bytes))
     }
 
-    pub(crate) fn materialize(self) -> Option<UnicodeValue> {
+    pub(super) fn materialize(self) -> Option<UnicodeValue> {
         let code_units = self
             .0
             .chunks_exact(2)

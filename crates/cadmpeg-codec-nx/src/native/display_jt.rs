@@ -161,7 +161,7 @@ pub(in crate::native) struct DisplayJtIndexRow {
 /// One bounded embedded JT document and its table of contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "DisplayJtDocumentWire", into = "DisplayJtDocumentWire")]
-pub(crate) struct DisplayJtDocument {
+pub(in crate::native) struct DisplayJtDocument {
     /// Globally unique document identity.
     pub(super) id: String,
     /// Owning outer-index row.
@@ -259,7 +259,7 @@ pub(in crate::native) struct DisplayJtTocEntry {
 
 /// One physically bounded segment in an embedded JT document.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DisplayJtSegment {
+pub(super) struct DisplayJtSegment {
     /// Globally unique segment identity.
     pub(super) id: String,
     /// Owning JT document.
@@ -364,7 +364,7 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
     try_from = "DisplayJtShapeLodElementWire",
     into = "DisplayJtShapeLodElementWire"
 )]
-pub(crate) struct DisplayJtShapeLodElement {
+pub(super) struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
     pub(super) id: String,
     /// Owning type-7 segment.
@@ -965,7 +965,7 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
     try_from = "DisplayJtCompressedElementWire",
     into = "DisplayJtCompressedElementWire"
 )]
-pub(crate) struct DisplayJtCompressedElement {
+pub(super) struct DisplayJtCompressedElement {
     /// Globally unique element identity.
     pub(super) id: String,
     /// Owning compressed segment.
@@ -1060,7 +1060,7 @@ impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
     try_from = "DisplayJtCompressedElementSequenceWire",
     into = "DisplayJtCompressedElementSequenceWire"
 )]
-pub(crate) struct DisplayJtCompressedElementSequence {
+pub(super) struct DisplayJtCompressedElementSequence {
     /// Globally unique sequence identity.
     pub(super) id: String,
     /// Owning compressed segment.

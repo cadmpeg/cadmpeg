@@ -88,7 +88,7 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
 /// NX uses the typed trim-surface family for records that carry no body
 /// occurrence or primary-body field. Those records have no body result to
 /// bind; a body marker makes the output obligation explicit again.
-pub(crate) fn output_free_trim_surface_construction(
+pub(super) fn output_free_trim_surface_construction(
     feature: &cadmpeg_ir::features::Feature,
 ) -> bool {
     feature.evaluation.outputs().is_empty()
@@ -160,7 +160,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
         })
 }
 
-pub(crate) fn datum_coordinate_system_is_incomplete(
+pub(super) fn datum_coordinate_system_is_incomplete(
     origin: Point3,
     x_axis: Vector3,
     y_axis: Vector3,
@@ -180,7 +180,7 @@ pub(crate) fn datum_coordinate_system_is_incomplete(
     !handedness.is_finite() || (handedness - 1.0).abs() > EPS_ORTHONORMAL_FRAME
 }
 
-pub(crate) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
+pub(super) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
     match direction {
         CurveProjectionDirection::Vector(_) => false,
         CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => true,
@@ -188,11 +188,11 @@ pub(crate) fn projected_curve_direction_is_incomplete(direction: CurveProjection
     }
 }
 
-pub(crate) fn unit_feature_direction(direction: Vector3) -> bool {
+fn unit_feature_direction(direction: Vector3) -> bool {
     valid_feature_direction(direction) && (direction.norm() - 1.0).abs() <= EPS_UNIT_DIRECTION
 }
 
-pub(crate) fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
+fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     let scale = first.norm() * second.norm();
     scale.is_finite() && first.dot(second).abs() <= EPS_PERPENDICULAR * scale
 }
@@ -388,7 +388,7 @@ pub(crate) fn trim_bodies_definition_is_incomplete(feature: &Feature) -> bool {
         || matches!(keep, BodyTrimSide::Unresolved)
 }
 
-pub(crate) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) =
         feature.evaluation.definition()
     else {
@@ -462,7 +462,7 @@ pub(crate) fn chamfer_definition_is_incomplete(feature: &Feature) -> bool {
         .any(|group| edge_selection_is_incomplete(&group.edges) || group.spec.is_unresolved())
 }
 
-pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         feature.evaluation.definition()
     else {
@@ -473,7 +473,7 @@ pub(crate) fn fillet_definition_is_incomplete(feature: &Feature) -> bool {
         .any(|group| edge_selection_is_incomplete(&group.edges) || group.radius.is_unresolved())
 }
 
-pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::FaceBlend { operands, radius }) =
         feature.evaluation.definition()
     else {
@@ -486,7 +486,7 @@ pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
         || radius.is_unresolved()
 }
 
-pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
+pub(super) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies,
         removed_faces,
@@ -510,7 +510,7 @@ pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> 
         || allow_self_intersections.is_none()
 }
 
-pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, distance }) =
         feature.evaluation.definition()
     else {
@@ -529,7 +529,7 @@ pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
     matches!(op, BooleanOp::Unresolved)
 }
 
-pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Thicken {
         faces,
         thickness,
@@ -541,7 +541,7 @@ pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {
     face_selection_is_incomplete(faces) || thickness.is_none() || side.is_none()
 }
 
-pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Draft {
         faces,
         anchor,
@@ -569,7 +569,7 @@ pub(crate) fn draft_definition_is_incomplete(feature: &Feature) -> bool {
         || outward.is_none()
 }
 
-pub(crate) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
+pub(super) fn replace_face_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) =
         feature.evaluation.definition()
     else {
@@ -696,10 +696,10 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
         || transformation.is_none()
 }
 
-pub(crate) fn positive_feature_length(length: Length) -> bool {
+fn positive_feature_length(length: Length) -> bool {
     length.get() > 0.0
 }
 
-pub(crate) fn valid_feature_direction(direction: Vector3) -> bool {
+fn valid_feature_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > 0.0
 }

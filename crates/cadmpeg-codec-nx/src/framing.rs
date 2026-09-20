@@ -51,7 +51,7 @@ pub(crate) struct FixedRecordFrame {
 /// The framing grammar admits at most the direct and escaped readings at one
 /// type-tag offset. Keep both slots inline so a rejected probe does not allocate
 /// while a whole stream is scanned.
-pub(crate) type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
+type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
 
 /// Build all complete direct and escaped interpretations at one fixed-record tag.
 pub(crate) fn fixed_record_candidates(

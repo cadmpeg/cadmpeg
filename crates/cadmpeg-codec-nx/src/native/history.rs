@@ -9,25 +9,25 @@ use cadmpeg_ir::ids::BodyId;
 
 /// Source property on the retained-history input that admits the native
 /// primary-body active-state witness.
-pub(crate) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
+pub(super) const NATIVE_PRIMARY_BODY_CLOSURE_WITNESS: &str = "native_primary_body_closure_witness";
 /// Source property carrying an admitted native primary-body object index.
-pub(crate) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
+pub(super) const NATIVE_PRIMARY_BODY_OBJECT_INDEX: &str = "primary_body_object_index";
 
 /// Ordered feature writers indexed by both native history identity and the
 /// neutral body identity established by projection.
 #[derive(Default)]
-pub(crate) struct BodyWriterHistory {
+pub(super) struct BodyWriterHistory {
     native: BTreeMap<u32, FeatureId>,
     offset_store: BTreeMap<String, FeatureId>,
     outputs: BTreeMap<BodyId, FeatureId>,
 }
 
 impl BodyWriterHistory {
-    pub(crate) fn native_writer(&self, body: u32) -> Option<&FeatureId> {
+    pub(super) fn native_writer(&self, body: u32) -> Option<&FeatureId> {
         self.native.get(&body)
     }
 
-    pub(crate) fn offset_store_writer(&self, data_block: &str) -> Option<&FeatureId> {
+    pub(super) fn offset_store_writer(&self, data_block: &str) -> Option<&FeatureId> {
         self.offset_store.get(data_block)
     }
 
@@ -35,7 +35,7 @@ impl BodyWriterHistory {
     /// selected bodies. The provisional retained-history input is excluded
     /// because segment-backed body images exist before feature replay but are
     /// not feature writers.
-    pub(crate) fn has_preceding_writer(
+    pub(super) fn has_preceding_writer(
         &self,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
@@ -50,7 +50,7 @@ impl BodyWriterHistory {
             || offset_store_body.is_some_and(|body| self.offset_store.contains_key(body))
     }
 
-    pub(crate) fn extend_primary_dependencies(
+    pub(super) fn extend_primary_dependencies(
         &self,
         provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
@@ -85,7 +85,7 @@ impl BodyWriterHistory {
         }
     }
 
-    pub(crate) fn record_writer(
+    pub(super) fn record_writer(
         &mut self,
         native_body: Option<u32>,
         offset_store_body: Option<&str>,
@@ -106,7 +106,7 @@ impl BodyWriterHistory {
 
     /// Retract provisional output ownership when a later construction record
     /// proves that the body did not exist at the start of retained replay.
-    pub(crate) fn retract_outputs(&mut self, feature: &FeatureId, outputs: &[BodyId]) {
+    pub(super) fn retract_outputs(&mut self, feature: &FeatureId, outputs: &[BodyId]) {
         for output in outputs {
             if self.outputs.get(output) == Some(feature) {
                 self.outputs.remove(output);

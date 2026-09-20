@@ -19,37 +19,39 @@ pub(crate) struct DisplayJtGraph(DisplayJtGraphWire);
 /// Raw JT arenas before aggregate admission.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
-pub(crate) struct DisplayJtGraphWire {
+pub(in crate::native) struct DisplayJtGraphWire {
     #[serde(rename = "display_jt_documents")]
-    pub(crate) documents: Vec<DisplayJtDocument>,
+    pub(in crate::native) documents: Vec<DisplayJtDocument>,
     #[serde(rename = "display_jt_segments")]
-    pub(crate) segments: Vec<DisplayJtSegment>,
+    pub(in crate::native) segments: Vec<DisplayJtSegment>,
     #[serde(rename = "display_jt_shape_lod_elements")]
-    pub(crate) shape_lod_elements: Vec<DisplayJtShapeLodElement>,
+    pub(in crate::native) shape_lod_elements: Vec<DisplayJtShapeLodElement>,
     #[serde(rename = "display_jt_compressed_elements")]
-    pub(crate) compressed_elements: Vec<DisplayJtCompressedElement>,
+    pub(in crate::native) compressed_elements: Vec<DisplayJtCompressedElement>,
     #[serde(rename = "display_jt_compressed_element_sequences")]
-    pub(crate) compressed_element_sequences: Vec<DisplayJtCompressedElementSequence>,
+    pub(in crate::native) compressed_element_sequences: Vec<DisplayJtCompressedElementSequence>,
 }
 
 impl DisplayJtGraph {
-    pub(crate) fn documents(&self) -> &[DisplayJtDocument] {
+    pub(in crate::native) fn documents(&self) -> &[DisplayJtDocument] {
         &self.0.documents
     }
 
-    pub(crate) fn segments(&self) -> &[DisplayJtSegment] {
+    pub(in crate::native) fn segments(&self) -> &[DisplayJtSegment] {
         &self.0.segments
     }
 
-    pub(crate) fn shape_lod_elements(&self) -> &[DisplayJtShapeLodElement] {
+    pub(in crate::native) fn shape_lod_elements(&self) -> &[DisplayJtShapeLodElement] {
         &self.0.shape_lod_elements
     }
 
-    pub(crate) fn compressed_elements(&self) -> &[DisplayJtCompressedElement] {
+    pub(in crate::native) fn compressed_elements(&self) -> &[DisplayJtCompressedElement] {
         &self.0.compressed_elements
     }
 
-    pub(crate) fn compressed_element_sequences(&self) -> &[DisplayJtCompressedElementSequence] {
+    pub(in crate::native) fn compressed_element_sequences(
+        &self,
+    ) -> &[DisplayJtCompressedElementSequence] {
         &self.0.compressed_element_sequences
     }
 }

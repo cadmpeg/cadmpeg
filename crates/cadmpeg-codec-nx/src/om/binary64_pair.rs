@@ -13,7 +13,7 @@ pub(crate) enum ObjectPairForm {
 }
 
 impl ObjectPairForm {
-    pub(crate) const ALL: [Self; 2] = [Self::Short, Self::Extended];
+    const ALL: [Self; 2] = [Self::Short, Self::Extended];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

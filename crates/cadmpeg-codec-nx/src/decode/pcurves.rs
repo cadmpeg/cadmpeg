@@ -52,10 +52,10 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10: f64 = 1.0e-10;
 const EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8: f64 = 1.0e-8;
 
-pub(crate) type EndpointWitnesses =
+pub(super) type EndpointWitnesses =
     BTreeMap<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], [Point3; 2])>>;
 
-pub(crate) fn endpoint_witness_for_candidate(
+pub(super) fn endpoint_witness_for_candidate(
     witnesses: &EndpointWitnesses,
     key: &(CurveId, SurfaceId),
     pcurve: &PcurveGeometry,
@@ -69,14 +69,14 @@ pub(crate) fn endpoint_witness_for_candidate(
         })
 }
 
-pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+pub(super) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return None;
     };
     ordered_parameter_range([*nurbs.knots().first()?, *nurbs.knots().last()?])
 }
 
-pub(crate) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
+pub(super) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
     if !range.iter().all(|value| value.is_finite()) || range[0] == range[1] {
         return None;
     }
@@ -122,17 +122,17 @@ fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
 }
 
 #[derive(Clone, Copy, Default)]
-pub(crate) struct IntersectionEntityStarts {
-    pub(crate) loops: usize,
-    pub(crate) faces: usize,
-    pub(crate) edges: usize,
-    pub(crate) coedges: usize,
-    pub(crate) pcurves: usize,
-    pub(crate) procedural_curves: usize,
+pub(super) struct IntersectionEntityStarts {
+    pub(super) loops: usize,
+    pub(super) faces: usize,
+    pub(super) edges: usize,
+    pub(super) coedges: usize,
+    pub(super) pcurves: usize,
+    pub(super) procedural_curves: usize,
 }
 
 #[derive(Default)]
-pub(crate) struct IntersectionIncidenceIndex {
+pub(super) struct IntersectionIncidenceIndex {
     loop_faces: BTreeMap<LoopId, FaceId>,
     face_surfaces: BTreeMap<FaceId, SurfaceId>,
     edge_curves: BTreeMap<EdgeId, CurveId>,
@@ -299,7 +299,7 @@ impl IntersectionIncidenceIndex {
         }
     }
 
-    pub(crate) fn complete_from_stream(
+    pub(super) fn complete_from_stream(
         &mut self,
         ir: &mut CadIr,
         starts: IntersectionEntityStarts,
@@ -312,18 +312,18 @@ impl IntersectionIncidenceIndex {
     /// Complete incidence relations after every Parasolid stream has contributed
     /// its model entities. Stream-local completion cannot revisit a coedge whose
     /// edge, loop, or face arrived in a later stream.
-    pub(crate) fn complete_from_model(&mut self, ir: &mut CadIr) {
+    pub(super) fn complete_from_model(&mut self, ir: &mut CadIr) {
         *self = Self::default();
         let affected_curves = self.index_stream(ir, IntersectionEntityStarts::default());
         self.complete_supports(ir, &affected_curves);
         self.complete_pcurves(ir, &affected_curves);
     }
 
-    pub(crate) fn complete_new_pcurves_from_stream(&mut self, ir: &CadIr, start: usize) {
+    pub(super) fn complete_new_pcurves_from_stream(&mut self, ir: &CadIr, start: usize) {
         self.index_new_pcurves(ir, start);
     }
 
-    pub(crate) fn reindex_pcurves_after_prune(&mut self, ir: &CadIr) {
+    pub(super) fn reindex_pcurves_after_prune(&mut self, ir: &CadIr) {
         self.pcurves_by_id.clear();
         self.index_new_pcurves(ir, 0);
     }
@@ -344,7 +344,7 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
 }
 
 #[cfg(test)]
-pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
+pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
@@ -359,7 +359,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
 }
 
 #[cfg(test)]
-pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
+fn complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
@@ -376,7 +376,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_wi
     .expect("valid exactness fields");
 }
 
-pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     coedge_start: usize,
@@ -617,7 +617,7 @@ pub(crate) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
 }
 
 #[cfg(test)]
-pub(crate) fn orient_tolerant_intersection_pcurve(
+pub(super) fn orient_tolerant_intersection_pcurve(
     ir: &CadIr,
     curve: &CurveId,
     support: &SurfaceId,
@@ -722,7 +722,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
 
 /// Reverse a pcurve over `[start, end]`. `Ok(None)` states a pcurve family the
 /// reversal cannot carry; `Err` states reversed lanes the carrier refuses.
-pub(crate) fn reverse_pcurve_over_range(
+pub(super) fn reverse_pcurve_over_range(
     pcurve: &PcurveGeometry,
     [start, end]: [f64; 2],
 ) -> Result<Option<PcurveGeometry>, NurbsError> {
@@ -1673,7 +1673,7 @@ fn curve_is_cache_backed_with_index(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_boundary_pcurve(
+pub(super) fn exact_boundary_pcurve(
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -1981,7 +1981,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     })
 }
 
-pub(crate) fn exact_boundary_curve_breaks(
+fn exact_boundary_curve_breaks(
     geometry: &SolvedCurveGeometry,
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
@@ -2015,7 +2015,7 @@ pub(crate) fn exact_boundary_curve_breaks(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_analytic_isocurve_pcurve(
+pub(super) fn exact_analytic_isocurve_pcurve(
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -2159,7 +2159,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
 }
 
 #[cfg(test)]
-pub(crate) fn coincident_pcurve_pair(
+pub(super) fn coincident_pcurve_pair(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
@@ -2513,7 +2513,7 @@ fn blend_transfer_contact<'a>(
 pub(super) type TransferBudget<'a> = WorkBudget<'a>;
 
 #[cfg(test)]
-pub(super) fn new_transfer_budget() -> TransferBudget<'static> {
+fn new_transfer_budget() -> TransferBudget<'static> {
     WorkBudget::new(MAX_COMPLETION_TRANSFER_SAMPLES)
 }
 
@@ -2895,7 +2895,7 @@ fn blend_transfer_point_with_index(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_boundary_parameter_from_support_spine(
+pub(super) fn blend_boundary_parameter_from_support_spine(
     ir: &CadIr,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -2910,7 +2910,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
+fn blend_boundary_parameter_from_support_spine_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -2930,7 +2930,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index(
     )
 }
 
-pub(crate) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
+pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -2985,7 +2985,7 @@ pub(crate) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
     .then_some(parameters)
 }
 
-pub(crate) fn blend_boundary_spine_geometry_matches_with_index_and_budget(
+fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     parameters: Point2,
@@ -3195,7 +3195,7 @@ fn append_transferred_pcurve_segment_with_budget(
     )
 }
 
-pub(crate) fn surface_parameters_for_fit_with_index_and_budget(
+pub(super) fn surface_parameters_for_fit_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -3346,7 +3346,7 @@ fn point_outside_nurbs_control_bounds(
 }
 
 #[cfg(test)]
-pub(crate) fn attach_tolerant_edge_intersections(
+pub(super) fn attach_tolerant_edge_intersections(
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
@@ -3367,7 +3367,7 @@ pub(crate) fn attach_tolerant_edge_intersections(
     .expect("valid exactness fields");
 }
 
-pub(crate) fn attach_tolerant_edge_intersections_with_budget(
+pub(super) fn attach_tolerant_edge_intersections_with_budget(
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
@@ -3582,7 +3582,7 @@ pub(crate) fn pcurve_matches_edge(
 }
 
 #[cfg(test)]
-pub(crate) fn pcurve_matches_edge_range(
+fn pcurve_matches_edge_range(
     ir: &CadIr,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
@@ -3605,7 +3605,7 @@ pub(crate) fn pcurve_matches_edge_range(
 
 // Keep the index, edge identity, p-curve, and shared budget explicit: this
 // predicate is the topology admission boundary and must not hide its inputs.
-pub(crate) fn pcurve_matches_edge_range_with_index_and_budget(
+pub(super) fn pcurve_matches_edge_range_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
@@ -3628,7 +3628,7 @@ pub(crate) fn pcurve_matches_edge_range_with_index_and_budget(
 
 /// Evaluate and admit a pcurve endpoint pair, returning the exact points that
 /// established the edge-incidence contract for later proof reuse.
-pub(crate) fn pcurve_endpoint_witness_with_index_and_budget(
+pub(super) fn pcurve_endpoint_witness_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
@@ -3648,7 +3648,7 @@ pub(crate) fn pcurve_endpoint_witness_with_index_and_budget(
         .then_some(coincident_surface)
 }
 
-pub(crate) fn pcurve_surface_endpoints_with_index_and_budget(
+pub(super) fn pcurve_surface_endpoints_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
@@ -3677,7 +3677,7 @@ pub(crate) fn pcurve_surface_endpoints_with_index_and_budget(
     ])
 }
 
-pub(crate) fn pcurve_matches_edge_endpoints_with_index(
+fn pcurve_matches_edge_endpoints_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     edge_id: &EdgeId,
     coincident_surface: [Point3; 2],
@@ -3696,7 +3696,7 @@ pub(crate) fn pcurve_matches_edge_endpoints_with_index(
     )
 }
 
-pub(crate) fn pcurve_edge_endpoint_contract_with_index(
+pub(super) fn pcurve_edge_endpoint_contract_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     edge_id: &EdgeId,
 ) -> Option<([Point3; 2], f64)> {
@@ -3721,7 +3721,7 @@ pub(crate) fn pcurve_edge_endpoint_contract_with_index(
 
 /// Return the serialized endpoint witnesses of a charted linear intersection
 /// carrier. Other curve forms do not provide this prefilter proof.
-pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
+pub(super) fn linear_nurbs_curve_endpoint_witness_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve_id: &CurveId,
 ) -> Option<[Point3; 2]> {
@@ -3749,7 +3749,7 @@ pub(crate) fn linear_nurbs_curve_endpoint_witness_with_index(
         .then_some([first, last])
 }
 
-pub(crate) fn pcurve_matches_edge_endpoint_contract(
+pub(super) fn pcurve_matches_edge_endpoint_contract(
     coincident_surface: [Point3; 2],
     edge_endpoints: [Point3; 2],
     edge_allowance: f64,

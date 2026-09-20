@@ -920,7 +920,7 @@ pub(in crate::native) struct ParasolidDeltasEvents {
 
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
-pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
+fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
     let delta_censuses = streams
         .iter()
         .map(|stream| {

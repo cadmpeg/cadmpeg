@@ -123,7 +123,7 @@ pub(crate) struct DraftIdentityFrame {
 }
 
 impl DraftIdentityFrame {
-    pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
         let prefix = Prefix::read(bytes.get(offset..)?)?;
         let start = offset.checked_add(prefix.byte_len())?;
         let tail = bytes.get(start..)?;

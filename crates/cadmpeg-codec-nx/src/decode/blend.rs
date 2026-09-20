@@ -228,7 +228,7 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_parameters(
+pub(super) fn blend_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -250,7 +250,7 @@ pub(crate) fn blend_surface_parameters(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_parameters_for_fit(
+pub(super) fn blend_surface_parameters_for_fit(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -277,7 +277,7 @@ pub(super) enum BlendParameterGrid<'a> {
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_parameters_for_fit_with_grid(
+fn blend_surface_parameters_for_fit_with_grid(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -590,7 +590,7 @@ fn blend_surface_parameters_inner(
 }
 
 #[cfg(test)]
-pub(crate) fn coarse_blend_surface_parameters(
+pub(super) fn coarse_blend_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -608,7 +608,7 @@ pub(crate) fn coarse_blend_surface_parameters(
 }
 
 #[cfg(test)]
-pub(crate) fn coarse_blend_surface_parameters_with_index_and_budget(
+fn coarse_blend_surface_parameters_with_index_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -762,7 +762,7 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
 }
 
 #[cfg(test)]
-pub(crate) fn refine_blend_surface_parameters(
+pub(super) fn refine_blend_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -931,7 +931,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_point(
+pub(super) fn blend_surface_point(
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
@@ -941,7 +941,7 @@ pub(crate) fn blend_surface_point(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_point_inner(
+fn blend_surface_point_inner(
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
@@ -1237,7 +1237,7 @@ fn blend_surface_point_from_frame(
 }
 
 #[cfg(test)]
-pub(crate) fn blend_surface_u_derivative(
+pub(super) fn blend_surface_u_derivative(
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
@@ -2081,7 +2081,7 @@ fn closest_pcurve_parameter_from_seed(
 }
 
 #[cfg(test)]
-pub(crate) fn closest_pcurve_parameters(
+pub(super) fn closest_pcurve_parameters(
     pcurve: &PcurveGeometry,
     point: Point2,
     seed: Option<f64>,
@@ -2950,7 +2950,7 @@ pub(super) fn spine_contact_pcurve_with_index<'a>(
 }
 
 #[cfg(test)]
-pub(crate) fn constant_surface_offset_between(
+pub(super) fn constant_surface_offset_between(
     ir: &CadIr,
     support: &SurfaceId,
     offset_surface: &SurfaceId,
@@ -3210,7 +3210,7 @@ pub(super) fn blend_contact_offset_matches(
 }
 
 #[cfg(test)]
-pub(crate) fn surface_offset_lineage(
+pub(super) fn surface_offset_lineage(
     ir: &CadIr,
     surface: &SurfaceId,
     depth: usize,
@@ -3287,7 +3287,7 @@ fn blend_surface_definition_from_procedural(
 }
 
 #[cfg(test)]
-pub(crate) fn surface_contact_direction(
+pub(super) fn surface_contact_direction(
     ir: &CadIr,
     surface: &SurfaceId,
     center: Point3,
@@ -3299,7 +3299,7 @@ pub(crate) fn surface_contact_direction(
 }
 
 #[cfg(test)]
-pub(crate) fn surface_contact_direction_with_index(
+fn surface_contact_direction_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     center: Point3,
@@ -3465,7 +3465,7 @@ fn model_curve_tangent_with_index_and_budget(
 }
 
 #[cfg(test)]
-pub(crate) fn closest_spine_parameter(
+pub(super) fn closest_spine_parameter(
     ir: &CadIr,
     curve: &CurveId,
     point: Point3,
@@ -3726,7 +3726,7 @@ fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
 }
 
 #[cfg(test)]
-pub(crate) fn closest_nurbs_curve_parameter(
+pub(super) fn closest_nurbs_curve_parameter(
     curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,

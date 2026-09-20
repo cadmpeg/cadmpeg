@@ -31,7 +31,7 @@ impl<O: Copy + From<u8> + std::ops::Add<Output = O>> StateSlotLane<O> {
 }
 
 impl StateSlotLane {
-    pub(crate) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
         if bytes.get(at..at.checked_add(3)?) != Some(&[0x02, 0x01, 0x11]) {
             return None;
         }
@@ -52,7 +52,7 @@ impl StateSlotLane {
         None
     }
 
-    pub(crate) fn end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    pub(super) fn end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
         if bytes.get(at..at.checked_add(3)?) != Some(&[0x02, 0x01, 0x11]) {
             return None;
         }

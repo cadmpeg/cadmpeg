@@ -59,11 +59,11 @@ impl Type101State {
         }
     }
     #[cfg(test)]
-    pub(crate) fn terminal_value(&self) -> u64 {
+    pub(super) fn terminal_value(&self) -> u64 {
         self.terminal_value
     }
     #[cfg(test)]
-    pub(crate) fn anchor_reference(&self) -> Option<u32> {
+    pub(super) fn anchor_reference(&self) -> Option<u32> {
         self.anchor_reference.map(u32::from)
     }
 }

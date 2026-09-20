@@ -148,7 +148,7 @@ pub(super) fn saved_offset_carriers(
 }
 
 #[cfg(test)]
-pub(crate) fn certified_offset_cache_fit(
+pub(super) fn certified_offset_cache_fit(
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
@@ -917,7 +917,7 @@ fn offset_support_control_hull_excludes_point(
 }
 
 #[cfg(test)]
-pub(crate) fn offset_surface_parameters(
+pub(super) fn offset_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -927,7 +927,7 @@ pub(crate) fn offset_surface_parameters(
 }
 
 #[cfg(test)]
-pub(crate) fn offset_surface_parameters_with_tolerance(
+pub(super) fn offset_surface_parameters_with_tolerance(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
@@ -939,7 +939,7 @@ pub(crate) fn offset_surface_parameters_with_tolerance(
 }
 
 #[cfg(test)]
-pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
+fn offset_surface_parameters_with_tolerance_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
@@ -1519,7 +1519,7 @@ fn model_surface_point_and_derivatives(
 /// parameter spaces. The chart seeds and orders the branch; corrected points
 /// satisfy the two support surfaces rather than interpolating chart samples.
 #[cfg(test)]
-pub(crate) fn continue_surface_intersection_parameters(
+pub(super) fn continue_surface_intersection_parameters(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
@@ -1535,7 +1535,7 @@ pub(crate) fn continue_surface_intersection_parameters(
 }
 
 #[cfg(test)]
-pub(crate) fn continue_surface_intersection_parameters_with_seeds(
+fn continue_surface_intersection_parameters_with_seeds(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],
@@ -1555,7 +1555,7 @@ pub(crate) fn continue_surface_intersection_parameters_with_seeds(
 }
 
 #[cfg(test)]
-pub(crate) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
+fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     chart: &[Point3],

@@ -12,7 +12,7 @@ pub(crate) struct OffsetSurfaceState {
 }
 
 impl OffsetSurfaceState {
-    pub(crate) fn new(support: u32, distance: f64) -> Result<Self, &'static str> {
+    pub(super) fn new(support: u32, distance: f64) -> Result<Self, &'static str> {
         if !distance.is_finite() {
             return Err("distance: must be finite");
         }

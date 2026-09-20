@@ -25,7 +25,7 @@ impl CommonFramePrefix {
         Ok(prefix)
     }
 
-    pub(crate) fn read(bytes: &[u8], marker: [u8; 3]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], marker: [u8; 3]) -> Option<Self> {
         let widths = match marker {
             [1, 3, 2] => [1, 2, 2],
             [1, 1, 1] => [1, 1, 1],
@@ -53,7 +53,7 @@ impl CommonFramePrefix {
             [1, 3, 2]
         }
     }
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         self.0.iter().map(|token| token.raw().len()).sum::<usize>() + 3
     }
     fn index_offsets(self) -> [usize; 3] {
@@ -95,7 +95,7 @@ impl CommonFrameSuffix {
         })
     }
 
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let local_ordinal = CanonicalFeatureReferenceToken::read(bytes)?;
         let width = local_ordinal.raw().len();
         (bytes.get(width..2 * width) == Some(local_ordinal.raw())).then_some(())?;
@@ -152,7 +152,7 @@ impl<T> CommonFrameSuffix<T> {
     fn object_offset(&self) -> usize {
         2 * self.local_ordinal.raw().len()
     }
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         self.object_offset() + self.raw_object_index().len() + 1
     }
 }
@@ -255,7 +255,7 @@ frame_positions!(usize);
 frame_positions!(u64);
 
 impl<T> CommonFrame<usize, T> {
-    pub(crate) fn end_offset(&self) -> usize {
+    pub(super) fn end_offset(&self) -> usize {
         self.offset + self.byte_len()
     }
 }
@@ -272,7 +272,7 @@ impl<T> CommonFrame<u64, T> {
 }
 
 impl<T> TerminalFrame<usize, T> {
-    pub(crate) fn end_offset(&self) -> usize {
+    pub(super) fn end_offset(&self) -> usize {
         self.offset + self.suffix.byte_len()
     }
 }

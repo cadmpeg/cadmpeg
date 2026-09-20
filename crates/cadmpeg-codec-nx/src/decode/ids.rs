@@ -32,7 +32,7 @@ impl IdScope {
     }
 
     /// The scope of entities the decoder synthesizes from non-topology input.
-    pub(crate) fn derived() -> Self {
+    pub(super) fn derived() -> Self {
         Self::native(identity_component!("derived"))
     }
 
@@ -49,7 +49,7 @@ impl IdScope {
     }
 
     /// The `<format>:<scope>` prefix this scope mints under.
-    pub(crate) fn prefix(&self) -> String {
+    pub(super) fn prefix(&self) -> String {
         format!("{}:{}", nx().as_str(), self.0.as_str())
     }
 

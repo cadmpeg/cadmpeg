@@ -47,7 +47,7 @@ impl StateIndexToken {
         }
     }
 
-    pub(crate) fn byte_len(self) -> u8 {
+    pub(super) fn byte_len(self) -> u8 {
         match self.0 {
             IndexBytes::Direct(_) => 1,
             IndexBytes::Compact(_) => 2,
@@ -65,12 +65,12 @@ impl StateIndexToken {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationStateIndex {
+pub(super) struct OperationStateIndex {
     token: Option<StateIndexToken>,
 }
 
 impl OperationStateIndex {
-    pub(crate) fn read_at(bytes: &[u8], at: usize, base_offset: usize) -> Option<Self> {
+    pub(super) fn read_at(bytes: &[u8], at: usize, base_offset: usize) -> Option<Self> {
         let token = if *bytes.get(at)? == 0xff {
             None
         } else {
@@ -80,11 +80,11 @@ impl OperationStateIndex {
         Some(Self { token })
     }
 
-    pub(crate) fn token(self) -> Option<StateIndexToken> {
+    pub(super) fn token(self) -> Option<StateIndexToken> {
         self.token
     }
 
-    pub(crate) fn raw(&self) -> &[u8] {
+    pub(super) fn raw(&self) -> &[u8] {
         self.token.as_ref().map_or(&[0xff], StateIndexToken::raw)
     }
 }

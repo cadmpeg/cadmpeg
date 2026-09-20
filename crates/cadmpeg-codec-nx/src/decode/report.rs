@@ -44,24 +44,24 @@ use std::collections::{BTreeMap, BTreeSet};
 // Each flag is an independent model-wide phase fact surfaced in the loss
 // report; combining them would hide which bounded phase stopped.
 #[allow(clippy::struct_excessive_bools)]
-pub(crate) struct CompletionBudgetStatus {
-    pub(crate) exact_boundary_exhausted: bool,
-    pub(crate) transfer_exhausted: bool,
-    pub(crate) support_uv_validation_exhausted: bool,
-    pub(crate) support_uv_exhausted: bool,
-    pub(crate) coupled_support_uv_exhausted: bool,
-    pub(crate) completion_geometry_exhausted: bool,
-    pub(crate) serialized_support_uv_geometry_exhausted: bool,
-    pub(crate) support_uv_geometry_exhausted: bool,
-    pub(crate) coupled_support_uv_geometry_exhausted: bool,
-    pub(crate) support_uv_lane_geometry_exhausted: bool,
-    pub(crate) transfer_limit: usize,
-    pub(crate) support_uv_limit: usize,
+pub(super) struct CompletionBudgetStatus {
+    pub(super) exact_boundary_exhausted: bool,
+    pub(super) transfer_exhausted: bool,
+    pub(super) support_uv_validation_exhausted: bool,
+    pub(super) support_uv_exhausted: bool,
+    pub(super) coupled_support_uv_exhausted: bool,
+    pub(super) completion_geometry_exhausted: bool,
+    pub(super) serialized_support_uv_geometry_exhausted: bool,
+    pub(super) support_uv_geometry_exhausted: bool,
+    pub(super) coupled_support_uv_geometry_exhausted: bool,
+    pub(super) support_uv_lane_geometry_exhausted: bool,
+    pub(super) transfer_limit: usize,
+    pub(super) support_uv_limit: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_geometry_report(
+pub(super) fn build_geometry_report(
     scan: &Scan,
     unmatched_delta_tombstone_counts: &BTreeMap<&'static str, usize>,
     ir: &CadIr,

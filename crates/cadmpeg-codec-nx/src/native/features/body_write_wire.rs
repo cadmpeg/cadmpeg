@@ -9,45 +9,45 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub(super) struct BodyWriteWire {
     /// Globally unique relation identity.
-    pub id: String,
+    id: String,
     /// Owning operation-label identity, absent for an unlabeled record.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_operation_label"
     )]
-    pub operation_label: Option<String>,
+    operation_label: Option<String>,
     /// Owning bounded operation-record identity.
-    pub operation_record: String,
+    operation_record: String,
     /// Zero-based body-write order within the operation payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Persistent identity of the body written by this operation.
-    pub body_identity: u8,
+    body_identity: u8,
     /// Partition-local Parasolid GROUP node owned by this feature.
-    pub group_node: u32,
+    group_node: u32,
     /// Exact serialized GROUP-node token.
-    pub raw_group_node: Vec<u8>,
+    raw_group_node: Vec<u8>,
     /// Absolute offset of the GROUP-node token.
-    pub group_node_source_offset: u64,
+    group_node_source_offset: u64,
     /// Tagged body-image field discriminator.
-    pub endpoint_tag: u8,
+    endpoint_tag: u8,
     /// Offset-store object containing the body's serialized image.
-    pub body_image_object_index: u32,
+    body_image_object_index: u32,
     /// Unambiguous offset-store block selected by the body-image object index.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_body_image_data_block"
     )]
-    pub body_image_data_block: Option<String>,
+    body_image_data_block: Option<String>,
     /// Exact serialized body-image object token.
-    pub raw_body_image_object_index: Vec<u8>,
+    raw_body_image_object_index: Vec<u8>,
     /// Absolute offset of the body-image object token.
-    pub body_image_object_index_source_offset: u64,
+    body_image_object_index_source_offset: u64,
     /// Exact serialized frame byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 impl From<FeatureOperationBodyWrite> for BodyWriteWire {

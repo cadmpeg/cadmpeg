@@ -41,7 +41,7 @@ impl<T> NonEmpty<T> {
 }
 
 impl<T> NonEmpty<Option<T>> {
-    pub(crate) fn transpose(self) -> Option<NonEmpty<T>> {
+    pub(super) fn transpose(self) -> Option<NonEmpty<T>> {
         Some(NonEmpty {
             first: self.first?,
             rest: self.rest.into_iter().collect::<Option<Vec<_>>>()?,

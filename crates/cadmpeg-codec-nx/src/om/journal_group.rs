@@ -42,7 +42,7 @@ impl<O: Copy + From<u8> + std::ops::Sub<Output = O>> JournalGroup<O> {
 }
 
 impl JournalGroup<usize> {
-    pub(crate) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
         let tail = bytes.get(at..end)?;
         let [0x04, a, b, 0x00, ..] = tail else {
             return None;
@@ -69,7 +69,7 @@ impl JournalGroup<usize> {
         })
     }
 
-    pub(crate) fn end_offset(&self) -> usize {
+    pub(super) fn end_offset(&self) -> usize {
         let last = self.rows.last();
         last.offset() + last.byte_len()
     }

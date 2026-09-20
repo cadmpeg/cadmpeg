@@ -168,15 +168,15 @@ impl Type38State {
         })
     }
     #[cfg(test)]
-    pub(crate) fn xmt(&self) -> u32 {
+    pub(super) fn xmt(&self) -> u32 {
         self.xmt.into()
     }
     #[cfg(test)]
-    pub(crate) fn marker(&self) -> u8 {
+    pub(super) fn marker(&self) -> u8 {
         self.marker.into()
     }
     #[cfg(test)]
-    pub(crate) fn leading_references(&self) -> [u32; 5] {
+    pub(super) fn leading_references(&self) -> [u32; 5] {
         self.leading_references
     }
     pub(crate) fn leading_statuses(&self) -> [u8; 5] {

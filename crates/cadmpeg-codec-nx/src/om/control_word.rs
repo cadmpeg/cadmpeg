@@ -6,7 +6,7 @@
 pub(crate) struct ControlWord24([u8; 3]);
 
 impl ControlWord24 {
-    pub(crate) fn new(bytes: [u8; 3]) -> Self {
+    pub(super) fn new(bytes: [u8; 3]) -> Self {
         Self(bytes)
     }
     pub(crate) fn value(self) -> u32 {

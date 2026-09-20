@@ -40,7 +40,7 @@ impl TrimmedCurveState {
             ],
         })
     }
-    pub(crate) fn from_metres(
+    pub(super) fn from_metres(
         basis: u32,
         points: [[f64; 3]; 2],
         parameters: [f64; 2],

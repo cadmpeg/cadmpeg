@@ -30,7 +30,7 @@ pub(crate) struct PreambleState {
 }
 
 impl PreambleState {
-    pub(crate) fn new(
+    pub(super) fn new(
         identity: u16,
         references: [u32; 2],
         state_references: [u32; 3],
@@ -103,7 +103,7 @@ impl PreambleState {
         self.linked.then_some(self.first_reference + 2)
     }
     #[cfg(test)]
-    pub(crate) fn state_references(&self) -> [u32; 3] {
+    pub(super) fn state_references(&self) -> [u32; 3] {
         [1, self.state_reference().unwrap_or(1), 1]
     }
     pub(crate) fn state_words(&self) -> [u32; 4] {

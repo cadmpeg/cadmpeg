@@ -37,11 +37,11 @@ pub(crate) struct EntityValueRecords<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UnmaterializedValueRecord {
     /// Byte offset of the frame in the inflated stream.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Entity tag the frame carries.
-    pub(crate) xmt: u32,
+    xmt: u32,
     /// Value family the frame declared.
-    pub(crate) family: &'static str,
+    family: &'static str,
 }
 
 impl std::fmt::Display for UnmaterializedValueRecord {
@@ -288,7 +288,7 @@ fn append_value_record<'a>(
     Ok(())
 }
 #[cfg(test)]
-pub(crate) fn entity_52_integer_record_at(
+fn entity_52_integer_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<ValueRecord<CountedValues<u32>>> {
@@ -299,7 +299,7 @@ pub(crate) fn entity_52_integer_record_at(
     Some(frame.retained(value.materialize()?))
 }
 #[cfg(test)]
-pub(crate) fn entity_53_double_record_at(
+fn entity_53_double_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<ValueRecord<CountedValues<f64>>> {
@@ -310,7 +310,7 @@ pub(crate) fn entity_53_double_record_at(
     Some(frame.retained(value.materialize()?))
 }
 #[cfg(test)]
-pub(crate) fn entity_54_string_record_at(
+fn entity_54_string_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<ValueRecord<PrintableString<&'_ str>>> {

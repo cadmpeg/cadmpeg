@@ -8,45 +8,45 @@ use super::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PartColorTableWire {
     /// Globally unique table identity.
-    pub id: String,
+    id: String,
     /// Registered `UGS::COLOR_table` declaration in `class_definitions`.
-    pub class_definition: String,
+    class_definition: String,
     /// Name of the separately encoded background color.
-    pub background_name: String,
+    background_name: String,
     /// Normalized background RGB components.
-    pub background_rgb: [f32; 3],
+    background_rgb: [f32; 3],
     /// Exact serialized background component atoms.
-    pub raw_background_components: [Vec<u8>; 3],
+    raw_background_components: [Vec<u8>; 3],
     /// Absolute file offsets of the background component atoms.
-    pub background_component_source_offsets: [u64; 3],
+    background_component_source_offsets: [u64; 3],
     /// Ordered entries in the native `part_color_definitions` arena.
-    pub definitions: Vec<String>,
+    definitions: Vec<String>,
     /// Directory entry containing the table.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute file offset of the counted name roster.
-    pub source_offset: u64,
+    source_offset: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PartColorDefinitionWire {
     /// Globally unique color-definition identity.
-    pub id: String,
+    id: String,
     /// Owning table in the native `part_color_tables` arena.
-    pub color_table: String,
+    color_table: String,
     /// One-based NX color index.
-    pub color_index: u16,
+    color_index: u16,
     /// Serialized color name.
-    pub name: String,
+    name: String,
     /// Normalized RGB components.
-    pub rgb: [f32; 3],
+    rgb: [f32; 3],
     /// Exact serialized index token.
-    pub raw_color_index: Vec<u8>,
+    raw_color_index: Vec<u8>,
     /// Exact serialized component atoms.
-    pub raw_components: [Vec<u8>; 3],
+    raw_components: [Vec<u8>; 3],
     /// Absolute file offset of the opening `05` marker.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute file offsets of the three component atoms.
-    pub component_source_offsets: [u64; 3],
+    component_source_offsets: [u64; 3],
 }
 
 fn components_from_wire(

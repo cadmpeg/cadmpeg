@@ -14,7 +14,7 @@ pub(crate) struct Type150State {
 }
 
 impl Type150State {
-    pub(crate) fn new(
+    pub(super) fn new(
         references: [u32; 5],
         marker: Type150Marker,
         values: [f64; 9],

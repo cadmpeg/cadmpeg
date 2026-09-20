@@ -19,11 +19,11 @@ struct OccurrenceLane {
 }
 
 impl FastLoadOccurrences {
-    pub(crate) fn as_slice(&self) -> &[FastLoadComponentOccurrence] {
+    pub(in crate::native) fn as_slice(&self) -> &[FastLoadComponentOccurrence] {
         self.0.as_ref().map_or(&[], |lane| lane.records.as_slice())
     }
 
-    pub(crate) fn wire_records(
+    pub(in crate::native) fn wire_records(
         &self,
     ) -> impl Iterator<Item = FastLoadComponentOccurrenceWire> + '_ {
         self.0.iter().flat_map(|lane| {

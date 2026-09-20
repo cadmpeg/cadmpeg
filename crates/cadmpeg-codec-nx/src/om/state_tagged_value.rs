@@ -25,7 +25,7 @@ impl StateTaggedValue {
         Some(Self(token))
     }
 
-    pub(crate) fn raw(&self) -> &[u8] {
+    pub(super) fn raw(&self) -> &[u8] {
         match &self.0 {
             TokenBytes::Short(bytes) => bytes,
             TokenBytes::Medium(bytes) => bytes,
