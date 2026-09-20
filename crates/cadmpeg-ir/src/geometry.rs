@@ -593,8 +593,11 @@ pub struct CompoundCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CompoundCurveConstructionWire {
+    /// Finite leading and per-component construction parameters.
     parameters: Vec<f64>,
+    /// Component curves in construction order.
     components: Vec<CompoundComponent<CurveId>>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1888,12 +1891,19 @@ pub struct HelixPathConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixPathConstructionWire {
+    /// Native helix angle interval.
     angle_range: [f64; 2],
+    /// Helix center in model space.
     center: Point3,
+    /// Major radial axis vector.
     major: Vector3,
+    /// Minor radial axis vector.
     minor: Vector3,
+    /// Axial advance of one turn, as a vector.
     pitch: Vector3,
+    /// Native apex taper factor.
     apex_factor: f64,
+    /// Helix axis direction.
     axis: Vector3,
 }
 
@@ -2046,13 +2056,21 @@ pub struct HelixCurveConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixCurveConstructionWire {
+    /// Native helix angle interval.
     angle_range: [f64; 2],
+    /// Helix center in model space.
     center: Point3,
+    /// Major radial axis vector.
     major: Vector3,
+    /// Minor radial axis vector.
     minor: Vector3,
+    /// Axial advance of one turn, as a vector.
     pitch: Vector3,
+    /// Native apex taper factor.
     apex_factor: f64,
+    /// Helix axis direction.
     axis: Vector3,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -2219,7 +2237,9 @@ pub struct HelixCircleProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixCircleProfileWire {
+    /// Native profile length.
     length: f64,
+    /// Signed circular profile radius.
     radius: f64,
 }
 
@@ -2265,6 +2285,7 @@ pub struct HelixLineProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixLineProfileWire {
+    /// Finite non-degenerate profile direction.
     direction: Vector3,
 }
 
@@ -2320,9 +2341,13 @@ pub struct HelixSurfaceConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HelixSurfaceConstructionWire {
+    /// Native helix angle interval.
     angle_range: [f64; 2],
+    /// Native profile dimension interval.
     dimension_range: [f64; 2],
+    /// Circular path of the helix surface.
     path: HelixPathConstruction,
+    /// Profile swept along the path.
     profile: HelixSurfaceProfile,
 }
 
@@ -2440,10 +2465,14 @@ pub struct InlineTSplineSubtransform {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum InlineTSplineSubtransformWire {
+    /// Inline line-oriented T-spline program and companion values.
     Inline {
+        /// Line-oriented topology and geometry program.
         program: String,
+        /// Optional native separator boolean.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         separator: Option<bool>,
+        /// Companion values program.
         values: String,
     },
 }
@@ -2498,14 +2527,21 @@ pub enum TSplineSubtransform {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum TSplineSubtransformWire {
+    /// Inline line-oriented T-spline program and companion values.
     Inline {
+        /// Line-oriented topology and geometry program.
         program: String,
+        /// Optional native separator boolean.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         separator: Option<bool>,
+        /// Companion values program.
         values: String,
     },
+    /// Resolved reference to an earlier subtype-table entry.
     Reference {
+        /// Native subtype-table index.
         index: SubtypeTableIndex,
+        /// Resolved shared program.
         resolved: Box<InlineTSplineSubtransform>,
     },
 }
@@ -3094,7 +3130,9 @@ impl RollingBallJetStations {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct RollingBallJetReadWire {
+    /// Polynomial degree of each scalar channel.
     degree: u32,
+    /// Ordered station data.
     stations: Vec<RollingBallJetStation>,
 }
 
@@ -3498,7 +3536,9 @@ pub struct LoftSubdataTable {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LoftSubdataTableWire {
+    /// Native loft table type code.
     type_code: i64,
+    /// Table rows, all of one column width.
     rows: Vec<LoftSubdataRow>,
 }
 
@@ -6627,8 +6667,11 @@ pub struct IntcurveSupportContext {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct IntcurveSupportContextWire {
+    /// Ordered support sides.
     sides: [IntcurveSupportSide; 2],
+    /// Solved-curve interval.
     parameter_range: [f64; 2],
+    /// Ordered discontinuity arrays.
     discontinuities: [Vec<f64>; 3],
 }
 
@@ -6755,8 +6798,11 @@ pub struct TolerantIntersectionConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TolerantIntersectionConstructionWire {
+    /// Distinct support surfaces of the intersection.
     supports: [SurfaceId; 2],
+    /// Model-space endpoint witnesses.
     endpoints: [Point3; 2],
+    /// Finite non-negative intersection tolerance.
     tolerance: f64,
 }
 
@@ -6822,7 +6868,9 @@ pub struct TolerantIntersectionParameterization {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TolerantIntersectionParameterizationWire {
+    /// Coincident support charts in support order.
     pcurves: [PcurveGeometry; 2],
+    /// Common finite solved-curve interval.
     parameter_range: [f64; 2],
 }
 

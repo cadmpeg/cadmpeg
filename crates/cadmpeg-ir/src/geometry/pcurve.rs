@@ -183,7 +183,9 @@ pub struct LinePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LinePcurveWire {
+    /// Parameter-space line origin.
     origin: Point2,
+    /// Parameter-space line direction.
     direction: Point2,
 }
 
@@ -239,11 +241,17 @@ pub struct PolarHarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PolarHarmonicPcurveWire {
+    /// Constant radial coefficient.
     radial_center: Point2,
+    /// Cosine radial coefficient.
     radial_cos: Point2,
+    /// Sine radial coefficient.
     radial_sin: Point2,
+    /// Constant axial coefficient.
     axial_origin: f64,
+    /// Cosine axial coefficient.
     axial_cos: f64,
+    /// Sine axial coefficient.
     axial_sin: f64,
 }
 
@@ -348,9 +356,13 @@ pub struct SphericalGreatCirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SphericalGreatCirclePcurveWire {
+    /// Azimuth at the parameter origin.
     azimuth_origin: f64,
+    /// Azimuth change for one unit of parameter.
     azimuth_rate: f64,
+    /// Phase of the great-circle plane.
     plane_phase: f64,
+    /// Slope of the great-circle plane.
     plane_slope: f64,
 }
 
@@ -433,9 +445,13 @@ pub struct CirclePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CirclePcurveWire {
+    /// Parameter-space circle center.
     center: Point2,
+    /// First parameter-space axis.
     x_axis: Point2,
+    /// Second parameter-space axis.
     y_axis: Point2,
+    /// Circle radius in parameter space.
     radius: f64,
 }
 
@@ -514,10 +530,15 @@ pub struct EllipsePcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EllipsePcurveWire {
+    /// Parameter-space ellipse center.
     center: Point2,
+    /// First parameter-space axis.
     x_axis: Point2,
+    /// Second parameter-space axis.
     y_axis: Point2,
+    /// Major semiaxis radius in parameter space.
     major_radius: f64,
+    /// Minor semiaxis radius in parameter space.
     minor_radius: f64,
 }
 
@@ -610,8 +631,11 @@ pub struct HarmonicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HarmonicPcurveWire {
+    /// Constant parameter-space coefficient.
     center: Point2,
+    /// Cosine parameter-space coefficient.
     cosine: Point2,
+    /// Sine parameter-space coefficient.
     sine: Point2,
 }
 
@@ -672,9 +696,13 @@ pub struct ParabolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ParabolaPcurveWire {
+    /// Parameter-space parabola vertex.
     vertex: Point2,
+    /// First parameter-space axis.
     x_axis: Point2,
+    /// Second parameter-space axis.
     y_axis: Point2,
+    /// Distance from the vertex to the focus, in parameter space.
     focal_distance: f64,
 }
 
@@ -753,10 +781,15 @@ pub struct HyperbolaPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HyperbolaPcurveWire {
+    /// Parameter-space hyperbola center.
     center: Point2,
+    /// First parameter-space axis.
     x_axis: Point2,
+    /// Second parameter-space axis.
     y_axis: Point2,
+    /// Transverse semiaxis radius in parameter space.
     major_radius: f64,
+    /// Conjugate semiaxis radius in parameter space.
     minor_radius: f64,
 }
 
@@ -849,8 +882,11 @@ pub struct HyperbolicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HyperbolicPcurveWire {
+    /// Constant parameter-space coefficient.
     center: Point2,
+    /// Hyperbolic-cosine parameter-space coefficient.
     cosine: Point2,
+    /// Hyperbolic-sine parameter-space coefficient.
     sine: Point2,
 }
 
@@ -911,9 +947,12 @@ pub struct TrimmedPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TrimmedPcurveWire {
+    /// Native parameter interval retained from the basis.
     parameter_range: [f64; 2],
+    /// Whether the trim follows increasing basis parameters.
     #[serde(default = "crate::default_true")]
     same_sense: bool,
+    /// Curve this curve trims.
     basis: Box<PcurveGeometry>,
 }
 
@@ -975,7 +1014,9 @@ pub struct OffsetPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct OffsetPcurveWire {
+    /// Signed parameter-space offset distance.
     distance: f64,
+    /// Curve this curve is offset from.
     basis: Box<PcurveGeometry>,
 }
 
@@ -1860,9 +1901,13 @@ pub struct PcurveInlineForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveInlineFormWire {
+    /// Parameterization wrapper reversal.
     wrapper_reversed: bool,
+    /// Four native booleans following the inline subtype scope.
     native_tail_flags: [bool; 4],
+    /// Directed native parameter interval.
     parameter_range: [f64; 2],
+    /// Parameter-space fit tolerance.
     fit_tolerance: f64,
 }
 
@@ -1950,10 +1995,13 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
+    /// Source wrapper reversal, when stored independently of an ASM tail.
     #[serde(default, deserialize_with = "deserialize_wrapper_reversed")]
     wrapper_reversed: Option<bool>,
+    /// Directed native parameter interval.
     #[serde(default, deserialize_with = "deserialize_parameter_range")]
     parameter_range: Option<[f64; 2]>,
+    /// Parameter-space fit tolerance.
     #[serde(
         default,
         deserialize_with = "deserialize_pcurve_general_form_wire_fit_tolerance"

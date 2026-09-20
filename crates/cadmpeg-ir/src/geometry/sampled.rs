@@ -193,7 +193,9 @@ pub struct PolylineCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PolylineCurveWire {
+    /// The polyline's sample rows.
     samples: PolylineSamples,
+    /// Maximum chordal deviation recorded by the source.
     chordal_deflection: f64,
 }
 

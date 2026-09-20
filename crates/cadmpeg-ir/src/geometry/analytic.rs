@@ -22,8 +22,11 @@ pub struct PlaneSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PlaneSurfaceWire {
+    /// Plane origin.
     origin: Point3,
+    /// Plane normal.
     normal: Vector3,
+    /// First in-plane axis, perpendicular to `normal`.
     u_axis: Vector3,
 }
 
@@ -86,9 +89,13 @@ pub struct CylinderSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CylinderSurfaceWire {
+    /// Cylinder frame origin.
     origin: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Frame reference direction, perpendicular to `axis`.
     ref_direction: Vector3,
+    /// Cylinder radius.
     radius: f64,
 }
 
@@ -171,11 +178,17 @@ pub struct ConeSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ConeSurfaceWire {
+    /// Cone frame origin.
     origin: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Frame reference direction, perpendicular to `axis`.
     ref_direction: Vector3,
+    /// Cross-section radius at the origin.
     radius: f64,
+    /// Ratio of the minor to the major cross-section radius.
     ratio: f64,
+    /// Half angle of the cone, in radians.
     half_angle: f64,
 }
 
@@ -285,9 +298,13 @@ pub struct SphereSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SphereSurfaceWire {
+    /// Sphere center.
     center: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Frame reference direction, perpendicular to `axis`.
     ref_direction: Vector3,
+    /// Signed sphere radius.
     radius: f64,
 }
 
@@ -371,10 +388,15 @@ pub struct TorusSurface {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TorusSurfaceWire {
+    /// Torus center.
     center: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Frame reference direction, perpendicular to `axis`.
     ref_direction: Vector3,
+    /// Distance from the center to the tube center.
     major_radius: f64,
+    /// Signed tube radius.
     minor_radius: f64,
 }
 
@@ -474,7 +496,9 @@ pub struct LineCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LineCurveWire {
+    /// Line origin.
     origin: Point3,
+    /// Line direction.
     direction: Vector3,
 }
 
@@ -526,9 +550,13 @@ pub struct CircleCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CircleCurveWire {
+    /// Circle center.
     center: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Frame reference direction, perpendicular to `axis`.
     ref_direction: Vector3,
+    /// Circle radius.
     radius: f64,
 }
 
@@ -615,10 +643,15 @@ pub struct EllipseCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EllipseCurveWire {
+    /// Ellipse center.
     center: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Major-axis direction, perpendicular to `axis`.
     major_direction: Vector3,
+    /// Major semiaxis radius.
     major_radius: f64,
+    /// Minor semiaxis radius.
     minor_radius: f64,
 }
 
@@ -724,9 +757,13 @@ pub struct ParabolaCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ParabolaCurveWire {
+    /// Parabola vertex.
     vertex: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Major-axis direction, perpendicular to `axis`.
     major_direction: Vector3,
+    /// Distance from the vertex to the focus.
     focal_distance: f64,
 }
 
@@ -813,10 +850,15 @@ pub struct HyperbolaCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct HyperbolaCurveWire {
+    /// Hyperbola center.
     center: Point3,
+    /// Frame axis direction.
     axis: Vector3,
+    /// Major-axis direction, perpendicular to `axis`.
     major_direction: Vector3,
+    /// Transverse semiaxis radius.
     major_radius: f64,
+    /// Conjugate semiaxis radius.
     minor_radius: f64,
 }
 
@@ -919,6 +961,7 @@ pub struct DegenerateCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct DegenerateCurveWire {
+    /// Point the curve degenerates to.
     point: Point3,
 }
 

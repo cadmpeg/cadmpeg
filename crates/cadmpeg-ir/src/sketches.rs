@@ -194,8 +194,11 @@ pub struct SketchPlaneFrame {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SketchPlaneFrameWire {
+    /// Sketch-plane origin in model space.
     origin: Point3,
+    /// Sketch-plane normal.
     normal: Vector3,
+    /// In-plane first axis, perpendicular to `normal`.
     u_axis: Vector3,
 }
 
@@ -835,9 +838,13 @@ pub struct SpatialSketchProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SpatialSketchProfileWire {
+    /// Profile-plane origin in model space.
     origin: Point3,
+    /// Profile-plane unit normal.
     normal: Vector3,
+    /// Profile-plane unit u-axis.
     u_axis: Vector3,
+    /// Ordered oriented boundary uses.
     boundary: Vec<SpatialSketchEntityUse>,
 }
 
@@ -2125,7 +2132,9 @@ impl SketchPatternDirectionWire {
 #[cfg_attr(feature = "schema", schemars(rename = "SketchRectangularPattern"))]
 #[serde(deny_unknown_fields)]
 struct SketchRectangularPatternWire {
+    /// Ordered pattern directions.
     directions: [SketchPatternDirectionWire; 2],
+    /// Rectangular instance rows.
     rows: Vec<Vec<SketchPatternInstance>>,
 }
 
@@ -2134,21 +2143,27 @@ struct SketchRectangularPatternWire {
 #[cfg_attr(feature = "schema", schemars(rename = "SketchCircularPattern"))]
 #[serde(deny_unknown_fields)]
 struct SketchCircularPatternWire {
+    /// Point entity defining the center of rotation.
     center: SketchEntityId,
+    /// Evaluated angular span stored by the native pattern.
     angle: Angle,
+    /// Driving angular-span parameter.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_angle_parameter"
     )]
     angle_parameter: Option<ParameterId>,
+    /// Driving instance-count parameter.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_count_parameter"
     )]
     count_parameter: Option<ParameterId>,
+    /// Seed entities in fixed order.
     seed: Vec<SketchEntityId>,
+    /// Instances after the seed, in pattern order.
     instances: Vec<SketchCircularPatternInstance>,
 }
 
@@ -2281,16 +2296,27 @@ pub enum SketchInternalAlignment {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "alignment", rename_all = "snake_case", deny_unknown_fields)]
 enum SketchInternalAlignmentWire {
+    /// Major diameter helper for an ellipse.
     EllipseMajorDiameter {},
+    /// Minor diameter helper for an ellipse.
     EllipseMinorDiameter {},
+    /// First ellipse focus helper.
     EllipseFocus1 {},
+    /// Second ellipse focus helper.
     EllipseFocus2 {},
+    /// Hyperbola major-axis helper.
     HyperbolaMajor {},
+    /// Hyperbola minor-axis helper.
     HyperbolaMinor {},
+    /// Hyperbola focus helper.
     HyperbolaFocus {},
+    /// Parabola focus helper.
     ParabolaFocus {},
+    /// B-spline control-point helper.
     BsplineControlPoint { index: u32 },
+    /// B-spline knot-point helper.
     BsplineKnotPoint { index: u32 },
+    /// Parabola focal-axis helper.
     ParabolaFocalAxis {},
 }
 
@@ -2348,6 +2374,7 @@ pub struct SketchPolygon {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SketchPolygonWire {
+    /// Ordered polygon members.
     entities: Vec<SketchEntityId>,
 }
 
@@ -2394,8 +2421,11 @@ pub struct SketchSameCoordinate {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SketchSameCoordinateWire {
+    /// First locus.
     first: SketchLocus,
+    /// Second locus.
     second: SketchLocus,
+    /// Shared coordinate axis.
     axis: SketchCoordinateAxis,
 }
 

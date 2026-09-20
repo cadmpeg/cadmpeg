@@ -174,9 +174,12 @@ pub struct RetainedSourceRecord {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct RetainedSourceRecordWire {
+    /// Source stream containing the record.
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     stream: SourceOwner,
+    /// First byte offset in the source stream.
     offset: u64,
+    /// Retained image of the source bytes.
     bytes: RetainedBytes,
 }
 

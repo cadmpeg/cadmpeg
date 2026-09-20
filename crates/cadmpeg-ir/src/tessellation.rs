@@ -741,34 +741,44 @@ impl ChannelAddressing {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TessellationWire {
+    /// Stable source-derived identifier.
     id: TessellationId,
+    /// Body represented by this mesh, when known.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_body"
     )]
     body: Option<BodyId>,
+    /// Faces represented by this mesh, empty when face-level ownership is unknown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     faces: Vec<FaceId>,
+    /// Source chordal deflection tolerance, when carried.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_chordal_deflection"
     )]
     chordal_deflection: Option<f64>,
+    /// Native source-object identity and effective display metadata.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_source_object"
     )]
     source_object: Option<SourceObjectAssociation>,
+    /// The mesh's vertices, triangles and shading normals.
     mesh: TessellationMesh,
+    /// Undirected geometric feature edges.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
+    /// Source face or region groups as an ordered partition of the triangle ordinals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
+    /// Source texture resources assigned to disjoint sets of triangle ordinals.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_assignments: Vec<TessellationTextureAssignment>,
+    /// Additional per-vertex or per-facet data channels.
     #[serde(default)]
     channels: Vec<TessellationChannel>,
 }
@@ -777,10 +787,15 @@ struct TessellationWire {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TessellationChannelWire {
+    /// Mesh element addressed by this channel.
     addressing: ChannelAddressing,
+    /// Byte size of one element of `data`.
     item_size: u32,
+    /// Source channel-kind tag.
     kind: u32,
+    /// Source per-channel flag word.
     flags: u32,
+    /// Raw channel payload.
     #[serde(with = "crate::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     data: Vec<u8>,
