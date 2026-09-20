@@ -148,9 +148,11 @@ fn container_and_native_arenas_retain_loop_roster() {
     assert_eq!(scan.loop_arrays.records.len(), 1);
     assert_eq!(scan.loop_arrays.records[0].lo_id, 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(namespace.arenas()["loop_array_frames"].len(), 1);
     let records = &namespace.arenas()["loop_array_records"];

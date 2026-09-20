@@ -342,9 +342,11 @@ fn ps07_duplicate_context_placements_remain_opaque_in_any_order() {
         include_bytes!("tests/data/ps07_duplicate_context_placement_first.p21").as_slice(),
         include_bytes!("tests/data/ps07_duplicate_context_placement_reordered.p21").as_slice(),
     ] {
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(input), &DecodeOptions::default())
-            .expect("decode PS-07 fixture");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            StepCodec::default()
+                .decode(&mut Cursor::new(input), &DecodeOptions::default())
+                .expect("decode PS-07 fixture"),
+        );
         let occurrence = result
             .ir()
             .model
@@ -406,9 +408,11 @@ fn ps08_mixed_placement_mechanisms_remain_opaque_in_any_order() {
         include_bytes!("tests/data/ps08_mixed_placement_mechanisms_first.p21").as_slice(),
         include_bytes!("tests/data/ps08_mixed_placement_mechanisms_reordered.p21").as_slice(),
     ] {
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(input), &DecodeOptions::default())
-            .expect("decode PS-08 fixture");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            StepCodec::default()
+                .decode(&mut Cursor::new(input), &DecodeOptions::default())
+                .expect("decode PS-08 fixture"),
+        );
         assert!(result
             .ir()
             .model
@@ -870,9 +874,11 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
 #[test]
 fn ps09_ambiguous_occurrence_owned_placements_remain_opaque() {
     let input = include_bytes!("tests/data/ps09_ambiguous_occurrence_items.p21");
-    let result = StepCodec::default()
-        .decode(&mut Cursor::new(input), &DecodeOptions::default())
-        .expect("decode PS-09 ambiguous occurrence fixture");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(input), &DecodeOptions::default())
+            .expect("decode PS-09 ambiguous occurrence fixture"),
+    );
 
     assert!(!result
         .ir()

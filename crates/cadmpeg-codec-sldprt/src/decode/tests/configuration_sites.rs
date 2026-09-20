@@ -76,9 +76,11 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Default" SourceIndex="0"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     assert_eq!(decoded.ir().model.configurations.len(), 1);
     assert!(decoded.ir().model.configurations[0].active);
     assert_eq!(

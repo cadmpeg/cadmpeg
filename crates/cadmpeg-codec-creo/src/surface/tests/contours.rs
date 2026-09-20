@@ -118,9 +118,11 @@ fn container_and_native_arena_retain_contour_entries() {
         scan.surfaces.rows[0].offset
     );
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let contours = &result.ir().native.namespace("creo").unwrap().arenas()["surface_contours"];
     assert_eq!(contours.len(), 2);
     assert_eq!(contours[0].fields()["surface_id"], 7);

@@ -46,12 +46,14 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn generated_surface_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("surface-offset decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("surface-offset decode"),
+    );
     let ProceduralCurveDefinition::SurfaceOffset(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -183,12 +185,14 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 fn generated_spring_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("spring decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("spring decode"),
+    );
     let ProceduralCurveDefinition::Spring(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {

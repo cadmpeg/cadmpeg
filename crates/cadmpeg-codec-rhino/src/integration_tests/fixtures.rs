@@ -32,7 +32,7 @@ pub(super) fn anonymous_major(
 
 /// The native parameters of the one typed hatch feature in `result`.
 pub(super) fn hatch_parameters(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &cadmpeg_test_support::EditableDecodeResult,
 ) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     result
         .ir()

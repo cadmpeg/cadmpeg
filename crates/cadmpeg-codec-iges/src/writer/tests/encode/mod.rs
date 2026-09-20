@@ -196,12 +196,14 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
 #[test]
 fn encode_replays_an_unchanged_iges_source_image() {
     let bytes = point_file();
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
     let plan = plan_at(
         IgesVersion::V5_3,
         decoded.ir(),
@@ -377,9 +379,11 @@ fn encode_rejects_open_shells_before_iges_5_3() {
 
 #[test]
 fn encode_does_not_replay_a_source_with_the_wrong_version() {
-    let decoded = IgesCodec
-        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .unwrap(),
+    );
     let plan = plan_at(
         IgesVersion::V5_2,
         decoded.ir(),

@@ -1127,12 +1127,14 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 
 #[test]
 fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
-    let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&triangle_body())),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_body(&triangle_body())),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
     let origin = cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0);
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let reference = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
@@ -1268,9 +1270,11 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap(),
+    );
 
     assert_eq!(regenerated.ir().model.bodies.len(), 2);
     assert_eq!(regenerated.ir().model.regions.len(), 2);

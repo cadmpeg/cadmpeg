@@ -127,14 +127,14 @@ fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
 }
 
 fn object_presentation(
-    result: &cadmpeg_ir::codec::DecodeResult,
+    result: &cadmpeg_test_support::EditableDecodeResult,
 ) -> &cadmpeg_ir::native::NativeRecord {
     let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }
 
-fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_and_retention(result: &cadmpeg_test_support::EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
         result.ir().model.points[0].position(),

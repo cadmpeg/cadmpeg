@@ -181,15 +181,17 @@ fn decode_keeps_document_objects_and_model_entities_additive() {
 fn thumbnail_bytes_are_retained_with_digest() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("Document.xml", xml), ("thumbnails/Thumbnail.png", b"png")]);
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(bytes),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        FcstdCodec
+            .decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("decode"),
+    );
     assert_eq!(
         result.ir().native_unknowns_iter("fcstd").count(),
         1,

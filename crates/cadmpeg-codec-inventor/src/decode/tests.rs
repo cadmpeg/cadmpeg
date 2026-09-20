@@ -109,9 +109,11 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let container_only = InventorCodec
-        .decode(&mut std::io::Cursor::new(source), &options)
-        .expect("container-only Inventor decode succeeds");
+    let container_only = cadmpeg_test_support::EditableDecodeResult::from(
+        InventorCodec
+            .decode(&mut std::io::Cursor::new(source), &options)
+            .expect("container-only Inventor decode succeeds"),
+    );
     assert_eq!(
         container_only
             .report()

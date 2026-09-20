@@ -5605,9 +5605,11 @@ mod tests {
     #[test]
     fn decode_retains_typed_nx_numeric_expression() {
         let mut cur = Cursor::new(prt_with_indexed_om_section());
-        let result = NxCodec
-            .decode(&mut cur, &DecodeOptions::default())
-            .expect("required invariant");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            NxCodec
+                .decode(&mut cur, &DecodeOptions::default())
+                .expect("required invariant"),
+        );
         let expressions = result
             .ir()
             .native

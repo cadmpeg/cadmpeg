@@ -125,9 +125,11 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
             .and_then(|record| record.class_name().map(str::to_owned))
     );
 
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode closed length formula");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode closed length formula"),
+    );
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("closed formula parameters")
     };
@@ -342,19 +344,21 @@ fn decode_keeps_a_mismatched_formula_result_unresolved() {
 
 #[test]
 fn decode_transfers_a_closed_constant_formula() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
-                3,
-                false,
-                &[],
-                "LENGTH",
-                Some(12.0),
-                "10mm+2mm",
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode constant formula");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_inputs(
+                    3,
+                    false,
+                    &[],
+                    "LENGTH",
+                    Some(12.0),
+                    "10mm+2mm",
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode constant formula"),
+    );
 
     let [output] = decoded.ir().model.parameters.as_slice() else {
         panic!("constant formula output")
@@ -578,14 +582,16 @@ fn decode_transfers_typed_integer_to_angle_formula() {
 fn decode_transfers_dimensionless_real_formula() {
     use cadmpeg_ir::features::ParameterValue;
 
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_typed_formula_relation(
-                4, false, "Real", "R", 2.5, 1.25, "#1_ /2/2",
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode real formula");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_typed_formula_relation(
+                    4, false, "Real", "R", 2.5, 1.25, "#1_ /2/2",
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode real formula"),
+    );
     let [input, output] = decoded.ir().model.parameters.as_slice() else {
         panic!("real formula parameters")
     };

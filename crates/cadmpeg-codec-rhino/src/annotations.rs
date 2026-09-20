@@ -1122,9 +1122,11 @@ mod tests {
                 let scan = crate::container::scan_owned(bytes.clone())
                     .expect("annotation archive framing");
                 let source = scan.objects[0].framed().expect("framed annotation");
-                let decoded = crate::RhinoCodec
-                    .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-                    .expect("complete annotation decode");
+                let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+                    crate::RhinoCodec
+                        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                        .expect("complete annotation decode"),
+                );
                 let ir: CadIr = serde_json::from_slice(
                     &serde_json::to_vec(decoded.ir()).expect("annotation CADIR serialization"),
                 )

@@ -750,7 +750,9 @@ fn decode_preserves_multiple_shells_in_one_region() {
 #[test]
 fn decode_transfers_point_plane_cylinder_line() {
     let mut cur = Cursor::new(single_part_prt());
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap(),
+    );
 
     assert!(result.report().geometry_transferred());
     assert_eq!(result.ir().model.points.len(), 1);

@@ -985,9 +985,11 @@ fn decode_resolves_feature_input_operands_by_compatible_ordinal() {
         &resolved_features_payload_with_names(&[0, 0, 2], &["Sketch1", "D1"]),
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let feature_ref = decoded
         .ir()
         .model

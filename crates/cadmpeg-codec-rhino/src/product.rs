@@ -385,9 +385,11 @@ mod tests {
                     support::table(archive, 0x1000_0013, std::slice::from_ref(&record)),
                 ],
             );
-            let decoded = crate::RhinoCodec
-                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-                .expect("complete occurrence decode");
+            let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                    .expect("complete occurrence decode"),
+            );
             let ir: CadIr = serde_json::from_slice(
                 &serde_json::to_vec(decoded.ir()).expect("occurrence CADIR serialization"),
             )
@@ -474,9 +476,11 @@ mod tests {
             ],
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete product framing");
-        let decoded = crate::RhinoCodec
-            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-            .expect("later valid records recover");
+        let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+            crate::RhinoCodec
+                .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+                .expect("later valid records recover"),
+        );
         let ir: CadIr = serde_json::from_slice(
             &serde_json::to_vec(decoded.ir()).expect("product CADIR serialization"),
         )

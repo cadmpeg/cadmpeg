@@ -242,9 +242,11 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
+    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap(),
+    );
 
     assert_eq!(regenerated.ir().model.points[1].position().x, 1_250.0);
     assert!(matches!(

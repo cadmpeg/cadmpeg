@@ -74,7 +74,7 @@ fn point_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
     )
 }
 
-fn assert_point_record(result: &cadmpeg_ir::codec::DecodeResult, record: &[u8]) {
+fn assert_point_record(result: &cadmpeg_test_support::EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     let retained = result
         .source_fidelity()

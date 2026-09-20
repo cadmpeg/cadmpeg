@@ -343,12 +343,14 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     append_generated_record_tail(&mut smbh, "coedge", &tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
 
-    let decoded = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
-            &DecodeOptions::default(),
-        )
-        .expect("embedded tolerant-coedge curves must decode");
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("embedded tolerant-coedge curves must decode"),
+    );
     assert_eq!(
         decoded
             .ir()

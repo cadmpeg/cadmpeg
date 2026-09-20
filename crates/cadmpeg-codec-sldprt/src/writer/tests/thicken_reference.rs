@@ -1518,9 +1518,11 @@ fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="A" Type="LocalizedPlane" id="2"/><Feature Name="B" Type="LocalizedPlane" id="3"/><Feature Name="C" Type="LocalizedPlane" id="4"/></Keywords>"#,
     ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     for (feature, plane) in decoded.ir().model.features.iter().zip([
         PrincipalPlane::Front,
         PrincipalPlane::Top,

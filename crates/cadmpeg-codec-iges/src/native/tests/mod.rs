@@ -181,12 +181,14 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss
 fn decode_preserves_native_entities_and_graph() {
     let bytes = point_file();
 
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(bytes.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
     assert_eq!(

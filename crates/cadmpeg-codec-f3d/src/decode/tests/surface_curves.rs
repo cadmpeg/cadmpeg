@@ -29,12 +29,14 @@ use crate::F3dCodec;
 fn generated_projection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionRole, ProjectionTail};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_projection_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("projection decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_projection_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("projection decode"),
+    );
     let ProceduralCurveDefinition::Projection(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -147,14 +149,16 @@ fn generated_projection_decodes_and_writes_source_less() {
 fn generated_early_close_projection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProjectionTail};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_early_close_projection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("early-close projection decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_early_close_projection_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("early-close projection decode"),
+    );
     assert!(matches!(
         result.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
 
@@ -206,14 +210,16 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
 fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_three_surface_intersection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("three-surface intersection decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_three_surface_intersection_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("three-surface intersection decode"),
+    );
     let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -312,14 +318,16 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
         ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
     ] {
-        let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_curve_smbh(
-                    name,
-                ))),
-                &DecodeOptions::default(),
-            )
-            .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            F3dCodec
+                .decode(
+                    &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_curve_smbh(
+                        name,
+                    ))),
+                    &DecodeOptions::default(),
+                )
+                .unwrap_or_else(|error| panic!("{name} decode failed: {error}")),
+        );
         let ProceduralCurveDefinition::SurfaceCurve { family } =
             &result.ir().model.procedural_curves[0].definition()
         else {
@@ -382,15 +390,17 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         ("para_silh_int_cur", None),
         ("taper_silh_int_cur", Some(0.35)),
     ] {
-        let result = F3dCodec
-            .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
-                    name,
-                    draft_factor,
-                ))),
-                &DecodeOptions::default(),
-            )
-            .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            F3dCodec
+                .decode(
+                    &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_silhouette_smbh(
+                        name,
+                        draft_factor,
+                    ))),
+                    &DecodeOptions::default(),
+                )
+                .unwrap_or_else(|error| panic!("{name} decode failed: {error}")),
+        );
         let ProceduralCurveDefinition::Silhouette(definition_payload) =
             &result.ir().model.procedural_curves[0].definition()
         else {

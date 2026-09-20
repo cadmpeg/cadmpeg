@@ -47,15 +47,17 @@ fn definition_fixture_families_have_valid_nested_checksums() {
             let record = bytes::definition_record(archive, payload);
             let document = bytes::document_with_definitions(version, archive, &[record], &[]);
             for container_only in [false, true] {
-                let result = RhinoCodec
-                    .decode(
-                        &mut Cursor::new(&document),
-                        &DecodeOptions {
-                            container_only,
-                            ..DecodeOptions::default()
-                        },
-                    )
-                    .expect("complete definition fixture");
+                let result = cadmpeg_test_support::EditableDecodeResult::from(
+                    RhinoCodec
+                        .decode(
+                            &mut Cursor::new(&document),
+                            &DecodeOptions {
+                                container_only,
+                                ..DecodeOptions::default()
+                            },
+                        )
+                        .expect("complete definition fixture"),
+                );
                 let integrity = result
                     .report()
                     .losses
@@ -143,15 +145,17 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 usize::from(!malformed_tail)
             );
             for container_only in [false, true] {
-                let result = RhinoCodec
-                    .decode(
-                        &mut Cursor::new(&document),
-                        &DecodeOptions {
-                            container_only,
-                            ..DecodeOptions::default()
-                        },
-                    )
-                    .expect("definition diagnostics remain recoverable");
+                let result = cadmpeg_test_support::EditableDecodeResult::from(
+                    RhinoCodec
+                        .decode(
+                            &mut Cursor::new(&document),
+                            &DecodeOptions {
+                                container_only,
+                                ..DecodeOptions::default()
+                            },
+                        )
+                        .expect("definition diagnostics remain recoverable"),
+                );
                 let _: cadmpeg_ir::document::CadIr =
                     serde_json::from_slice(&serde_json::to_vec(result.ir()).unwrap())
                         .expect("complete CADIR admission");
@@ -217,15 +221,17 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
         .collect::<Vec<_>>();
     assert_eq!(offsets.len(), 2);
     for container_only in [false, true] {
-        let result = RhinoCodec
-            .decode(
-                &mut Cursor::new(&document),
-                &DecodeOptions {
-                    container_only,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("both failed definitions remain recoverable");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            RhinoCodec
+                .decode(
+                    &mut Cursor::new(&document),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("both failed definitions remain recoverable"),
+        );
         for code in [
             crate::loss::RhinoLossCode::IntegrityFailure,
             crate::loss::RhinoLossCode::ContainerInstanceDefinitionDegraded,
@@ -255,15 +261,17 @@ fn container_only_keeps_recorded_definition_field_losses() {
     let record = definition_record(false, false, 0.002);
     let document = bytes::document_with_definitions("80", ArchiveVersion::V8, &[record], &[]);
     for container_only in [false, true] {
-        let result = RhinoCodec
-            .decode(
-                &mut Cursor::new(&document),
-                &DecodeOptions {
-                    container_only,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("contradictory stored unit detail");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            RhinoCodec
+                .decode(
+                    &mut Cursor::new(&document),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("contradictory stored unit detail"),
+        );
         assert!(result
             .report()
             .losses
@@ -294,15 +302,17 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
             .collect::<Vec<_>>();
         assert_eq!(offsets.len(), 2);
         for container_only in [false, true] {
-            let result = RhinoCodec
-                .decode(
-                    &mut Cursor::new(&document),
-                    &DecodeOptions {
-                        container_only,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .expect("field losses survive a later parse failure or duplicate definition");
+            let result = cadmpeg_test_support::EditableDecodeResult::from(
+                RhinoCodec
+                    .decode(
+                        &mut Cursor::new(&document),
+                        &DecodeOptions {
+                            container_only,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .expect("field losses survive a later parse failure or duplicate definition"),
+            );
             let actual = result
                 .report()
                 .losses
@@ -342,15 +352,17 @@ fn container_only_keeps_coded_container_checksum_failures() {
         ],
     );
     for container_only in [false, true] {
-        let result = RhinoCodec
-            .decode(
-                &mut Cursor::new(&document),
-                &DecodeOptions {
-                    container_only,
-                    ..DecodeOptions::default()
-                },
-            )
-            .expect("recoverable settings checksum mismatch");
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            RhinoCodec
+                .decode(
+                    &mut Cursor::new(&document),
+                    &DecodeOptions {
+                        container_only,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .expect("recoverable settings checksum mismatch"),
+        );
         let failures = result
             .report()
             .losses

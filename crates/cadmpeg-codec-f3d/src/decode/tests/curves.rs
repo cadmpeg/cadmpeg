@@ -123,12 +123,14 @@ fn decode_retains_generated_helix_construction() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::math::Point3;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated helix decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated helix decode"),
+    );
     let procedural = result
         .ir()
         .model
@@ -387,14 +389,16 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, VectorOffsetRoles};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_vector_offset_curve_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated vector-offset decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_vector_offset_curve_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated vector-offset decode"),
+    );
     let procedural = &result.ir().model.procedural_curves[0];
     let ProceduralCurveDefinition::VectorOffset(definition_payload) = procedural.definition()
     else {
@@ -554,12 +558,14 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated subset decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated subset decode"),
+    );
     let ProceduralCurveDefinition::Subset(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -972,12 +978,14 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
 fn generated_compound_intcurve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
-            &DecodeOptions::default(),
-        )
-        .expect("generated compound intcurve decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("generated compound intcurve decode"),
+    );
     let ProceduralCurveDefinition::Compound(compound) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -1112,14 +1120,16 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 fn generated_two_sided_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_two_sided_offset_curve_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("generated two-sided offset decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_two_sided_offset_curve_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated two-sided offset decode"),
+    );
     let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -1210,14 +1220,16 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         pcurve::PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_embedded_offset_supports_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("embedded offset-support decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_embedded_offset_supports_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("embedded offset-support decode"),
+    );
     let ProceduralCurveDefinition::TwoSidedOffset(definition_payload) =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -1548,14 +1560,16 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 fn generated_surface_intersection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_surface_intersection_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("surface intersection decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(
+                    &synthetic_geometry_with_surface_intersection_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("surface intersection decode"),
+    );
     let ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag,

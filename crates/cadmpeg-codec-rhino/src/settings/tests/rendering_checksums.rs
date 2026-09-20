@@ -170,9 +170,11 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
                     table(archive, 0x1000_0013, std::slice::from_ref(&record)),
                 ],
             );
-            let decoded = crate::RhinoCodec
-                .decode(&mut Cursor::new(source), &DecodeOptions::default())
-                .unwrap();
+            let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(&mut Cursor::new(source), &DecodeOptions::default())
+                    .unwrap(),
+            );
             let losses: Vec<_> = decoded
                 .report()
                 .losses

@@ -47,9 +47,11 @@ fn scan_decodes_length_prefixed_native_model_name() {
         scan.framing.model_name.as_ref().map(|model| model.offset),
         Some(model_name_offset)
     );
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     assert_eq!(
         result
             .ir()

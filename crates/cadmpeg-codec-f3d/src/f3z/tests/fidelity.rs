@@ -11,19 +11,23 @@ use std::io::Cursor;
 #[test]
 fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
     let component = f3d_with_smbh(&synthetic_mixed_smbh());
-    let original = F3dCodec
-        .decode(
-            &mut Cursor::new(component.clone()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let original = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(
+                &mut Cursor::new(component.clone()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
     let unknowns = original.ir().native_unknowns("f3d").unwrap();
     assert!(!unknowns.is_empty());
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)]);
-    let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .unwrap(),
+    );
     for unknown in unknowns {
         let source_id = unknown.id.as_str();
         let original_record = original

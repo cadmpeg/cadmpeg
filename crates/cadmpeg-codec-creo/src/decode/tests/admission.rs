@@ -92,15 +92,17 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
 #[test]
 fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
-    let result = CreoCodec
-        .decode(
-            &mut Cursor::new(data),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("decode thumbnail");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(
+                &mut Cursor::new(data),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("decode thumbnail"),
+    );
 
     assert!(!result.report().geometry_transferred());
     let unknowns = result.ir().native_unknowns("creo").unwrap();
@@ -151,15 +153,17 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
-    let result = CreoCodec
-        .decode(
-            &mut Cursor::new(data),
-            &DecodeOptions {
-                container_only: true,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("decode compressed thumbnail");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(
+                &mut Cursor::new(data),
+                &DecodeOptions {
+                    container_only: true,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("decode compressed thumbnail"),
+    );
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = result
@@ -329,9 +333,11 @@ fn decode_annotations_cover_every_emitted_entity() {
     let datum_offset =
         container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload as u64;
     let mut reader = Cursor::new(data);
-    let result = CreoCodec
-        .decode(&mut reader, &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut reader, &DecodeOptions::default())
+            .expect("decode"),
+    );
 
     let unknowns = result.ir().native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 3);
@@ -426,9 +432,11 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(scan.features.operations[5].kind.as_str(), "Surface");
     assert_eq!(scan.features.operations[5].stored_name_prefix(), Some(b'y'));
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let states =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(states.len(), 7);

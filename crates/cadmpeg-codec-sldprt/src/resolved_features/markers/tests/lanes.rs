@@ -78,9 +78,11 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         &payload,
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
     assert_eq!(

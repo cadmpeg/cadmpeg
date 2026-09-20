@@ -155,15 +155,17 @@ fn duplicate_definitions_retain_every_record_and_locate_every_ambiguity() {
             .ambiguous_ids
             .contains(&Uuid::from_wire(duplicate)));
         for container_only in [false, true] {
-            let decoded = crate::RhinoCodec
-                .decode(
-                    &mut Cursor::new(&source),
-                    &DecodeOptions {
-                        container_only,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .unwrap();
+            let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(
+                        &mut Cursor::new(&source),
+                        &DecodeOptions {
+                            container_only,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .unwrap(),
+            );
             let losses: Vec<_> = decoded
                 .report()
                 .losses
@@ -234,9 +236,11 @@ fn bounded_definition_members_do_not_become_ordinary_geometry_after_metadata_fai
             .records[0]
             .range
             .start as u64;
-        let decoded = crate::RhinoCodec
-            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-            .unwrap();
+        let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+            crate::RhinoCodec
+                .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                .unwrap(),
+        );
         assert!(
             !decoded
                 .report()
@@ -321,15 +325,17 @@ fn nil_definition_identity_is_not_admitted_and_keeps_source_membership() {
             .range
             .start as u64;
         for container_only in [false, true] {
-            let decoded = crate::RhinoCodec
-                .decode(
-                    &mut Cursor::new(&source),
-                    &DecodeOptions {
-                        container_only,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .unwrap();
+            let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+                crate::RhinoCodec
+                    .decode(
+                        &mut Cursor::new(&source),
+                        &DecodeOptions {
+                            container_only,
+                            ..DecodeOptions::default()
+                        },
+                    )
+                    .unwrap(),
+            );
             assert!(scan.definitions.definitions().is_empty());
             assert!(scan.definitions.contains_member(Uuid::from_wire(member)));
             assert!(!scan.definitions.contains_member(Uuid::from_wire(ordinary)));

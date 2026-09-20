@@ -65,9 +65,11 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.surface_ids(), vec![7]);
     assert_eq!(table.non_surface_entity_ids(), vec![9]);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let feature = result
         .ir()
         .model
@@ -299,9 +301,11 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let namespace = result
         .ir()
         .native
@@ -484,9 +488,11 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         Some(&[42, 43][..])
     );
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_geometry_tables"];
     assert_eq!(tables.len(), 3);
     assert_eq!(tables[0].fields()["owner_feature_id"], 4);
@@ -527,9 +533,11 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(scan.features.loop_history_entries[1].ordinal, 1);
     assert_eq!(scan.features.loop_history_entries[1].loop_id, 43);
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_loop_history_entries"];
     assert_eq!(records.len(), 2);
@@ -776,9 +784,11 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(variables.points()[0].u, Some(1.0));
     assert_eq!(variables.points()[0].v, Some(3.0));
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     assert_eq!(records[0].fields()["source_section"], "DEPDB_DATA");
     assert_annotation(

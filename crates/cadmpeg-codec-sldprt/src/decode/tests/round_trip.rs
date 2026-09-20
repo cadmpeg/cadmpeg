@@ -109,9 +109,11 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
 fn decode_encode_decode_reaches_fixpoint() {
     let fixture = sldprt_with_body_and_history(&triangle_body());
 
-    let first = SldprtCodec
-        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
-        .expect("first decode");
+    let first = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+            .expect("first decode"),
+    );
     assert!(first.report().geometry_transferred());
 
     let mut reencoded = Vec::new();
@@ -202,7 +204,8 @@ fn decode_is_equivariant_under_rigid_translation() {
 /// misconception cannot hide behind a self-consistent round trip.
 #[test]
 fn source_less_cube_reaches_encode_decode_fixpoint() {
-    let first = encode_decode_result(&source_less_cube());
+    let first =
+        cadmpeg_test_support::EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(first.ir(), first.source_fidelity(), &mut encoded)
         .unwrap();

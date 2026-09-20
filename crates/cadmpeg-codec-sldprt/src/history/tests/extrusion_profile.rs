@@ -137,9 +137,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         &compact_extrusion_payload(false),
     ));
 
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
     let feature = decoded
         .ir()
         .model

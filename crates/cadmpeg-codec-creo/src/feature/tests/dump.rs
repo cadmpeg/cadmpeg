@@ -307,9 +307,11 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .unwrap()
         .rows[0]
         .offset;
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
 
     let namespace = result
         .ir()
@@ -1073,9 +1075,11 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|operation| operation.feature_id == 8053)
         .expect("recipe operation");
 
-    let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
     let feature = result
         .ir()
         .model
