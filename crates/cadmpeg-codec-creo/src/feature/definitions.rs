@@ -3427,38 +3427,37 @@ fn trim_line_line_intersection(
     second_start: [f64; 2],
     second_end: [f64; 2],
 ) -> Option<[f64; 2]> {
-    let first_direction = [first_end[0] - first_start[0], first_end[1] - first_start[1]];
-    let second_direction = [
+    use cadmpeg_ir::math::Vector3;
+    let first = Vector3::new(
+        first_end[0] - first_start[0],
+        first_end[1] - first_start[1],
+        0.0,
+    );
+    let second = Vector3::new(
         second_end[0] - second_start[0],
         second_end[1] - second_start[1],
-    ];
-    let denominator = first_direction[0].mul_add(
-        second_direction[1],
-        -(first_direction[1] * second_direction[0]),
+        0.0,
     );
-    let scale = first_direction
-        .into_iter()
-        .chain(second_direction)
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    if denominator.abs() <= TRIM_INTERSECTION_EPS * scale * scale {
+    if first.unit_nonzero()?.cross(second.unit_nonzero()?).z.abs() <= TRIM_INTERSECTION_EPS {
         return None;
     }
+    // Solve in component-scaled directions. Unit directions are for the
+    // angular gate; their square roots need not perturb exact junctions.
+    let first_scale = first.x.abs().max(first.y.abs());
+    let second_scale = second.x.abs().max(second.y.abs());
+    let first = [first.x / first_scale, first.y / first_scale];
+    let second = [second.x / second_scale, second.y / second_scale];
+    let determinant = first[0].mul_add(second[1], -first[1] * second[0]);
     let relative = [
         second_start[0] - first_start[0],
         second_start[1] - first_start[1],
     ];
-    let first_parameter = relative[0]
-        .mul_add(second_direction[1], -(relative[1] * second_direction[0]))
-        / denominator;
-    let coordinate = [
-        first_start[0] + first_parameter * first_direction[0],
-        first_start[1] + first_parameter * first_direction[1],
+    let parameter = relative[0].mul_add(second[1], -relative[1] * second[0]) / determinant;
+    let point = [
+        parameter.mul_add(first[0], first_start[0]),
+        parameter.mul_add(first[1], first_start[1]),
     ];
-    coordinate
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(coordinate)
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 fn trim_line_circle_intersection(
@@ -7210,6 +7209,31 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn numerical_ranges_trim_line_intersection_is_scale_independent() {
+        for length in [1e-7, 1.0, 1e150] {
+            assert_eq!(
+                super::trim_line_line_intersection(
+                    [-length, 0.],
+                    [length, 0.],
+                    [0., -length],
+                    [0., length]
+                ),
+                Some([0., 0.])
+            );
+            assert_eq!(
+                super::trim_line_line_intersection(
+                    [-length, 0.],
+                    [length, 0.],
+                    [-length, length],
+                    [length, length]
+                ),
+                None
+            );
+        }
+    }
+
     #[test]
     fn numerical_followup_circle_intersection_requires_a_unique_tangent() {
         for r in [1.0, 1e-6, 1e-150, 1e150] {

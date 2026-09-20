@@ -921,11 +921,7 @@ fn decode_v2(
             },
             user_text_point,
             true,
-            difference(points[1], points[3])
-                .into_iter()
-                .map(|value| value * value)
-                .sum::<f64>()
-                .sqrt(),
+            (points[1][0] - points[3][0]).hypot(points[1][1] - points[3][1]),
         )
     } else if class == V2_RADIAL {
         if !matches!(kind, 4 | 5) || points.len() < 3 {
@@ -1735,6 +1731,28 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    #[test]
+    fn numerical_ranges_v2_linear_dimension_preserves_tiny_length() {
+        let bytes = v2_payload(
+            1,
+            &[[0., 0.], [0., 0.], [1., 0.], [1e-200, 0.], [0., 1.]],
+            "",
+            "",
+            false,
+            None,
+        );
+        let value = decode(
+            &bytes,
+            V2_LINEAR,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(1.),
+            ArchiveVersion::V4,
+        )
+        .unwrap();
+        assert_eq!(value.measurement, 1e-200);
+    }
+
     use super::{
         angular_measurement, apply_userdata, decode, legacy_text_scaling, modern_annotation_type,
         semantic_json, v2_annotation_direct, v2_effective_text, Definition, DimensionFamily,

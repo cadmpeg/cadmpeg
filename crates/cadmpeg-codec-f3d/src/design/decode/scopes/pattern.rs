@@ -158,7 +158,7 @@ fn exact_rectangular_pattern_instances(
                 continue;
             }
             let delta = translation_delta(&first.0, &final_candidate.0);
-            let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+            let distance = cadmpeg_ir::math::Vector3::from(delta).norm();
             if (distance - extent.abs()).abs() > EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8 {
                 continue;
             }

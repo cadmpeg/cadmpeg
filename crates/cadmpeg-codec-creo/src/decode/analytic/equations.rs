@@ -141,14 +141,21 @@ struct QuadricEquation {
     constant: f64,
 }
 
+/// A conic in the chart coordinates `u` and `v`.
+///
+/// Every coefficient is a sum of products of the restricted surface's or
+/// curve's own coefficients, so each one carries the magnitudes of those
+/// products beside its value. That is what lets both constructors state zero
+/// where a sum cancels inside its rounding bound, and what lets `conic_v_roots`
+/// hand `real_roots` the `vv` error bar rather than the value alone.
 #[derive(Clone, Copy)]
 pub(super) struct PlaneConicEquation {
-    pub(super) uu: f64,
-    pub(super) uv: f64,
-    pub(super) vv: f64,
-    pub(super) u: f64,
-    pub(super) v: f64,
-    pub(super) constant: f64,
+    pub(super) uu: Coefficient,
+    pub(super) uv: Coefficient,
+    pub(super) vv: Coefficient,
+    pub(super) u: Coefficient,
+    pub(super) v: Coefficient,
+    pub(super) constant: Coefficient,
 }
 
 fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
@@ -239,27 +246,23 @@ fn restrict_quadric_to_plane(
     let matrix_u = matrix_vector(quadric.matrix, u_axis);
     let matrix_v = matrix_vector(quadric.matrix, v_axis);
     PlaneConicEquation {
-        uu: Coefficient::summed(dot(u_axis, matrix_u), abs_dot(u_axis, matrix_u)).stated(),
-        uv: Coefficient::summed(2.0 * dot(u_axis, matrix_v), 2.0 * abs_dot(u_axis, matrix_v))
-            .stated(),
-        vv: Coefficient::summed(dot(v_axis, matrix_v), abs_dot(v_axis, matrix_v)).stated(),
+        uu: Coefficient::summed(dot(u_axis, matrix_u), abs_dot(u_axis, matrix_u)),
+        uv: Coefficient::summed(2.0 * dot(u_axis, matrix_v), 2.0 * abs_dot(u_axis, matrix_v)),
+        vv: Coefficient::summed(dot(v_axis, matrix_v), abs_dot(v_axis, matrix_v)),
         u: Coefficient::summed(
             2.0 * dot(u_axis, matrix_origin) + dot(quadric.linear, u_axis),
             2.0 * abs_dot(u_axis, matrix_origin) + abs_dot(quadric.linear, u_axis),
-        )
-        .stated(),
+        ),
         v: Coefficient::summed(
             2.0 * dot(v_axis, matrix_origin) + dot(quadric.linear, v_axis),
             2.0 * abs_dot(v_axis, matrix_origin) + abs_dot(quadric.linear, v_axis),
-        )
-        .stated(),
+        ),
         constant: Coefficient::summed(
             dot(origin, matrix_origin) + dot(quadric.linear, origin) + quadric.constant,
             abs_dot(origin, matrix_origin)
                 + abs_dot(quadric.linear, origin)
                 + quadric.constant.abs(),
-        )
-        .stated(),
+        ),
     }
 }
 
@@ -512,12 +515,16 @@ const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
 
 fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec<f64> {
     let zero = vec![0.0];
-    let first_y2 = vec![first.vv];
-    let first_y = vec![first.v, first.uv];
-    let first_constant = vec![first.constant, first.u, first.uu];
-    let second_y2 = vec![second.vv];
-    let second_y = vec![second.v, second.uv];
-    let second_constant = vec![second.constant, second.u, second.uu];
+    let first_y2 = vec![first.vv.stated()];
+    let first_y = vec![first.v.stated(), first.uv.stated()];
+    let first_constant = vec![first.constant.stated(), first.u.stated(), first.uu.stated()];
+    let second_y2 = vec![second.vv.stated()];
+    let second_y = vec![second.v.stated(), second.uv.stated()];
+    let second_constant = vec![
+        second.constant.stated(),
+        second.u.stated(),
+        second.uu.stated(),
+    ];
     let matrix = [
         [
             first_y2.clone(),
@@ -547,12 +554,12 @@ fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec
 }
 
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
-    conic.uu * u * u
-        + conic.uv * u * v
-        + conic.vv * v * v
-        + conic.u * u
-        + conic.v * v
-        + conic.constant
+    conic.uu.stated() * u * u
+        + conic.uv.stated() * u * v
+        + conic.vv.stated() * v * v
+        + conic.u.stated() * u
+        + conic.v.stated() * v
+        + conic.constant.stated()
 }
 
 fn refine_plane_conic_intersection(
@@ -564,10 +571,10 @@ fn refine_plane_conic_intersection(
     for _ in 0..12 {
         let first_value = plane_conic_value(first, u, v);
         let second_value = plane_conic_value(second, u, v);
-        let first_u = 2.0 * first.uu * u + first.uv * v + first.u;
-        let first_v = first.uv * u + 2.0 * first.vv * v + first.v;
-        let second_u = 2.0 * second.uu * u + second.uv * v + second.u;
-        let second_v = second.uv * u + 2.0 * second.vv * v + second.v;
+        let first_u = 2.0 * first.uu.stated() * u + first.uv.stated() * v + first.u.stated();
+        let first_v = first.uv.stated() * u + 2.0 * first.vv.stated() * v + first.v.stated();
+        let second_u = 2.0 * second.uu.stated() * u + second.uv.stated() * v + second.u.stated();
+        let second_v = second.uv.stated() * u + 2.0 * second.vv.stated() * v + second.v.stated();
         let determinant = first_u.mul_add(second_v, -(first_v * second_u));
         let scale = first_u
             .abs()
@@ -591,19 +598,21 @@ fn refine_plane_conic_intersection(
 
 /// The conic parameters v that satisfy the conic at the given u.
 ///
-/// `conic.vv` reaches this site as a value its own constructor already stated,
-/// so its term magnitudes are no longer available here and it enters as a
-/// single value. The two sums formed here carry their terms.
+/// `conic.vv` is the quadratic coefficient of the problem and reaches
+/// `real_roots` with the error bar its own constructor gave it, so the degree
+/// decision there is the one that constructor made. The two sums formed here
+/// scale that same bar by the powers of `u` they multiply it with, which bounds
+/// each sum against the exact coefficients rather than against the stated ones.
 fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
     real_roots(
-        Coefficient::single(conic.vv),
+        conic.vv,
         Coefficient::summed(
-            conic.uv.mul_add(u, conic.v),
-            (conic.uv * u).abs() + conic.v.abs(),
+            conic.uv.stated().mul_add(u, conic.v.stated()),
+            u.abs() * conic.uv.terms() + conic.v.terms(),
         ),
         Coefficient::summed(
-            conic.uu * u * u + conic.u * u + conic.constant,
-            (conic.uu * u * u).abs() + (conic.u * u).abs() + conic.constant.abs(),
+            conic.uu.stated() * u * u + conic.u.stated() * u + conic.constant.stated(),
+            u * u * conic.uu.terms() + u.abs() * conic.u.terms() + conic.constant.terms(),
         ),
     )
 }
@@ -635,7 +644,7 @@ pub(super) fn common_plane_conic_parameters(
                 second.constant,
             ]
             .into_iter()
-            .map(f64::abs)
+            .map(|coefficient| coefficient.stated().abs())
             .fold(1.0, f64::max);
             let tolerance = EPS_CONIC_RESIDUAL * coefficient_scale * scale * scale;
             if plane_conic_value(first, candidate[0], candidate[1]).abs() <= tolerance

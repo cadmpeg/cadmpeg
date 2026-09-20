@@ -206,15 +206,15 @@ impl TryFrom<SketchPlaneFrameWire> for SketchPlaneFrame {
     type Error = &'static str;
 
     fn try_from(wire: SketchPlaneFrameWire) -> Result<Self, Self::Error> {
-        let normal = wire.normal.norm();
-        let u_norm = wire.u_axis.norm();
-        let dot = wire.normal.x * wire.u_axis.x
-            + wire.normal.y * wire.u_axis.y
-            + wire.normal.z * wire.u_axis.z;
-        if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
-            return Err("sketch normal and u_axis must have finite positive length");
-        }
-        if dot.abs() > EPS_SKETCH_PLANE_ORTHOGONALITY * normal * u_norm {
+        let normal = wire
+            .normal
+            .unit_nonzero()
+            .ok_or("sketch normal must be finite and nonzero")?;
+        let u_axis = wire
+            .u_axis
+            .unit_nonzero()
+            .ok_or("sketch u_axis must be finite and nonzero")?;
+        if normal.dot(u_axis).abs() > EPS_SKETCH_PLANE_ORTHOGONALITY {
             return Err("sketch normal and u_axis must be perpendicular");
         }
         if !wire.origin.is_finite() {

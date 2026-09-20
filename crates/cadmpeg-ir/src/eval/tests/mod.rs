@@ -2054,3 +2054,5 @@ mod periodic_and_analytic;
 mod numerical_audit;
 
 mod numerical_followup;
+
+mod analytic_ranges;

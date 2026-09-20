@@ -1888,7 +1888,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         last[1][3] - first[1][3],
                         last[2][3] - first[2][3],
                     ];
-                    let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
+                    let distance = cadmpeg_ir::math::Vector3::from(delta).norm();
                     let component_link =
                         valid_component_pattern_occurrences(native, native_stream, instances);
                     instances

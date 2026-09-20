@@ -618,7 +618,15 @@ pub(in super::super) fn point_on_profile_arc(
     let (center, radius, start, delta) = arc;
     let relative = [point[0] - center[0], point[1] - center[1]];
     let distance = relative[0].hypot(relative[1]);
-    if (distance - radius).abs() > tolerance {
+    if !distance.is_finite()
+        || !radius.is_finite()
+        || radius <= 0.0
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || !start.is_finite()
+        || !delta.is_finite()
+        || (distance - radius).abs() > tolerance
+    {
         return false;
     }
     let angle = relative[1].atan2(relative[0]);
@@ -627,7 +635,8 @@ pub(in super::super) fn point_on_profile_arc(
     } else {
         (start - angle).rem_euclid(std::f64::consts::TAU)
     };
-    travel <= delta.abs() + tolerance / radius.max(1.0)
+    let angular_tolerance = tolerance / radius;
+    travel <= delta.abs() + angular_tolerance || std::f64::consts::TAU - travel <= angular_tolerance
 }
 
 pub(in super::super) fn line_arc_intersect(

@@ -70,6 +70,19 @@ impl BlendSectionDomain {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn numerical_ranges_periodic_blend_parameter_avoids_difference_overflow() {
+        assert_eq!(
+            super::canonical_periodic_parameter([-1e308, 0.], true, 1e308),
+            -1e308
+        );
+        assert_eq!(
+            super::canonical_periodic_parameter([-1e308, 0.], false, 1e308),
+            1e308
+        );
+    }
+
     use super::{
         BlendContactSeed, BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
         BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES,
@@ -2659,8 +2672,7 @@ fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64
     if !periodic {
         return parameter;
     }
-    let period = domain[1] - domain[0];
-    domain[0] + (parameter - domain[0]).rem_euclid(period)
+    cadmpeg_ir::math::wrap_parameter(parameter, domain[0], domain[1]).unwrap_or(f64::NAN)
 }
 
 fn lift_periodic_parameters(
