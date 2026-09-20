@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::quadratic::real_roots;
+use crate::decode::quadratic::{cancelling_coefficient, real_roots};
 use crate::vecmath::{cross, dot};
 
 const EPS_CUBIC_PARAM: f64 = 1.0e-11;
@@ -411,6 +411,31 @@ pub(in super::super) fn shared_extrusion_generator_curve(
     )))
 }
 
+/// The power-basis coefficients `[cubic, quadratic, linear, constant]` of the
+/// weighted plane distance along a cubic Bezier control polygon.
+///
+/// The third and second differences are the sums that state the degree: they
+/// cancel to zero where the plane distance along the polygon is exactly
+/// quadratic or exactly affine, which a degenerate span or a degree-elevated
+/// quadratic polygon reaches, so both carry the cancellation rule. The first
+/// difference is one subtraction of two terms, which is exactly zero whenever
+/// the exact difference is zero, and the constant is one distance.
+fn plane_distance_coefficients(signed: [f64; 4]) -> [f64; 4] {
+    let [first, second, third, fourth] = signed;
+    [
+        cancelling_coefficient(
+            -first + 3.0 * second - 3.0 * third + fourth,
+            first.abs() + 3.0 * second.abs() + 3.0 * third.abs() + fourth.abs(),
+        ),
+        cancelling_coefficient(
+            3.0 * first - 6.0 * second + 3.0 * third,
+            3.0 * first.abs() + 6.0 * second.abs() + 3.0 * third.abs(),
+        ),
+        -3.0 * first + 3.0 * second,
+        first,
+    ]
+}
+
 pub(in super::super) fn cubic_unit_interval_roots(
     cubic: f64,
     quadratic: f64,
@@ -589,31 +614,22 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
                     <= structural_tolerance
             }))
         .then_some(())?;
-        let signed = (0..4)
-            .map(|u| {
-                let point = poles[2 * u];
-                weights[2 * u]
-                    * dot(
-                        normal,
-                        [
-                            point.x - plane.origin[0],
-                            point.y - plane.origin[1],
-                            point.z - plane.origin[2],
-                        ],
-                    )
-            })
-            .collect::<Vec<_>>();
-        let cubic = -signed[0] + 3.0 * signed[1] - 3.0 * signed[2] + signed[3];
-        let quadratic = 3.0 * signed[0] - 6.0 * signed[1] + 3.0 * signed[2];
-        let linear = -3.0 * signed[0] + 3.0 * signed[1];
+        let signed: [f64; 4] = std::array::from_fn(|u| {
+            let point = poles[2 * u];
+            weights[2 * u]
+                * dot(
+                    normal,
+                    [
+                        point.x - plane.origin[0],
+                        point.y - plane.origin[1],
+                        point.z - plane.origin[2],
+                    ],
+                )
+        });
+        let [cubic, quadratic, linear, constant] = plane_distance_coefficients(signed);
         let weight_scale = weights.iter().copied().fold(1.0, f64::max);
-        let roots = cubic_unit_interval_roots(
-            cubic,
-            quadratic,
-            linear,
-            signed[0],
-            tolerance * weight_scale,
-        );
+        let roots =
+            cubic_unit_interval_roots(cubic, quadratic, linear, constant, tolerance * weight_scale);
         let [parameter] = roots.as_slice() else {
             return None;
         };
@@ -681,4 +697,40 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         )),
     );
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    const EPS_TEST_VALUE: f64 = 1.0e-11;
+    const EPS_TEST_ROOT: f64 = 1.0e-12;
+
+    #[test]
+    fn numerical_followup_degenerate_bezier_plane_distances_state_a_zero_difference() {
+        // Plane distances in arithmetic progression. The exact second and third
+        // differences of -8.9, -2.0, 4.9, 11.8 are zero, and the second
+        // difference computes as -1.7763568394002505e-15.
+        let [cubic, quadratic, linear, constant] =
+            super::plane_distance_coefficients([-8.9, -2.0, 4.9, 11.8]);
+        assert_eq!([cubic, quadratic], [0.0, 0.0]);
+        assert_eq!([linear, constant], [20.700_000_000_000_003, -8.9]);
+        assert_eq!(
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE),
+            [-constant / linear]
+        );
+
+        // Plane distances that are exactly quadratic in the polygon index. The
+        // exact third difference of -0.1, -0.1, 0.0, 0.2 is zero and it computes
+        // as -2.7755575615628914e-17; the second difference stays.
+        let [cubic, quadratic, linear, constant] =
+            super::plane_distance_coefficients([-0.1, -0.1, 0.0, 0.2]);
+        assert_eq!(cubic, 0.0);
+        assert_eq!(
+            [quadratic, linear, constant],
+            [0.300_000_000_000_000_04, 0.0, -0.1]
+        );
+        let roots =
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE);
+        assert_eq!(roots.len(), 1);
+        assert!((roots[0] - (1.0f64 / 3.0).sqrt()).abs() <= EPS_TEST_ROOT);
+    }
 }
