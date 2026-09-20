@@ -293,7 +293,7 @@ fn prune_incidence_choices_with_explicit_support(
     }
 }
 
-pub(crate) fn incidence_choice_components(
+fn incidence_choice_components(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
@@ -428,7 +428,7 @@ pub(crate) fn incidence_choice_components(
 /// Merge components whose assignments participate in one shared partial
 /// constraint. Evaluation-order constraints stay as edges between components
 /// so independent domains do not inherit each other's branch alternatives.
-pub(crate) fn join_incidence_components_by_coupling(
+fn join_incidence_components_by_coupling(
     components: Vec<Vec<usize>>,
     coupled_edges: &[bool],
 ) -> Vec<Vec<usize>> {
@@ -467,7 +467,7 @@ pub(crate) fn join_incidence_components_by_coupling(
     joined.into_iter().map(|(_, edges)| edges).collect()
 }
 
-pub(crate) fn order_incidence_components_by_branch_width(
+fn order_incidence_components_by_branch_width(
     components: &mut [Vec<usize>],
     choices: &[Vec<[usize; 2]>],
 ) -> Option<()> {
@@ -498,7 +498,7 @@ pub(crate) fn order_incidence_components_by_branch_width(
 /// relation: joining the two components would make an otherwise independent
 /// search share every branch. Components in a prerequisite cycle have no
 /// valid order and are rejected by the caller.
-pub(crate) fn order_incidence_components_by_constraints(
+fn order_incidence_components_by_constraints(
     components: &mut Vec<Vec<usize>>,
     choices: &[Vec<[usize; 2]>],
     assignment_order: Option<AssignmentOrder<'_>>,
@@ -1502,7 +1502,7 @@ impl Iterator for IncidenceBranch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum IncidenceSolve<T> {
+pub(super) enum IncidenceSolve<T> {
     Solved(T),
     Rejected(IncidenceRejection),
     Ambiguous,
@@ -1534,7 +1534,7 @@ impl<T> IncidenceSolve<T> {
     }
 }
 
-pub(crate) fn compact_boundary_domain_viable(
+pub(super) fn compact_boundary_domain_viable(
     domain: &MeshFaceBoundaryDomain,
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
@@ -1616,13 +1616,13 @@ pub(crate) fn compact_boundary_domain_viable(
     }
 }
 
-pub(crate) enum CompactBoundaryAdvanceOutcome {
+enum CompactBoundaryAdvanceOutcome {
     Complete(Vec<MeshQuotientGaugeState>),
     Rejected,
     Exhausted,
 }
 
-pub(crate) fn advance_compact_boundary_domains<'a>(
+fn advance_compact_boundary_domains<'a>(
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
@@ -3196,7 +3196,7 @@ fn augment_cycle_matching(
     false
 }
 
-pub(crate) fn deferred_boundary_assignment(
+pub(super) fn deferred_boundary_assignment(
     domain: &MeshDeferredFaceBoundary,
     edge_points: &[[usize; 2]],
 ) -> Option<MeshFaceBoundaryAssignment> {
@@ -3246,10 +3246,7 @@ pub(crate) fn deferred_boundary_assignment(
     })
 }
 
-pub(crate) fn deferred_boundary_closes(
-    domain: &MeshDeferredFaceBoundary,
-    edge_points: &[[usize; 2]],
-) -> bool {
+fn deferred_boundary_closes(domain: &MeshDeferredFaceBoundary, edge_points: &[[usize; 2]]) -> bool {
     let mut incident = domain.missing_edges.clone();
     incident.extend(
         domain
@@ -3385,7 +3382,7 @@ fn component_incidence_faces_viable(
     })
 }
 
-pub(crate) fn partial_face_orientability_viable(
+pub(super) fn partial_face_orientability_viable(
     assignment: &[Option<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_edges: &[Vec<usize>],
@@ -3514,7 +3511,7 @@ pub(crate) fn partial_face_orientability_viable(
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub(crate) fn component_incidence_pair_solutions<F>(
+fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3542,7 +3539,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub(crate) fn component_incidence_pair_solution_outcome<F>(
+pub(super) fn component_incidence_pair_solution_outcome<F>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3588,7 +3585,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
-pub(crate) fn visit_component_incidence_pair_solutions<F, V>(
+fn visit_component_incidence_pair_solutions<F, V>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,

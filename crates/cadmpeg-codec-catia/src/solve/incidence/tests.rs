@@ -1492,3 +1492,5 @@ fn incidence_selection_validates_only_its_affected_faces() {
     assert!(search.ordered_faces_feasible([0]));
     assert!(!search.ordered_faces_feasible([1]));
 }
+
+mod components;

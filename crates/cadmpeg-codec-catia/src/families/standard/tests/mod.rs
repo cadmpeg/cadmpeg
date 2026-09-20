@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
+pub(crate) fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);
     vec![domain; count]
 }
@@ -15,9 +15,8 @@ fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
     bytes
 }
 
+mod body_orientation;
 mod coordinate_closure;
-mod incidence_components;
 mod incidence_reconstruction;
-mod mesh_quotient;
 mod record_decoders;
 mod trim;
