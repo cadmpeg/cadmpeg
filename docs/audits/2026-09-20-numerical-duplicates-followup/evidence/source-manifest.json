@@ -1,0 +1,54 @@
+[
+  {
+    "path": "crates/cadmpeg-ir/src/eval.rs",
+    "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+  },
+  {
+    "path": "crates/cadmpeg-codec-iges/src/entities/surfaces.rs",
+    "sha256": "93087e3d639821f6d6e0aa119d6cc05ed9b6e6dcc6c6f406460207c0caa280c1"
+  },
+  {
+    "path": "crates/cadmpeg-codec-f3d/src/design/geometry.rs",
+    "sha256": "46709ddced55b7d6ac57b096a5fb8078b7d9f0b586672b6bcf32cc448f9928f8"
+  },
+  {
+    "path": "crates/cadmpeg-codec-freecad/src/topology_transfer.rs",
+    "sha256": "e80725bf3efcf040b74134ae9f4f8bf7bbbe2ed2c0c220dce3a01c305181898e"
+  },
+  {
+    "path": "crates/cadmpeg-codec-step/src/reader/validation.rs",
+    "sha256": "4303af72bb8039a539aa0b7fcac1d51d8c25df30b4d09818f82b9ddd4b13ff07"
+  },
+  {
+    "path": "crates/cadmpeg-codec-nx/src/native/display_jt.rs",
+    "sha256": "30a29d005c60972c685415309e4be0e297d31c88973d637a5f6beb6080721add"
+  },
+  {
+    "path": "crates/cadmpeg-codec-sldprt/src/tessellation.rs",
+    "sha256": "459b5848af65ecece0e97d1d4234cd73ca30af9e9cc98a2fd0606b1b1a1fd40d"
+  },
+  {
+    "path": "crates/cadmpeg-codec-creo/src/decode/analytic/equations.rs",
+    "sha256": "bfa2babd01edaba374a3b7dfdd21c929abd30cecdc6b60935146b6466ae4650f"
+  },
+  {
+    "path": "crates/cadmpeg-codec-creo/src/decode/sketch/equations_coordinate.rs",
+    "sha256": "bf009f33bc5a01453d59f85a7c6e1d8c7cc4ff3a9f50fc365ef5a08a9d24939d"
+  },
+  {
+    "path": "crates/cadmpeg-codec-creo/src/feature/definitions.rs",
+    "sha256": "5ccccd0434ea888fcc8aaca3a67be996fc21063278420895baf791bbcc44d6ad"
+  },
+  {
+    "path": "crates/cadmpeg-asm/src/nurbs/proc_surface.rs",
+    "sha256": "15d6a1dfc95d8a2c8fe6e42f628b52e072fd0021262664797164cbd68256b6c2"
+  },
+  {
+    "path": "crates/cadmpeg-codec-rhino/src/brep.rs",
+    "sha256": "cc35ed5da2867d3b19b6cc734614bf209ce480534650c09c2a49fe216aa0fc96"
+  },
+  {
+    "path": "crates/cadmpeg-ir/src/geometry.rs",
+    "sha256": "4dcb9535cb68b121318e62d77e6737df17138de60d2ac35e4554f5b57891e4d7"
+  }
+]
