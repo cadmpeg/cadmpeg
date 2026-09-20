@@ -2,7 +2,9 @@
 
 use crate::records::sketch_placement::DesignSketchPlacement;
 use cadmpeg_ir::document::Model;
+use cadmpeg_ir::features::DistinctMembers;
 use cadmpeg_ir::features::Feature;
+use cadmpeg_ir::features::FeatureContent;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
@@ -26,11 +28,11 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
