@@ -1206,11 +1206,11 @@ fn intersection_selector_keeps_pcurve_for_cacheless_surface_support_in_both_form
             ));
             assert!(context.pcurves[0].is_some());
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 1, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 1, &table)
                     .is_some()
             );
             assert!(
-                crate::nurbs::proc_curve::pcurve_for_selector_resolving_refs(&toks, 2, &table)
+                crate::nurbs::proc_curve::pcurve_for_selector_with_chart(&toks, 2, &table)
                     .is_none()
             );
         }
