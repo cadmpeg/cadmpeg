@@ -1463,3 +1463,69 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
         }
     }
 }
+
+#[test]
+fn the_blend_admission_refuses_a_non_finite_radius_law() {
+    use super::{BlendSurfacePayload, BlendSurfacePayloadWire};
+    use crate::geometry::{BlendCrossSection, BlendRadiusLaw, CacheContract};
+
+    let blend_new = |radius: BlendRadiusLaw| {
+        BlendSurfacePayload::try_new(
+            [None, None],
+            None,
+            radius,
+            BlendCrossSection::Circular,
+            CacheContract::legacy(),
+        )
+    };
+    let blend_wire = |radius: BlendRadiusLaw| {
+        BlendSurfacePayload::try_from(BlendSurfacePayloadWire {
+            supports: [None, None],
+            spine: None,
+            radius,
+            cross_section: BlendCrossSection::Circular,
+            cache: CacheContract::legacy(),
+        })
+    };
+
+    // The sign of a radius selects the support offset side, so a negative
+    // radius is admitted on both routes.
+    let admitted = ProceduralSurfaceDefinition::Blend(
+        blend_new(BlendRadiusLaw::Linear {
+            start: -1.5,
+            end: 2.5,
+        })
+        .unwrap(),
+    );
+    let wire = serde_json::to_value(&admitted).unwrap();
+    assert_eq!(wire["radius"]["kind"], serde_json::json!("linear"));
+    assert_eq!(wire["radius"]["start"], serde_json::json!(-1.5));
+    assert_eq!(wire["radius"]["end"], serde_json::json!(2.5));
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        admitted
+    );
+    assert!(blend_new(BlendRadiusLaw::Constant {
+        signed_radius: -3.0
+    })
+    .is_ok());
+
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for law in [
+            BlendRadiusLaw::Constant {
+                signed_radius: value,
+            },
+            BlendRadiusLaw::Linear {
+                start: value,
+                end: 1.0,
+            },
+            BlendRadiusLaw::Linear {
+                start: 1.0,
+                end: value,
+            },
+        ] {
+            assert!(blend_new(law.clone()).is_err());
+            assert!(blend_wire(law).is_err());
+        }
+    }
+}

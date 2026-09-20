@@ -3373,13 +3373,13 @@ fn emit_surface_curve_layout<F>(
         EmbeddedSurfaceCurveLayout::CacheFirst { context, flags } => {
             let (context, form) = context
                 .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
-            let curve_tail = cadmpeg_ir::geometry::SurfaceCurveTail {
-                extension: form.extension,
-                revision: form.revision,
-                cache: form.cache,
-                support_bounds: form.support_bounds,
-                solved_range: form.solved_range,
-            };
+            let curve_tail = cadmpeg_ir::geometry::SurfaceCurveTail::try_new(
+                form.extension,
+                form.revision,
+                form.cache,
+                form.support_bounds,
+                form.solved_range,
+            )?;
             (
                 context,
                 Some(cadmpeg_ir::geometry::SurfaceCurveCacheFirst {
@@ -3682,7 +3682,7 @@ fn emit_spring_curve(
             layout,
             embedded.direction,
         )
-        .map_err(|_| "spring context or null-support ranges are invalid")?,
+        .map_err(|_| "spring context, null-support ranges, or cache-first form are invalid")?,
     ))
 }
 
@@ -3756,11 +3756,11 @@ fn emit_law_curve(
             let domain = solved_domain.ok_or("missing procedural curve cache domain")?;
             (
                 std::array::from_fn(|index| parameter_range[index].unwrap_or(domain[index])),
-                Some(cadmpeg_ir::geometry::LawCurveVersionForm {
+                Some(cadmpeg_ir::geometry::LawCurveVersionForm::try_new(
                     stamp,
                     post_enum,
                     parameter_range,
-                }),
+                )?),
             )
         }
     };

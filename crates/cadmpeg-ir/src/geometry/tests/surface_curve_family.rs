@@ -27,16 +27,17 @@ fn support_context() -> IntcurveSupportContext {
 }
 
 fn tail() -> SurfaceCurveTail {
-    SurfaceCurveTail {
-        extension: 7,
-        revision: 23100,
-        cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+    SurfaceCurveTail::try_new(
+        7,
+        23100,
+        RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval: [Some(0.0), Some(1.0)],
             closed_form: 0,
         }),
-        support_bounds: [[None; 4]; 2],
-        solved_range: [Some(-1.0), Some(2.0)],
-    }
+        [[None; 4]; 2],
+        [Some(-1.0), Some(2.0)],
+    )
+    .expect("finite surface curve tail")
 }
 
 #[test]
@@ -98,4 +99,61 @@ fn a_blend_surface_curve_tail_refuses_the_parametric_second_flag() {
         serde_json::from_value::<SurfaceCurveFamily>(wire).expect("round trip"),
         parametric
     );
+}
+
+fn degenerate_tail(family: usize, value: f64) -> crate::geometry::SurfaceCurveTailWire {
+    let mut support_bounds = [[None; 4]; 2];
+    support_bounds[0][0] = Some(0.0);
+    let mut solved_range = [Some(-1.0), Some(2.0)];
+    let mut interval = [Some(0.0), Some(1.0)];
+    match family {
+        0 => support_bounds[0][0] = Some(value),
+        1 => solved_range[0] = Some(value),
+        _ => interval[1] = Some(value),
+    }
+    crate::geometry::SurfaceCurveTailWire {
+        extension: 7,
+        revision: 23_100,
+        cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+            interval,
+            closed_form: 0,
+        }),
+        support_bounds,
+        solved_range,
+    }
+}
+
+#[test]
+fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
+    let admitted = tail();
+    let wire = serde_json::to_value(&admitted).expect("serializes");
+    assert_eq!(wire["extension"], serde_json::json!(7));
+    assert_eq!(wire["revision"], serde_json::json!(23_100));
+    assert_eq!(
+        wire["support_bounds"][0],
+        serde_json::json!([null, null, null, null])
+    );
+    assert_eq!(wire["solved_range"], serde_json::json!([-1.0, 2.0]));
+    // `RevisionCacheForm` is internally tagged and its parameterization is a
+    // newtype variant, so the interval is one level up from the variant name.
+    assert_eq!(wire["cache"]["interval"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(
+        serde_json::from_value::<SurfaceCurveTail>(wire).expect("round trip"),
+        admitted
+    );
+
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for family in 0..3 {
+            let wire = degenerate_tail(family, value);
+            assert!(SurfaceCurveTail::try_new(
+                wire.extension,
+                wire.revision,
+                wire.cache.clone(),
+                wire.support_bounds,
+                wire.solved_range,
+            )
+            .is_err());
+            assert!(SurfaceCurveTail::try_from(wire).is_err());
+        }
+    }
 }

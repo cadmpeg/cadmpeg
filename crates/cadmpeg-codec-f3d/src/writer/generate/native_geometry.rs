@@ -4908,13 +4908,13 @@ pub(crate) fn native_procedural_curve(
         bytes.push(0x0f);
         native_ident(bytes, "law_int_cur")?;
         if let Some(version) = version {
-            native_i64(bytes, version.stamp);
-            native_enum(bytes, version.post_enum);
+            native_i64(bytes, version.stamp());
+            native_enum(bytes, version.post_enum());
         }
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
         if let Some(version) = version {
-            native_law_version_context(bytes, target, context, &version.parameter_range)?;
+            native_law_version_context(bytes, target, context, version.parameter_range())?;
         } else {
             native_intcurve_support_context(bytes, target, context)?;
         }
@@ -5217,11 +5217,11 @@ pub(crate) fn native_procedural_curve(
                 target,
                 context,
                 &cadmpeg_ir::geometry::CacheFirstCurveForm {
-                    revision: tail.revision,
-                    cache: tail.cache.clone(),
-                    support_bounds: tail.support_bounds,
-                    solved_range: tail.solved_range,
-                    extension: tail.extension,
+                    revision: tail.revision(),
+                    cache: tail.cache().clone(),
+                    support_bounds: *tail.support_bounds(),
+                    solved_range: *tail.solved_range(),
+                    extension: tail.extension(),
                 },
                 Some(solved_cache),
             )?;
@@ -5311,7 +5311,7 @@ pub(crate) fn native_procedural_curve(
             }
             native_nurbs_curve(bytes, &base)?;
             for value in base_endpoints {
-                native_optional_f64(bytes, *value);
+                native_optional_f64(bytes, value);
             }
             for value in base_range {
                 native_optional_f64(bytes, Some(*value));
