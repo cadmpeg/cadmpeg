@@ -805,7 +805,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 };
                 let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
                     let scale = 1.0 + measured.max(expected);
-                    (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
+                    measured.is_finite()
+                        && (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
                     error_finding(findings,
@@ -848,12 +849,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     (
                         Some(SpatialSketchGeometryDefinition::Point { position: first }),
                         Some(SpatialSketchGeometryDefinition::Point { position: second }),
-                    ) => Some(
-                        ((second.x - first.x).powi(2)
-                            + (second.y - first.y).powi(2)
-                            + (second.z - first.z).powi(2))
-                        .sqrt(),
-                    ),
+                    ) => Some(first.distance(*second)),
                     _ => None,
                 };
                 let expected = match parameter_values.get(parameter) {
@@ -864,7 +860,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 };
                 let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
                     let scale = 1.0 + measured.max(expected);
-                    (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
+                    measured.is_finite()
+                        && (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
                     error_finding(findings,

@@ -129,3 +129,32 @@ fn unknown_standard_circle_carrier_does_not_create_a_sphere_pcurve() {
     )
     .is_none());
 }
+
+#[test]
+fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
+    use crate::families::standard::decode::{
+        circle_axis_from_carrier, point_on_surface_if_supported,
+    };
+    use cadmpeg_ir::geometry::analytic::{CylinderSurface, SphereSurface};
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let x_axis = Vector3::new(1.0, 0.0, 0.0);
+    let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(origin, axis, x_axis, 1.0).unwrap(),
+    ));
+    for axial in [0.0, 1e8, 1e200] {
+        assert_eq!(
+            point_on_surface_if_supported(Point3::new(1.0, 0.0, axial), &cylinder),
+            Some(true)
+        );
+        assert_eq!(
+            point_on_surface_if_supported(Point3::new(2.0, 0.0, axial), &cylinder),
+            Some(false)
+        );
+    }
+    let sphere = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        SphereSurface::try_new(origin, axis, x_axis, 1.0).unwrap(),
+    ));
+    assert!(circle_axis_from_carrier(Point3::new(1e200, 0.0, 0.0), 1.0, &sphere).is_none());
+    assert!(circle_axis_from_carrier(Point3::new(0.0, 0.0, 0.6), 0.8, &sphere).is_some());
+}

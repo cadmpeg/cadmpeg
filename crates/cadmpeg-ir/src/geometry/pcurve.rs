@@ -1604,17 +1604,12 @@ impl PcurveGeometry {
                     ellipse.minor_radius() * ellipse.y_axis().v,
                 )),
             )?),
-            Self::Parabola(parabola) => {
-                if !isotropic {
-                    return Err("parabola coordinate scaling must be isotropic".into());
-                }
-                Self::Parabola(ParabolaPcurve::try_new(
-                    scale(*parabola.vertex()),
-                    *parabola.x_axis(),
-                    *parabola.y_axis(),
-                    parabola.focal_distance() * u_scale,
-                )?)
-            }
+            Self::Parabola(parabola) => Self::Parabola(ParabolaPcurve::try_new(
+                scale(*parabola.vertex()),
+                scale(*parabola.x_axis()),
+                scale(*parabola.y_axis()),
+                parabola.focal_distance(),
+            )?),
             Self::Hyperbola(hyperbola) if isotropic => Self::Hyperbola(HyperbolaPcurve::try_new(
                 scale(*hyperbola.center()),
                 *hyperbola.x_axis(),

@@ -649,3 +649,62 @@ fn radial_extension_annotations_require_a_point_on_the_line_carrier() {
         &linear,
     ));
 }
+
+#[test]
+fn geometric_membership_rejects_large_residuals_and_short_line_false_positives() {
+    use crate::design::dimensions::point_lies_on_sketch_geometry;
+    use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
+    let point = |x| {
+        SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: Point3::new(x, 0.0, 0.0),
+        })
+        .unwrap()
+    };
+    assert!(!spatial_point_distance_matches(
+        &point(0.0),
+        &point(1e200),
+        1.0
+    ));
+    assert!(spatial_point_distance_matches(
+        &point(0.0),
+        &point(1e200),
+        1e200
+    ));
+    let short_length = 0.000001;
+    for definition in [
+        SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(short_length, 0.0),
+        },
+        SketchGeometryDefinition::ReferenceLine {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(short_length, 0.0),
+        },
+    ] {
+        let geometry = SketchGeometry::try_from(definition).unwrap();
+        assert!(!point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0001),
+            &geometry
+        ));
+        assert!(point_lies_on_sketch_geometry(
+            Point2::new(short_length / 2.0, 0.0),
+            &geometry
+        ));
+    }
+    let ellipse = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+        center: Point2::new(0.0, 0.0),
+        major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        major_radius: Length::new(1.0).unwrap(),
+        minor_radius: Length::new(0.5).unwrap(),
+        bounds: None,
+    })
+    .unwrap();
+    assert!(!point_lies_on_sketch_geometry(
+        Point2::new(1e200, 0.0),
+        &ellipse
+    ));
+    assert!(point_lies_on_sketch_geometry(
+        Point2::new(1.0, 0.0),
+        &ellipse
+    ));
+}
