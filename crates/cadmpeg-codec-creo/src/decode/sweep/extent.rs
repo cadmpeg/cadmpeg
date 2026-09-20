@@ -31,7 +31,7 @@ pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) vector: [f64; 3],
 }
 
-pub(in super::super) fn blind_extrusion_from_carriers(
+fn blind_extrusion_from_carriers(
     carriers: &[ExtrusionCarrierSpan],
     planes: &[([f64; 3], [f64; 3])],
     transform: Option<&crate::placement::FeatureSectionTransform>,
@@ -515,12 +515,12 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     blind_extrusion_from_carriers(&carriers, &planes, transform)
 }
 
-pub(in super::super) struct RectilinearPlaneStation {
+struct RectilinearPlaneStation {
     pub(in super::super) coordinate: f64,
     pub(in super::super) reversed: bool,
 }
 
-pub(in super::super) struct RectilinearPlaneFamily {
+struct RectilinearPlaneFamily {
     pub(in super::super) normal: [f64; 3],
     pub(in super::super) stations: Vec<RectilinearPlaneStation>,
 }
@@ -645,7 +645,7 @@ fn rectilinear_family_extent(
     (signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs()))
 }
 
-pub(in super::super) fn rectilinear_extent_from_section_plane(
+fn rectilinear_extent_from_section_plane(
     family: &RectilinearPlaneFamily,
     section_origin: [f64; 3],
     section_normal: [f64; 3],
@@ -930,3 +930,9 @@ pub(in super::super) fn resolved_feature_extrusion_span(
             )
         })
 }
+
+#[cfg(test)]
+mod blind_tests;
+
+#[cfg(test)]
+mod rectilinear_tests;

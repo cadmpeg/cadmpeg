@@ -1,3 +1,5 @@
+mod chamfer;
+
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 // SPDX-License-Identifier: Apache-2.0
 

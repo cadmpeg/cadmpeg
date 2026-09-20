@@ -122,9 +122,7 @@ pub(in crate::decode) fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> 
     (range[0] < range[1]).then_some(range)
 }
 
-pub(in crate::decode) fn nonperiodic_nurbs_endpoint_points(
-    geometry: &CurveGeometry,
-) -> Option<[[f64; 3]; 2]> {
+pub(super) fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f64; 3]; 2]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
         return None;
     };
@@ -144,7 +142,7 @@ pub(in crate::decode) fn nonperiodic_nurbs_endpoint_points(
         .then_some([first, second])
 }
 
-pub(in crate::decode) fn nonperiodic_nurbs_edge_parameter_range(
+fn nonperiodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -613,7 +611,7 @@ pub(in crate::decode) fn nonperiodic_conic_edge_parameter_range(
     (parameters[1] - parameters[0] > EPS_NEAR_ZERO).then_some(parameters)
 }
 
-pub(in crate::decode) fn periodic_conic_edge_parameter_range(
+pub(super) fn periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
     interior: [f64; 3],
@@ -693,6 +691,9 @@ pub(in crate::decode) fn full_periodic_conic_edge_parameter_range(
         .rem_euclid(std::f64::consts::TAU);
     Some([start, start + std::f64::consts::TAU])
 }
+
+#[cfg(test)]
+mod native_parameter_tests;
 
 #[cfg(test)]
 mod tests {

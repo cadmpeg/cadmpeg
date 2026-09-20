@@ -592,7 +592,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
         .collect()
 }
 
-pub(in crate::decode) fn merge_scalar_value_candidate(
+pub(super) fn merge_scalar_value_candidate(
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
     variable: SectionScalarVariable,
     value: f64,
@@ -666,7 +666,7 @@ pub(super) fn section_relation_radius_scalar_values(
         .collect()
 }
 
-pub(in crate::decode) fn section_equation_scalar_seed_values(
+pub(super) fn section_equation_scalar_seed_values(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, Option<f64>> {
     let Some(variables) = definition
@@ -717,7 +717,7 @@ pub(in crate::decode) fn section_equation_scalar_seed_values(
     values
 }
 
-pub(in crate::decode) fn propagate_section_equation_scalar_equality_values(
+pub(super) fn propagate_section_equation_scalar_equality_values(
     definition: &crate::feature::definitions::FeatureDefinition,
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> bool {
@@ -852,7 +852,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
     }
 }
 
-pub(in crate::decode) fn section_equation_scalar_values_from_coordinates(
+pub(super) fn section_equation_scalar_values_from_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> BTreeMap<SectionScalarVariable, f64> {
@@ -969,7 +969,7 @@ fn direct_function_five_scalar_rows<'a>(
         .then_some((first, second, selector))
 }
 
-pub(in crate::decode) fn section_equation_scalar_equality_components(
+pub(super) fn section_equation_scalar_equality_components(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<BTreeSet<SectionScalarVariable>> {
     let Some(variables) = definition
@@ -1138,7 +1138,7 @@ fn scalar_equality_values_for_components(
     resolved
 }
 
-pub(in crate::decode) fn section_equation_scalar_equalities(
+fn section_equation_scalar_equalities(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> BTreeMap<SectionScalarVariable, f64> {
     section_equation_scalar_equality_values(definition)
@@ -1525,7 +1525,7 @@ pub(in crate::decode) struct SectionFunctionSixteenAngleDifference {
     pub(in crate::decode) active: bool,
 }
 
-pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_values(
+fn section_equation_function_sixteen_angle_difference_values(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<(SectionScalarVariable, f64)> {
     section_equation_function_sixteen_angle_difference_rows(definition)
@@ -1663,7 +1663,7 @@ pub(in crate::decode) struct SectionFunctionFortyThreeAxisDistance {
     pub(in crate::decode) active: bool,
 }
 
-pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_values(
+fn section_equation_function_forty_three_axis_distance_values(
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
@@ -1846,3 +1846,6 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
         })
         .collect()
 }
+
+#[cfg(test)]
+mod propagation_tests;
