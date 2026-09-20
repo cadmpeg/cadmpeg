@@ -329,6 +329,7 @@ fn numerical_ranges_parabola_reversal_reuses_scaled_evaluation() {
 #[test]
 fn analytic_reversal_preserves_finite_coefficients_at_extreme_parameters() {
     use cadmpeg_ir::geometry::pcurve::{HyperbolaPcurve, HyperbolicPcurve, LinePcurve};
+    const RADIUS: f64 = 1e-10;
     let line = PcurveGeometry::Line(
         LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0)).unwrap(),
     );
@@ -338,7 +339,6 @@ fn analytic_reversal_preserves_finite_coefficients_at_extreme_parameters() {
     };
     assert_eq!(*reversed.origin(), Point2::new(1.2e308, 0.0));
     assert_eq!(*reversed.direction(), Point2::new(-0.5, 0.0));
-    const RADIUS: f64 = 1e-10;
     for curve in [
         PcurveGeometry::Hyperbola(
             HyperbolaPcurve::try_new(

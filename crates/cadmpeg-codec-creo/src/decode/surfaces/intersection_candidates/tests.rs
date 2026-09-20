@@ -51,7 +51,7 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
                     1.0,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid test cone"),
             )
         };
         let torus = CarrierEquation::Torus(TorusEquation {
