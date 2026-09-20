@@ -740,3 +740,70 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
     )
     .unwrap();
 }
+
+#[test]
+fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
+    use crate::writer::{
+        model::{WritableEdge, WritableEdgeCurve, WritablePcurve},
+        validate_nurbs_trim,
+    };
+    use cadmpeg_ir::geometry::{
+        nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+        pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs},
+    };
+    use cadmpeg_ir::math::Point2;
+    let domain = [-1e308, 1e308];
+    let knots = vec![domain[0], domain[0], domain[1], domain[1]];
+    let curve = NurbsCurve::from_lanes(
+        1,
+        knots.clone(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let uv = vec![Point2::new(1.0, 0.0), Point2::new(0.0, 0.0)];
+    let pcurve = Pcurve {
+        id: cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#large-domain").unwrap(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
+        },
+        metadata: PcurveMetadata::try_general(None, Some(domain), Some(0.001)).unwrap(),
+    };
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let source = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = WritableEdge {
+        source: &source.model.edges[0],
+        start: 0,
+        end: 1,
+        domain,
+        curve_id: "large-domain",
+        curve: WritableEdgeCurve::Nurbs(&curve),
+        uses: vec![],
+    };
+    let explicit = WritablePcurve {
+        source: &pcurve,
+        payload: ([0; 16], vec![]),
+        domain_extent_points: uv,
+    };
+    validate_nurbs_trim(
+        &surface,
+        0.001,
+        &edge,
+        cadmpeg_ir::topology::Sense::Reversed,
+        &explicit,
+    )
+    .unwrap();
+}

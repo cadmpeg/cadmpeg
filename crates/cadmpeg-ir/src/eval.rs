@@ -7522,8 +7522,10 @@ fn pcurve_uv_differential_inner(
                 let (sine_sinh, sine_cosh) = scaled_sinh_cosh(sine, t)?;
                 Some([
                     crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?,
-                    crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh])?,
-                    crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh])?,
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh])
+                        .unwrap_or(f64::NAN),
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh])
+                        .unwrap_or(f64::NAN),
                 ])
             };
             let u = coordinate(hyperbolic.center().u, cosine.u, sine.u)?;
