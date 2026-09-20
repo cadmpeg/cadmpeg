@@ -2,12 +2,6 @@
 //! Parameter alias, equation, and configuration-index tests.
 #![allow(clippy::unwrap_used)]
 
-use super::design_configuration;
-use super::feature;
-use super::feature_input_lane;
-use super::native_configuration;
-use super::native_with_configuration_lanes;
-use super::with_configuration_id;
 use crate::history::configuration::configuration_lane_assignments;
 use crate::history::parameters::expression_identifiers;
 use crate::history::parameters::parameter_aliases;
@@ -16,6 +10,12 @@ use crate::history::parameters::project_parameters;
 use crate::history::parameters::ParameterAliases;
 use crate::history::project::incomplete_history_reference_features;
 use crate::history::project::project_features;
+use crate::history::tests::design_configuration;
+use crate::history::tests::feature;
+use crate::history::tests::feature_input_lane;
+use crate::history::tests::native_configuration;
+use crate::history::tests::native_with_configuration_lanes;
+use crate::history::tests::with_configuration_id;
 use crate::history::write::configurations::sync_neutral_configurations;
 use crate::history::write::parameters::{
     rewrite_parameter_expression, unquoted_expression_identifier,
