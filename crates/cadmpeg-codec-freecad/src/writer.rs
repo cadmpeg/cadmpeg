@@ -19,13 +19,10 @@ use crate::native::{
 };
 use target::Resolution;
 
-pub(crate) trait WriteSeek: Write + Seek {}
+trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-pub(crate) fn write(
-    output: &mut dyn Write,
-    resolution: &Resolution<'_>,
-) -> Result<WriteOutcome, CodecError> {
+fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
     let report = write_seekable(&mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
@@ -39,7 +36,7 @@ pub(crate) fn write(
 /// from [`resolve`], which takes its options from [`retained_baseline`], so the
 /// dialect written here is the one the retained document already declares.
 /// This function carries out that decision; it does not gate it.
-pub(crate) fn write_seekable(
+fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
@@ -122,9 +119,9 @@ pub(crate) fn write_seekable(
     })
 }
 
-pub(crate) struct WriteOutcome {
-    pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
-    pub(crate) notes: Vec<String>,
+struct WriteOutcome {
+    census: cadmpeg_ir::report::export::EntityCensus,
+    notes: Vec<String>,
 }
 
 fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {

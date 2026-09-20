@@ -395,4 +395,4 @@ fn valid_identifier(value: &str, role: &str) -> Result<(), CodecError> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
