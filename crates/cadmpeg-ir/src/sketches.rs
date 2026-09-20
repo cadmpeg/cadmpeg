@@ -2487,13 +2487,7 @@ impl TryFrom<f64> for SketchLabelValue {
     }
 }
 
-impl SketchLabelValue {
-    /// Return the admitted label coordinate.
-    #[must_use]
-    pub fn get(self) -> f64 {
-        self.0
-    }
-}
+impl SketchLabelValue {}
 
 const EPS_POLAR_DISTANCE_ZERO: f64 = 1.0e-12;
 

@@ -266,7 +266,7 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         FeatureDefinition::Operation(FeatureOperation::RegularPolygonCurve {
             sides,
             circumradius: actual_circumradius
-        }) if sides.get() == 7 && actual_circumradius.get() == 8.0
+        }) if cadmpeg_test_support::wire::value::<u32>(&sides) == 7 && actual_circumradius.get() == 8.0
     ));
     assert!(matches!(
         feature("Plane").evaluation.definition(),

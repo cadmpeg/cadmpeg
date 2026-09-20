@@ -1356,7 +1356,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         [ir.model.features[0].id.clone()]
     );
     assert_eq!(
-        ir.model.features[0].source_content.as_slice(),
+        (&*ir.model.features[0].source_content),
         ir.model
             .parameters
             .iter()

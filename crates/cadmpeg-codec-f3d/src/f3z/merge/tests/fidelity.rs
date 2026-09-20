@@ -14,7 +14,14 @@ fn source(stream: &str) -> SourceFidelity {
     fidelity
         .insert_retained_record(
             cadmpeg_ir::ids::UnknownId::mint(ID).unwrap(),
-            RetainedSourceRecord::retained(stream, 7, vec![1, 2, 3]).unwrap(),
+            RetainedSourceRecord::from_bytes(
+                stream,
+                7,
+                cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
+                    data: vec![1, 2, 3],
+                },
+            )
+            .unwrap(),
         )
         .unwrap();
     fidelity

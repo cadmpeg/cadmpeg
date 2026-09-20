@@ -1357,7 +1357,10 @@ mod tests {
             .expect("malformed annotation loss");
         assert!(loss.message.contains(&format!("offset {source_offset}")));
         let provenance = loss.provenance.as_ref().expect("annotation provenance");
-        assert_eq!(provenance.format(), "rhino");
+        assert_eq!(
+            cadmpeg_test_support::wire::field::<String>(&provenance, "format"),
+            "rhino"
+        );
         assert_eq!(provenance.offset, source_offset as u64);
         let expected_tag =
             format!("ANNOTATION/source={source_id}/class=5de6b210-486b-11d4-8014-0010830122f0");

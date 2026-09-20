@@ -384,6 +384,6 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             keep: cadmpeg_ir::features::TrimRegion::Cells(ref selection),
             ..
-        }) if selection.removed() == [1, 4] && selection.total() == 5
+        }) if cadmpeg_test_support::wire::field::<Vec<u64>>(&selection, "removed") == [1, 4] && cadmpeg_test_support::wire::field::<u64>(&selection, "total") == 5
     ));
 }

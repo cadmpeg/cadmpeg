@@ -42,11 +42,6 @@ impl AssetData {
     pub fn new(data: Vec<u8>) -> Option<Self> {
         (!data.is_empty()).then_some(Self(data))
     }
-
-    /// Borrow the embedded bytes.
-    pub fn as_slice(&self) -> &[u8] {
-        &self.0
-    }
 }
 
 impl<'de> Deserialize<'de> for AssetData {
@@ -204,7 +199,7 @@ mod tests {
             let AssetContent::Embedded { data } = &ir.model.assets[0].content else {
                 panic!("embedded fixture changed content family");
             };
-            assert_eq!(data.as_slice(), bytes);
+            assert_eq!(data.0, bytes);
             assert_eq!(serde_json::to_value(ir).unwrap(), wire);
         }
         for encoded in ["", "AA", "AA=", "AAAA=", "AB==", "AAB=", "AA==\n", "__8="] {

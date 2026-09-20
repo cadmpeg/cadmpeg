@@ -72,26 +72,9 @@ impl ModelCheckpoint {
         self.length::<T>()
     }
 
-    /// Returns entities of `T` added since this checkpoint.
-    pub fn added<'a, T: ArenaEntity>(&self, model: &'a Model) -> Option<&'a [T]> {
-        T::arena(model).get(self.length::<T>()..)
-    }
-
     /// Returns mutable entities of `T` added since this checkpoint.
     pub fn added_mut<'a, T: ArenaEntity>(&self, model: &'a mut Model) -> Option<&'a mut [T]> {
         T::arena_mut(model).get_mut(self.length::<T>()..)
-    }
-
-    /// Counts all entities added since this checkpoint, rejecting arena shrinkage.
-    pub fn added_count(&self, model: &Model) -> Option<usize> {
-        let after = Self::capture(model);
-        after
-            .lengths
-            .into_iter()
-            .zip(self.lengths)
-            .try_fold(0_usize, |total, (after, before)| {
-                total.checked_add(after.checked_sub(before)?)
-            })
     }
 
     /// Discards appended entities and restores captured feature-parent relations.
@@ -703,7 +686,6 @@ mod tests {
                 "test:checkpoint:feature#parent".try_into().unwrap(),
             )
             .unwrap();
-        assert_eq!(checkpoint.added_count(&model), Some(3));
         checkpoint.discard_appended(&mut model);
         assert_eq!(model, original);
     }

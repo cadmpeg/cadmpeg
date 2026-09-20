@@ -269,7 +269,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                 unreachable!("test result is a NURBS")
             };
             curve.reverse_parameterization();
-            let last = curve.pole_count() - 1;
+            let last = curve.pole_rows().len() - 1;
             let mut index = 0;
             curve
                 .edit_control_points(|point| {

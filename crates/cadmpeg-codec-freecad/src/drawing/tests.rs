@@ -132,7 +132,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(
         neutral_view
             .direction
-            .map(cadmpeg_ir::units::NonzeroVector::get),
+            .map(|value| cadmpeg_test_support::wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
     assert!(crate::validate_native(result.ir()).is_empty());
@@ -177,7 +177,10 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .find(|drawing| drawing.object.ends_with("#PageNull"))
         .expect("null page");
     assert!(null_page.template.is_none());
-    assert!(null_page.relationships["Template"][0].is_null());
+    assert!(matches!(
+        null_page.relationships["Template"][0].target,
+        cadmpeg_ir::references::ReferenceTarget::Null
+    ));
     assert_eq!(
         null_page.relationships["Views"][0].local_target(),
         Some("fcstd:native:object#Model")
@@ -315,7 +318,9 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
         Some(2.0)
     );
     assert_eq!(
-        drawing.direction.map(cadmpeg_ir::units::NonzeroVector::get),
+        drawing
+            .direction
+            .map(|value| cadmpeg_test_support::wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
     assert_eq!(

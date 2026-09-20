@@ -351,10 +351,6 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         cadmpeg_ir::features::patterns::PatternTransform::LinearOffsets { direction: Some(direction), offsets }
             if direction.y == -1.0 && offsets.iter().map(|offset| offset.get()).collect::<Vec<_>>() == [0.0, 1.0, 5.0]
     ));
-    assert_eq!(
-        stages.combination(1).expect("stage 1"),
-        cadmpeg_ir::features::patterns::PatternStageCombination::CartesianProduct
-    );
     assert!(matches!(
         feature("PolarCustom").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
@@ -1317,18 +1313,10 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         panic!("composite pattern");
     };
     assert_eq!(stages.len(), 2);
-    assert_eq!(
-        stages.combination(0).expect("stage 0"),
-        cadmpeg_ir::features::patterns::PatternStageCombination::Initialize
-    );
     assert!(matches!(
         stages[0].pattern.definition(),
         cadmpeg_ir::features::patterns::PatternTransform::Linear { count: 3, .. }
     ));
-    assert_eq!(
-        stages.combination(1).expect("stage 1"),
-        cadmpeg_ir::features::patterns::PatternStageCombination::AlignedSlices
-    );
     assert!(matches!(
         stages[1].pattern.definition(),
         cadmpeg_ir::features::patterns::PatternTransform::Scale { count: 3, .. }

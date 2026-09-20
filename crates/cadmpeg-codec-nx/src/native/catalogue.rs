@@ -3733,6 +3733,6 @@ mod tests {
         model.parasolid.parasolid_entity_51_records = Vec::new();
         let mut annotations = super::AnnotationBuilder::new();
         super::NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, &model, &mut annotations);
-        assert!(annotations.annotations().exactness().contains_key(&id));
+        assert!(annotations.build().exactness().contains_key(&id));
     }
 }

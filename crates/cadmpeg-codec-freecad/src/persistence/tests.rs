@@ -324,7 +324,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     match result.ir().model.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
-            let distance = payload.distance();
+            let distance = cadmpeg_test_support::wire::field::<f64>(&payload, "distance");
             let cadmpeg_ir::geometry::OffsetSide::Direction {
                 direction,
                 support: None,
@@ -332,7 +332,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             else {
                 panic!("unexpected offset construction {payload:?}");
             };
-            assert_eq!(*distance, 2.0);
+            assert_eq!(distance, 2.0);
             assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 1.0]);
         }
         other => panic!("unexpected offset construction {other:?}"),

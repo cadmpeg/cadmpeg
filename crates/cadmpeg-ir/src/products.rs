@@ -150,32 +150,6 @@ impl ExternalDocument {
             None => Self::Missing {},
         }
     }
-
-    /// Returns the explicit missing-reference state.
-    pub fn missing() -> Self {
-        Self::Missing {}
-    }
-
-    /// Returns the persisted file path, when the reference uses one.
-    pub fn as_path(&self) -> Option<&str> {
-        match self {
-            Self::Path { path } => Some(path.as_str()),
-            Self::DocumentId { .. } | Self::Missing {} => None,
-        }
-    }
-
-    /// Returns the persisted document id, when the reference uses one.
-    pub fn as_document_id(&self) -> Option<&str> {
-        match self {
-            Self::DocumentId { document_id } => Some(document_id.as_str()),
-            Self::Path { .. } | Self::Missing {} => None,
-        }
-    }
-
-    /// Returns whether the source carried no usable external document identity.
-    pub fn is_missing(&self) -> bool {
-        matches!(self, Self::Missing {})
-    }
 }
 
 /// Copy-on-change ownership behavior of a link.
@@ -587,7 +561,7 @@ mod tests {
             document_id
         );
 
-        let missing = ExternalDocument::missing();
+        let missing = ExternalDocument::Missing {};
         assert_eq!(ExternalDocument::path(""), missing);
         assert_eq!(ExternalDocument::document_id(""), missing);
         let missing_wire = serde_json::to_value(&missing).unwrap();

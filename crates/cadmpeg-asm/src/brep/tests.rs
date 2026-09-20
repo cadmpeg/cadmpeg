@@ -166,10 +166,11 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
         .map(|weights| weights.into_iter().map(|weight| weight * 7.0).collect());
     scaled
         .set_poles(
-            scaled
-                .pole_rows()
-                .with_weights(scaled_weights)
-                .expect("scaled weights are finite and non-zero"),
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
+                scaled.pole_rows().points(),
+                scaled_weights,
+            )
+            .expect("scaled weights are finite and non-zero"),
         )
         .unwrap();
     assert!(rational_four_arc_circle(&scaled).is_some());

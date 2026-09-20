@@ -749,13 +749,13 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
     assert_eq!(
         point_on_object
             .label_distance
-            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+            .map(|value| cadmpeg_test_support::wire::value::<f64>(&value)),
         Some(2.5)
     );
     assert_eq!(
         point_on_object
             .label_position
-            .map(cadmpeg_ir::sketches::SketchLabelValue::get),
+            .map(|value| cadmpeg_test_support::wire::value::<f64>(&value)),
         Some(0.25)
     );
     assert_eq!(point_on_object.driving, Some(false));

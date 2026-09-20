@@ -42,3 +42,13 @@ pub fn coverage_count(report: &impl Serialize, key: &str) -> usize {
     let coverage: std::collections::BTreeMap<String, usize> = field_or_default(report, "coverage");
     coverage.get(key).copied().unwrap_or(0)
 }
+
+/// Decode a transparent value through its wire representation.
+///
+/// # Panics
+///
+/// Panics if serialization or decoding the expected type fails.
+pub fn value<T: DeserializeOwned>(value: &impl Serialize) -> T {
+    serde_json::from_value(serde_json::to_value(value).expect("serialize tested value"))
+        .expect("decode tested wire value")
+}

@@ -1592,7 +1592,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
             .find(|feature| feature.source_tag.as_deref() == Some("MacroFeature"))
             .unwrap();
         assert!(matches!(
-            neutral_macro.source_content.as_slice(),
+            &*neutral_macro.source_content,
             [
                 FeatureSourceContent::Text(prefix),
                 FeatureSourceContent::Parameter(_),

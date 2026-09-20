@@ -170,24 +170,6 @@ impl UnknownRecord {
         self.offset
     }
 
-    /// Returns the byte length of the record span.
-    #[must_use]
-    pub fn byte_len(&self) -> u64 {
-        match &self.retention {
-            RawRetainedBytes::Inline { data } => data.len() as u64,
-            RawRetainedBytes::Digest { byte_len, .. } => *byte_len,
-        }
-    }
-
-    /// Return the measured inline digest or the producer-supplied digest text.
-    #[must_use]
-    pub fn sha256(&self) -> String {
-        match &self.retention {
-            RawRetainedBytes::Inline { data } => crate::hash::sha256_hex(data),
-            RawRetainedBytes::Digest { sha256, .. } => sha256.clone(),
-        }
-    }
-
     /// Returns the retained bytes when available.
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
@@ -288,8 +270,7 @@ mod tests {
         let mut inline = record;
         inline.retain_data(vec![1]);
         assert_eq!(inline.offset(), u64::MAX);
-        assert_eq!(inline.byte_len(), 1);
-        assert_eq!(inline.sha256(), crate::hash::sha256_hex(&[1]));
+        assert_eq!(inline.data(), Some([1].as_slice()));
         let wire = serde_json::to_value(&inline).unwrap();
         assert_eq!(
             serde_json::from_value::<UnknownRecord>(wire).unwrap(),
@@ -316,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_record_derives_extent_and_digest() {
+    fn retained_record_preserves_source_bytes() {
         let record = UnknownRecord::retained(
             UnknownId::mint("synthetic:model:unknown#0").expect("valid identity"),
             7,
@@ -324,8 +305,6 @@ mod tests {
             vec!["synthetic:model:point#0".into()],
         );
 
-        assert_eq!(record.byte_len(), 3);
-        assert_eq!(record.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
         assert_eq!(record.data(), Some([1, 2, 3].as_slice()));
     }
 
@@ -345,8 +324,9 @@ mod tests {
         let record: UnknownRecord =
             serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
 
-        assert_eq!(record.byte_len(), 99);
-        assert_eq!(record.sha256(), "wire-value");
+        assert!(
+            matches!(&record.retention, super::RawRetainedBytes::Digest { byte_len: 99, sha256 } if sha256 == "wire-value")
+        );
         assert_eq!(record.data(), None);
         assert_eq!(
             serde_json::to_value(record).expect("serialize unknown-record wire"),
@@ -365,8 +345,6 @@ mod tests {
         });
         let record: UnknownRecord =
             serde_json::from_value(wire.clone()).expect("deserialize unknown-record wire");
-        assert_eq!(record.byte_len(), 3);
-        assert_eq!(record.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
         assert_eq!(
             serde_json::to_value(record).expect("serialize unknown-record wire"),
             wire

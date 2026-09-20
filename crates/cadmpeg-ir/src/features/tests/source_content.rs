@@ -23,7 +23,7 @@ fn source_content_rejects_repeated_references_and_preserves_repeated_text() {
         .push(FeatureSourceContent::Text("text".into()))
         .unwrap();
     assert_eq!(
-        content.as_slice(),
+        (&*content),
         &[
             FeatureSourceContent::Text("text".into()),
             FeatureSourceContent::Text("text".into()),

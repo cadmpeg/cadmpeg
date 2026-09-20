@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::ids;
-use cadmpeg_ir::{format_identity, is_valid_identity, IdentityError};
+use cadmpeg_ir::{is_valid_identity, IdentityError};
 
 #[test]
 fn signature_uses_three_component_grammar() {
@@ -47,7 +47,8 @@ fn scoped_builders_preserve_existing_forms() {
 #[test]
 fn empty_scope_is_rejected_at_construction() {
     // The Phase 1 regression was `step:signature#0` (missing scope).
-    let err = format_identity("step", "", "signature", 0u8).expect_err("empty scope");
+    let err =
+        cadmpeg_ir::ids::IdentityNamespace::new("step", "", "signature").expect_err("empty scope");
     assert!(matches!(
         err,
         IdentityError::InvalidComponent { label: "scope", .. }

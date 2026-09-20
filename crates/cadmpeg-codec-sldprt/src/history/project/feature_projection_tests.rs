@@ -309,9 +309,7 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
     assert_eq!(parameter_names(&feature), vec!["D1", "D1"]);
     assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
-        project_feature_content(&feature, &HashMap::new())
-            .unwrap()
-            .as_slice(),
+        (&*project_feature_content(&feature, &HashMap::new()).unwrap()),
         vec![FeatureSourceContent::Parameter(
             ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar")
         )]
