@@ -5,7 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::decode::quadratic::{cancelling_coefficient, real_roots};
+use crate::decode::quadratic::{real_roots, Coefficient};
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
@@ -239,23 +239,27 @@ fn restrict_quadric_to_plane(
     let matrix_u = matrix_vector(quadric.matrix, u_axis);
     let matrix_v = matrix_vector(quadric.matrix, v_axis);
     PlaneConicEquation {
-        uu: cancelling_coefficient(dot(u_axis, matrix_u), abs_dot(u_axis, matrix_u)),
-        uv: cancelling_coefficient(2.0 * dot(u_axis, matrix_v), 2.0 * abs_dot(u_axis, matrix_v)),
-        vv: cancelling_coefficient(dot(v_axis, matrix_v), abs_dot(v_axis, matrix_v)),
-        u: cancelling_coefficient(
+        uu: Coefficient::summed(dot(u_axis, matrix_u), abs_dot(u_axis, matrix_u)).stated(),
+        uv: Coefficient::summed(2.0 * dot(u_axis, matrix_v), 2.0 * abs_dot(u_axis, matrix_v))
+            .stated(),
+        vv: Coefficient::summed(dot(v_axis, matrix_v), abs_dot(v_axis, matrix_v)).stated(),
+        u: Coefficient::summed(
             2.0 * dot(u_axis, matrix_origin) + dot(quadric.linear, u_axis),
             2.0 * abs_dot(u_axis, matrix_origin) + abs_dot(quadric.linear, u_axis),
-        ),
-        v: cancelling_coefficient(
+        )
+        .stated(),
+        v: Coefficient::summed(
             2.0 * dot(v_axis, matrix_origin) + dot(quadric.linear, v_axis),
             2.0 * abs_dot(v_axis, matrix_origin) + abs_dot(quadric.linear, v_axis),
-        ),
-        constant: cancelling_coefficient(
+        )
+        .stated(),
+        constant: Coefficient::summed(
             dot(origin, matrix_origin) + dot(quadric.linear, origin) + quadric.constant,
             abs_dot(origin, matrix_origin)
                 + abs_dot(quadric.linear, origin)
                 + quadric.constant.abs(),
-        ),
+        )
+        .stated(),
     }
 }
 
@@ -332,15 +336,15 @@ pub(super) fn intersect_two_planes_with_quadric(
     };
     let matrix_origin = matrix_vector(quadric.matrix, line_origin);
     let matrix_direction = matrix_vector(quadric.matrix, direction);
-    let quadratic = cancelling_coefficient(
+    let quadratic = Coefficient::summed(
         dot(direction, matrix_direction),
         abs_dot(direction, matrix_direction),
     );
-    let linear = cancelling_coefficient(
+    let linear = Coefficient::summed(
         2.0 * dot(line_origin, matrix_direction) + dot(quadric.linear, direction),
         2.0 * abs_dot(line_origin, matrix_direction) + abs_dot(quadric.linear, direction),
     );
-    let constant = cancelling_coefficient(
+    let constant = Coefficient::summed(
         dot(line_origin, matrix_origin) + dot(quadric.linear, line_origin) + quadric.constant,
         abs_dot(line_origin, matrix_origin)
             + abs_dot(quadric.linear, line_origin)
@@ -586,14 +590,18 @@ fn refine_plane_conic_intersection(
 }
 
 /// The conic parameters v that satisfy the conic at the given u.
+///
+/// `conic.vv` reaches this site as a value its own constructor already stated,
+/// so its term magnitudes are no longer available here and it enters as a
+/// single value. The two sums formed here carry their terms.
 fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
     real_roots(
-        conic.vv,
-        cancelling_coefficient(
+        Coefficient::single(conic.vv),
+        Coefficient::summed(
             conic.uv.mul_add(u, conic.v),
             (conic.uv * u).abs() + conic.v.abs(),
         ),
-        cancelling_coefficient(
+        Coefficient::summed(
             conic.uu * u * u + conic.u * u + conic.constant,
             (conic.uu * u * u).abs() + (conic.u * u).abs() + conic.constant.abs(),
         ),

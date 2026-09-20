@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 
 use crate::decode::analytic::equations::PlaneEquation;
-use crate::decode::quadratic::{cancelling_coefficient, real_roots};
+use crate::decode::quadratic::{real_roots, Coefficient};
 use crate::vecmath::{cross, dot};
 
 const EPS_CUBIC_PARAM: f64 = 1.0e-11;
@@ -417,66 +417,96 @@ pub(in super::super) fn shared_extrusion_generator_curve(
 /// The third and second differences are the sums that state the degree: they
 /// cancel to zero where the plane distance along the polygon is exactly
 /// quadratic or exactly affine, which a degenerate span or a degree-elevated
-/// quadratic polygon reaches, so both carry the cancellation rule. The first
-/// difference is one subtraction of two terms, which is exactly zero whenever
-/// the exact difference is zero, and the constant is one distance.
-fn plane_distance_coefficients(signed: [f64; 4]) -> [f64; 4] {
+/// quadratic polygon reaches, so both carry the magnitudes of their terms. The
+/// first difference is one subtraction of two terms, which is exactly zero
+/// whenever the exact difference is zero, and the constant is one distance, so
+/// each is a single value.
+fn plane_distance_coefficients(signed: [f64; 4]) -> [Coefficient; 4] {
     let [first, second, third, fourth] = signed;
     [
-        cancelling_coefficient(
+        Coefficient::summed(
             -first + 3.0 * second - 3.0 * third + fourth,
             first.abs() + 3.0 * second.abs() + 3.0 * third.abs() + fourth.abs(),
         ),
-        cancelling_coefficient(
+        Coefficient::summed(
             3.0 * first - 6.0 * second + 3.0 * third,
             3.0 * first.abs() + 6.0 * second.abs() + 3.0 * third.abs(),
         ),
-        -3.0 * first + 3.0 * second,
-        first,
+        Coefficient::single(-3.0 * first + 3.0 * second),
+        Coefficient::single(first),
     ]
 }
 
+/// The unit-interval parameter a root of the cubic states, or `None` where the
+/// root lies outside `[0, 1]` by more than `EPS_CUBIC_PARAM`.
+///
+/// `EPS_CUBIC_PARAM` is the excess this problem admits, which is the parameter
+/// rounding of the root solve. A root inside the excess differs from the
+/// endpoint by that rounding alone, so the endpoint is the parameter it states.
+/// A root outside the excess is not a parameter of this problem and states
+/// nothing, so no value outside `[0, 1]` reaches the caller as a parameter.
+fn unit_interval_parameter(root: f64) -> Option<f64> {
+    if !(-EPS_CUBIC_PARAM..=1.0 + EPS_CUBIC_PARAM).contains(&root) {
+        return None;
+    }
+    if root < 0.0 {
+        return Some(0.0);
+    }
+    if root > 1.0 {
+        return Some(1.0);
+    }
+    Some(root)
+}
+
 pub(in super::super) fn cubic_unit_interval_roots(
-    cubic: f64,
-    quadratic: f64,
-    linear: f64,
-    constant: f64,
+    cubic: Coefficient,
+    quadratic: Coefficient,
+    linear: Coefficient,
+    constant: Coefficient,
     value_tolerance: f64,
 ) -> Vec<f64> {
-    let scale = cubic
+    let [cubic_value, quadratic_value, linear_value, constant_value] =
+        [cubic, quadratic, linear, constant].map(Coefficient::stated);
+    let scale = cubic_value
         .abs()
-        .max(quadratic.abs())
-        .max(linear.abs())
-        .max(constant.abs());
+        .max(quadratic_value.abs())
+        .max(linear_value.abs())
+        .max(constant_value.abs());
     if scale <= value_tolerance {
         return Vec::new();
     }
-    let parameter_tolerance = EPS_CUBIC_PARAM;
     let evaluate = |parameter: f64| {
-        ((cubic * parameter + quadratic) * parameter + linear) * parameter + constant
+        ((cubic_value * parameter + quadratic_value) * parameter + linear_value) * parameter
+            + constant_value
     };
-    if cubic.abs() <= 1e-14 * scale {
+    // The cubic coefficient states the degree: it is zero where the third
+    // difference of the plane distances cancels inside the error of its own
+    // terms, and the problem is then the quadratic the remaining coefficients
+    // state.
+    if cubic_value == 0.0 {
         let mut roots = real_roots(quadratic, linear, constant)
             .into_iter()
-            .filter(|root| {
-                *root >= -parameter_tolerance
-                    && *root <= 1.0 + parameter_tolerance
-                    && evaluate(*root).abs() <= value_tolerance
+            .filter_map(|root| {
+                let parameter = unit_interval_parameter(root)?;
+                (evaluate(root).abs() <= value_tolerance).then_some(parameter)
             })
-            .map(|root| root.clamp(0.0, 1.0))
             .collect::<Vec<_>>();
         roots.sort_by(f64::total_cmp);
-        roots.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+        roots.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
         return roots;
     }
     let mut stations = vec![0.0, 1.0];
     stations.extend(
-        real_roots(3.0 * cubic, 2.0 * quadratic, linear)
-            .into_iter()
-            .filter(|root| *root > parameter_tolerance && *root < 1.0 - parameter_tolerance),
+        real_roots(
+            Coefficient::summed(3.0 * cubic_value, 3.0 * cubic.terms()),
+            Coefficient::summed(2.0 * quadratic_value, 2.0 * quadratic.terms()),
+            linear,
+        )
+        .into_iter()
+        .filter(|root| *root > EPS_CUBIC_PARAM && *root < 1.0 - EPS_CUBIC_PARAM),
     );
     stations.sort_by(f64::total_cmp);
-    stations.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+    stations.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
     let mut roots = stations
         .iter()
         .copied()
@@ -512,7 +542,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         roots.push(f64::midpoint(left, right));
     }
     roots.sort_by(f64::total_cmp);
-    roots.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+    roots.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
     roots
 }
 
@@ -711,11 +741,14 @@ mod tests {
         // difference computes as -1.7763568394002505e-15.
         let [cubic, quadratic, linear, constant] =
             super::plane_distance_coefficients([-8.9, -2.0, 4.9, 11.8]);
-        assert_eq!([cubic, quadratic], [0.0, 0.0]);
-        assert_eq!([linear, constant], [20.700_000_000_000_003, -8.9]);
+        assert_eq!([cubic.stated(), quadratic.stated()], [0.0, 0.0]);
+        assert_eq!(
+            [linear.stated(), constant.stated()],
+            [20.700_000_000_000_003, -8.9]
+        );
         assert_eq!(
             super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE),
-            [-constant / linear]
+            [-constant.stated() / linear.stated()]
         );
 
         // Plane distances that are exactly quadratic in the polygon index. The
@@ -723,9 +756,9 @@ mod tests {
         // as -2.7755575615628914e-17; the second difference stays.
         let [cubic, quadratic, linear, constant] =
             super::plane_distance_coefficients([-0.1, -0.1, 0.0, 0.2]);
-        assert_eq!(cubic, 0.0);
+        assert_eq!(cubic.stated(), 0.0);
         assert_eq!(
-            [quadratic, linear, constant],
+            [quadratic.stated(), linear.stated(), constant.stated()],
             [0.300_000_000_000_000_04, 0.0, -0.1]
         );
         let roots =

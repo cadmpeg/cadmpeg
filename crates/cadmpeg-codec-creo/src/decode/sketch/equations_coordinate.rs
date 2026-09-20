@@ -12,7 +12,7 @@ use super::equations_scalar::{
     reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
 };
 use super::skamp::SectionPointSource;
-use crate::decode::quadratic::cancelling_coefficient;
+use crate::decode::quadratic::Coefficient;
 use crate::decode::sketch_transfer::constraints::section_solver_equation_is_disabled;
 
 const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
@@ -969,18 +969,19 @@ pub(super) fn section_equal_length_coordinate_values(
         // The squared coefficients are exactly 0.0 or 1.0 and the linear terms
         // are exactly zero except on the one axis that carries the missing
         // coordinate, so the first two sums are exact. The constant sum is the
-        // difference of two squared lengths: it cancels to a rounding residue
-        // where the two segments have the same length, and that residue turns a
-        // tangency into two roots or into none.
-        let quadratic = (
-            second_u.0 + second_v.0 - first_u.0 - first_v.0,
-            second_u.1 + second_v.1 - first_u.1 - first_v.1,
-            cancelling_coefficient(
+        // difference of two squared lengths: it cancels against the four
+        // squares, so it carries their magnitudes and the root solver reads the
+        // discriminant against the error those magnitudes admit. Without that,
+        // the residue of the cancellation turns a tangency into two roots or
+        // into none.
+        let roots = quadratic_roots(
+            Coefficient::single(second_u.0 + second_v.0 - first_u.0 - first_v.0),
+            Coefficient::single(second_u.1 + second_v.1 - first_u.1 - first_v.1),
+            Coefficient::summed(
                 second_u.2 + second_v.2 - first_u.2 - first_v.2,
                 second_u.2 + second_v.2 + first_u.2 + first_v.2,
             ),
         );
-        let roots = quadratic_roots(quadratic);
         let [value] = roots.as_slice() else {
             continue;
         };
@@ -996,8 +997,11 @@ pub(super) fn section_equal_length_coordinate_values(
     candidates
 }
 
-fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) -> Vec<f64> {
+fn quadratic_roots(quadratic: Coefficient, linear: Coefficient, constant: Coefficient) -> Vec<f64> {
     let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
+    let quadratic = quadratic.stated();
+    let linear = linear.stated();
+    let constant = constant.stated();
     let scale = quadratic.abs().max(linear.abs()).max(constant.abs());
     let quadratic = quadratic / scale;
     let linear = linear / scale;
@@ -1252,5 +1256,55 @@ mod tests {
             super::section_equal_length_coordinate_values(&constraints, &coordinates),
             expected
         );
+    }
+
+    /// The single U coordinate an equal-length tangency states.
+    ///
+    /// Point 1 sits at the origin and point 2 at `segment`. Point 3 carries the
+    /// missing U coordinate and sits on the U axis; point 4 sits at
+    /// `(partner_u, length)`, where `length` is the length of segment 1-2. The
+    /// equal-length constraint 1-2 against 3-4 is then tangent, with the single
+    /// solution u3 = `partner_u`.
+    fn equal_length_tangency_u(
+        segment: [f64; 2],
+        partner_u: f64,
+        length: f64,
+    ) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
+        let coordinates = BTreeMap::from([
+            (1, [Some(0.0), Some(0.0)]),
+            (2, [Some(segment[0]), Some(segment[1])]),
+            (3, [None, Some(0.0)]),
+            (4, [Some(partner_u), Some(length)]),
+        ]);
+        let constraints = [SectionEqualLengthConstraint {
+            first: [1, 2],
+            second: [3, 4],
+            equation_id: 7,
+            offset: 0,
+            active: true,
+        }];
+        super::section_equal_length_coordinate_values(&constraints, &coordinates)
+    }
+
+    #[test]
+    fn numerical_followup_equal_length_tangency_states_its_off_axis_root() {
+        // The exact constant of the quadratic is partner_u^2, and the two
+        // squared segment lengths cancel on top of it. That residue is far
+        // larger than a discriminant band read from the coefficient values
+        // alone admits: the first and third witnesses stated no root at all and
+        // the second split the double root into 0.000999992616836453 and
+        // 0.0010000073831635471, which no longer agree to one coordinate.
+        for (segment, partner_u, length) in [
+            ([3.3, 4.3], 0.001, 5.420_332_093_147_061),
+            ([0.3, 0.4], 0.001, 0.5),
+            ([1.1, 2.2], 0.01, 2.459_674_775_249_769),
+        ] {
+            let expected: BTreeMap<SectionCoordinateVariable, Option<f64>> =
+                BTreeMap::from([((3, SectionAxis::U), Some(partner_u))]);
+            assert_eq!(
+                equal_length_tangency_u(segment, partner_u, length),
+                expected
+            );
+        }
     }
 }

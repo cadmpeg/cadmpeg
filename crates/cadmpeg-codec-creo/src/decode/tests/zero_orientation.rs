@@ -17,6 +17,7 @@ use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::named::{
     named_feature_definition, named_or_referenced_feature_definition,
 };
+use crate::decode::quadratic::Coefficient;
 use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
@@ -1800,11 +1801,25 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     .expect("resource limits")
     .is_none());
     assert_eq!(
-        cubic_unit_interval_roots(1.0, -1.5, 0.66, -0.08, 1.0e-12).len(),
+        cubic_unit_interval_roots(
+            Coefficient::single(1.0),
+            Coefficient::single(-1.5),
+            Coefficient::single(0.66),
+            Coefficient::single(-0.08),
+            1.0e-12
+        )
+        .len(),
         3
     );
     assert_eq!(
-        cubic_unit_interval_roots(1.0, -1.8, 1.05, -0.2, 1.0e-12).len(),
+        cubic_unit_interval_roots(
+            Coefficient::single(1.0),
+            Coefficient::single(-1.8),
+            Coefficient::single(1.05),
+            Coefficient::single(-0.2),
+            1.0e-12
+        )
+        .len(),
         2
     );
 }
