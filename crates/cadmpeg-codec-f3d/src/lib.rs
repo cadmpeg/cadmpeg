@@ -47,12 +47,13 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.f3d")?;
 //! let result = F3dCodec.decode(&mut input, &DecodeOptions::default())?;
-//! // Edit supported fields in result.ir().
+//! let (ir, _report, fidelity) = result.into_parts();
+//! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
 //!     .plan(cadmpeg_ir::codec::write::EncodeInput {
-//!         ir: result.ir(),
-//!         fidelity: Some(result.source_fidelity()),
+//!         ir: &ir,
+//!         fidelity: Some(&fidelity),
 //!     }, TargetRequest::Inherit)?
 //!     .write_to(&mut output)?;
 //! # Ok(())
