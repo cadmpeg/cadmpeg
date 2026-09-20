@@ -5,6 +5,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
 use crate::test_support::test_deltas::bspline_curve_replacement_partition_stream;
@@ -908,7 +910,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
 fn snapshot(bytes: &[u8]) -> String {
     let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
         Ok(result) => {
-            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+            let result = EditableDecodeResult::from(result);
             serde_json::json!({
                 "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                 "report": serde_json::to_value(result.report()).expect("serialize report"),

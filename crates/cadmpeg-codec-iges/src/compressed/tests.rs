@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use super::{normalize, parse_data_entity, parse_directory_record};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
@@ -148,7 +150,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     assert_eq!(lines[directory_start + 4][64..72], *b"       1");
     assert_eq!(lines[directory_start + 5][64..72], *b"       3");
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
             .unwrap(),
@@ -185,7 +187,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -211,7 +213,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
 #[test]
 fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
     let source = compressed_points_file();
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
             .unwrap(),
@@ -228,8 +230,8 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-            &(plan.report()),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
             "identity/target"
         )
         .as_ref()
@@ -237,7 +239,7 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),

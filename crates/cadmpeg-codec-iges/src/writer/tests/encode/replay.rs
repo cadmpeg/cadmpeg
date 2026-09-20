@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reporting of a declined verbatim replay.
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
@@ -21,7 +23,7 @@ use std::io::Cursor;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
 fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+    match &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
         plan.report().write_path(),
         "fidelity",
     ) {
@@ -32,7 +34,7 @@ fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -
 
 #[test]
 fn encode_reports_a_version_mismatch_as_dialect_displacement() {
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
             .unwrap(),
@@ -57,7 +59,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -77,7 +79,7 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
 
 #[test]
 fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
             .unwrap(),
@@ -104,7 +106,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -114,7 +116,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
 
 #[test]
 fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
             .unwrap(),
@@ -133,7 +135,7 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             &(report),
             "identity/target"
         )
@@ -174,13 +176,22 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             .unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
-        assert_eq!(cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(&(report), "identity/target").as_ref().map(DialectId::as_str), Some(id), "{id}");
+        assert_eq!(
+            wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+                &(report),
+                "identity/target"
+            )
+            .as_ref()
+            .map(DialectId::as_str),
+            Some(id),
+            "{id}"
+        );
     }
 }
 
 #[test]
 fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
             .unwrap(),

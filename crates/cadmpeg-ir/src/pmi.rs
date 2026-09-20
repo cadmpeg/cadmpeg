@@ -470,6 +470,7 @@ crate::units::named_field!(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_test_support::edit;
     use std::num::NonZeroU32;
 
     use super::{
@@ -810,7 +811,7 @@ mod tests {
             .is_err());
             assert!({
                 let replacement = invalid;
-                cadmpeg_test_support::edit::replace(&mut admitted, |_| {
+                edit::replace(&mut admitted, |_| {
                     crate::pmi::DatumReferences::try_from(replacement)
                 })
             }
@@ -820,7 +821,7 @@ mod tests {
         let replacement = vec![reference("z", 3, None)];
         {
             let replacement = replacement.clone();
-            cadmpeg_test_support::edit::replace(&mut admitted, |_| {
+            edit::replace(&mut admitted, |_| {
                 crate::pmi::DatumReferences::try_from(replacement)
             })
         }

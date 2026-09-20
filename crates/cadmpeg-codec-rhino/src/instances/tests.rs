@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::subd;
 use cadmpeg_test_support::wire;
 
@@ -413,8 +415,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
     assert!(parsed.legacy_relative_path());
     assert!(scan.definitions.diagnostics.is_empty());
     set_test_units(&mut scan, 1.0);
-    let result =
-        cadmpeg_test_support::EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
+    let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let external = &result
         .ir()
         .native
@@ -541,8 +542,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         &malformed_source_bytes[malformed_range.clone()]
     );
     set_test_units(&mut scan, 1.0);
-    let malformed_result =
-        cadmpeg_test_support::EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
+    let malformed_result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
     let malformed_retained = malformed_result
         .source_fidelity()
         .retained_records()
@@ -604,9 +604,7 @@ fn obsolete_alternative_path_userdata_applies_v5_slot_precedence() {
         future_record.as_slice()
     );
     set_test_units(&mut future_scan, 1.0);
-    let future_result = cadmpeg_test_support::EditableDecodeResult::from(
-        crate::decode::decode_for_test(&future_scan),
-    );
+    let future_result = EditableDecodeResult::from(crate::decode::decode_for_test(&future_scan));
     let future_external = &future_result
         .ir()
         .native

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use crate::test_support::allfeatur_row;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
@@ -65,7 +67,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.surface_ids(), vec![7]);
     assert_eq!(table.non_surface_entity_ids(), vec![9]);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -301,7 +303,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -488,7 +490,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         Some(&[42, 43][..])
     );
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -533,7 +535,7 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(scan.features.loop_history_entries[1].ordinal, 1);
     assert_eq!(scan.features.loop_history_entries[1].loop_id, 43);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -563,9 +565,9 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         Exactness::ByteExact,
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::DECODED_FEATURE_LOOP_HISTORY_ENTRY_COUNT.as_str()
         ),
         2
     );
@@ -704,23 +706,23 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     assert_eq!(parameters["loop_restore.direction#2"], "1");
     assert_eq!(parameters["loop_restore.direction2"], "167");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_FEATURE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_TYPED_FEATURE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(result.report()),
-            (crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT).as_str()
+        wire::coverage_count(
+            result.report(),
+            crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT.as_str()
         ),
         1
     );
@@ -784,7 +786,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(variables.points()[0].u, Some(1.0));
     assert_eq!(variables.points()[0].v, Some(3.0));
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),
@@ -861,16 +863,16 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "none"
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT.as_str()
         ),
         0
     );
@@ -905,16 +907,16 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         "driver_table_unresolved"
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONFIGURATION_DRIVER_TABLE_REFERENCE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT.as_str()
         ),
         0
     );

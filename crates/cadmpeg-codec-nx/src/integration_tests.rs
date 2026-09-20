@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized NX PRT byte images.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_test_support::bytes::put_u16;
 
 use crate::test_support::test_bytes::zlib_compress;
@@ -56,15 +58,15 @@ use super::NxCodec;
 
 mod dialect;
 
-fn decode(bytes: Vec<u8>) -> cadmpeg_test_support::EditableDecodeResult {
-    cadmpeg_test_support::EditableDecodeResult::from(
+fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
+    EditableDecodeResult::from(
         NxCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized NX part should decode"),
     )
 }
 
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("nx").is_some());

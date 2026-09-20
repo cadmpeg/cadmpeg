@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::container::SectionRole;
 use crate::test_support::assert_annotation;
 use crate::test_support::build_prt;
@@ -47,7 +49,7 @@ fn scan_decodes_length_prefixed_native_model_name() {
         scan.framing.model_name.as_ref().map(|model| model.offset),
         Some(model_name_offset)
     );
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode"),

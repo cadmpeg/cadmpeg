@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -46,7 +48,7 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn generated_surface_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_surface_offset_smbh())),
@@ -102,7 +104,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         let shift = &mut shift_value;
         let mut scale_value = *definition_payload.scale();
         let scale = &mut scale_value;
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();
@@ -193,7 +195,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
 fn generated_spring_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_spring_smbh())),
@@ -1087,7 +1089,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     inline.native_tail_flags = [false, true, false, true];
     {
         let replacement = [-2.0, 3.0];
-        cadmpeg_test_support::edit::replace(inline, |previous| {
+        edit::replace(inline, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
@@ -1178,7 +1180,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
     {
         let replacement = poles.unwrap();
-        cadmpeg_test_support::edit::replace(nurbs, |previous| {
+        edit::replace(nurbs, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
                 previous.degree(),
                 previous.knots().to_vec(),
@@ -1226,7 +1228,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
             Ok(())
         })
         .unwrap();
-    cadmpeg_test_support::edit::replace(nurbs, |previous| {
+    edit::replace(nurbs, |previous| {
         let mut knots = previous.knots().to_vec();
         (|knots: &mut [f64]| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))(&mut knots);
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
@@ -1244,7 +1246,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     };
     {
         let replacement = Some([-3.0, 5.0]);
-        cadmpeg_test_support::edit::replace(metadata, |previous| {
+        edit::replace(metadata, |previous| {
             cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,

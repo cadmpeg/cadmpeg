@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::geometry::pcurve::{PcurveGeneralForm, PcurveInlineForm, PcurveMetadata};
 
 #[test]
@@ -56,7 +58,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
         assert!(PcurveMetadata::try_general(None, Some(range), None).is_err());
         assert!({
             let replacement = range;
-            cadmpeg_test_support::edit::replace(&mut inline, |previous| {
+            edit::replace(&mut inline, |previous| {
                 crate::geometry::pcurve::PcurveInlineForm::try_new(
                     previous.wrapper_reversed,
                     previous.native_tail_flags,
@@ -69,7 +71,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
         assert_eq!(inline.parameter_range(), [0.0, 1.0]);
         assert!({
             let replacement = Some(range);
-            cadmpeg_test_support::edit::replace(&mut general, |previous| {
+            edit::replace(&mut general, |previous| {
                 crate::geometry::pcurve::PcurveGeneralForm::try_new(
                     previous.wrapper_reversed,
                     replacement,
@@ -82,7 +84,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
     }
     {
         let replacement = [1.0, 1.0];
-        cadmpeg_test_support::edit::replace(&mut inline, |previous| {
+        edit::replace(&mut inline, |previous| {
             crate::geometry::pcurve::PcurveInlineForm::try_new(
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
@@ -94,7 +96,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
     .unwrap();
     {
         let replacement = Some([3.0, -2.0]);
-        cadmpeg_test_support::edit::replace(&mut general, |previous| {
+        edit::replace(&mut general, |previous| {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,
@@ -107,7 +109,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
     assert_eq!(general.parameter_range(), Some([3.0, -2.0]));
     {
         let replacement = None;
-        cadmpeg_test_support::edit::replace(&mut general, |previous| {
+        edit::replace(&mut general, |previous| {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,

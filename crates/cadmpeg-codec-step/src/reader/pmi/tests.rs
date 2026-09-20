@@ -4,6 +4,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 const EPS_PMI_NUMERIC: f64 = 1.0e-12;
 
 use std::fmt::Write as _;
@@ -24,7 +26,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
 
     assert_eq!(result.ir().model.pmi.len(), 5);
     assert!(!result
@@ -1286,7 +1288,7 @@ pub(crate) fn common_datum_compartment_round_trips_as_one_precedence() {
                 modifiers: vec!["least_material_requirement".into()],
             },
         ];
-        cadmpeg_test_support::edit::replace(references, |_| {
+        edit::replace(references, |_| {
             cadmpeg_ir::pmi::DatumReferences::try_from(replacement)
         })
     }

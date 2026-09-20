@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::features::FeatureOperation;
 use crate::features::{
     BinderTarget, BodySelection, CombineOperands, Feature, FeatureDefinition, FeatureId,
@@ -34,7 +36,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     let before = children.clone();
     assert!({
         let active = Some(second.clone());
-        cadmpeg_test_support::edit::replace(&mut children, |previous| {
+        edit::replace(&mut children, |previous| {
             crate::features::TreeChildren::new(previous.to_vec(), active)
         })
     }
@@ -45,7 +47,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert_eq!(children.len(), 2);
     {
         let active = Some(second);
-        cadmpeg_test_support::edit::replace(&mut children, |previous| {
+        edit::replace(&mut children, |previous| {
             crate::features::TreeChildren::new(previous.to_vec(), active)
         })
     }

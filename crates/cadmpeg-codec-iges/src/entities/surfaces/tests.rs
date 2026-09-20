@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::unwrap_used)]
+use cadmpeg_test_support::edit;
+
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 use std::io::Cursor;
@@ -1580,7 +1582,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     .unwrap();
     {
         let replacement = scaled_poles;
-        cadmpeg_test_support::edit::replace(&mut scaled, |previous| {
+        edit::replace(&mut scaled, |previous| {
             cadmpeg_ir::geometry::nurbs::NurbsCurve::new(
                 previous.degree(),
                 previous.knots().to_vec(),

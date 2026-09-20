@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
     CadirEncoder, Consumption, EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption,
@@ -23,8 +25,8 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("empty-catalog inheritance resolves to CADIR identity");
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-            &(plan.report()),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
             "identity/target"
         )
         .as_ref(),
@@ -69,15 +71,15 @@ fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
         .unwrap();
     assert_eq!(plan.report().format(), "cadir");
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-            &(plan.report()),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
             "identity/target"
         )
         .as_ref(),
         None
     );
     assert_eq!(
-        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+        wire::field::<crate::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -133,8 +135,8 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         .unwrap();
     assert_eq!(plan.report().format(), "test");
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-            &(plan.report()),
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
             "identity/target"
         )
         .as_ref(),
@@ -150,7 +152,7 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
     assert_eq!(
-        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+        wire::field::<crate::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -169,7 +171,7 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
         )
         .unwrap();
     assert_eq!(
-        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+        wire::field::<crate::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),

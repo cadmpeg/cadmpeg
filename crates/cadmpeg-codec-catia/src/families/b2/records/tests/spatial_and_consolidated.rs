@@ -1,3 +1,5 @@
+use cadmpeg_test_support::edit;
+
 use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
@@ -100,7 +102,7 @@ fn offset_support_binds_by_native_domain_knot_limits() {
         &mut crate::nurbs::LaneRefusals::new(),
     );
     let mut decoy = carriers[0].clone();
-    cadmpeg_test_support::edit::replace(&mut decoy.geometry, |previous| {
+    edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
         (|knots: &mut [f64]| {
             for knot in knots {

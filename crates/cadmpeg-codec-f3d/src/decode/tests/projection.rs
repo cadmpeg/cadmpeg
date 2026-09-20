@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::wire;
+
 use super::super::{
     bind_mesh_feature_definitions, design_projection_gaps, face_selection_is_resolved,
     feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
@@ -196,10 +198,7 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
     assert!(unresolved.is_empty());
     assert_eq!(channels.len(), 1);
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::tessellation::TessellationChannelDomain>(
-            &channels[0],
-            "domain"
-        ),
+        wire::field::<cadmpeg_ir::tessellation::TessellationChannelDomain>(&channels[0], "domain"),
         cadmpeg_ir::tessellation::TessellationChannelDomain::Corner
     );
     assert_eq!(channels[0].count(), 5);

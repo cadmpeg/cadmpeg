@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::chunks::ArchiveVersion;
 use crate::test_support::test_dump as bytes;
 use crate::RhinoCodec;
@@ -47,7 +49,7 @@ fn definition_fixture_families_have_valid_nested_checksums() {
             let record = bytes::definition_record(archive, payload);
             let document = bytes::document_with_definitions(version, archive, &[record], &[]);
             for container_only in [false, true] {
-                let result = cadmpeg_test_support::EditableDecodeResult::from(
+                let result = EditableDecodeResult::from(
                     RhinoCodec
                         .decode(
                             &mut Cursor::new(&document),
@@ -145,7 +147,7 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 usize::from(!malformed_tail)
             );
             for container_only in [false, true] {
-                let result = cadmpeg_test_support::EditableDecodeResult::from(
+                let result = EditableDecodeResult::from(
                     RhinoCodec
                         .decode(
                             &mut Cursor::new(&document),
@@ -221,7 +223,7 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
         .collect::<Vec<_>>();
     assert_eq!(offsets.len(), 2);
     for container_only in [false, true] {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),
@@ -261,7 +263,7 @@ fn container_only_keeps_recorded_definition_field_losses() {
     let record = definition_record(false, false, 0.002);
     let document = bytes::document_with_definitions("80", ArchiveVersion::V8, &[record], &[]);
     for container_only in [false, true] {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),
@@ -302,7 +304,7 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
             .collect::<Vec<_>>();
         assert_eq!(offsets.len(), 2);
         for container_only in [false, true] {
-            let result = cadmpeg_test_support::EditableDecodeResult::from(
+            let result = EditableDecodeResult::from(
                 RhinoCodec
                     .decode(
                         &mut Cursor::new(&document),
@@ -352,7 +354,7 @@ fn container_only_keeps_coded_container_checksum_failures() {
         ],
     );
     for container_only in [false, true] {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
                     &mut Cursor::new(&document),

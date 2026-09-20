@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -201,7 +203,7 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
 #[test]
 fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("generated Protein decode"),

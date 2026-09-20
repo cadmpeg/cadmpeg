@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
+use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_test_support::edit;
+
 use crate::decode::sweep::pcurves::RevolutionBoundary;
 
 use super::with_decode_ctx;
@@ -1487,13 +1490,9 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let surface = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            3,
-            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             (0..4)
                 .flat_map(|u| {
                     [
@@ -1602,9 +1601,9 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
 #[test]
 fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets() {
     let first = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(-1.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 1.0)],
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
@@ -1616,9 +1615,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     )
     .expect("valid first extrusion surface");
     let second = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![4.0, 4.0, 8.0, 8.0], false),
+        NurbsSurfaceLanes::new(
             vec![
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)],
                 vec![Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 1.0, 1.0)],
@@ -1660,14 +1659,14 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     {
         let replacement = NurbsPoleGrid::from_lanes(reversed_grid, reversed_weights)
             .expect("finite fixture geometry preserves NURBS invariants");
-        cadmpeg_test_support::edit::replace(&mut reversed, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(&mut reversed, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     previous.u_periodic(),
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1695,14 +1694,14 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     {
         let replacement = NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
             .expect("finite fixture geometry preserves NURBS invariants");
-        cadmpeg_test_support::edit::replace(&mut same_side, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(&mut same_side, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     previous.u_periodic(),
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1725,14 +1724,14 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     let mut periodic_transverse = second.clone();
     {
         let replacement = true;
-        cadmpeg_test_support::edit::replace(&mut periodic_transverse, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(&mut periodic_transverse, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     replacement,
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1759,14 +1758,14 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     {
         let replacement = NurbsPoleGrid::from_lanes(different_grid, different_weights)
             .expect("finite fixture geometry preserves NURBS invariants");
-        cadmpeg_test_support::edit::replace(&mut different_boundary, |previous| {
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+        edit::replace(&mut different_boundary, |previous| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(
                     previous.u_degree(),
                     previous.u_knots().to_vec(),
                     previous.u_periodic(),
                 ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                NurbsSurfaceAxis::new(
                     previous.v_degree(),
                     previous.v_knots().to_vec(),
                     previous.v_periodic(),
@@ -1790,13 +1789,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
 #[test]
 fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     let surface = NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            3,
-            vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
             [-1.0, -0.5, 0.5, 1.0]
                 .into_iter()
                 .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])

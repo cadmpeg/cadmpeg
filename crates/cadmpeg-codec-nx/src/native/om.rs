@@ -4293,6 +4293,7 @@ mod tests {
     use crate::test_support::test_prt::prt_with_indexed_om_section;
     use crate::test_support::test_prt::prt_with_named_payloads;
     use crate::test_support::test_prt::prt_with_size_framed_om_section;
+    use cadmpeg_test_support::EditableDecodeResult;
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -5605,7 +5606,7 @@ mod tests {
     #[test]
     fn decode_retains_typed_nx_numeric_expression() {
         let mut cur = Cursor::new(prt_with_indexed_om_section());
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             NxCodec
                 .decode(&mut cur, &DecodeOptions::default())
                 .expect("required invariant"),

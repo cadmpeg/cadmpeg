@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::design::dimensions::bind_dimension_loci;
 use crate::design::dimensions::counted_role_relation;
 use crate::design::dimensions::exact_counted_offset;
@@ -203,7 +205,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     ));
 
     let mut skewed = result;
-    cadmpeg_test_support::edit::replace(&mut skewed.geometry, |previous| {
+    edit::replace(&mut skewed.geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             let SketchGeometryDefinition::Nurbs { curve } = definition else {
@@ -769,7 +771,7 @@ fn counted_roles_require_matching_solved_geometry() {
         Some(SketchConstraintDefinitionInput::Equal { first, second })
             if &first == arc.id() && &second == equal_arc.id()
     ));
-    cadmpeg_test_support::edit::replace(&mut equal_arc.geometry, |previous| {
+    edit::replace(&mut equal_arc.geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             if let SketchGeometryDefinition::Arc { radius, .. } = definition {

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
@@ -818,26 +820,24 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
         assert!(serde_json::from_value::<SpatialSketchGeometry>(invalid).is_err());
     }
     let before = geometry.clone();
-    assert!(
-        cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
-            let mut definition = previous.definition().clone();
-            (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
-                let SpatialSketchGeometryDefinition::Arc {
-                    start_angle,
-                    end_angle,
-                    ..
-                } = definition
-                else {
-                    panic!("arc")
-                };
-                *end_angle = *start_angle;
-            })(&mut definition);
-            definition.try_into()
-        })
-        .is_err()
-    );
+    assert!(edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
+            let SpatialSketchGeometryDefinition::Arc {
+                start_angle,
+                end_angle,
+                ..
+            } = definition
+            else {
+                panic!("arc")
+            };
+            *end_angle = *start_angle;
+        })(&mut definition);
+        definition.try_into()
+    })
+    .is_err());
     assert_eq!(geometry, before);
-    cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
+    edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
             let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {

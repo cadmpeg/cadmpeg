@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::geometry::{CurveOffsetRange, OffsetSide, ProceduralCurve, ProceduralCurveDefinition};
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::Vector3;
@@ -176,23 +178,21 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     let support = SurfaceId::mint("synthetic:test:surface#support").unwrap();
     let context = curve.intersection_context_mut().unwrap();
     context.set_surface(0, Some(support.clone()));
-    assert!(
-        cadmpeg_test_support::edit::with_output(context, |previous| {
-            let mut sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
-            let output = (|_: &mut [crate::geometry::IntcurveSupportSide; 2],
-                           range: &mut [f64; 2],
-                           _: &mut [Vec<f64>; 3]| *range = [1.0, 0.0])(
-                &mut sides,
-                &mut range,
-                &mut discontinuities,
-            );
-            crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-                .map(|candidate| (candidate, output))
-        })
-        .is_err()
-    );
+    assert!(edit::with_output(context, |previous| {
+        let mut sides = previous.sides().clone();
+        let mut range = previous.parameter_range();
+        let mut discontinuities = previous.discontinuities().clone();
+        let output = (|_: &mut [crate::geometry::IntcurveSupportSide; 2],
+                       range: &mut [f64; 2],
+                       _: &mut [Vec<f64>; 3]| *range = [1.0, 0.0])(
+            &mut sides,
+            &mut range,
+            &mut discontinuities,
+        );
+        crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
+            .map(|candidate| (candidate, output))
+    })
+    .is_err());
     assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert_eq!(context.sides()[0].surface.as_ref(), Some(&support));
     assert_eq!(curve.cache_fit_tolerance(), Some(0.5));

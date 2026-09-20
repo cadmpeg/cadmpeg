@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::analytic_surface_normal;
 use super::analytic_surface_residual;
 use super::assign_persistent_owners;
@@ -1578,7 +1580,7 @@ fn decode_reports_display_list_geometry() {
     let f = sldprt_with_body_and_display_list(&triangle_body());
     let mut cur = Cursor::new(f);
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),

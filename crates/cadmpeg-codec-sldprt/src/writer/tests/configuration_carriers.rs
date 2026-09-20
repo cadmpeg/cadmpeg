@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -265,7 +267,7 @@ fn semantic_writer_round_trips_active_configuration() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(decoded.ir().model.configurations[0].active);
     assert!(!decoded.ir().model.configurations[1].active);
 
@@ -454,7 +456,7 @@ fn semantic_writer_remaps_partition_without_remapping_resolved_features() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.configurations[0].source_index, Some(3));
     assert!(decoded.ir().model.configurations[0].active);
 
@@ -533,7 +535,7 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0].source_index = None;
 
     let mut written = Vec::new();
@@ -579,7 +581,7 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let mut duplicate = decoded.ir().model.configurations[0].clone();
     duplicate.id =
         cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
@@ -615,7 +617,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0]
         .name
         .as_mut()
@@ -811,7 +813,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let mut result = EditableDecodeResult::from(result);
     let moved = result.ir_mut().model.points[0].position();
     result.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -843,7 +845,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut solid = cadmpeg_test_support::EditableDecodeResult::from(solid);
+    let mut solid = EditableDecodeResult::from(solid);
     let moved = solid.ir_mut().model.points[0].position();
     solid.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -871,7 +873,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut sheet = cadmpeg_test_support::EditableDecodeResult::from(sheet);
+    let mut sheet = EditableDecodeResult::from(sheet);
     let moved = sheet.ir_mut().model.points[0].position();
     sheet.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -901,7 +903,7 @@ fn semantic_writer_preserves_outer_header() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -933,7 +935,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
         let result = SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap();
-        let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
+        let mut result = EditableDecodeResult::from(result);
         translate_model_x(&mut result.ir_mut(), 1.0);
 
         let mut encoded = Vec::new();
@@ -983,7 +985,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -1031,7 +1033,7 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let error = crate::test_support::plan_inherited_write(
@@ -1051,7 +1053,7 @@ fn semantic_writer_rejects_unrepresented_typed_fields() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.edges[0]
         .set_param_range(Some([0.0, 1.0]))
         .unwrap();
@@ -1072,7 +1074,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.subds.push(cadmpeg_ir::SubdSurface {
         id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
@@ -1127,7 +1129,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 
 #[test]
 fn semantic_writer_rejects_unrepresentable_analytic_surface_parameterizations() {
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(
                 &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -1215,7 +1217,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(50.8, moved.y, moved.z))
@@ -1253,7 +1255,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -1270,7 +1272,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+    let regenerated = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap(),
@@ -1318,7 +1320,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
@@ -1388,7 +1390,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -1438,7 +1440,7 @@ fn semantic_writer_rejects_overlong_material_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].color = Some(
@@ -1475,7 +1477,7 @@ fn semantic_writer_preserves_face_appearance() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -1524,7 +1526,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0]
@@ -1568,7 +1570,7 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let native = &sldprt_native(decoded.ir()).feature_histories[0].features;
     assert_eq!(
         native[1].tree_parent_record_id(),
@@ -1628,7 +1630,7 @@ fn semantic_writer_applies_neutral_configuration_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let configuration = &mut ir_edit.model.configurations[0];
@@ -1668,7 +1670,7 @@ fn semantic_writer_rejects_conflicting_configuration_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.configurations[0].name = Some("Neutral".to_string());
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].configurations[0].name = "Native".to_string();
@@ -1695,7 +1697,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = ir_edit
@@ -1748,7 +1750,7 @@ fn semantic_writer_preserves_dimension_attributes() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];
@@ -1790,7 +1792,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let parameter = &mut ir_edit.model.parameters[0];

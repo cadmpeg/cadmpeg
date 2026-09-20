@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
 use crate::test_support::test_a5a8::a5_surface_stream;
@@ -1252,7 +1254,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         &mut crate::nurbs::LaneRefusals::new(),
     );
     let surface = &mut carriers[0].geometry;
-    cadmpeg_test_support::edit::replace(surface, |previous| {
+    edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
         (|knots: &mut [f64]| {
             let lower = knots[0];
@@ -1277,7 +1279,7 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         )
     })
     .unwrap();
-    cadmpeg_test_support::edit::replace(surface, |previous| {
+    edit::replace(surface, |previous| {
         let mut knots = previous.v_knots().to_vec();
         (|knots: &mut [f64]| {
             let lower = knots[0];

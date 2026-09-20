@@ -2,6 +2,8 @@
 //! Parameter, equation, and configuration-local scalar decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -45,7 +47,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let parameters = &decoded.ir().model.parameters;
     assert_eq!(parameters.len(), 10);
     assert_eq!(
@@ -237,7 +239,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let parameter_id = |name: &str| {
         decoded
             .ir()
@@ -424,7 +426,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -507,7 +509,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let equations = decoded
         .ir()
         .model
@@ -651,7 +653,7 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded
         .ir_mut()
         .model
@@ -759,7 +761,7 @@ fn decode_preserves_configuration_local_parameter_values() {
         ),
     ));
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap(),

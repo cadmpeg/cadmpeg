@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::edit;
+
 use super::{
     historical_profile_face_candidates, resolve_entity_selection_path,
     resolve_entity_selection_profile, resolved_loft_entity_selection_path,
@@ -547,7 +549,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     );
 
     let mut noncoincident_entities = spatial_entities.to_vec();
-    cadmpeg_test_support::edit::replace(&mut noncoincident_entities[2].geometry, |previous| {
+    edit::replace(&mut noncoincident_entities[2].geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SpatialSketchGeometryDefinition| {
             let SpatialSketchGeometryDefinition::Circle { center, .. } = definition else {

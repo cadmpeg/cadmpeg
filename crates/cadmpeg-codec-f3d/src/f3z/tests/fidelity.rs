@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
 use crate::test_support::smbh_geometry_test::synthetic_mixed_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
@@ -11,7 +13,7 @@ use std::io::Cursor;
 #[test]
 fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
     let component = f3d_with_smbh(&synthetic_mixed_smbh());
-    let original = cadmpeg_test_support::EditableDecodeResult::from(
+    let original = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(component.clone()),
@@ -23,7 +25,7 @@ fn merged_archive_keeps_each_component_unknown_record_image_and_owner() {
     assert!(!unknowns.is_empty());
     let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
     let archive = f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)]);
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .unwrap(),

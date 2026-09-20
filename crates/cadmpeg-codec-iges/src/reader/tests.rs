@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -55,7 +57,7 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityRetainedUnprojected.kind()));
     assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<String>>(
+        wire::field_or_default::<Option<String>>(
             &(result.report().transfer_ledger.entries[0].outcome),
             "note"
         )

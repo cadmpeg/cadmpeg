@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design construction transfer unit tests.
 
+use cadmpeg_test_support::wire;
+
 use crate::design::tests::definition;
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
@@ -266,7 +268,7 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         FeatureDefinition::Operation(FeatureOperation::RegularPolygonCurve {
             sides,
             circumradius: actual_circumradius
-        }) if cadmpeg_test_support::wire::value::<u32>(&sides) == 7 && actual_circumradius.get() == 8.0
+        }) if wire::value::<u32>(&sides) == 7 && actual_circumradius.get() == 8.0
     ));
     assert!(matches!(
         feature("Plane").evaluation.definition(),

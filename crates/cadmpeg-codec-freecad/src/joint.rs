@@ -584,6 +584,7 @@ pub(crate) mod tests {
     use crate::FcstdCodec;
     use cadmpeg_ir::products::PairedJointKind;
     use cadmpeg_ir::{Codec, DecodeOptions};
+    use cadmpeg_test_support::wire;
     use std::io::Cursor;
 
     const EPS_JOINT_SCALAR: f64 = 1.0e-12;
@@ -656,7 +657,7 @@ pub(crate) mod tests {
                 panic!("one neutral joint")
             };
             assert!(matches!(
-                cadmpeg_test_support::wire::field::<cadmpeg_ir::products::JointOperands>(joint, "operands"),
+                wire::field::<cadmpeg_ir::products::JointOperands>(joint, "operands"),
                 cadmpeg_ir::products::JointOperands::Pair { kind: PairedJointKind::Native { name, .. }, .. } if name == family
             ));
             assert_valid_document(result.ir());
@@ -728,7 +729,7 @@ pub(crate) mod tests {
                 },
             offset_frames,
             ..
-        } = cadmpeg_test_support::wire::field(joint, "operands")
+        } = wire::field(joint, "operands")
         else {
             panic!("revolute pair")
         };
@@ -790,9 +791,7 @@ pub(crate) mod tests {
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
         assert!(matches!(
-            cadmpeg_test_support::wire::field::<cadmpeg_ir::products::JointOperands>(
-                joint, "operands"
-            ),
+            wire::field::<cadmpeg_ir::products::JointOperands>(joint, "operands"),
             cadmpeg_ir::products::JointOperands::Grounded { .. }
         ));
         let connectors = joint.connectors().collect::<Vec<_>>();

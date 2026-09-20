@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use super::{
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
     SpatialSketchEntityId, SpatialSketchEntityPair,
@@ -1305,21 +1307,19 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     let mut geometry = serde_json::from_value::<SketchGeometry>(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     let original = geometry.clone();
-    assert!(
-        cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
-            let mut definition = previous.definition().clone();
-            (|definition: &mut crate::sketches::SketchGeometryDefinition| {
-                let SketchGeometryDefinition::Arc { radius, .. } = definition else {
-                    panic!("arc")
-                };
-                *radius = Length::new(-1.0).unwrap();
-            })(&mut definition);
-            definition.try_into()
-        })
-        .is_err()
-    );
+    assert!(edit::replace(&mut geometry, |previous| {
+        let mut definition = previous.definition().clone();
+        (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+            let SketchGeometryDefinition::Arc { radius, .. } = definition else {
+                panic!("arc")
+            };
+            *radius = Length::new(-1.0).unwrap();
+        })(&mut definition);
+        definition.try_into()
+    })
+    .is_err());
     assert_eq!(geometry, original);
-    cadmpeg_test_support::edit::replace(&mut geometry, |previous| {
+    edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut crate::sketches::SketchGeometryDefinition| {
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use super::{
     byte_accounting, claim_trivia, decode_exchange_mode, implicit_face_plane_work,
     semantic_input_work, ByteClass, Packaging,
@@ -190,7 +192,7 @@ fn implicit_face_plane_work_is_charged_before_plane_inference() {
 #[test]
 pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     let bytes = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode parsed STEP document"),
@@ -225,7 +227,7 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 #[test]
 fn decode_retains_signature_opaque_without_verification_result() {
     let bytes = include_bytes!("../signature/tests/data/sg04_openssl_detached.p21");
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode signature witness"),
@@ -262,7 +264,7 @@ fn decode_retains_signature_opaque_without_verification_result() {
 #[test]
 fn decode_user_defined_entities_as_named_opaque_records() {
     let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode user-defined entity witness"),
@@ -493,7 +495,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
             "ENDSEC;\nEND-ISO-10303-21;",
             "#69=PCURVE('',#28,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71),#50);\n#71=LINE('',#51,#53);\nENDSEC;\nEND-ISO-10303-21;",
         );
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode unowned pcurve"),
@@ -676,10 +678,7 @@ fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
         "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
     );
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
-    assert_eq!(
-        cadmpeg_test_support::wire::field::<String>(&provenance, "format"),
-        "step"
-    );
+    assert_eq!(wire::field::<String>(&provenance, "format"), "step");
     assert_eq!(
         provenance.offset,
         source.find("FILE_SCHEMA").unwrap() as u64
@@ -765,13 +764,9 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
     let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(wire::field::<String>(&provenance, "format"), "step");
     assert_eq!(
-        cadmpeg_test_support::wire::field::<String>(&provenance, "format"),
-        "step"
-    );
-    assert_eq!(
-        cadmpeg_test_support::wire::field_or_default::<Option<String>>(&provenance, "stream")
-            .as_deref(),
+        wire::field_or_default::<Option<String>>(&provenance, "stream").as_deref(),
         None
     );
     assert_eq!(

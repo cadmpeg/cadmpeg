@@ -2,6 +2,8 @@
 //! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::IgesCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -47,7 +49,7 @@ use crate::test_support::test_surface_fixtures::{
     tabulated_cylinder_file,
 };
 
-fn assert_valid(result: &cadmpeg_test_support::EditableDecodeResult) {
+fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
@@ -69,7 +71,7 @@ enum ExpectedArena {
     Native(&'static str),
 }
 
-fn arena_count(result: &cadmpeg_test_support::EditableDecodeResult, arena: ExpectedArena) -> usize {
+fn arena_count(result: &EditableDecodeResult, arena: ExpectedArena) -> usize {
     match arena {
         ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
         ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
@@ -91,10 +93,7 @@ fn arena_count(result: &cadmpeg_test_support::EditableDecodeResult, arena: Expec
     }
 }
 
-fn arena_ids(
-    result: &cadmpeg_test_support::EditableDecodeResult,
-    arena: ExpectedArena,
-) -> Vec<&str> {
+fn arena_ids(result: &EditableDecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
             .ir()
@@ -271,7 +270,7 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
 
 fn decode_matrix(
     fixtures: Vec<(&'static str, Vec<u8>, i64, ExpectedArena)>,
-) -> Vec<cadmpeg_test_support::EditableDecodeResult> {
+) -> Vec<EditableDecodeResult> {
     let matrix_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
     let source = std::fs::read_to_string(matrix_path).unwrap();
@@ -293,7 +292,7 @@ fn decode_matrix(
                 .filter(|entry| entry.entity_type == subject_type)
                 .map(|entry| entry.sequence)
                 .collect::<Vec<_>>();
-            let result = cadmpeg_test_support::EditableDecodeResult::from(detect_and_decode(bytes));
+            let result = EditableDecodeResult::from(detect_and_decode(bytes));
             let subject_output_count = arena_ids(&result, expected_arena)
                 .into_iter()
                 .filter(|identity| {
@@ -415,27 +414,25 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
 #[test]
 fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = cadmpeg_test_support::EditableDecodeResult::from(detect_and_decode(
-        owned_test_file_with_global(
-            &[
-                OwnedTestEntity {
-                    entity_type: 110,
-                    form: 1,
-                    label: "LATER-LN".into(),
-                    status: "00000000",
-                    parameters: "110,0,0,0,1,1,0;".into(),
-                },
-                OwnedTestEntity {
-                    entity_type: 116,
-                    form: 0,
-                    label: "V4-POINT".into(),
-                    status: "00000000",
-                    parameters: "116,1,2,3,0;".into(),
-                },
-            ],
-            global_v4,
-        ),
-    ));
+    let result = EditableDecodeResult::from(detect_and_decode(owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 1,
+                label: "LATER-LN".into(),
+                status: "00000000",
+                parameters: "110,0,0,0,1,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "V4-POINT".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+        ],
+        global_v4,
+    )));
 
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
@@ -571,9 +568,8 @@ fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_t
 
 #[test]
 fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
-    let result = cadmpeg_test_support::EditableDecodeResult::from(detect_and_decode(
-        bounded_plane_with_significance_gap_file(),
-    ));
+    let result =
+        EditableDecodeResult::from(detect_and_decode(bounded_plane_with_significance_gap_file()));
     let records = &result
         .ir()
         .native
@@ -875,7 +871,7 @@ fn metadata_pipeline_composes_properties_attributes_associativity_and_native_own
 #[test]
 fn repeated_decode_is_canonical() {
     let bytes = explicit_tetrahedron_solid_with_boolean_file();
-    let first = cadmpeg_test_support::EditableDecodeResult::from(
+    let first = EditableDecodeResult::from(
         IgesCodec
             .decode(
                 &mut Cursor::new(bytes.as_slice()),
@@ -883,7 +879,7 @@ fn repeated_decode_is_canonical() {
             )
             .unwrap(),
     );
-    let second = cadmpeg_test_support::EditableDecodeResult::from(
+    let second = EditableDecodeResult::from(
         IgesCodec
             .decode(
                 &mut Cursor::new(bytes.as_slice()),
@@ -944,7 +940,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
     ];
 
     for (name, bytes) in fixtures {
-        let result = cadmpeg_test_support::EditableDecodeResult::from(
+        let result = EditableDecodeResult::from(
             IgesCodec
                 .decode(
                     &mut Cursor::new(bytes.as_slice()),

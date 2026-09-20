@@ -2,6 +2,8 @@
 //! Sketch-marker lane decode, write-back, and native-validation tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -78,7 +80,7 @@ fn decode_resolves_each_marker_link_by_trailing_local_id() {
         &payload,
     ));
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap(),
@@ -121,7 +123,7 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0] =
             native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
@@ -150,7 +152,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0] =
             native.feature_input_lanes[0].sketch_entities[0].with_test_identity(
@@ -184,7 +186,7 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities.remove(1);
     });

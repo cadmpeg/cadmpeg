@@ -198,8 +198,6 @@ pub struct Region {
     pub shells: Vec<ShellId>,
 }
 
-impl Region {}
-
 /// One member of a shell: a face, a wire edge, or a free vertex.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

@@ -8,6 +8,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::dialect::{Admission, DialectMatch};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -424,7 +426,7 @@ fn mixed_unframed_and_foreign_declarations_report_every_admission_cause() {
 
 /// The coverage counts one decode of `bytes` reported.
 fn coverage(bytes: &[u8]) -> std::collections::BTreeMap<String, usize> {
-    cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+    wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
         &(InventorCodec
             .decode(
                 &mut std::io::Cursor::new(bytes.to_vec()),

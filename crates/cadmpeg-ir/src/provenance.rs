@@ -643,6 +643,7 @@ mod tests {
     #[cfg(feature = "schema")]
     use super::StreamName;
     use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
+    use cadmpeg_test_support::wire;
 
     #[cfg(feature = "schema")]
     #[test]
@@ -689,8 +690,7 @@ mod tests {
         assert_eq!(wire, serde_json::json!({"format": "iges", "offset": 12}));
         let read: SourceProvenance = serde_json::from_value(wire).expect("root reads back");
         assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<Option<String>>(&read, "stream")
-                .as_deref(),
+            wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
             None
         );
         assert_eq!(read, root);
@@ -703,8 +703,7 @@ mod tests {
         );
         let read: SourceProvenance = serde_json::from_value(wire).expect("named reads back");
         assert_eq!(
-            cadmpeg_test_support::wire::field_or_default::<Option<String>>(&read, "stream")
-                .as_deref(),
+            wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
             Some("Document.xml")
         );
 

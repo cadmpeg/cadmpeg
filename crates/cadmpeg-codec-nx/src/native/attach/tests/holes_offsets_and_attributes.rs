@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_test_support::edit;
+
 use crate::native::attach::blend_feature_definition;
 use crate::native::attach::blend_support_bipartition;
 use crate::native::attach::blind_hole_axis_placements_for_operations;
@@ -1011,7 +1013,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
             };
             {
                 let replacement = 7.0;
-                cadmpeg_test_support::edit::replace(definition_payload, |previous| {
+                edit::replace(definition_payload, |previous| {
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                         previous.support().clone(),
                         replacement,

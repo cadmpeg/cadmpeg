@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::wire;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -93,101 +95,101 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
+        wire::coverage_count(
+            decoded.report(),
             (crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT)
                 .as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_SCHEMA_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
@@ -241,9 +243,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode wide-prefix scalar suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(wide_scalar.report()),
-            (crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            wide_scalar.report(),
+            crate::coverage::DECODED_WIDE_PREFIX_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -328,16 +330,16 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic unset entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(unset.report()),
-            (crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(unset.report()),
-            (crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -368,23 +370,23 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic control entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control.report()),
-            (crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control.report()),
-            (crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control.report()),
-            (crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
@@ -410,23 +412,23 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode E9 control entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control_e9.report()),
-            (crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control_e9.report()),
-            (crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(control_e9.report()),
-            (crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            control_e9.report(),
+            crate::coverage::DECODED_CONTROL_E9_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -480,9 +482,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic separator entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(separator.report()),
-            (crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            separator.report(),
+            crate::coverage::DECODED_SEPARATOR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -514,9 +516,9 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode generic atom entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(atom.report()),
-            (crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            atom.report(),
+            crate::coverage::DECODED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -563,16 +565,16 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected atom entity suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(schema_selected_atom.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            schema_selected_atom.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ATOM_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(schema_selected_atom.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            schema_selected_atom.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -646,8 +648,8 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected scalar suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(selected_scalar.report()),
+        wire::coverage_count(
+            selected_scalar.report(),
             (crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT)
                 .as_str()
         ),
@@ -723,16 +725,16 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         )
         .expect("decode schema-selected control suffix");
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(selected_control.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            selected_control.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(selected_control.report()),
-            (crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT).as_str()
+        wire::coverage_count(
+            selected_control.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );

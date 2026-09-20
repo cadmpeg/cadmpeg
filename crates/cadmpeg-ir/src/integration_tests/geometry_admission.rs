@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::geometry::analytic::EllipseCurve;
 use crate::geometry::pcurve::{
     CirclePcurve, EllipsePcurve, HarmonicPcurve, LinePcurve, OffsetPcurve, PcurveGeometry,
@@ -129,7 +131,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     let mut polar = polar();
     {
         let replacement = curve_weights(&curve, vec![1e-200, -1e-200]).unwrap();
-        cadmpeg_test_support::edit::replace(&mut curve, |previous| {
+        edit::replace(&mut curve, |previous| {
             crate::geometry::nurbs::NurbsCurve::new(
                 previous.degree(),
                 previous.knots().to_vec(),
@@ -141,7 +143,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     .unwrap();
     {
         let replacement = surface_weights(&surface, vec![vec![-1e-200; 2]; 2]).unwrap();
-        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
+        edit::replace(&mut surface, |previous| {
             crate::geometry::nurbs::NurbsSurface::new(
                 crate::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
@@ -161,7 +163,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     .unwrap();
     {
         let replacement = pcurve_weights(&pcurve, vec![1e-200; 2]).unwrap();
-        cadmpeg_test_support::edit::replace(&mut pcurve, |previous| {
+        edit::replace(&mut pcurve, |previous| {
             crate::geometry::pcurve::PcurveNurbs::new(
                 previous.degree(),
                 previous.knots().to_vec(),
@@ -173,7 +175,7 @@ fn weight_rules_preserve_signed_3d_and_positive_parameter_space_carriers() {
     .unwrap();
     {
         let replacement = polar_weights(&polar, vec![1e-200; 2]).unwrap();
-        cadmpeg_test_support::edit::replace(&mut polar, |previous| {
+        edit::replace(&mut polar, |previous| {
             crate::geometry::pcurve::PolarPcurveNurbs::new(
                 previous.degree(),
                 previous.knots().to_vec(),
@@ -245,48 +247,44 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
 
     let mut surface = surface();
     let original = surface.clone();
-    assert!(
-        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
-            let mut knots = previous.u_knots().to_vec();
-            (<[f64]>::reverse)(&mut knots);
-            crate::geometry::nurbs::NurbsSurface::new(
-                crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    knots,
-                    previous.u_periodic(),
-                ),
-                crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    previous.v_knots().to_vec(),
-                    previous.v_periodic(),
-                ),
-                previous.pole_grid().clone(),
-                previous.normal_reversed(),
-            )
-        })
-        .is_err()
-    );
-    assert!(
-        cadmpeg_test_support::edit::replace(&mut surface, |previous| {
-            let mut knots = previous.v_knots().to_vec();
-            (|knots: &mut [f64]| knots[1] = f64::NAN)(&mut knots);
-            crate::geometry::nurbs::NurbsSurface::new(
-                crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                    previous.u_degree(),
-                    previous.u_knots().to_vec(),
-                    previous.u_periodic(),
-                ),
-                crate::geometry::nurbs::NurbsSurfaceAxis::new(
-                    previous.v_degree(),
-                    knots,
-                    previous.v_periodic(),
-                ),
-                previous.pole_grid().clone(),
-                previous.normal_reversed(),
-            )
-        })
-        .is_err()
-    );
+    assert!(edit::replace(&mut surface, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        (<[f64]>::reverse)(&mut knots);
+        crate::geometry::nurbs::NurbsSurface::new(
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .is_err());
+    assert!(edit::replace(&mut surface, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        (|knots: &mut [f64]| knots[1] = f64::NAN)(&mut knots);
+        crate::geometry::nurbs::NurbsSurface::new(
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .is_err());
     assert!(surface
         .edit_control_points(|point| {
             point.y = f64::NEG_INFINITY;
@@ -299,19 +297,17 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
 
     let mut pcurve = pcurve();
     let original = pcurve.clone();
-    assert!(
-        cadmpeg_test_support::edit::replace(&mut pcurve, |previous| {
-            let mut knots = previous.knots().to_vec();
-            (<[f64]>::reverse)(&mut knots);
-            crate::geometry::pcurve::PcurveNurbs::new(
-                previous.degree(),
-                knots,
-                previous.pole_rows().clone(),
-                previous.periodic(),
-            )
-        })
-        .is_err()
-    );
+    assert!(edit::replace(&mut pcurve, |previous| {
+        let mut knots = previous.knots().to_vec();
+        (<[f64]>::reverse)(&mut knots);
+        crate::geometry::pcurve::PcurveNurbs::new(
+            previous.degree(),
+            knots,
+            previous.pole_rows().clone(),
+            previous.periodic(),
+        )
+    })
+    .is_err());
     assert!(pcurve
         .edit_control_points(|point| {
             point.u = f64::NAN;
@@ -324,7 +320,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
 
     let mut polar = polar();
     let original = polar.clone();
-    assert!(cadmpeg_test_support::edit::replace(&mut polar, |previous| {
+    assert!(edit::replace(&mut polar, |previous| {
         let mut knots = previous.knots().to_vec();
         (<[f64]>::reverse)(&mut knots);
         crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(

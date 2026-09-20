@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::owner_scoped_angular_dimension_definition;
 use crate::design::dimensions::owner_scoped_line_length_dimension_definition;
@@ -167,7 +169,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .with_native_ref(entity.native_ref.clone())
     .with_geometry_ref(entity.geometry_ref.clone())
     .with_endpoint_refs(entity.endpoint_refs.clone());
-    cadmpeg_test_support::edit::replace(&mut duplicate.geometry, |previous| {
+    edit::replace(&mut duplicate.geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
             const RADIUS_PERTURBATION: f64 = 5.0e-7;

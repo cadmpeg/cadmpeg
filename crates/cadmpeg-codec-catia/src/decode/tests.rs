@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_test_support::{wire, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -142,44 +144,44 @@ fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
         .expect("decode object graph without a declared part container");
 
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_OBJECT_GRAPH_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_GRAPH_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::DECODED_OBJECT_RECORD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::DECODED_OBJECT_RECORD_COUNT.as_str()
         ),
         2
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::MODELING_OBJECT_GRAPH_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::MODELING_OBJECT_GRAPH_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::MODELING_OBJECT_RECORD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::MODELING_OBJECT_RECORD_COUNT.as_str()
         ),
         0
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
-        cadmpeg_test_support::wire::coverage_count(
-            &(decoded.report()),
-            (crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT).as_str()
+        wire::coverage_count(
+            decoded.report(),
+            crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT.as_str()
         ),
         2
     );
@@ -199,9 +201,7 @@ fn container_only_stops_before_geometry() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
-        CatiaCodec.decode(&mut cur, &opts).unwrap(),
-    );
+    let result = EditableDecodeResult::from(CatiaCodec.decode(&mut cur, &opts).unwrap());
     assert!(!result.report().geometry_transferred());
     assert!(result.report().container_only());
     // The reconstructed BREP stream is preserved as an unknown passthrough.

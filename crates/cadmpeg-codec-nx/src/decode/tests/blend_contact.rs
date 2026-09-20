@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use cadmpeg_test_support::edit;
+
 const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 
 use crate::decode::blend::{
@@ -1445,7 +1447,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                 unreachable!()
             };
-            cadmpeg_test_support::edit::with_output(context, |previous| {
+            edit::with_output(context, |previous| {
                 let mut sides = previous.sides().clone();
                 let mut range = previous.parameter_range();
                 let mut discontinuities = previous.discontinuities().clone();

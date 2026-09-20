@@ -1,5 +1,7 @@
 //! Axial hole-profile role tests.
 
+use cadmpeg_test_support::edit;
+
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
 use std::collections::{BTreeMap, HashMap};
 
@@ -81,7 +83,7 @@ fn axial_profile_resolves_counterbore_roles() {
 
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -106,7 +108,7 @@ fn axial_profile_resolves_counterbore_roles() {
 
     let mut independently_translated_entities = entities.clone();
     for (ordinal, entity) in independently_translated_entities.iter_mut().enumerate() {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -213,7 +215,7 @@ fn axial_profile_resolves_counterdrill_roles() {
 
     let mut translated = entities.clone();
     for entity in &mut translated {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| match definition {
                 SketchGeometryDefinition::Point { position } => {
@@ -515,7 +517,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
 
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| match definition {
                 SketchGeometryDefinition::Point { position } => {
@@ -603,7 +605,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
         let mut translated_entities = exact_entities;
         for entity in &mut translated_entities {
-            cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+            edit::replace(&mut entity.geometry, |previous| {
                 let mut definition = previous.definition().clone();
                 (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                     let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -629,7 +631,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
 
     let mut independently_translated = entities(-6.0, false);
     for (index, entity) in independently_translated.iter_mut().enumerate() {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {

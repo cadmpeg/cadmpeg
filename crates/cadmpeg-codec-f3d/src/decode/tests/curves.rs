@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
@@ -123,7 +125,7 @@ fn decode_retains_generated_helix_construction() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::math::Point3;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
@@ -389,7 +391,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
 fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, VectorOffsetRoles};
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -558,7 +560,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
 fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh())),
@@ -978,7 +980,7 @@ fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
 fn generated_compound_intcurve_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_compound_curve_smbh())),
@@ -1120,7 +1122,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
 fn generated_two_sided_offset_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -1161,7 +1163,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         let discontinuity_flag = &mut discontinuity_flag_value;
         let mut offsets_value = *definition_payload.offsets();
         let offsets = &mut offsets_value;
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();
@@ -1228,7 +1230,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         pcurve::PcurveGeometry, ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
     };
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -1276,7 +1278,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         let discontinuity_flag = &mut discontinuity_flag_value;
         let mut offsets_value = *definition_payload.offsets();
         let offsets = &mut offsets_value;
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();
@@ -1403,7 +1405,7 @@ fn generated_mixed_offset_supports_write_source_less() {
         let mut context_value = definition_payload.context().clone();
         let context = &mut context_value;
         let edit_result = {
-            cadmpeg_test_support::edit::with_output(context, |previous| {
+            edit::with_output(context, |previous| {
                 let mut sides = previous.sides().clone();
                 let mut range = previous.parameter_range();
                 let mut discontinuities = previous.discontinuities().clone();
@@ -1585,7 +1587,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
 fn generated_surface_intersection_decodes_and_writes_source_less() {
     use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(
@@ -1637,7 +1639,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         else {
             unreachable!()
         };
-        cadmpeg_test_support::edit::with_output(context, |previous| {
+        edit::with_output(context, |previous| {
             let mut sides = previous.sides().clone();
             let mut range = previous.parameter_range();
             let mut discontinuities = previous.discontinuities().clone();

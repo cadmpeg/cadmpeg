@@ -999,6 +999,7 @@ mod tests {
         SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
         SketchId,
     };
+    use cadmpeg_test_support::wire;
     #[test]
     fn rectangular_pattern_instances_require_exact_translated_geometry() {
         let source = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -1392,16 +1393,14 @@ mod tests {
         };
         assert_eq!(pattern.center(), center.id());
         assert_eq!(
-            cadmpeg_test_support::wire::field::<cadmpeg_ir::scalar::Angle>(&pattern, "angle").get(),
+            wire::field::<cadmpeg_ir::scalar::Angle>(&pattern, "angle").get(),
             std::f64::consts::PI
         );
         assert_eq!((pattern.instances().len() + 1), 3);
         // The seed is not an instance, so the instance list carries only the
         // rotations after it.
         assert_eq!(
-            cadmpeg_test_support::wire::field::<Vec<cadmpeg_ir::sketches::SketchEntityId>>(
-                &pattern, "seed"
-            ),
+            wire::field::<Vec<cadmpeg_ir::sketches::SketchEntityId>>(&pattern, "seed"),
             std::slice::from_ref(seed.id())
         );
         assert_eq!(

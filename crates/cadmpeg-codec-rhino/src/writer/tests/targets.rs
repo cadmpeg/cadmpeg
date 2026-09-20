@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_test_support::wire;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
@@ -21,7 +23,7 @@ fn source_in(dialect: &'static str) -> CadIr {
 
 /// The resolved target `plan` reports for one request.
 fn resolved(ir: &CadIr, encoder: RhinoCodec, request: TargetRequest<'_>) -> String {
-    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+    wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
         &(Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
             .expect("the request resolves")
             .report()),
@@ -137,7 +139,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     )
     .expect("archive 70 is in the catalog");
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -165,7 +167,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     )
     .expect("archive 50 is in the catalog");
     assert_eq!(
-        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -253,9 +255,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
-        let claimed = cadmpeg_test_support::wire::field_or_default::<
-            Option<cadmpeg_core::dialect::DialectId>,
-        >(&(plan.report()), "identity/target")
+        let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            plan.report(),
+            "identity/target",
+        )
         .as_ref()
         .cloned()
         .expect("a Rhino write always names its archive version");

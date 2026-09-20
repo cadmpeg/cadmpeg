@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
@@ -30,7 +32,7 @@ const EPS_CONE_ANGLE: f64 = 1.0e-12;
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
     let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_configuration(
@@ -266,7 +268,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 #[test]
 fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap(),
@@ -1389,7 +1391,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less circle-carrier round trip");
-    let mut round_trip = cadmpeg_test_support::EditableDecodeResult::from(round_trip);
+    let mut round_trip = EditableDecodeResult::from(round_trip);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
         round_trip.ir().model.edges[0].param_range(),
@@ -1835,7 +1837,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 fn generated_f3d_rewrites_plane_frame() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
@@ -1867,7 +1869,7 @@ fn generated_f3d_rewrites_plane_frame() {
 fn generated_f3d_rejects_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),

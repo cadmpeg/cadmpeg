@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use crate::test_support::appearance::sldprt_with_body_and_material;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
@@ -43,7 +45,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded.ir().model.sketch_entities[0].id().clone();
     decoded
@@ -102,7 +104,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
@@ -158,10 +160,10 @@ fn semantic_writer_applies_line_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -215,10 +217,10 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -285,22 +287,19 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        cadmpeg_test_support::edit::replace(
-            &mut ir_edit.model.sketch_entities[0].geometry,
-            |previous| {
-                let mut definition = previous.definition().clone();
-                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
-                    let SketchGeometryDefinition::Line { start, .. } = definition else {
-                        panic!("line sketch entity");
-                    };
-                    start.u += 1.0;
-                })(&mut definition);
-                definition.try_into()
-            },
-        )
+        edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                let SketchGeometryDefinition::Line { start, .. } = definition else {
+                    panic!("line sketch entity");
+                };
+                start.u += 1.0;
+            })(&mut definition);
+            definition.try_into()
+        })
         .unwrap();
     }
 
@@ -328,23 +327,20 @@ fn semantic_writer_applies_circle_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        cadmpeg_test_support::edit::replace(
-            &mut ir_edit.model.sketch_entities[0].geometry,
-            |previous| {
-                let mut definition = previous.definition().clone();
-                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
-                    let SketchGeometryDefinition::Circle { center, radius } = definition else {
-                        panic!("circle sketch entity");
-                    };
-                    center.u = 250.0;
-                    *radius = Length::new(750.0).unwrap();
-                })(&mut definition);
-                definition.try_into()
-            },
-        )
+        edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                let SketchGeometryDefinition::Circle { center, radius } = definition else {
+                    panic!("circle sketch entity");
+                };
+                center.u = 250.0;
+                *radius = Length::new(750.0).unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
         .unwrap();
     }
 
@@ -378,32 +374,29 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
-        cadmpeg_test_support::edit::replace(
-            &mut ir_edit.model.sketch_entities[0].geometry,
-            |previous| {
-                let mut definition = previous.definition().clone();
-                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
-                    let SketchGeometryDefinition::Ellipse {
-                        center,
-                        major_angle,
-                        major_radius,
-                        minor_radius,
-                        ..
-                    } = definition
-                    else {
-                        panic!("ellipse sketch entity");
-                    };
-                    center.v = 125.0;
-                    *major_angle = Angle::new(0.25).unwrap();
-                    *major_radius = Length::new(1500.0).unwrap();
-                    *minor_radius = Length::new(500.0).unwrap();
-                })(&mut definition);
-                definition.try_into()
-            },
-        )
+        edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
+            let mut definition = previous.definition().clone();
+            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                let SketchGeometryDefinition::Ellipse {
+                    center,
+                    major_angle,
+                    major_radius,
+                    minor_radius,
+                    ..
+                } = definition
+                else {
+                    panic!("ellipse sketch entity");
+                };
+                center.v = 125.0;
+                *major_angle = Angle::new(0.25).unwrap();
+                *major_radius = Length::new(1500.0).unwrap();
+                *minor_radius = Length::new(500.0).unwrap();
+            })(&mut definition);
+            definition.try_into()
+        })
         .unwrap();
     }
 
@@ -440,7 +433,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let arc = ir_edit
@@ -454,7 +447,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                 )
             })
             .expect("arc sketch entity");
-        cadmpeg_test_support::edit::replace(&mut arc.geometry, |previous| {
+        edit::replace(&mut arc.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Arc {
@@ -480,7 +473,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             cadmpeg_ir::math::Point2::new(100.0 + 800.0 * 1.25f64.cos(), 800.0 * 1.25f64.sin()),
         ];
         for entity in &mut ir_edit.model.sketch_entities {
-            cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+            edit::replace(&mut entity.geometry, |previous| {
                 let mut definition = previous.definition().clone();
                 (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                     let SketchGeometryDefinition::Line { start, end } = definition else {
@@ -532,9 +525,9 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
-        cadmpeg_test_support::edit::replace(&mut entity.geometry, |previous| {
+        edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
@@ -558,7 +551,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                     );
                     {
                         let replacement = poles.unwrap();
-                        cadmpeg_test_support::edit::replace(curve, |previous| {
+                        edit::replace(curve, |previous| {
                             cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
                                 previous.degree(),
                                 previous.knots().to_vec(),
@@ -614,7 +607,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -631,7 +624,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+    let regenerated = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap(),
@@ -678,7 +671,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -706,7 +699,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+    let regenerated = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap(),
@@ -774,7 +767,7 @@ fn semantic_writer_preserves_display_list_geometry() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
@@ -817,7 +810,7 @@ fn semantic_writer_rejects_tessellation_f32_overflow() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.tessellations[0]
         .edit_vertices(|vertex| {
             vertex.x = f64::MAX;
@@ -915,7 +908,7 @@ fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let original = decoded.ir().model.tessellations[0].clone();
     assert_eq!(original.channels().len(), 6);
     let mut channels = original.channels().to_vec();

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Layer class-userdata retention contracts.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use super::{assert_valid, decode};
 use crate::chunks::ArchiveVersion;
 use crate::settings::LAYER_EXTENSIONS;
@@ -264,11 +266,7 @@ fn document_with_stamp(
     )
 }
 
-fn assert_layer_record_retained(
-    result: &cadmpeg_test_support::EditableDecodeResult,
-    layer: &[u8],
-    message: &str,
-) {
+fn assert_layer_record_retained(result: &EditableDecodeResult, layer: &[u8], message: &str) {
     let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     let fields = layers[0].fields();

@@ -2,6 +2,8 @@
 //! Native partition patch tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::{edit, EditableDecodeResult};
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -51,7 +53,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         Ok(())
     })
     .unwrap();
-    cadmpeg_test_support::edit::replace(&mut new, |previous| {
+    edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
         (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
@@ -70,7 +72,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         )
     })
     .unwrap();
-    cadmpeg_test_support::edit::replace(&mut new, |previous| {
+    edit::replace(&mut new, |previous| {
         let mut knots = previous.v_knots().to_vec();
         (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
@@ -149,7 +151,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let (expected_curve, expected_surface) = {
         let mut ir_edit = decoded.ir_mut();
         let curve = ir_edit
@@ -193,7 +195,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 Ok(())
             })
             .unwrap();
-        cadmpeg_test_support::edit::replace(surface, |previous| {
+        edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();
             (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
@@ -212,7 +214,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             )
         })
         .unwrap();
-        cadmpeg_test_support::edit::replace(surface, |previous| {
+        edit::replace(surface, |previous| {
             let mut knots = previous.v_knots().to_vec();
             (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
@@ -301,7 +303,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[1].position();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
@@ -314,7 +316,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         &mut encoded,
     )
     .unwrap();
-    let regenerated = cadmpeg_test_support::EditableDecodeResult::from(
+    let regenerated = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap(),
@@ -361,7 +363,7 @@ fn native_patch_requires_point_provenance_annotation() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let point_id = decoded.ir().model.points[1].id.as_str().to_owned();
     assert!(decoded
         .source_fidelity()
@@ -421,7 +423,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir_edit = decoded.ir_mut();
         let plane = ir_edit
@@ -579,7 +581,7 @@ fn auxiliary_edit_retains_opaque_partition_payload() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let brep_hash = crate::decode::brep_local_sha256(decoded.ir()).unwrap();
     let document_hash = crate::decode::document_local_sha256(decoded.ir()).unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
@@ -684,7 +686,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
 
     let curve_id = decoded.ir().model.edges[0]
         .curve()
@@ -787,7 +789,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[1].position();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Byte and projection fixtures shared by the userdata integration suites.
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use crate::chunks::ArchiveVersion;
 
 /// The world plane an annotation userdata payload carries.
@@ -32,7 +34,7 @@ pub(super) fn anonymous_major(
 
 /// The native parameters of the one typed hatch feature in `result`.
 pub(super) fn hatch_parameters(
-    result: &cadmpeg_test_support::EditableDecodeResult,
+    result: &EditableDecodeResult,
 ) -> &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String> {
     result
         .ir()

@@ -2,6 +2,8 @@
 //! Extrusion projection and adjacent-profile binding decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -58,7 +60,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -137,7 +139,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         &compact_extrusion_payload(false),
     ));
 
-    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+    let decoded = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap(),

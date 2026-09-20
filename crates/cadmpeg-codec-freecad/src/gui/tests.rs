@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown)]
 
+use cadmpeg_test_support::wire;
+
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -127,7 +129,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     assert_eq!(
         camera
             .orientation
-            .map(|value| cadmpeg_test_support::wire::value::<[f64; 4]>(&value)),
+            .map(|value| wire::value::<[f64; 4]>(&value)),
         Some([0.0, 0.0, 1.0, 0.25])
     );
     assert_eq!(
@@ -644,8 +646,7 @@ Co 1001000 +2 0 *
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {
-            cadmpeg_test_support::wire::field_or_default::<Option<String>>(&source, "stream")
-                .as_deref()
+            wire::field_or_default::<Option<String>>(&source, "stream").as_deref()
                 == Some("GuiDocument.xml")
                 && source.offset > 0
         }));

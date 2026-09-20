@@ -2,6 +2,8 @@
 //! Derived pcurve, seam, and analytic-section decode tests.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::EditableDecodeResult;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -312,7 +314,7 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
 #[test]
 fn sphere_patch_gets_degenerate_meridian_seam() {
     let mut cur = Cursor::new(sldprt_with_body(&sphere_patch_body()));
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
@@ -391,7 +393,7 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
 
 #[test]
 fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(
                 &mut Cursor::new(sldprt_with_body(&sphere_existing_seam_body())),
@@ -452,7 +454,7 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
     body.extend(nurbs_surface_carrier(180, 181, 10));
     body.extend(linear_nurbs_curve_carrier(190, 191));
     let mut cur = Cursor::new(sldprt_with_body(&body));
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(&mut cur, &DecodeOptions::default())
             .unwrap(),
@@ -485,7 +487,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
         0.0,
         1.0,
     ));
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(
                 &mut Cursor::new(sldprt_with_body(&body)),
@@ -581,7 +583,7 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
     body[edge + 24..edge + 26].copy_from_slice(&190u16.to_be_bytes());
     body.extend(rational_nurbs_surface_carrier(180, 181, 10));
     body.extend(rational_linear_nurbs_curve_carrier(190, 191));
-    let result = cadmpeg_test_support::EditableDecodeResult::from(
+    let result = EditableDecodeResult::from(
         SldprtCodec
             .decode(
                 &mut Cursor::new(sldprt_with_body(&body)),

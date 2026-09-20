@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_test_support::edit;
+
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
 use crate::math::{Point2, Point3, Vector3};
@@ -242,7 +244,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     };
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
 
-    cadmpeg_test_support::edit::replace(
+    edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
             let mut definition = previous.definition().clone();
@@ -267,7 +269,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         "reversed fitted offset distance {reversed_distance}"
     );
     assert!(!offset_mismatch(&validate_neutral(&ir, Vec::new())));
-    cadmpeg_test_support::edit::replace(
+    edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
             let mut definition = previous.definition().clone();
@@ -407,7 +409,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .find(|entity| entity.id() == &disconnected)
         .expect("disconnected entity remains present")
         .geometry;
-    cadmpeg_test_support::edit::replace(disconnected_geometry, |previous| {
+    edit::replace(disconnected_geometry, |previous| {
         let mut definition = previous.definition().clone();
         (|definition: &mut crate::sketches::SketchGeometryDefinition| {
             let SketchGeometryDefinition::Line { start, .. } = definition else {

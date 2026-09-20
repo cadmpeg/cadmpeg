@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_test_support::edit;
+
 use super::{OffsetSurfaceConstruction, SubSurfaceConstruction, SubsetSurfaceConstruction};
 use crate::geometry::{LegacyExtensionFlags, OffsetExtension, ProceduralSurfaceDefinition};
 use crate::ids::SurfaceId;
@@ -56,7 +58,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
     for distance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!({
             let replacement = distance;
-            cadmpeg_test_support::edit::replace(&mut payload, |previous| {
+            edit::replace(&mut payload, |previous| {
                 crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     previous.support().clone(),
                     replacement,
@@ -72,7 +74,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
     }
     {
         let replacement = 0.0;
-        cadmpeg_test_support::edit::replace(&mut payload, |previous| {
+        edit::replace(&mut payload, |previous| {
             crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                 previous.support().clone(),
                 replacement,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_test_support::wire;
+
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -104,7 +106,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     .expect("explicit transcode plans");
 
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
@@ -149,7 +151,7 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     // No fidelity was provided, so the sealed wrapper resolves the report to
     // `NotProvided`; the image-missing reason survives as the typed loss below.
     assert_eq!(
-        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
             "fidelity"
         ),
