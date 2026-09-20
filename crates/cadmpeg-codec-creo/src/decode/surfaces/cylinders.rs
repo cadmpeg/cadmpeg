@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole, split, round, and positional cylinders and cones.
 
+use crate::feature::rows::agreed_feature_affected_ids;
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +15,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 
 use super::super::feature_history::dependencies::{
-    agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
+    agreed_feature_replay_geometry_ids, has_feature_affected_ids,
 };
 use super::super::feature_history::draft::section_sweep_allows_linear_extrusion;
 use super::super::feature_history::round::{

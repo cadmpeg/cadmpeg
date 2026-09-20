@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::eval::{
+    nurbs_pcurve_parameter_domain,
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
     model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
@@ -871,8 +872,8 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
             let u_count = surface.u_count();
             let v_count = surface.v_count();
             Some([
-                nurbs_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?,
-                nurbs_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
+                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?,
+                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
             ])
         }
         SolvedSurfaceGeometry::Transformed { basis, .. } => solved_surface_parameter_domains(basis),
@@ -923,10 +924,10 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
-            nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.control_points().len())
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.control_points().len())
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
-            nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -952,22 +953,6 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::PolarHarmonic(_) => None,
         PcurveGeometry::SphericalGreatCircle(_) => None,
     }
-}
-
-fn nurbs_parameter_domain(
-    degree: u32,
-    knots: &[f64],
-    control_point_count: usize,
-) -> Option<[f64; 2]> {
-    let degree = usize::try_from(degree).ok()?;
-    if control_point_count <= degree
-        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
-    {
-        return None;
-    }
-    let start = *knots.get(degree)?;
-    let end = *knots.get(control_point_count)?;
-    (start.is_finite() && end.is_finite() && start < end).then_some([start, end])
 }
 
 #[cfg(test)]

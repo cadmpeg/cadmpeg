@@ -1206,7 +1206,7 @@ pub(crate) fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffec
     result
 }
 
-fn unique_named_affected_ids(
+pub(crate) fn agreed_feature_affected_ids(
     records: &[FeatureAffectedIds],
     feature_id: u32,
     kind: AffectedIdKind,
@@ -1302,9 +1302,9 @@ pub(crate) fn surface_merge_replay_affected_ids(
         }
         let state = extents.entry(row.stream_offset).or_default();
         let named_arrays = [
-            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
-            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
-            unique_named_affected_ids(named, row.feature_id, AffectedIdKind::Quilts),
+            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Geometry),
+            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Edges),
+            agreed_feature_affected_ids(named, row.feature_id, AffectedIdKind::Quilts),
         ];
         if let [Some(geometry), Some(edges), Some(quilts)] = named_arrays {
             let (Ok(geometry_count), Ok(edge_count), Ok(quilt_count)) = (

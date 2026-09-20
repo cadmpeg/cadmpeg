@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-owned joins from the legacy ASCII persistence graph.
 
+use crate::legacy::value_index;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
@@ -113,21 +114,6 @@ impl<'a> Index<'a> {
             NumericPayload::Array(_) => None,
         }
     }
-}
-
-fn value_index<K: legacy::LegacyCode>(
-    records: &[legacy::ValueRecord<K>],
-) -> BTreeMap<(usize, &str), Vec<&legacy::ValueRecord<K>>> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        if let Some(parent) = record.parent {
-            index
-                .entry((parent, record.name.as_str()))
-                .or_insert_with(Vec::new)
-                .push(record);
-        }
-    }
-    index
 }
 
 /// Decode feature-owned round records from one legacy persistence graph.
