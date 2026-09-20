@@ -25,10 +25,7 @@ pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
-pub use space::{
-    resolve_address, AddressStep, AddressStepKind, ByteRange, ResolvedAddress, SpaceDerivation,
-    SpaceDescriptor, SpaceId,
-};
+pub use space::{ByteRange, SpaceId};
 pub use view::{
     bounded_len, id_from_index, index_from_u32, index_from_u64, u64_from_index, BoundedCount, View,
 };

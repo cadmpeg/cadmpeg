@@ -7,9 +7,8 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use crate::CodecError;
 
 use super::{
-    refuse_local_limit, resolve_address, AddressStepKind, ByteRange, DecodeArena, DecodeContext,
-    DecodePolicy, ExpandSpec, ResourceDimension, ResourceLimits, SourceLocation, SpaceDerivation,
-    SpaceDescriptor, SpaceId, WorkBudget,
+    refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
+    ResourceDimension, ResourceLimits, WorkBudget,
 };
 
 fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
@@ -100,13 +99,13 @@ fn exact_expansion_enforces_size_and_limit() {
         limits.max_decompressed_bytes_total = 8;
         limits.max_decompressed_bytes_per_expand = 8;
     });
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let mut writer = ctx.begin_expand(root, ExpandSpec::Exact(4)).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut writer = ctx.begin_expand(ExpandSpec::Exact(4)).unwrap();
     writer.write(&[1, 2, 3, 4]).unwrap();
     let view = writer.finalize().unwrap();
     assert_eq!(view.window(), &[1, 2, 3, 4]);
 
-    let mut writer = ctx.begin_expand(root, ExpandSpec::Unknown).unwrap();
+    let mut writer = ctx.begin_expand(ExpandSpec::Unknown).unwrap();
     assert!(matches!(
         writer.write(&[0; 9]),
         Err(CodecError::ResourceLimit(_))
@@ -328,60 +327,6 @@ fn committed_reads_preserve_truncation_location_and_operation() {
 }
 
 #[test]
-fn unresolved_address_does_not_invent_a_root_step() {
-    let address = resolve_address(
-        &[],
-        SourceLocation {
-            space: SpaceId::ROOT,
-            offset: 7,
-        },
-    );
-    assert!(address.steps.is_empty());
-    assert_eq!(
-        address.inspect_commands("part.FCStd"),
-        ["cadmpeg inspect hex --offset 7 --len 64 -- 'part.FCStd'"]
-    );
-}
-
-#[test]
-fn nested_member_address_is_inspect_replayable() {
-    let descriptors = vec![
-        SpaceDescriptor {
-            label: "root".into(),
-            derivation: SpaceDerivation::Root,
-        },
-        SpaceDescriptor {
-            label: "GuiDocument.xml".into(),
-            derivation: SpaceDerivation::Expanded {
-                parent: SpaceId::ROOT,
-                source_range: ByteRange { start: 30, end: 90 },
-                member: Some("GuiDocument.xml".into()),
-            },
-        },
-    ];
-    let address = resolve_address(
-        &descriptors,
-        SourceLocation {
-            space: SpaceId::from_index(1),
-            offset: 120,
-        },
-    );
-    assert_eq!(address.path(), "root/GuiDocument.xml@120");
-    assert_eq!(
-        address.steps[1].kind,
-        AddressStepKind::Member("GuiDocument.xml".into())
-    );
-    let commands = address.inspect_commands("part.FCStd");
-    assert_eq!(
-        commands,
-        [
-            "cadmpeg inspect extract --force --output='part.FCStd.member' -- 'part.FCStd' 'GuiDocument.xml'".to_string(),
-            "cadmpeg inspect hex --offset 120 --len 64 -- 'part.FCStd.member'".to_string(),
-        ]
-    );
-}
-
-#[test]
 fn forced_child_exhaustion_charges_its_full_slice() {
     let parent = WorkBudget::new(10);
     let child = parent.child_slice(4);
@@ -393,7 +338,7 @@ fn forced_child_exhaustion_charges_its_full_slice() {
 }
 
 #[test]
-fn unnamed_and_concatenated_spaces_have_no_extraction_route() {
+fn stored_expanded_and_concatenated_spaces_have_distinct_zero_based_locations() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(b"abcd", &arena, &policy).unwrap();
@@ -401,14 +346,13 @@ fn unnamed_and_concatenated_spaces_have_no_extraction_route() {
         .register_slice(root, ByteRange { start: 0, end: 4 })
         .unwrap();
     let expanded = ctx
-        .begin_expand(root, ExpandSpec::Exact(0))
+        .begin_expand(ExpandSpec::Exact(0))
         .unwrap()
         .finalize()
         .unwrap();
     let concat = ctx.concat_views(&[root, stored]).unwrap();
-    for view in [stored, expanded, concat] {
-        let address = ctx.resolve_location(view.location());
-        assert!(address.inspect_commands("input.zip").is_empty());
-        assert_eq!(address.steps.last().unwrap().kind, AddressStepKind::Derived);
+    for (index, view) in [root, stored, expanded, concat].into_iter().enumerate() {
+        assert_eq!(view.space().index(), index);
+        assert_eq!(view.location().offset, 0);
     }
 }
