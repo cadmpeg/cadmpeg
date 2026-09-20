@@ -1,6 +1,6 @@
 //! Helix polyline fitting and the linear solvers it uses.
 
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two, Point3, Vector3};
 
 // Mesh coordinates are an approximation of the analytic helix. This fixed
 // relative bound is the decoder's promotion policy, not a value inferred from
@@ -109,13 +109,17 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     u = Vector3::new(u.x / u_length, u.y / u_length, u.z / u_length);
     let v = axis.cross(u);
     let reference = points[0];
-    let scale = points
+    let extent = points
         .iter()
         .map(|point| point.vector_from(reference).norm())
         .fold(0.0_f64, f64::max);
-    if !scale.is_finite() || scale == 0.0 {
-        return None;
-    }
+    // The normal equations mix the quadratic terms of the row with a constant
+    // one, so the fitted coordinates are normalised before the solve. The scale
+    // is the binade bound of the largest offset: it states an exponent alone, so
+    // every significand reaches the solve unchanged and the normalisation cannot
+    // move the answer. `power_of_two_bound` answers `None` for a zero or
+    // non-finite extent, which is the degenerate span this refuses.
+    let exponent = power_of_two_bound(extent)?;
     let mut normal = [[0.0; 3]; 3];
     let mut rhs = [0.0; 3];
     for point in points {
@@ -124,8 +128,8 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
             point.y - reference.y,
             point.z - reference.z,
         );
-        let x = delta.dot(u) / scale;
-        let y = delta.dot(v) / scale;
+        let x = scale_power_of_two(delta.dot(u), -exponent)?;
+        let y = scale_power_of_two(delta.dot(v), -exponent)?;
         let row = [x, y, 1.0];
         let target = -(x * x + y * y);
         for i in 0..3 {
@@ -142,9 +146,9 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     if !radius_squared.is_finite() || radius_squared <= 0.0 {
         return None;
     }
-    let center_u = center_u * scale;
-    let center_v = center_v * scale;
-    let radius = radius_squared.sqrt() * scale;
+    let center_u = scale_power_of_two(center_u, exponent)?;
+    let center_v = scale_power_of_two(center_v, exponent)?;
+    let radius = scale_power_of_two(radius_squared.sqrt(), exponent)?;
     let origin = Point3::new(
         reference.x + center_u * u.x + center_v * v.x,
         reference.y + center_u * u.y + center_v * v.y,
@@ -233,6 +237,30 @@ fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64
 
 #[cfg(test)]
 mod tests {
+    // Four points of the exact circle of radius 5 about `(-5, 0, 0)` in the
+    // plane normal to `z`. Every coordinate, the centre and the radius are
+    // representable in f64, and the frame the fit builds for this axis is the
+    // exact pair `u = (0, 1, 0)`, `v = (-1, 0, 0)`, so the answer is reachable
+    // bit for bit. The largest offset from `points[0]` is `sqrt(50)`: a
+    // normalisation by that value divides every fitted coordinate by an
+    // irrational scale and loses the last bit of each one before the solve.
+    #[test]
+    fn circle_fit_normalisation_keeps_an_exact_centre_and_radius() {
+        use cadmpeg_ir::math::{Point3, Vector3};
+        let points = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(-5.0, -5.0, 0.0),
+            Point3::new(-2.0, -4.0, 0.0),
+            Point3::new(-1.0, 3.0, 0.0),
+        ];
+        let (origin, radius) =
+            super::fit_circle_on_axis(&points, Vector3::new(0.0, 0.0, 1.0)).unwrap();
+        assert_eq!(origin.x, -5.0);
+        assert_eq!(origin.y, 0.0);
+        assert_eq!(origin.z, 0.0);
+        assert_eq!(radius, 5.0);
+    }
+
     #[test]
     fn helix_fit_preserves_small_model_units() {
         const RELATIVE_ERROR: f64 = 1e-10;
