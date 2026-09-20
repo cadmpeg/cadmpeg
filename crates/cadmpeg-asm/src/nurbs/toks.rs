@@ -959,4 +959,33 @@ mod tests {
         assert_eq!(owned_marker_positions(&toks), None);
         assert_eq!(owned_subtype_defs(&toks), None);
     }
+    #[test]
+    fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
+        fn t_ident(b: &mut Vec<u8>, s: &str) {
+            b.push(0x0d);
+            b.push(s.len() as u8);
+            b.extend_from_slice(s.as_bytes());
+        }
+
+        for ref_width in [
+            crate::kernel_header::RefWidth::Four,
+            crate::kernel_header::RefWidth::Eight,
+        ] {
+            // The last four payload bytes spell a definition opening. Only a walker
+            // that consumes the length prefix at `ref_width` steps past them.
+            let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
+
+            let mut active = Vec::new();
+            t_ident(&mut active, "tspl");
+            active.push(0x09);
+            active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width.bytes()]);
+            active.extend_from_slice(&payload);
+            let definition = active.len();
+            active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
+            active.push(0x11);
+
+            let tables = crate::nurbs::subtypes::SubtypeTables::from_stream(&active);
+            assert_eq!(tables.for_width(ref_width), [definition]);
+        }
+    }
 }
