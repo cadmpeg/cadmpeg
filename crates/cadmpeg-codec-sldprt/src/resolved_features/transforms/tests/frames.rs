@@ -1503,7 +1503,7 @@ fn numerical_ranges_sketch_matrix_refuses_unrepresentable_axes() {
                 Vector3::new(scale, 0., 0.),
             )
             .unwrap(),
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         };
         assert_eq!(
