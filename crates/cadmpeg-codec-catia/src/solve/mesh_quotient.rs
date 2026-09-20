@@ -90,7 +90,7 @@ fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<us
         .checked_add(usize::from(if end { !reversed } else { reversed }))
 }
 
-pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
+const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 /// Caps the optional exact-state memo without turning it into a search refusal.
 const MAX_SELECTION_STATE_MEMO_ENTRIES: usize = 4_096;
 /// Bounds reuse of deterministic endpoint-resolution results across incidence
@@ -180,7 +180,7 @@ pub(crate) enum MeshCandidateFailure<
 
 /// Exclusive search status: a solved candidate cannot also be ambiguous or exhausted.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SearchOutcome<T> {
+pub(super) enum SearchOutcome<T> {
     Open,
     Solved(T),
     Ambiguous,
@@ -188,7 +188,7 @@ pub(crate) enum SearchOutcome<T> {
 }
 
 impl<T> SearchOutcome<T> {
-    pub(crate) fn is_closed(&self) -> bool {
+    pub(super) fn is_closed(&self) -> bool {
         matches!(self, Self::Ambiguous | Self::Exhausted)
     }
 
@@ -442,7 +442,7 @@ enum MeshImplicitEdgeCandidateSource {
 }
 
 impl MeshImplicitEdgeCandidates {
-    pub(crate) fn width_upper_bound(&self) -> usize {
+    pub(super) fn width_upper_bound(&self) -> usize {
         match &self.source {
             MeshImplicitEdgeCandidateSource::Cartesian { left, right, .. } => {
                 left.len().saturating_mul(right.len())
@@ -509,11 +509,11 @@ pub(crate) enum MeshEndpointCandidates<'a> {
 }
 
 impl MeshCoordinateRootDomains {
-    pub(crate) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
+    pub(super) fn edge_candidates(&self) -> &[Vec<[usize; 2]>] {
         &self.edge_candidates
     }
 
-    pub(crate) fn supports_edge_candidate(&self, edge: usize, pair: [usize; 2]) -> bool {
+    pub(super) fn supports_edge_candidate(&self, edge: usize, pair: [usize; 2]) -> bool {
         let Some(&[left, right]) = self.edges.get(edge) else {
             return false;
         };
@@ -526,7 +526,7 @@ impl MeshCoordinateRootDomains {
                 && self.domains[right].binary_search(&pair[0]).is_ok())
     }
 
-    pub(crate) fn edge_candidate_points(&self, edge: usize) -> Option<Vec<usize>> {
+    pub(super) fn edge_candidate_points(&self, edge: usize) -> Option<Vec<usize>> {
         let candidates = self.edge_candidates.get(edge)?;
         if !candidates.is_empty() {
             let mut points = candidates.iter().flatten().copied().collect::<Vec<_>>();
@@ -544,7 +544,7 @@ impl MeshCoordinateRootDomains {
         Some(points)
     }
 
-    pub(crate) fn implicit_edge_candidates(
+    pub(super) fn implicit_edge_candidates(
         &self,
         edge: usize,
         required_point: Option<usize>,
@@ -619,7 +619,7 @@ impl MeshCoordinateRootDomains {
         })
     }
 
-    pub(crate) fn implicit_edge_candidate_with_point(
+    pub(super) fn implicit_edge_candidate_with_point(
         &self,
         edge: usize,
         required: usize,
@@ -819,7 +819,7 @@ impl MeshCoordinateRootDomains {
         }
     }
 
-    pub(crate) fn refine_edge_candidate_arc(
+    pub(super) fn refine_edge_candidate_arc(
         &self,
         edge: usize,
         pair: [usize; 2],
@@ -1019,7 +1019,7 @@ impl MeshQuotient {
         &self.members[root]
     }
 
-    pub(crate) fn coordinate_domain_preparation_limit(
+    pub(super) fn coordinate_domain_preparation_limit(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -1532,7 +1532,7 @@ impl MeshQuotient {
         }
     }
 
-    pub(crate) fn assignment_has_option(
+    fn assignment_has_option(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -1777,7 +1777,7 @@ impl MeshQuotient {
         options
     }
 
-    pub(crate) fn assignment_options_limited(
+    pub(super) fn assignment_options_limited(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -2256,7 +2256,7 @@ impl MeshQuotient {
         }
     }
 
-    pub(crate) fn point_assignment_exists(
+    pub(super) fn point_assignment_exists(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -3140,7 +3140,7 @@ fn propagate_common_full_quotients(
     }
     quotient.edge_domains_viable(edge_candidates).then_some(())
 }
-pub(crate) fn propagate_common_ordered_face_quotients(
+pub(super) fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
@@ -3322,7 +3322,7 @@ fn mesh_boundary_domain_edges(domain: &MeshFaceBoundaryDomain) -> Vec<usize> {
     edges
 }
 
-pub(crate) fn bounded_unordered_cycle_assignments(
+pub(super) fn bounded_unordered_cycle_assignments(
     edges: &[usize],
     quotient: &MeshQuotient,
     limit: usize,
@@ -3542,7 +3542,7 @@ fn advance_boundary_component_states(
     (!next.is_empty()).then_some(next)
 }
 
-pub(crate) fn propagate_common_boundary_components(
+pub(super) fn propagate_common_boundary_components(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
@@ -3679,7 +3679,7 @@ type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -
 ///
 /// At least one of `predecessors` or `dependencies` is present.
 #[derive(Clone, Copy)]
-pub(crate) struct AssignmentOrder<'a> {
+pub(super) struct AssignmentOrder<'a> {
     predecessors: Option<&'a [Option<usize>]>,
     dependencies: Option<&'a [Vec<usize>]>,
 }
@@ -3687,7 +3687,7 @@ pub(crate) struct AssignmentOrder<'a> {
 impl<'a> AssignmentOrder<'a> {
     /// Build an assignment order from independently optional predecessor and
     /// dependency tables. Both absent is `None`.
-    pub(crate) fn new(
+    pub(super) fn new(
         predecessors: Option<&'a [Option<usize>]>,
         dependencies: Option<&'a [Vec<usize>]>,
     ) -> Option<Self> {
@@ -3710,7 +3710,7 @@ impl<'a> AssignmentOrder<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MeshPartialEndpointConstraint<'a> {
+pub(super) struct MeshPartialEndpointConstraint<'a> {
     pub(crate) active_edges: &'a [bool],
     pub(crate) coupled_edges: &'a [bool],
     pub(crate) assignment_order: Option<AssignmentOrder<'a>>,
@@ -3792,7 +3792,7 @@ fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<
         .collect()
 }
 
-pub(crate) struct MeshSelectionSearch<'a> {
+struct MeshSelectionSearch<'a> {
     pub(crate) assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
     #[cfg(test)]
     pub(crate) possible_face_equations: Vec<Vec<[usize; 2]>>,
@@ -3812,9 +3812,7 @@ pub(crate) struct MeshSelectionSearch<'a> {
     pub(crate) face_equation_cache: MeshFaceEquationCache,
 }
 
-pub(crate) fn possible_face_equations(
-    faces: &[Vec<MeshFaceBoundaryAssignment>],
-) -> Vec<Vec<[usize; 2]>> {
+fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec<[usize; 2]>> {
     fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
         let port = |reversed: bool| {
             use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
@@ -3860,7 +3858,7 @@ pub(crate) fn possible_face_equations(
         .collect()
 }
 
-pub(crate) fn possible_face_choices_with_limit(
+fn possible_face_choices_with_limit(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
     limit: usize,
@@ -3953,7 +3951,7 @@ pub(crate) fn possible_face_choices(
         .expect("unbounded test face-choice materialization")
 }
 
-pub(crate) fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
+fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
     fn canonical_cycle(boundary: &[MeshBoundaryEdgeCandidate]) -> Vec<(usize, Option<bool>)> {
         fn rotations(values: &[(usize, Option<bool>)]) -> Vec<Vec<(usize, Option<bool>)>> {
             (0..values.len())
@@ -6403,7 +6401,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
 }
 
 impl MeshSelectionSearch<'_> {
-    pub(crate) fn should_stop(&self) -> bool {
+    fn should_stop(&self) -> bool {
         self.outcome.is_closed()
     }
 
@@ -6810,11 +6808,11 @@ impl MeshSelectionSearch<'_> {
         true
     }
 
-    pub(crate) fn selected_orientable(&self) -> bool {
+    fn selected_orientable(&self) -> bool {
         self.selection_orientable(&self.selected)
     }
 
-    pub(crate) fn fixed_remaining_faces_are_orientable(&self) -> bool {
+    fn fixed_remaining_faces_are_orientable(&self) -> bool {
         let mut completion = self.selected.clone();
         for (face, selected) in completion.iter_mut().enumerate() {
             if selected.is_some() {
@@ -6841,7 +6839,7 @@ impl MeshSelectionSearch<'_> {
         self.selection_orientable(&completion)
     }
 
-    pub(crate) fn prepare_selected_branch(
+    fn prepare_selected_branch(
         &self,
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
@@ -7173,7 +7171,7 @@ impl MeshSelectionSearch<'_> {
         )
     }
 
-    pub(crate) fn search_from_state(
+    fn search_from_state(
         &mut self,
         quotient: &MeshQuotient,
         prepared: bool,
@@ -7614,7 +7612,7 @@ fn direction_work_estimate(mut unknown_uses: impl Iterator<Item = usize>) -> Opt
     })
 }
 
-pub(crate) fn mesh_assignment_can_merge(
+fn mesh_assignment_can_merge(
     assignment: &MeshFaceBoundaryAssignment,
     quotient: &mut MeshQuotient,
 ) -> bool {

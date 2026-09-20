@@ -77,3 +77,5 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
     assert!(outcome_for(usize::BITS as usize));
     assert!(!outcome_for(2));
 }
+
+mod quotient_search;
