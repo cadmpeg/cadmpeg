@@ -332,21 +332,33 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         )
     })
     .is_err());
-    assert!(crate::geometry::pcurve::PolarNurbsPoles::from_lanes(
-        vec![crate::geometry::pcurve::PolarNurbsPole {
-            radial: Point2::new(0.0, f64::INFINITY),
-            axial: 0.0
-        }],
-        None
-    )
+    assert!(edit::replace(&mut polar, |previous| {
+        let mut poles = previous.poles();
+        for pole in &mut poles {
+            pole.radial.v = f64::INFINITY;
+        }
+        PolarPcurveNurbs::from_lanes(
+            previous.degree(),
+            previous.knots().to_vec(),
+            poles,
+            previous.weights(),
+            previous.periodic(),
+        )
+    })
     .is_err());
-    assert!(crate::geometry::pcurve::PolarNurbsPoles::from_lanes(
-        vec![crate::geometry::pcurve::PolarNurbsPole {
-            radial: Point2::new(0.0, 0.0),
-            axial: f64::NAN
-        }],
-        None
-    )
+    assert!(edit::replace(&mut polar, |previous| {
+        let mut poles = previous.poles();
+        for pole in &mut poles {
+            pole.axial = f64::NAN;
+        }
+        PolarPcurveNurbs::from_lanes(
+            previous.degree(),
+            previous.knots().to_vec(),
+            poles,
+            previous.weights(),
+            previous.periodic(),
+        )
+    })
     .is_err());
     assert!(polar_weights(&polar, vec![1.0, -1.0]).is_err());
     assert!(polar_weights(&polar, vec![1.0]).is_err());

@@ -12,10 +12,10 @@ use serde::Serialize;
 /// Panics if serialization fails, the field is absent, or its type differs.
 pub fn field<T: DeserializeOwned>(value: &impl Serialize, key: &str) -> T {
     let mut wire = serde_json::to_value(value).expect("serialize tested value");
-    let field = wire
-        .pointer_mut(&format!("/{key}"))
-        .map(serde_json::Value::take)
-        .unwrap_or_else(|| panic!("tested value has no field {key}"));
+    let field = wire.pointer_mut(&format!("/{key}")).map_or_else(
+        || panic!("tested value has no field {key}"),
+        serde_json::Value::take,
+    );
     serde_json::from_value(field).unwrap_or_else(|error| panic!("field {key}: {error}"))
 }
 
