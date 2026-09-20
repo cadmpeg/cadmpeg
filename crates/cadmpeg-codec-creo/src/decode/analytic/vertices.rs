@@ -10,6 +10,7 @@ use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
+use crate::decode::quadratic::Coefficient;
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
@@ -232,6 +233,16 @@ fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<
         .collect()
 }
 
+/// The conic in the chart `origin + u * u_axis + v * v_axis`.
+///
+/// A chart point has the conic-frame coordinates `x[0] + u * x[1] + v * x[2]`
+/// and `y[0] + u * y[1] + v * y[2]`, so every coefficient below is a sum of
+/// products of the conic's own coefficients with those direction cosines. Each
+/// sum can cancel: `uu` and `vv` where a chart axis lies along a hyperbola
+/// asymptote, `uv` where the conic is a circle in a rotated chart, and
+/// `constant` — the conic's equation at the chart origin — where the chart
+/// origin lies on the conic. The rule that states zero inside the rounding
+/// error of the terms is therefore applied to all six.
 fn restrict_planar_conic_to_chart(
     conic: PlanarConicEquation,
     origin: [f64; 3],
@@ -250,17 +261,45 @@ fn restrict_planar_conic_to_chart(
         dot(u_axis, conic.y_axis),
         dot(v_axis, conic.y_axis),
     ];
+    let [first_quadratic, second_quadratic] = conic.quadratic;
+    let [first_linear, second_linear] = conic.linear;
     PlaneConicEquation {
-        uu: conic.quadratic[0].mul_add(x[1].powi(2), conic.quadratic[1] * y[1].powi(2)),
-        uv: 2.0 * conic.quadratic[0].mul_add(x[1] * x[2], conic.quadratic[1] * y[1] * y[2]),
-        vv: conic.quadratic[0].mul_add(x[2].powi(2), conic.quadratic[1] * y[2].powi(2)),
-        u: 2.0 * conic.quadratic[0].mul_add(x[0] * x[1], conic.quadratic[1] * y[0] * y[1])
-            + conic.linear[0].mul_add(x[1], conic.linear[1] * y[1]),
-        v: 2.0 * conic.quadratic[0].mul_add(x[0] * x[2], conic.quadratic[1] * y[0] * y[2])
-            + conic.linear[0].mul_add(x[2], conic.linear[1] * y[2]),
-        constant: conic.quadratic[0].mul_add(x[0].powi(2), conic.quadratic[1] * y[0].powi(2))
-            + conic.linear[0].mul_add(x[0], conic.linear[1] * y[0])
-            + conic.constant,
+        uu: Coefficient::summed(
+            first_quadratic.mul_add(x[1].powi(2), second_quadratic * y[1].powi(2)),
+            first_quadratic.abs() * x[1].powi(2) + second_quadratic.abs() * y[1].powi(2),
+        ),
+        uv: Coefficient::summed(
+            2.0 * first_quadratic.mul_add(x[1] * x[2], second_quadratic * y[1] * y[2]),
+            2.0 * ((first_quadratic * x[1] * x[2]).abs() + (second_quadratic * y[1] * y[2]).abs()),
+        ),
+        vv: Coefficient::summed(
+            first_quadratic.mul_add(x[2].powi(2), second_quadratic * y[2].powi(2)),
+            first_quadratic.abs() * x[2].powi(2) + second_quadratic.abs() * y[2].powi(2),
+        ),
+        u: Coefficient::summed(
+            2.0 * first_quadratic.mul_add(x[0] * x[1], second_quadratic * y[0] * y[1])
+                + first_linear.mul_add(x[1], second_linear * y[1]),
+            2.0 * ((first_quadratic * x[0] * x[1]).abs() + (second_quadratic * y[0] * y[1]).abs())
+                + (first_linear * x[1]).abs()
+                + (second_linear * y[1]).abs(),
+        ),
+        v: Coefficient::summed(
+            2.0 * first_quadratic.mul_add(x[0] * x[2], second_quadratic * y[0] * y[2])
+                + first_linear.mul_add(x[2], second_linear * y[2]),
+            2.0 * ((first_quadratic * x[0] * x[2]).abs() + (second_quadratic * y[0] * y[2]).abs())
+                + (first_linear * x[2]).abs()
+                + (second_linear * y[2]).abs(),
+        ),
+        constant: Coefficient::summed(
+            first_quadratic.mul_add(x[0].powi(2), second_quadratic * y[0].powi(2))
+                + first_linear.mul_add(x[0], second_linear * y[0])
+                + conic.constant,
+            first_quadratic.abs() * x[0].powi(2)
+                + second_quadratic.abs() * y[0].powi(2)
+                + (first_linear * x[0]).abs()
+                + (second_linear * y[0]).abs()
+                + conic.constant.abs(),
+        ),
     }
 }
 
@@ -659,14 +698,144 @@ mod topological_tests;
 
 #[cfg(test)]
 mod tests {
+    use super::super::edges::PlanarConicEquation;
+    use super::super::equations::common_plane_conic_parameters;
     use super::super::planes::CarrierSolveDiagnostics;
     use super::{
-        carrier_failure_kind, pcurve_endpoint_is_ambiguous, unique_model_curve, CarrierFailureKind,
+        carrier_failure_kind, pcurve_endpoint_is_ambiguous, restrict_planar_conic_to_chart,
+        unique_model_curve, CarrierFailureKind,
     };
+    use crate::vecmath::normalize;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::{Point3, Vector3};
+
+    const CHART_ORIGIN: [f64; 3] = [0.0, 0.0, 0.0];
+    const CHART_U_AXIS: [f64; 3] = [1.0, 0.0, 0.0];
+    const CHART_V_AXIS: [f64; 3] = [0.0, 1.0, 0.0];
+    const EPS_TEST_CONIC_RESIDUAL: f64 = 1.0e-6;
+
+    /// A circle of the given radius centred on the chart origin, whose frame is
+    /// the chart frame.
+    fn chart_circle(radius: f64) -> PlanarConicEquation {
+        PlanarConicEquation {
+            origin: CHART_ORIGIN,
+            normal: [0.0, 0.0, 1.0],
+            x_axis: CHART_U_AXIS,
+            y_axis: CHART_V_AXIS,
+            quadratic: [1.0 / (radius * radius), 1.0 / (radius * radius)],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: radius,
+        }
+    }
+
+    /// The conic's own equation at a model point. Every conic here has constant
+    /// -1, so the value is dimensionless and zero exactly on the curve.
+    fn conic_value(conic: PlanarConicEquation, point: [f64; 3]) -> f64 {
+        let offset: [f64; 3] =
+            std::array::from_fn(|coordinate| point[coordinate] - conic.origin[coordinate]);
+        let x = super::dot(offset, conic.x_axis);
+        let y = super::dot(offset, conic.y_axis);
+        conic.quadratic[0] * x * x
+            + conic.quadratic[1] * y * y
+            + conic.linear[0] * x
+            + conic.linear[1] * y
+            + conic.constant
+    }
+
+    /// The model point of a chart parameter pair.
+    fn chart_point(parameter: [f64; 2]) -> [f64; 3] {
+        std::array::from_fn(|coordinate| {
+            CHART_ORIGIN[coordinate]
+                + parameter[0] * CHART_U_AXIS[coordinate]
+                + parameter[1] * CHART_V_AXIS[coordinate]
+        })
+    }
+
+    fn stated_parameters(first: PlanarConicEquation, second: PlanarConicEquation) -> Vec<[f64; 2]> {
+        common_plane_conic_parameters(
+            restrict_planar_conic_to_chart(first, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
+            restrict_planar_conic_to_chart(second, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS),
+        )
+    }
+
+    #[test]
+    fn numerical_followup_chart_along_a_hyperbola_asymptote_states_no_extra_root() {
+        // The chart v axis is the asymptote direction (a, b) of the hyperbola
+        // x^2/a^2 - y^2/b^2 = 1, so the exact vv of the restricted conic is
+        // zero and the restricted conic is linear in v.
+        let semi_axis = 100.0;
+        let semi_conjugate_axis = 200.0;
+        let hyperbola = PlanarConicEquation {
+            origin: [-800.0, -700.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            x_axis: normalize([semi_conjugate_axis, semi_axis, 0.0]).expect("planar unit axis"),
+            y_axis: normalize([-semi_axis, semi_conjugate_axis, 0.0]).expect("planar unit axis"),
+            quadratic: [
+                1.0 / (semi_axis * semi_axis),
+                -1.0 / (semi_conjugate_axis * semi_conjugate_axis),
+            ],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: semi_conjugate_axis,
+        };
+        let circle = chart_circle(1000.0);
+
+        let parameters = stated_parameters(circle, hyperbola);
+        assert_eq!(parameters.len(), 2);
+        for parameter in parameters {
+            let point = chart_point(parameter);
+            assert!(conic_value(circle, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+            assert!(conic_value(hyperbola, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+        }
+
+        let chart =
+            restrict_planar_conic_to_chart(hyperbola, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS);
+        assert_eq!(chart.vv.stated(), 0.0);
+    }
+
+    #[test]
+    fn numerical_followup_chart_origin_on_the_conic_states_the_intersections() {
+        // The ellipse passes through the circle's centre, which is the chart
+        // origin, so the exact constant of the restricted conic is zero.
+        let semi_major_axis = 1.577_223_779_332_398_7e6;
+        let semi_minor_axis = 2.201_651_457_059_877_5e6;
+        let heading: f64 = 3.320_901_222_737_607_6;
+        let parameter_on_ellipse: f64 = 2.857_871_476_802_07;
+        let x_axis = normalize([heading.cos(), heading.sin(), 0.0]).expect("planar unit axis");
+        let y_axis = normalize([-heading.sin(), heading.cos(), 0.0]).expect("planar unit axis");
+        let ellipse = PlanarConicEquation {
+            origin: std::array::from_fn(|coordinate| {
+                -(semi_major_axis * parameter_on_ellipse.cos()) * x_axis[coordinate]
+                    - (semi_minor_axis * parameter_on_ellipse.sin()) * y_axis[coordinate]
+            }),
+            normal: [0.0, 0.0, 1.0],
+            x_axis,
+            y_axis,
+            quadratic: [
+                1.0 / (semi_major_axis * semi_major_axis),
+                1.0 / (semi_minor_axis * semi_minor_axis),
+            ],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: semi_minor_axis,
+        };
+        let circle = chart_circle(9.629_502_301_664_337e5);
+
+        let parameters = stated_parameters(circle, ellipse);
+        assert!(!parameters.is_empty());
+        for parameter in parameters {
+            let point = chart_point(parameter);
+            assert!(conic_value(circle, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+            assert!(conic_value(ellipse, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+        }
+
+        let chart =
+            restrict_planar_conic_to_chart(ellipse, CHART_ORIGIN, CHART_U_AXIS, CHART_V_AXIS);
+        assert_eq!(chart.constant.stated(), 0.0);
+    }
 
     #[test]
     fn unique_model_curve_rejects_duplicate_ids() {
