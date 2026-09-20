@@ -1000,10 +1000,15 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let sine = major_angle.get().sin();
             let du = point.u - center.u;
             let dv = point.v - center.v;
+            if !du.is_finite() || !dv.is_finite() {
+                return false;
+            }
             let x = du * cosine + dv * sine;
             let y = -du * sine + dv * cosine;
             let equation = (x / major_radius.get()).powi(2) + (y / minor_radius.get()).powi(2);
-            if (equation - 1.0).abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9 {
+            if !equation.is_finite()
+                || (equation - 1.0).abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
+            {
                 return false;
             }
             match bounds {

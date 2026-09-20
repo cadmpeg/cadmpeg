@@ -6,13 +6,13 @@ use super::endpoints::{
     marker_profile_curve_role, minor_arc_angles, minor_arc_geometry, one_based_u16_endpoint_pair,
     unique_arc_center_marker, wide_indexed_curve_endpoint_indices,
 };
+use super::grid::quantize;
 use super::markers::{
     compact_legacy_marker_body, finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at,
 };
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
@@ -1952,7 +1952,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
             let [u, v] = marker.coordinates_m?;
             Some((
                 *marker,
-                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM),
+                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM).cells()?,
             ))
         })
         .collect::<Vec<_>>();
@@ -1963,8 +1963,8 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     v.sort_unstable();
     v.dedup();
     let dimensions_match = |u0: i64, u1: i64, v0: i64, v1: i64| {
-        let u_span = (u1 - u0) as f64 * QUANTUM;
-        let v_span = (v1 - v0) as f64 * QUANTUM;
+        let u_span = (i128::from(u1) - i128::from(u0)) as f64 * QUANTUM;
+        let v_span = (i128::from(v1) - i128::from(v0)) as f64 * QUANTUM;
         dimensions_mm
             .iter()
             .enumerate()

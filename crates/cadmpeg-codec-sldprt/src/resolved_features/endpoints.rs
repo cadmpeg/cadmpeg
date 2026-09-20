@@ -2,6 +2,7 @@
 
 use super::curves::compact_bounded_curve_tangent;
 use super::dimensions::compact_legacy_radial_circle_index;
+use super::grid::quantize;
 use super::markers::{
     alternate_current_curve_body, compact_legacy_code_two_profile_point_coordinates,
     compact_legacy_coordinate_roster_coordinates, compact_legacy_embedded_geometry_coordinates,
@@ -12,7 +13,6 @@ use super::markers::{
 use super::relation_loci::same_dimension_length;
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
-use super::transforms::quantize;
 use super::typed_relations::{legacy_marker104_arc_endpoints, marker_curve_endpoint_markers};
 use super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE,

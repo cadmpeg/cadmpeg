@@ -4,11 +4,12 @@ use super::compact_reference_planes::{
     compact_profile_component_plane_frame, CompactReferencePlaneIndex,
 };
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
+use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
-use super::transforms::{quantize, sketch_frame_marker_transform};
+use super::transforms::sketch_frame_marker_transform;
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
 use crate::records::operand_tag::NativeOperandTag;
@@ -2735,33 +2736,6 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
 
 /// Outside i64 grid range, adjacent finite coordinates are farther apart than
 /// one grid cell. Preserve their bits instead of saturating distinct cells.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum GridCoordinate {
-    BelowRange(u64),
-    Cell(i64),
-    AboveRange(u64),
-}
-
-impl GridCoordinate {
-    fn new(value: f64, quantum: f64) -> Self {
-        let cell = (value / quantum).round();
-        if cell < i64::MIN as f64 {
-            Self::BelowRange(!value.to_bits())
-        } else if cell >= -(i64::MIN as f64) {
-            Self::AboveRange(value.to_bits())
-        } else {
-            Self::Cell(cell as i64)
-        }
-    }
-
-    fn coordinate(self, quantum: f64) -> f64 {
-        match self {
-            Self::BelowRange(bits) => f64::from_bits(!bits),
-            Self::Cell(cell) => cell as f64 * quantum,
-            Self::AboveRange(bits) => f64::from_bits(bits),
-        }
-    }
-}
 
 fn hole_axis_key(placement: &HolePlacement) -> Option<[GridCoordinate; 6]> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
@@ -4343,8 +4317,8 @@ fn constrained_bore_axes(
     let mut loci = Vec::with_capacity(axes.len() + 1);
     loci.push(Point2::new(0.0, 0.0));
     let mut bore_loci = HashSet::new();
-    for (u, v) in axes {
-        let point = Point2::new(u as f64 * QUANTUM, v as f64 * QUANTUM);
+    for point in axes {
+        let point = point.point(QUANTUM);
         let index = loci
             .iter()
             .position(|candidate| *candidate == point)

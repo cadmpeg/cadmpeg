@@ -1,5 +1,6 @@
 //! Relation definition and profile locus resolution.
 
+use super::grid::{quantize, GridPoint};
 use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{
     relation_operand_geometry_ref, relation_uses_solver_line_operand, solver_line_geometry_ref,
@@ -7,8 +8,7 @@ use super::relation_geometry::{
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
-    marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
-    ProfileAxis,
+    marker_transforms_with_frame_fallback, sketch_entity_loci, MarkerTransform, ProfileAxis,
 };
 use super::typed_relations::{
     line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
@@ -1749,29 +1749,12 @@ pub(super) fn line_line_distance(first: &SketchEntity, second: &SketchEntity) ->
     else {
         return None;
     };
-    let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
-    let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
-    let first_length = first_direction[0].hypot(first_direction[1]);
-    let second_length = second_direction[0].hypot(second_direction[1]);
-    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
-        return None;
-    }
-    let cross = |left: [f64; 2], right: [f64; 2]| left[0] * right[1] - left[1] * right[0];
-    if cross(first_direction, second_direction).abs()
-        > SKETCH_POINT_TOLERANCE * first_length * second_length
-    {
-        return None;
-    }
-    Some(
-        cross(
-            [
-                second_start.u - first_start.u,
-                second_start.v - first_start.v,
-            ],
-            first_direction,
-        )
-        .abs()
-            / first_length,
+    super::relation_records::line_line_distance(
+        [[first_start.u, first_start.v], [first_end.u, first_end.v]],
+        [
+            [second_start.u, second_start.v],
+            [second_end.u, second_end.v],
+        ],
     )
 }
 
@@ -3717,7 +3700,7 @@ pub(super) fn profile_loci_by_marker(
                 .map(Vec::as_slice)
                 .unwrap_or_default();
             let loci_by_point = loci.iter().fold(
-                HashMap::<(i64, i64), Vec<SketchLocus>>::new(),
+                HashMap::<GridPoint, Vec<SketchLocus>>::new(),
                 |mut by_point, (point, locus)| {
                     by_point
                         .entry(quantize(*point, QUANTUM))
@@ -3754,7 +3737,7 @@ pub(super) fn profile_loci_by_marker(
                     .into_iter()
                     .filter_map(|translated| {
                         let mut marker_loci = loci_by_point
-                            .get(&translated)
+                            .get(&GridPoint::from(translated))
                             .into_iter()
                             .flatten()
                             .filter(|locus| {
@@ -3949,14 +3932,14 @@ pub(super) fn unique_linked_endpoint_locus(
     if marker.links().len() < 2 {
         return None;
     }
-    let mut groups = Vec::<HashMap<(i64, i64), Vec<SketchLocus>>>::new();
+    let mut groups = Vec::<HashMap<GridPoint, Vec<SketchLocus>>>::new();
     let mut sketches = HashSet::new();
     for link in marker.links() {
         let entities = marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
         if entities.is_empty() {
             return None;
         }
-        let mut endpoints = HashMap::<(i64, i64), Vec<SketchLocus>>::new();
+        let mut endpoints = HashMap::<GridPoint, Vec<SketchLocus>>::new();
         for entity_id in entities {
             let entity = entities_by_id.get(&entity_id)?;
             sketches.insert(&entity.sketch);
@@ -3997,7 +3980,10 @@ pub(super) fn unique_linked_endpoint_locus(
     loci.into_iter().next()
 }
 
-fn point_on_quantized_segment(point: (i64, i64), start: (i64, i64), end: (i64, i64)) -> bool {
+fn point_on_quantized_segment(point: (i64, i64), start: GridPoint, end: GridPoint) -> bool {
+    let (Some(start), Some(end)) = (start.cells(), end.cells()) else {
+        return false;
+    };
     let ab = (
         i128::from(end.0) - i128::from(start.0),
         i128::from(end.1) - i128::from(start.1),
@@ -4006,9 +3992,24 @@ fn point_on_quantized_segment(point: (i64, i64), start: (i64, i64), end: (i64, i
         i128::from(point.0) - i128::from(start.0),
         i128::from(point.1) - i128::from(start.1),
     );
-    let cross = ab.0 * ap.1 - ab.1 * ap.0;
-    let projection = ab.0 * ap.0 + ab.1 * ap.1;
-    let squared_length = ab.0 * ab.0 + ab.1 * ab.1;
+    let Some(cross) =
+        ab.0.checked_mul(ap.1)
+            .and_then(|left| left.checked_sub(ab.1.checked_mul(ap.0)?))
+    else {
+        return false;
+    };
+    let Some(projection) =
+        ab.0.checked_mul(ap.0)
+            .and_then(|left| left.checked_add(ab.1.checked_mul(ap.1)?))
+    else {
+        return false;
+    };
+    let Some(squared_length) =
+        ab.0.checked_mul(ab.0)
+            .and_then(|left| left.checked_add(ab.1.checked_mul(ab.1)?))
+    else {
+        return false;
+    };
     squared_length != 0 && cross == 0 && (0..=squared_length).contains(&projection)
 }
 
@@ -4056,7 +4057,7 @@ pub(super) fn marker_transform_candidates_by_feature(
             {
                 continue;
             }
-            let mut directly_bound = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
+            let mut directly_bound = HashMap::<GridPoint, HashSet<GridPoint>>::new();
             for marker in &markers {
                 let Some([u, v]) = marker.coordinates_m else {
                     continue;
@@ -4078,7 +4079,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                 }
             }
             let compatible = |primary_only: bool| {
-                let mut points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
+                let mut points = HashMap::<GridPoint, HashSet<GridPoint>>::new();
                 for marker in &markers {
                     if !matches!(
                         marker.kind(),

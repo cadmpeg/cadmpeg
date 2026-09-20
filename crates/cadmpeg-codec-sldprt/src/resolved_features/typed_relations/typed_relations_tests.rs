@@ -466,3 +466,39 @@ fn native_owner_operand_keeps_a_missing_source_index() {
         );
     }
 }
+
+#[test]
+fn ellipse_membership_rejects_nonfinite_intermediates() {
+    use cadmpeg_ir::{
+        math::Point2,
+        scalar::{Angle, Length},
+        sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId},
+    };
+    let ellipse = |center| {
+        SketchEntity::new(
+            SketchEntityId::mint("sldprt:model:sketch-entity#ellipse-regression").unwrap(),
+            SketchId::mint("sldprt:model:sketch#ellipse-regression").unwrap(),
+            SketchGeometryDefinition::Ellipse {
+                center,
+                major_angle: Angle::new(0.).unwrap(),
+                major_radius: Length::new(1.).unwrap(),
+                minor_radius: Length::new(0.5).unwrap(),
+                bounds: None,
+            }
+            .try_into()
+            .unwrap(),
+        )
+    };
+    assert!(!super::sketch_entity_contains_point(
+        &ellipse(Point2::new(-1e308, 0.)),
+        Point2::new(1e308, 0.)
+    ));
+    assert!(super::sketch_entity_contains_point(
+        &ellipse(Point2::new(0., 0.)),
+        Point2::new(1., 0.)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &ellipse(Point2::new(0., 0.)),
+        Point2::new(2., 0.)
+    ));
+}

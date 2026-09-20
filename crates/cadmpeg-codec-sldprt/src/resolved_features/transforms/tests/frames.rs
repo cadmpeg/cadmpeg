@@ -1416,3 +1416,27 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         })
     ));
 }
+
+#[test]
+fn out_of_range_grid_points_cannot_be_transformed_as_saturated_cells() {
+    use crate::resolved_features::{
+        grid::quantize,
+        transforms::{Axes, MarkerTransform, Sign},
+    };
+    let transform = MarkerTransform {
+        axes: Axes::Aligned {
+            swap: false,
+            u: Sign::Positive,
+            v: Sign::Positive,
+        },
+        translation: (0, 0),
+    };
+    assert_eq!(
+        transform.apply(quantize(cadmpeg_ir::math::Point2::new(1e14, 0.), 1e-6)),
+        None
+    );
+    assert_eq!(
+        transform.apply(quantize(cadmpeg_ir::math::Point2::new(1., 2.), 0.5)),
+        Some((2, 4))
+    );
+}

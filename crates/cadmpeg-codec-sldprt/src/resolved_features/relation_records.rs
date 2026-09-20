@@ -2228,28 +2228,22 @@ fn line_direction(line: [[f64; 2]; 2]) -> [f64; 2] {
     [line[1][0] - line[0][0], line[1][1] - line[0][1]]
 }
 
-fn line_line_distance(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+pub(super) fn line_line_distance(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
     let first_direction = line_direction(first);
     let second_direction = line_direction(second);
-    let first_length = first_direction[0].hypot(first_direction[1]);
-    let second_length = second_direction[0].hypot(second_direction[1]);
-    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+    let unit = |direction: [f64; 2]| {
+        let v = cadmpeg_ir::math::Vector3::new(direction[0], direction[1], 0.0);
+        (v.norm() > SKETCH_POINT_TOLERANCE)
+            .then(|| v.unit_nonzero())
+            .flatten()
+    };
+    let a = unit(first_direction)?;
+    let b = unit(second_direction)?;
+    if (a.x * b.y - a.y * b.x).abs() > SKETCH_POINT_TOLERANCE {
         return None;
     }
-    let cross = |left: [f64; 2], right: [f64; 2]| left[0] * right[1] - left[1] * right[0];
-    if cross(first_direction, second_direction).abs()
-        > SKETCH_POINT_TOLERANCE * first_length * second_length
-    {
-        return None;
-    }
-    Some(
-        cross(
-            [second[0][0] - first[0][0], second[0][1] - first[0][1]],
-            first_direction,
-        )
-        .abs()
-            / first_length,
-    )
+    let distance = ((second[0][0] - first[0][0]) * a.y - (second[0][1] - first[0][1]) * a.x).abs();
+    distance.is_finite().then_some(distance)
 }
 
 pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
@@ -2663,6 +2657,18 @@ pub(super) fn legacy_scalar_layout(payload: &[u8], trailer_offset: usize) -> boo
 
 #[cfg(test)]
 mod binary_relation_operand_tests {
+    #[test]
+    fn large_perpendicular_lines_have_no_parallel_distance() {
+        assert_eq!(
+            super::line_line_distance([[0., 0.], [1e200, 0.]], [[0., 1.], [0., 1e200]]),
+            None
+        );
+        assert_eq!(
+            super::line_line_distance([[0., 0.], [1e200, 0.]], [[0., 1.], [1e200, 1.]]),
+            Some(1.)
+        );
+    }
+
     use super::{
         bind_dynamic_line_relation, bind_dynamic_point_line_relation, FeatureInputOperand,
         FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
