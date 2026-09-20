@@ -3097,7 +3097,7 @@ pub(super) fn validate_curve_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":directrix") || id.ends_with(":spine"))))
                 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} is not a patchable NURBS carrier"
                     )));
                 }
@@ -3321,7 +3321,7 @@ pub(super) fn validate_surface_edits(
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
                 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} is not a patchable NURBS carrier"
                     )));
                 }
@@ -4005,7 +4005,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nurbs_curve_edit_on_a_carrier_the_patcher_does_not_address_is_malformed() {
+    fn a_nurbs_curve_edit_on_a_carrier_the_patcher_does_not_address_is_not_implemented() {
         let id = "f3d:brep:procedural_surface#7:profile";
         let error = validate_curve_edits(
             &curve(id, nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, None)),
@@ -4114,7 +4114,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nurbs_surface_edit_on_a_carrier_the_patcher_does_not_address_is_malformed() {
+    fn a_nurbs_surface_edit_on_a_carrier_the_patcher_does_not_address_is_not_implemented() {
         let id = "f3d:brep:procedural_surface#9:profile";
         let error = validate_surface_edits(
             &surface(
