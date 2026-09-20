@@ -116,13 +116,11 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_core::decode::{InspectOptions, ResourceLimits};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::codec::{Confidence, FormatId};
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
     use super::{resolve_and_inspect_with, InspectError, Inspected};
-    use crate::{InputCatalog, ResolveSourceError, Selection};
+    use crate::InputCatalog;
 
     fn inspection() -> InspectOptions {
         InspectOptions {
@@ -139,6 +137,9 @@ mod tests {
     #[cfg(feature = "nx")]
     #[test]
     fn compound_detection_under_a_small_cap_keeps_prefix_candidates() {
+        use crate::ResolveSourceError;
+        use cadmpeg_ir::codec::FormatId;
+
         let mut bytes = nx_compound_prefix();
         let cap = bytes.len();
         bytes.resize(cap + 1024, 0x5a);
@@ -235,7 +236,8 @@ mod tests {
     mod declared {
         use cadmpeg_core::dialect::DialectId;
 
-        use super::{inspection, run, InputCatalog, Inspected, Selection};
+        use super::{inspection, run, InputCatalog, Inspected};
+        use crate::Selection;
 
         /// One fixture and the dialect its codec classifies.
         struct Case {
@@ -366,12 +368,15 @@ mod tests {
     /// A ZIP with no format marker is several formats at once, and the answer
     /// says so instead of picking one.
     ///
-    /// Every ZIP-based codec reports [`Confidence::Low`] for it. Candidate
-    /// detection retains the equal-confidence ambiguity, so no container is
+    /// Every ZIP-based codec reports [`cadmpeg_ir::codec::Confidence::Low`] for it.
+    /// Candidate detection retains the equal-confidence ambiguity, so no container is
     /// opened and no dialect is claimed.
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn a_markerless_zip_identifies_as_several_formats_with_no_dialect() {
+        use crate::ResolveSourceError;
+        use cadmpeg_ir::codec::Confidence;
+
         let found = run(b"PK\x03\x04 markerless", &inspection());
         let Err(InspectError::Unresolved(ResolveSourceError::Ambiguous(tie))) = &found else {
             panic!("expected ambiguity: {found:?}");
@@ -398,6 +403,10 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn an_exhausted_budget_keeps_the_format_and_reports_the_failure() {
+        use crate::Selection;
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::codec::{Confidence, FormatId};
+
         let bytes = include_bytes!("../../cadmpeg-codec-rhino/tests/golden/fixtures/arc.3dm");
         let starved = InspectOptions {
             limits: ResourceLimits {

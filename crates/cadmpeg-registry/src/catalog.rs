@@ -312,11 +312,7 @@ pub(crate) fn is_cadir_prefix(prefix: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::codec::{Confidence, FormatId};
-
-    use super::{
-        DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection,
-    };
+    use super::{ForcedInput, InputCatalog, ResolvedSource};
 
     /// The rendered format rows retain the input catalog's readable formats
     /// and extension data while adding write capability.
@@ -339,6 +335,9 @@ mod tests {
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn markerless_zip_is_explicitly_ambiguous() {
+        use super::DetectionOutcome;
+        use cadmpeg_ir::codec::Confidence;
+
         let catalog = InputCatalog::with_builtins();
         let DetectionOutcome::Ambiguous(tie) = catalog.detect(b"PK\x03\x04 markerless") else {
             panic!("markerless ZIP must remain ambiguous");
@@ -370,6 +369,8 @@ mod tests {
     #[cfg(feature = "inventor")]
     #[test]
     fn inventor_is_registered_as_a_read_only_family_codec() {
+        use cadmpeg_ir::codec::FormatId;
+
         let catalog = InputCatalog::with_builtins();
         let descriptor = catalog
             .descriptors()
@@ -400,6 +401,9 @@ mod tests {
         ));
         #[cfg(feature = "step")]
         {
+            use super::Selection;
+            use cadmpeg_ir::codec::FormatId;
+
             let ResolvedSource::Native { codec, selection } = catalog
                 .resolve_source(
                     b"",
@@ -421,6 +425,9 @@ mod tests {
     #[cfg(feature = "step")]
     #[test]
     fn forced_descriptor_absent_from_catalog_returns_an_error() {
+        use super::ResolveSourceError;
+        use cadmpeg_ir::codec::FormatId;
+
         let catalog = InputCatalog {
             descriptors: Vec::new(),
         };
