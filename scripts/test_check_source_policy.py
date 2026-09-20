@@ -526,6 +526,62 @@ class ModuleVisibility(TempSourceCase):
         self.assertEqual(self.findings("overwide_module_visibility"), [])
 
 
+class WireMirrorDocs(TempSourceCase):
+    IR = "crates/cadmpeg-ir/src"
+
+    def test_documented_members_pass_over_multiline_attributes(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '\n'.join([
+            '#[serde(try_from = "HolderWire")]', "pub struct Holder {",
+            "    value: u8,", "}", "",
+            "#[derive(Deserialize)]", "struct HolderWire {",
+            "    /// The value the wire states.", "    value: u8,",
+            "    /// The tag the wire states.", "    #[serde(",
+            "        default,", '        rename = "kind"', "    )]", "    tag: u8,",
+            "    #[doc = \"The count the wire states.\"]", "    count: u8,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_undocumented_field_variant_and_variant_field_are_reported(self) -> None:
+        self.write(f"{self.IR}/tagged.rs", '\n'.join([
+            '#[serde(from = "TaggedWire")]', "pub enum Tagged { One }", "",
+            "#[derive(Deserialize)]", "enum TaggedWire {", "    /// The wide arm.",
+            "    One {", "        width: u8,", "    },", "    Two,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/tagged.rs", 8),
+            ("crates/cadmpeg-ir/src/tagged.rs", 10),
+        ])
+        self.assertIn("`width`", findings[0].message)
+        self.assertIn("`TaggedWire`", findings[0].message)
+
+    def test_a_mirror_in_another_file_is_reached(self) -> None:
+        self.write(f"{self.IR}/names.rs", '#[serde(try_from = "RemoteWire")]\n'
+                                          "pub struct Named { value: u8 }\n")
+        self.write(f"{self.IR}/remote.rs", "struct RemoteWire {\n    value: u8,\n}\n")
+        self.assertEqual([(f.path, f.line) for f in self.findings(
+            "undocumented_wire_mirror")], [("crates/cadmpeg-ir/src/remote.rs", 2)])
+
+    def test_a_same_named_type_elsewhere_is_not_the_mirror(self) -> None:
+        self.write(f"{self.IR}/local.rs", '\n'.join([
+            '#[serde(try_from = "Wire")]', "pub struct Local { value: u8 }", "",
+            "struct Wire {", "    /// The value the wire states.", "    value: u8,",
+            "}", "",
+        ]))
+        self.write(f"{self.IR}/other.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_tuple_mirror_and_a_crate_outside_the_rule_state_nothing(self) -> None:
+        self.write(f"{self.IR}/tuple.rs", '#[serde(try_from = "TupleWire")]\n'
+                                          "pub struct Tuple(u8);\n"
+                                          "struct TupleWire(u8);\n")
+        self.write("crates/cadmpeg-codec-demo/src/lib.rs",
+                   '#[serde(try_from = "DemoWire")]\n'
+                   "pub struct Demo { value: u8 }\n"
+                   "struct DemoWire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+
 class EndianExceptions(TempSourceCase):
     def test_literal_cannot_supply_an_exception(self) -> None:
         self.write("crates/demo/src/lib.rs", '''fn f() {

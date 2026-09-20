@@ -708,6 +708,191 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
     return modules
 
 
+# A serde wire mirror is the type a `#[serde(try_from = "…")]` or
+# `#[serde(from = "…")]` container attribute names. The mirror spells the wire
+# shape of the admitted type, and its member documentation is what the
+# published JSON schema reads as each property's `description`. The rule covers
+# the crates whose types that schema carries; a codec-private record generates
+# no schema and states its shape through `NativeRecord`.
+WIRE_MIRROR_DOC_ROOTS = ("crates/cadmpeg-ir",)
+SERDE_ATTRIBUTE = re.compile(r"#\s*\[\s*serde\s*\(")
+SERDE_MIRROR_TARGET = re.compile(r"(?<![\w.])(?:try_from|from)\s*=\s*\"(?P<target>[^\"]+)\"")
+NAMED_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+TYPE_DECL = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<kind>struct|enum)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+)
+DOC_COMMENT = re.compile(r"^\s*///")
+DOC_ATTRIBUTE = re.compile(r"^#\s*\[\s*doc\b")
+MIRROR_FIELD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:")
+MIRROR_VARIANT = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\{|\(|=|,|$)")
+
+
+def type_declarations(lines: list[str], masked: list[str]):
+    """Yield every `struct`/`enum` declaration with the attributes above it.
+
+    Attributes are read from the source and delimited on the masked copy, so a
+    bracket inside a string literal cannot end one early and a doc comment
+    above a multi-line attribute stays attached to the declaration below it.
+    """
+    attrs: list[str] = []
+    index = 0
+    while index < len(lines):
+        if masked[index].lstrip().startswith("#["):
+            _, stop = collect_attribute(masked, index)
+            attrs.append("".join(lines[index:stop]))
+            index = stop
+            continue
+        if is_trivia_line(lines[index].strip()):
+            index += 1
+            continue
+        match = TYPE_DECL.match(masked[index])
+        if match is not None:
+            yield match.group("kind"), match.group("name"), index, tuple(attrs)
+        attrs = []
+        index += 1
+
+
+def mirror_targets(attrs: tuple[str, ...]) -> set[str]:
+    """Named mirror types one declaration's serde attributes convert from."""
+    targets: set[str] = set()
+    for attr in attrs:
+        if SERDE_ATTRIBUTE.search(attr) is None:
+            continue
+        for match in SERDE_MIRROR_TARGET.finditer(attr):
+            target = match.group("target").rsplit("::", 1)[-1].strip()
+            if NAMED_TYPE.match(target):
+                targets.add(target)
+    return targets
+
+
+def member_has_doc(lines: list[str], masked: list[str], index: int, floor: int) -> bool:
+    """Whether a doc comment or `#[doc]` stands above the member at ``index``.
+
+    The walk steps over blank lines, ordinary comments and whole attribute
+    blocks, so a doc comment above a multi-line `#[serde(…)]` still documents
+    the member below it.
+    """
+    line = index - 1
+    while line > floor:
+        text = lines[line].strip()
+        if not text or (text.startswith("//") and not DOC_COMMENT.match(lines[line])):
+            line -= 1
+            continue
+        if DOC_COMMENT.match(lines[line]):
+            return True
+        if not masked[line].rstrip().endswith("]"):
+            return False
+        depth = 0
+        start = line
+        while start > floor:
+            depth += masked[start].count("]") - masked[start].count("[")
+            if depth <= 0:
+                break
+            start -= 1
+        if DOC_ATTRIBUTE.match(lines[start].strip()):
+            return True
+        line = start - 1
+    return False
+
+
+def mirror_members(lines: list[str], masked: list[str], kind: str, index: int):
+    """Yield each documented-or-not member of one mirror declaration.
+
+    A field of the declaration, a variant of an enum, and a field of a
+    struct-shaped variant each carry their own schema property, so each is a
+    member. A tuple or unit declaration states no member.
+    """
+    body = index
+    while body < len(masked) and "{" not in masked[body]:
+        if ";" in masked[body]:
+            return
+        body += 1
+    if body >= len(masked):
+        return
+    end = find_matching_brace_end(masked, body)
+    depth = 0
+    for line in range(body, end):
+        depth += masked[line].count("{") - masked[line].count("}")
+        after = line + 1
+        if after >= end:
+            break
+        inner = depth
+        if inner == 1:
+            pattern = MIRROR_VARIANT if kind == "enum" else MIRROR_FIELD
+        elif inner == 2:
+            pattern = MIRROR_FIELD
+        else:
+            continue
+        match = pattern.match(masked[after])
+        if match is None:
+            continue
+        yield match.group("name"), after
+
+
+def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
+    """Report a serde wire mirror member that carries no doc comment.
+
+    The mirror is the shape the wire states, and the published JSON schema
+    reads each member's doc as that property's `description`. A member with no
+    doc leaves the schema silent about the value the wire carries.
+
+    The scan reads the whole tree: a declaration names its mirror by type name,
+    and the mirror itself is often declared in another file, so no per-file
+    scan can pair the two.
+    """
+    files = sorted(path for path in sources if is_production_rs(path))
+    parsed: dict[Path, tuple[list[str], list[str]]] = {}
+    targets: dict[Path, set[str]] = {}
+    in_file: dict[Path, dict[str, list[tuple[str, int]]]] = {}
+    in_crate: dict[str, dict[str, list[tuple[Path, str, int]]]] = {}
+    for path in files:
+        lines = sources[path].splitlines()
+        code, _ = production_source(sources[path])
+        masked = code.splitlines()
+        parsed[path] = (lines, masked)
+        crate = relative_path(path).split("/")[1]
+        named: set[str] = set()
+        for kind, name, index, attrs in type_declarations(lines, masked):
+            named |= mirror_targets(attrs)
+            in_file.setdefault(path, {}).setdefault(name, []).append((kind, index))
+            in_crate.setdefault(crate, {}).setdefault(name, []).append((path, kind, index))
+        targets[path] = named
+    # A target name is a type path the compiler resolves where the attribute
+    # stands, so the declaration in the same file answers first. A crate that
+    # holds its mirrors in child modules answers next, and nothing outside the
+    # crate can be named without a path the attribute would spell.
+    mirrors: set[tuple[Path, int]] = set()
+    for path, named in targets.items():
+        crate = relative_path(path).split("/")[1]
+        for target in named:
+            local = in_file.get(path, {}).get(target)
+            if local is not None:
+                mirrors.update((path, index) for _, index in local)
+                continue
+            for other, _, index in in_crate.get(crate, {}).get(target, []):
+                mirrors.add((other, index))
+    findings: list[Finding] = []
+    for path in files:
+        relative = relative_path(path)
+        if not relative.startswith(WIRE_MIRROR_DOC_ROOTS):
+            continue
+        lines, masked = parsed[path]
+        for name, entries in in_file.get(path, {}).items():
+            for kind, index in entries:
+                if (path, index) not in mirrors:
+                    continue
+                for member, line in mirror_members(lines, masked, kind, index):
+                    if member_has_doc(lines, masked, line, index):
+                        continue
+                    findings.append(Finding(
+                        "undocumented_wire_mirror", relative, line + 1,
+                        f"Member `{member}` of the serde wire mirror `{name}` carries "
+                        "no doc comment; the published schema reads that doc as the "
+                        "property's description.",
+                    ))
+    return findings
+
+
 def scan_module_visibility(sources: dict[Path, str]) -> list[Finding]:
     """Report a module-level item claiming more reach than its module can grant.
 
@@ -887,6 +1072,7 @@ def check_source() -> list[Finding]:
     for path, source in sources.items():
         if is_production_rs(path):
             findings.extend(scan_patterns(path, source))
+    findings.extend(scan_wire_mirror_docs(sources))
     findings.extend(scan_module_visibility(sources))
     findings.extend(scan_authoring_paths())
     findings.extend(scan_script_tests())
