@@ -106,7 +106,7 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus))
-            if torus.major_radius().get() > 0.0 && torus.minor_radius().get() > 0.0 =>
+            if torus.minor_radius().get() > 0.0 =>
         {
             let center = torus.center();
             let axis = torus.axis();

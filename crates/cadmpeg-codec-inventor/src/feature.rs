@@ -1202,7 +1202,8 @@ fn project_extrusion(
         direction = direction.scale(-1.0);
     }
     let length = length_parameter(source, 4, index)?;
-    let taper = cadmpeg_ir::scalar::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
+    let taper =
+        cadmpeg_ir::scalar::SlopeAngle::try_from(angle_parameter(source, 5, index)?).ok()?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
         1 if length.get() > 0.0 => LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::try_from(length).ok()?,
@@ -1400,9 +1401,10 @@ fn project_chamfer(
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                         edges: EdgeSelection::Native(edges.id()),
                         spec: ChamferSpec::Distance {
-                            distance: cadmpeg_ir::scalar::PositiveLength::new(
-                                length_parameter(source, 2, index)?.get(),
-                            )?,
+                            distance: cadmpeg_ir::scalar::PositiveLength::try_from(
+                                length_parameter(source, 2, index)?,
+                            )
+                            .ok()?,
                         },
                     }),
                     flip_direction: boolean(source, 5, index)?,

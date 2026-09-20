@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
 use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
@@ -1349,79 +1349,81 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
     Ok(())
 }
 
+fn scale_finite_point(point: FinitePoint3, scale: f64) -> Option<FinitePoint3> {
+    let mut point = point.get();
+    scale_point3(&mut point, scale);
+    FinitePoint3::new(point)
+}
+
 fn scale_surface_geometry(
     geometry: &mut SolvedSurfaceGeometry,
     scale: f64,
 ) -> Result<(), CodecError> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
-            *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
-                *normal,
-                *u_axis,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = scale_finite_point(plane_surface.origin(), scale)
+                .ok_or_else(|| CodecError::malformed("PlaneSurface.origin must be finite"))?;
+            *plane_surface =
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, plane_surface.frame());
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
-            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
-                *axis,
-                *ref_direction,
-                radius * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = scale_finite_point(cylinder_surface.origin(), scale)
+                .ok_or_else(|| CodecError::malformed("CylinderSurface.origin must be finite"))?;
+            let radius = PositiveLength::new(radius * scale).ok_or_else(|| {
+                CodecError::malformed("CylinderSurface.radius must be positive and finite")
+            })?;
+            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                origin,
+                cylinder_surface.frame(),
+                radius,
+            );
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
-            let ratio = cone_surface.ratio().get();
-            let half_angle = cone_surface.half_angle().get();
-            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                Point3::new(origin.x * scale, origin.y * scale, origin.z * scale),
-                *axis,
-                *ref_direction,
-                radius * scale,
-                ratio,
-                half_angle,
-            )
-            .map_err(CodecError::malformed)?;
+            let origin = scale_finite_point(cone_surface.origin(), scale)
+                .ok_or_else(|| CodecError::malformed("ConeSurface.origin must be finite"))?;
+            let radius = NonNegativeLength::new(radius * scale).ok_or_else(|| {
+                CodecError::malformed("ConeSurface.radius must be nonnegative and finite")
+            })?;
+            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                origin,
+                cone_surface.frame(),
+                radius,
+                cone_surface.ratio(),
+                cone_surface.half_angle(),
+            );
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
-            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(center.x * scale, center.y * scale, center.z * scale),
-                *axis,
-                *ref_direction,
-                radius * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = scale_finite_point(sphere_surface.center(), scale)
+                .ok_or_else(|| CodecError::malformed("SphereSurface.center must be finite"))?;
+            let radius = NonZeroLength::new(radius * scale).ok_or_else(|| {
+                CodecError::malformed("SphereSurface.radius must be finite and nonzero")
+            })?;
+            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                center,
+                sphere_surface.frame(),
+                radius,
+            );
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
-            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                Point3::new(center.x * scale, center.y * scale, center.z * scale),
-                *axis,
-                *ref_direction,
-                major_radius * scale,
-                minor_radius * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = scale_finite_point(torus_surface.center(), scale)
+                .ok_or_else(|| CodecError::malformed("TorusSurface.center must be finite"))?;
+            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
+                CodecError::malformed("TorusSurface.major_radius must be positive and finite")
+            })?;
+            let minor_radius = NonZeroLength::new(minor_radius * scale).ok_or_else(|| {
+                CodecError::malformed("TorusSurface.minor_radius must be finite and nonzero")
+            })?;
+            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                center,
+                torus_surface.frame(),
+                major_radius,
+                minor_radius,
+            );
         }
         SolvedSurfaceGeometry::Nurbs(surface) => {
             surface
@@ -1475,60 +1477,67 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
             let radius = circle_curve.radius().get();
-            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(center.x * scale, center.y * scale, center.z * scale),
-                *axis,
-                *ref_direction,
-                radius * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = scale_finite_point(circle_curve.center(), scale)
+                .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
+            let radius = PositiveLength::new(radius * scale).ok_or_else(|| {
+                CodecError::malformed("CircleCurve.radius must be positive and finite")
+            })?;
+            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                center,
+                circle_curve.frame(),
+                radius,
+            );
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                Point3::new(center.x * scale, center.y * scale, center.z * scale),
-                *axis,
-                *major_direction,
-                major_radius * scale,
-                minor_radius * scale,
+            let center = scale_finite_point(ellipse_curve.center(), scale)
+                .ok_or_else(|| CodecError::malformed("EllipseCurve.center must be finite"))?;
+            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
+                CodecError::malformed("EllipseCurve.major_radius must be positive and finite")
+            })?;
+            let minor_radius = PositiveLength::new(minor_radius * scale).ok_or_else(|| {
+                CodecError::malformed("EllipseCurve.minor_radius must be positive and finite")
+            })?;
+            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                center,
+                ellipse_curve.frame(),
+                major_radius,
+                minor_radius,
             )
             .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance().get();
-            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                Point3::new(vertex.x * scale, vertex.y * scale, vertex.z * scale),
-                *axis,
-                *major_direction,
-                focal_distance * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let vertex = scale_finite_point(parabola_curve.vertex(), scale)
+                .ok_or_else(|| CodecError::malformed("ParabolaCurve.vertex must be finite"))?;
+            let focal_distance = PositiveLength::new(focal_distance * scale).ok_or_else(|| {
+                CodecError::malformed("ParabolaCurve.focal_distance must be positive and finite")
+            })?;
+            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                vertex,
+                parabola_curve.frame(),
+                focal_distance,
+            );
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
-            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                Point3::new(center.x * scale, center.y * scale, center.z * scale),
-                *axis,
-                *major_direction,
-                major_radius * scale,
-                minor_radius * scale,
-            )
-            .map_err(CodecError::malformed)?;
+            let center = scale_finite_point(hyperbola_curve.center(), scale)
+                .ok_or_else(|| CodecError::malformed("HyperbolaCurve.center must be finite"))?;
+            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
+                CodecError::malformed("HyperbolaCurve.major_radius must be positive and finite")
+            })?;
+            let minor_radius = PositiveLength::new(minor_radius * scale).ok_or_else(|| {
+                CodecError::malformed("HyperbolaCurve.minor_radius must be positive and finite")
+            })?;
+            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                center,
+                hyperbola_curve.frame(),
+                major_radius,
+                minor_radius,
+            );
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let point = degenerate_curve.point().get();

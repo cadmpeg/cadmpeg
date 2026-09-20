@@ -10,13 +10,16 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -56,18 +59,17 @@ fn placed_offset_source(
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
+            let center = FinitePoint3::new(transform.apply_point(circle_curve.center().get())?)?;
+            let frame = OrthonormalFrame3::new(
+                unit_vector(transform.apply_vector(*circle_curve.axis())?)?.scale(orientation),
+                unit_vector(transform.apply_vector(*circle_curve.ref_direction())?)?,
+            )?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    transform.apply_point(center)?,
-                    unit_vector(transform.apply_vector(*axis)?)?.scale(orientation),
-                    unit_vector(transform.apply_vector(*ref_direction)?)?,
-                    radius,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    center,
+                    frame,
+                    circle_curve.radius(),
+                ),
             )))
         }
         _ => None,
@@ -429,10 +431,14 @@ pub(super) fn project(
                         let origin = line_curve.origin().get();
                         let direction = *line_curve.direction().as_raw();
                         let Some(payload) = admit(
-                            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                                origin.translated(normal.cross(direction), distance),
-                                direction,
-                            ),
+                            FinitePoint3::new(origin.translated(normal.cross(direction), distance))
+                                .ok_or("LineCurve.origin must be finite")
+                                .map(|origin| {
+                                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                                        origin,
+                                        line_curve.direction(),
+                                    )
+                                }),
                             entry,
                             &mut losses,
                         ) else {
@@ -446,9 +452,7 @@ pub(super) fn project(
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
-                        let center = circle_curve.center().get();
                         let axis = circle_curve.axis();
-                        let ref_direction = circle_curve.ref_direction();
                         let radius = circle_curve.radius().get();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
@@ -459,12 +463,15 @@ pub(super) fn project(
                             continue;
                         }
                         let Some(payload) = admit(
-                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                center,
-                                *axis,
-                                *ref_direction,
-                                offset_radius,
-                            ),
+                            PositiveLength::new(offset_radius)
+                                .ok_or("CircleCurve.radius must be positive and finite")
+                                .map(|radius| {
+                                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                                        circle_curve.center(),
+                                        circle_curve.frame(),
+                                        radius,
+                                    )
+                                }),
                             entry,
                             &mut losses,
                         ) else {

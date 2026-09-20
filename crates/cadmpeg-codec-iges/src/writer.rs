@@ -12,6 +12,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -26,6 +27,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
 };
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
@@ -3278,24 +3280,16 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius().get();
-            let minor_radius = hyperbola_curve.minor_radius().get();
-            // The hyperbola parameterization satisfies p(-u) = p(u) with its
-            // transverse axis reversed. Emit that equivalent frame with the
-            // reflected interval so the Type 104 endpoints follow the
-            // reversed coedge without introducing an approximation.
+            // Reversing the frame axis maps p(u) to p(-u).
+            let mut frame = hyperbola_curve.frame();
+            frame.reverse_axis();
             let reversed_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                    center,
-                    axis.scale(-1.0),
-                    *major_direction,
-                    major_radius,
-                    minor_radius,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                    hyperbola_curve.center(),
+                    frame,
+                    hyperbola_curve.major_radius(),
+                    hyperbola_curve.minor_radius(),
+                ),
             ));
             let reversed_range = [-span.range[1], -span.range[0]];
             if reversed_range.iter().any(|value| !value.is_finite()) {
@@ -6177,10 +6171,13 @@ fn apply_rigid_transform(
     geometry: CurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
-    let point = |value: Point3| -> Result<Point3, CodecError> {
-        transform.apply_point(value).ok_or_else(|| {
-            CodecError::malformed("transformed curve point has a non-finite coordinate")
-        })
+    let point = |value: Point3| -> Result<FinitePoint3, CodecError> {
+        transform
+            .apply_point(value)
+            .and_then(FinitePoint3::new)
+            .ok_or_else(|| {
+                CodecError::malformed("transformed curve point has a non-finite coordinate")
+            })
     };
     let vector = |value: Vector3, label: &str| -> Result<Vector3, CodecError> {
         let placed = transform.apply_vector(value).ok_or_else(|| {
@@ -6193,82 +6190,109 @@ fn apply_rigid_transform(
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
                     point(origin)?,
-                    vector(direction, "transformed line direction")?,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    UnitVector3::new(vector(direction, "transformed line direction")?).ok_or_else(
+                        || CodecError::malformed("LineCurve.direction must have unit length"),
+                    )?,
+                ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().get();
-            let axis = *circle_curve.axis();
-            let ref_direction = *circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
-            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point(center)?,
-                    vector(axis, "transformed circle axis")?,
-                    vector(ref_direction, "transformed circle reference")?,
-                    radius,
+            let center = point(circle_curve.center().get())?;
+            let frame = OrthonormalFrame3::new(
+                vector(*circle_curve.axis(), "transformed circle axis")?,
+                vector(
+                    *circle_curve.ref_direction(),
+                    "transformed circle reference",
+                )?,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "CircleCurve.axis/ref_direction must form an orthonormal frame",
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    center,
+                    frame,
+                    circle_curve.radius(),
+                ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center().get();
-            let axis = *ellipse_curve.axis();
-            let major_direction = *ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    point(center)?,
-                    vector(axis, "transformed ellipse axis")?,
-                    vector(major_direction, "transformed ellipse major")?,
-                    major_radius,
-                    minor_radius,
+            let center = point(ellipse_curve.center().get())?;
+            let frame = OrthonormalFrame3::new(
+                vector(*ellipse_curve.axis(), "transformed ellipse axis")?,
+                vector(
+                    *ellipse_curve.major_direction(),
+                    "transformed ellipse major",
+                )?,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "EllipseCurve.axis/major_direction must form an orthonormal frame",
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                    center,
+                    frame,
+                    ellipse_curve.major_radius(),
+                    ellipse_curve.minor_radius(),
+                )
+                .map_err(CodecError::malformed)?,
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-            let vertex = parabola_curve.vertex().get();
-            let axis = *parabola_curve.axis();
-            let major_direction = *parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance().get();
-            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
-                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                    point(vertex)?,
-                    vector(axis, "transformed parabola axis")?,
-                    vector(major_direction, "transformed parabola major")?,
-                    focal_distance,
+            let vertex = point(parabola_curve.vertex().get())?;
+            let frame = OrthonormalFrame3::new(
+                vector(*parabola_curve.axis(), "transformed parabola axis")?,
+                vector(
+                    *parabola_curve.major_direction(),
+                    "transformed parabola major",
+                )?,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "ParabolaCurve.axis/major_direction must form an orthonormal frame",
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+                cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                    vertex,
+                    frame,
+                    parabola_curve.focal_distance(),
+                ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = hyperbola_curve.center().get();
-            let axis = *hyperbola_curve.axis();
-            let major_direction = *hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius().get();
-            let minor_radius = hyperbola_curve.minor_radius().get();
-            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                    point(center)?,
-                    vector(axis, "transformed hyperbola axis")?,
-                    vector(major_direction, "transformed hyperbola major")?,
-                    major_radius,
-                    minor_radius,
+            let center = point(hyperbola_curve.center().get())?;
+            let frame = OrthonormalFrame3::new(
+                vector(*hyperbola_curve.axis(), "transformed hyperbola axis")?,
+                vector(
+                    *hyperbola_curve.major_direction(),
+                    "transformed hyperbola major",
+                )?,
+            )
+            .ok_or_else(|| {
+                CodecError::malformed(
+                    "HyperbolaCurve.axis/major_direction must form an orthonormal frame",
                 )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            })?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+                cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                    center,
+                    frame,
+                    hyperbola_curve.major_radius(),
+                    hyperbola_curve.minor_radius(),
+                ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let value = degenerate_curve.point().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point(value)?)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point(value)?),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {

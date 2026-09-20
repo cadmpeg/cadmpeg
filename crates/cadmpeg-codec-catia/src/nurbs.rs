@@ -5,12 +5,14 @@
 //! B-spline conversion, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::units::OrthonormalFrame3;
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -257,55 +259,31 @@ pub(crate) fn reverse_curve_geometry(
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
+            let direction = line_curve.direction();
             let length = range[1] - range[0];
-            let origin = origin.translated(direction, range[1]);
-            let direction = direction.scale(-1.0);
-            if !origin.is_finite() || !direction.is_finite() {
-                return None;
-            }
+            let origin = FinitePoint3::new(origin.translated(*direction.as_raw(), range[1]))?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).ok()?,
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction.reversed()),
                 )),
                 [0.0, length],
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
-            if !center.is_finite()
-                || ![
-                    axis.x,
-                    axis.y,
-                    axis.z,
-                    ref_direction.x,
-                    ref_direction.y,
-                    ref_direction.z,
-                ]
-                .into_iter()
-                .all(f64::is_finite)
-            {
-                return None;
-            }
+            let axis = *circle_curve.axis();
+            let reference = *circle_curve.ref_direction();
             let sweep = range[1] - range[0];
-            let tangent = (*axis).cross(*ref_direction);
+            let tangent = axis.cross(reference);
             let end = range[1];
-            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
-            if !ref_direction.is_finite() {
-                return None;
-            }
+            let reference = reference.scale(end.cos()) + tangent.scale(end.sin());
+            let frame = OrthonormalFrame3::new(axis.scale(-1.0), reference)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        center,
-                        (*axis).scale(-1.0),
-                        ref_direction,
-                        radius,
-                    )
-                    .ok()?,
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        circle_curve.center(),
+                        frame,
+                        circle_curve.radius(),
+                    ),
                 )),
                 [0.0, sweep],
             ))
