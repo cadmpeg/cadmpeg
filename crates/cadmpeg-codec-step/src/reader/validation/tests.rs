@@ -179,3 +179,37 @@ fn validation_shape_representation_with_parameters_uses_inherited_items() {
             .contains("geometric validation property #41 has unsupported item")
     }));
 }
+
+#[test]
+fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
+    use cadmpeg_ir::{
+        math::Point3,
+        tessellation::{Tessellation, TessellationMesh},
+    };
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.bodies.len(), 1);
+    for offset in [0.0, 1e6, 1e9] {
+        let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
+            .map(|p| Point3::new(p[0] + offset, p[1] + offset, p[2] + offset))
+            .to_vec();
+        let mesh = TessellationMesh::from_list_lanes(
+            points,
+            vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
+            None,
+        )
+        .unwrap();
+        let mut tessellation = Tessellation::new("numerical-followup", mesh, Vec::new()).unwrap();
+        tessellation.body = Some(ir.model.bodies[0].id.clone());
+        ir.model.tessellations = vec![tessellation];
+        let properties = super::mesh_properties(&ir).unwrap();
+        assert!((properties.volume - 1.0 / 3.0).abs() <= f64::EPSILON);
+        assert_eq!(
+            properties.centroid,
+            Point3::new(offset + 0.5, offset + 0.25, offset + 0.25)
+        );
+    }
+}

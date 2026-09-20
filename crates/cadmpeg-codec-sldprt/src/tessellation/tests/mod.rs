@@ -1946,3 +1946,12 @@ fn a_short_normal_lane_refuses_the_display_table() {
         .to_string();
     assert!(error.contains("vertex normal(s)"), "{error}");
 }
+
+#[test]
+fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
+    let (segments, error) = super::planar_arc_segments(1e-5, 1e12, 1e-9);
+    assert_eq!(segments, super::MAX_PLANAR_TRIM_ARC_SEGMENTS);
+    let expected = 2e12 * (1e-5 / (4.0 * segments as f64)).sin().powi(2);
+    assert!(error > 1e-9);
+    assert!((error / expected - 1.0).abs() <= 4.0 * f64::EPSILON);
+}

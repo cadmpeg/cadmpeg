@@ -3543,24 +3543,28 @@ fn trim_circle_circle_intersection(
         second_center[1] - first_center[1],
     ];
     let distance = delta[0].hypot(delta[1]);
-    let scale = distance.max(first_radius).max(second_radius).max(1.0);
+    let scale = distance.max(first_radius).max(second_radius);
     if !distance.is_finite() || distance <= TRIM_INTERSECTION_EPS * scale {
         return None;
     }
-    let external = first_radius + second_radius;
-    let internal = (first_radius - second_radius).abs();
-    if distance < internal - TRIM_COORDINATE_EPS * scale
-        || distance > external + TRIM_COORDINATE_EPS * scale
+    let distance_scaled = distance / scale;
+    let first = first_radius / scale;
+    let second = second_radius / scale;
+    if !first.is_finite() || !second.is_finite() || first <= 0.0 || second <= 0.0 {
+        return None;
+    }
+    let axial_scaled = (first * first - second * second + distance_scaled * distance_scaled)
+        / (2.0 * distance_scaled);
+    let height_squared = first.mul_add(first, -(axial_scaled * axial_scaled));
+    let tolerance = TRIM_INTERSECTION_EPS * (first * first + axial_scaled * axial_scaled);
+    if !height_squared.is_finite()
+        || height_squared.abs() > tolerance
+        || (axial_scaled.abs() - first).abs() > TRIM_COORDINATE_EPS
+        || ((distance_scaled - axial_scaled).abs() - second).abs() > TRIM_COORDINATE_EPS
     {
         return None;
     }
-    let axial = (first_radius * first_radius - second_radius * second_radius + distance * distance)
-        / (2.0 * distance);
-    let height_squared = first_radius.mul_add(first_radius, -(axial * axial));
-    let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
-    if !height_squared.is_finite() || height_squared.abs() > tolerance {
-        return None;
-    }
+    let axial = axial_scaled * scale;
     let direction = [delta[0] / distance, delta[1] / distance];
     let coordinate = [
         first_center[0] + axial * direction[0],
@@ -7213,6 +7217,24 @@ pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_followup_circle_intersection_requires_a_unique_tangent() {
+        for r in [1.0, 1e-6, 1e-150, 1e150] {
+            assert_eq!(
+                super::trim_circle_circle_intersection([0., 0.], r, [r, 0.], r),
+                None
+            );
+            assert_eq!(
+                super::trim_circle_circle_intersection([0., 0.], r, [2. * r, 0.], r),
+                Some([r, 0.])
+            );
+            assert_eq!(
+                super::trim_circle_circle_intersection([0., 0.], r, [3. * r, 0.], r),
+                None
+            );
+        }
+    }
+
     #[test]
     fn numerical_audit_trim_line_circle_rejects_disjoint_small_carriers() {
         for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {

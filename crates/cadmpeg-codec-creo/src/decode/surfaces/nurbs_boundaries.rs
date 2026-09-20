@@ -10,7 +10,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::Point3;
 
-use crate::decode::analytic::equations::{quadratic_real_roots, PlaneEquation};
+use crate::decode::analytic::equations::PlaneEquation;
+use crate::decode::quadratic::real_roots;
 use crate::vecmath::{cross, dot};
 
 const EPS_CUBIC_PARAM: f64 = 1.0e-11;
@@ -430,7 +431,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         ((cubic * parameter + quadratic) * parameter + linear) * parameter + constant
     };
     if cubic.abs() <= 1e-14 * scale {
-        let mut roots = quadratic_real_roots(quadratic, linear, constant)
+        let mut roots = real_roots(quadratic, linear, constant)
             .into_iter()
             .filter(|root| {
                 *root >= -parameter_tolerance
@@ -445,7 +446,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
     }
     let mut stations = vec![0.0, 1.0];
     stations.extend(
-        quadratic_real_roots(3.0 * cubic, 2.0 * quadratic, linear)
+        real_roots(3.0 * cubic, 2.0 * quadratic, linear)
             .into_iter()
             .filter(|root| *root > parameter_tolerance && *root < 1.0 - parameter_tolerance),
     );

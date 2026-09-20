@@ -1007,7 +1007,36 @@ impl LegacyCurveMeta {
 struct LegacyVertex {
     vertex: RawBrepVertex,
     point_sum: [f64; 3],
+    point_scale: [f64; 3],
     point_count: usize,
+}
+
+impl LegacyVertex {
+    fn into_vertex(mut self) -> RawBrepVertex {
+        if self.point_count != 0 {
+            let count = self.point_count as f64;
+            self.vertex.point = Point3([
+                (self.point_sum[0] / count).clamp(-1.0, 1.0) * self.point_scale[0],
+                (self.point_sum[1] / count).clamp(-1.0, 1.0) * self.point_scale[1],
+                (self.point_sum[2] / count).clamp(-1.0, 1.0) * self.point_scale[2],
+            ]);
+        }
+        self.vertex
+    }
+
+    // Sum relative coordinates before dividing by the endpoint count. Finite
+    // equal endpoints can have an unrepresentable sum but a finite mean.
+    fn add_point(&mut self, point: Point3) {
+        for (axis, value) in point.0.into_iter().enumerate() {
+            let scale = self.point_scale[axis].max(value.abs());
+            if scale > 0.0 {
+                self.point_sum[axis] =
+                    self.point_sum[axis] * (self.point_scale[axis] / scale) + value / scale;
+                self.point_scale[axis] = scale;
+            }
+        }
+        self.point_count += 1;
+    }
 }
 
 fn parse_legacy_major2(
@@ -1295,6 +1324,7 @@ fn parse_legacy_major2(
                         source_range: 0..0,
                     },
                     point_sum: [0.0; 3],
+                    point_scale: [0.0; 3],
                     point_count: 0,
                 });
                 position_in_array
@@ -1320,10 +1350,7 @@ fn parse_legacy_major2(
             .zip([curve.endpoints[0], curve.endpoints[1]])
         {
             let vertex = &mut vertices[vertex];
-            vertex.point_sum[0] += point.0[0];
-            vertex.point_sum[1] += point.0[1];
-            vertex.point_sum[2] += point.0[2];
-            vertex.point_count += 1;
+            vertex.add_point(point);
         }
         let edge_index_i32 = i32::try_from(edge_index)
             .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
@@ -1360,17 +1387,7 @@ fn parse_legacy_major2(
     }
     let mut vertices = vertices
         .into_iter()
-        .map(|mut accumulated| {
-            if accumulated.point_count != 0 {
-                let count = accumulated.point_count as f64;
-                accumulated.vertex.point = Point3([
-                    accumulated.point_sum[0] / count,
-                    accumulated.point_sum[1] / count,
-                    accumulated.point_sum[2] / count,
-                ]);
-            }
-            accumulated.vertex
-        })
+        .map(LegacyVertex::into_vertex)
         .collect::<Vec<_>>();
     for (trim_index, trim) in trims.iter_mut().enumerate() {
         trim.vertices = [
@@ -1640,6 +1657,7 @@ fn legacy_vertex(
             source_range: 0..0,
         },
         point_sum: [0.0; 3],
+        point_scale: [0.0; 3],
         point_count: 0,
     });
     Ok(index)
@@ -2843,6 +2861,22 @@ fn finish_anonymous_ranges(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_followup_legacy_vertex_mean_stays_finite() {
+        for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
+            let mut vertices = Vec::new();
+            super::legacy_vertex(&mut vertices, Point3([endpoints[0], 0., 0.]), 0).unwrap();
+            for x in endpoints {
+                vertices[0].add_point(Point3([x, 0., 0.]));
+            }
+            let vertex = vertices.pop().unwrap().into_vertex();
+            assert_eq!(
+                vertex.point.0,
+                [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
+            );
+        }
+    }
+
     use super::{
         body_kind_rests_on_missing_stamp, finite_tolerance, legacy_decoded_curve_endpoints,
         ordered_interval, parse, read_children, read_faces, read_legacy_mesh_sides,

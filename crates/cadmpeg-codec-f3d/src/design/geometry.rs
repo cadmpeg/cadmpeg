@@ -696,13 +696,20 @@ fn line_arc_intersection_points(
     }
     let d = Point2::new(direction.u / scale, direction.v / scale);
     let o = Point2::new(offset.u / scale, offset.v / scale);
-    let radius = radius / scale;
+    let scaled_radius = radius / scale;
     let quadratic = d.u * d.u + d.v * d.v;
     if quadratic == 0.0 {
-        return Some(Vec::new());
+        return Some(
+            (offset.u.hypot(offset.v) == *radius
+                && directed_angle_parameter(offset.v.atan2(offset.u), *start_angle, *end_angle)
+                    .is_some())
+            .then_some(start)
+            .into_iter()
+            .collect(),
+        );
     }
     let linear = 2.0 * (o.u * d.u + o.v * d.v);
-    let constant = o.u * o.u + o.v * o.v - radius * radius;
+    let constant = o.u * o.u + o.v * o.v - scaled_radius * scaled_radius;
     let discriminant = linear * linear - 4.0 * quadratic * constant;
     let error = 64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs());
     if discriminant < -error {
@@ -2242,24 +2249,11 @@ fn boundary_segments_intersect(
                 end: right_end,
             },
         ) => segments_intersect((*left_start, *left_end), (*right_start, *right_end)),
-        (
-            ProfileBoundarySegment::Line { start, end },
-            ProfileBoundarySegment::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            },
-        )
-        | (
-            ProfileBoundarySegment::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            },
-            ProfileBoundarySegment::Line { start, end },
-        ) => line_arc_intersects((*start, *end), *center, *radius, *start_angle, *end_angle),
+        (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
+        | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
+            line_arc_intersection_points((*start, *end), arc)
+                .is_some_and(|points| !points.is_empty())
+        }
         (
             ProfileBoundarySegment::Arc {
                 center: left_center,
@@ -2278,52 +2272,6 @@ fn boundary_segments_intersect(
             (*right_center, *right_radius, *right_start, *right_end),
         ),
     }
-}
-
-fn line_arc_intersects(
-    (start, end): (Point2, Point2),
-    center: Point2,
-    radius: f64,
-    start_angle: f64,
-    end_angle: f64,
-) -> bool {
-    let direction = Point2::new(end.u - start.u, end.v - start.v);
-    let offset = Point2::new(start.u - center.u, start.v - center.v);
-    let quadratic = direction.u * direction.u + direction.v * direction.v;
-    if quadratic == 0.0 {
-        return point_distance(start, center) == radius
-            && directed_angle_parameter(
-                (start.v - center.v).atan2(start.u - center.u),
-                start_angle,
-                end_angle,
-            )
-            .is_some();
-    }
-    let linear = 2.0 * (offset.u * direction.u + offset.v * direction.v);
-    let constant = offset.u * offset.u + offset.v * offset.v - radius * radius;
-    let discriminant = linear * linear - 4.0 * quadratic * constant;
-    let error =
-        64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
-    if discriminant < -error {
-        return false;
-    }
-    let root = discriminant.max(0.0).sqrt();
-    [-root, root].into_iter().any(|signed_root| {
-        let parameter = (-linear + signed_root) / (2.0 * quadratic);
-        if !(0.0..=1.0).contains(&parameter) {
-            return false;
-        }
-        let point = Point2::new(
-            start.u + parameter * direction.u,
-            start.v + parameter * direction.v,
-        );
-        directed_angle_parameter(
-            (point.v - center.v).atan2(point.u - center.u),
-            start_angle,
-            end_angle,
-        )
-        .is_some()
-    })
 }
 
 fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64)) -> bool {

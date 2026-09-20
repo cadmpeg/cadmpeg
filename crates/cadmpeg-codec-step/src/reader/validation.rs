@@ -334,6 +334,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
         .tessellations
         .iter()
         .filter(|mesh| mesh.body.as_ref() == Some(&body));
+    let mut origin = None;
     let mut area = 0.0;
     let mut area_centroid = [0.0; 3];
     let mut signed_volume = 0.0;
@@ -357,6 +358,10 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
                     .entry((first.min(second), first.max(second)))
                     .or_default() += 1;
             }
+            let reference = *origin.get_or_insert(a);
+            let relative =
+                |p: Point3| Point3::new(p.x - reference.x, p.y - reference.y, p.z - reference.z);
+            let [a, b, c] = [a, b, c].map(relative);
             coordinate_scale = coordinate_scale
                 .max(a.x.abs())
                 .max(a.y.abs())
@@ -396,8 +401,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     if triangles == 0 || area == 0.0 {
         return None;
     }
-    let volume_epsilon =
-        f64::EPSILON * coordinate_scale.max(1.0).powi(3) * (triangles as f64).max(1.0);
+    let volume_epsilon = f64::EPSILON * coordinate_scale.powi(3) * (triangles as f64).max(1.0);
     let centroid = if watertight && signed_volume.abs() > volume_epsilon {
         Point3::new(
             volume_centroid[0] / signed_volume,
@@ -411,6 +415,15 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
             area_centroid[2] / area,
         )
     };
+    let origin = origin?;
+    let centroid = Point3::new(
+        origin.x + centroid.x,
+        origin.y + centroid.y,
+        origin.z + centroid.z,
+    );
+    if !area.is_finite() || !signed_volume.is_finite() || !centroid.is_finite() {
+        return None;
+    }
     Some(MeshProperties {
         area,
         volume: signed_volume.abs(),

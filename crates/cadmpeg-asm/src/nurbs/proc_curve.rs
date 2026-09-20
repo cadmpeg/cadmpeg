@@ -2877,8 +2877,7 @@ fn embedded_surface_fields(
         "cone" => {
             let native_axis = normalized(cur.take_vector3()?)?;
             let major = cur.take_vector3()?;
-            let radius = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt()
-                * LEN_TO_MM;
+            let radius = major[0].hypot(major[1]).hypot(major[2]) * LEN_TO_MM;
             let ref_direction = normalized(major)?;
             let ratio = cur.take_f64()?;
             cur.take_bool()?;
@@ -3039,8 +3038,7 @@ fn decode_embedded_surface_fields(
         "cone" => {
             let native_axis = normalized(take_native_vec3(bytes, position, 0x14)?)?;
             let major = take_native_vec3(bytes, position, 0x14)?;
-            let radius = (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt()
-                * LEN_TO_MM;
+            let radius = major[0].hypot(major[1]).hypot(major[2]) * LEN_TO_MM;
             let ref_direction = normalized(major)?;
             let ratio = take_f64(bytes, position)?;
             take_bool(bytes, position)?;
