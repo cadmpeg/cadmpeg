@@ -202,7 +202,12 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
             None,
         )
         .unwrap();
-        let mut tessellation = Tessellation::new("numerical-followup", mesh, Vec::new()).unwrap();
+        let mut tessellation = Tessellation::new(
+            "test:step:tessellation#numerical-followup",
+            mesh,
+            Vec::new(),
+        )
+        .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
         let properties = super::mesh_properties(&ir).unwrap();
