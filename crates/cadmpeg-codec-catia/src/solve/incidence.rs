@@ -31,7 +31,7 @@ use std::sync::Arc;
 type MeshEndpointSolutionVisitor<'a> = &'a mut dyn FnMut(&[MeshEndpointPair]) -> ControlFlow<()>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
-pub(crate) fn prune_incidence_choices(
+fn prune_incidence_choices(
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -51,7 +51,7 @@ pub(crate) fn prune_incidence_choices(
 /// Mesh boundary domains may complete that support with an endpoint that is
 /// not present in the explicit candidate set. The mesh-aware caller checks
 /// those deferred supports after it has prepared the coordinate-root domains.
-pub(crate) fn prune_incidence_choices_with_deferred_support(
+fn prune_incidence_choices_with_deferred_support(
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -641,13 +641,13 @@ pub(crate) fn order_incidence_components_by_constraints(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IncidenceSearchState {
+enum IncidenceSearchState {
     Open,
     Exhausted,
     Stopped,
 }
 
-pub(crate) struct IncidenceComponentSearch<'a, 'v> {
+struct IncidenceComponentSearch<'a, 'v> {
     pub(crate) choices: &'a [Vec<[usize; 2]>],
     pub(crate) explicit_point_supports: Vec<HashMap<usize, Vec<[usize; 2]>>>,
     pub(crate) point_support_edges: Vec<HashMap<usize, Vec<usize>>>,
@@ -702,7 +702,7 @@ struct AppliedFaceConfiguration {
     factor_checkpoint: Option<FaceFactorCheckpoint>,
 }
 
-pub(crate) struct IncidenceDegreeUndo {
+struct IncidenceDegreeUndo {
     entries: Vec<(usize, usize, Option<u8>)>,
 }
 
@@ -728,7 +728,7 @@ struct FaceFactorGraph {
     domain_lengths: Vec<usize>,
 }
 
-pub(crate) struct PreparedFaceFactors {
+struct PreparedFaceFactors {
     domains: Vec<Option<MeshFaceEndpointConfigurations>>,
     factor_faces: Vec<usize>,
     factor_by_face: Vec<Option<usize>>,
@@ -931,7 +931,7 @@ impl FaceFactorGraph {
 
 impl PreparedFaceFactors {
     #[cfg(test)]
-    pub(crate) fn domains(&self) -> &[Option<MeshFaceEndpointConfigurations>] {
+    fn domains(&self) -> &[Option<MeshFaceEndpointConfigurations>] {
         &self.domains
     }
 
@@ -1028,7 +1028,7 @@ fn retain_configuration_masks(domains: &mut [MeshFaceEndpointConfigurations], ac
     }
 }
 
-pub(crate) fn prune_face_configuration_support(
+fn prune_face_configuration_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &WorkBudget<'_>,
 ) -> bool {
@@ -1139,7 +1139,7 @@ pub(crate) fn prune_face_configuration_support(
     true
 }
 
-pub(crate) fn prune_face_configuration_singleton_support(
+fn prune_face_configuration_singleton_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &WorkBudget<'_>,
 ) -> bool {
@@ -1220,7 +1220,7 @@ pub(crate) fn prune_face_configuration_singleton_support(
     }
 }
 
-pub(crate) fn prune_ordered_face_endpoint_support(
+fn prune_ordered_face_endpoint_support(
     domains: &[MeshFaceBoundaryDomain],
     choices: &mut [Vec<[usize; 2]>],
     budget: &WorkBudget<'_>,
@@ -1382,7 +1382,7 @@ pub(crate) fn prune_implicit_ordered_face_endpoint_support(
     }
 }
 
-pub(crate) fn prepare_face_configuration_domains(
+fn prepare_face_configuration_domains(
     assignments: Option<&[MeshFaceBoundaryDomain]>,
     choices: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
@@ -2161,7 +2161,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
+    fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         self.candidate_fits_in(edge, pair, self.coordinate_domains)
     }
 
@@ -2443,14 +2443,14 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn branch_options(
+    fn branch_options(
         &self,
         coordinate_domains: Option<&MeshCoordinateRootDomains>,
     ) -> Option<Vec<(usize, [usize; 2])>> {
         Some(self.branch(coordinate_domains)?.collect())
     }
 
-    pub(crate) fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> IncidenceDegreeUndo {
+    fn adjust(&mut self, edge: usize, pair: [usize; 2]) -> IncidenceDegreeUndo {
         adjust_incidence_degrees(&mut self.degrees, self.edge_faces, edge, pair)
     }
 
@@ -2520,10 +2520,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn ordered_faces_feasible(
-        &mut self,
-        faces: impl IntoIterator<Item = usize>,
-    ) -> bool {
+    fn ordered_faces_feasible(&mut self, faces: impl IntoIterator<Item = usize>) -> bool {
         self.advance_ordered_faces(faces, Vec::new()).is_some()
     }
 
@@ -2539,7 +2536,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    pub(crate) fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
+    fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
         self.face_configuration_options_for(&self.component_faces())
     }
 
@@ -2874,7 +2871,7 @@ impl IncidenceComponentSearch<'_, '_> {
         }
     }
 
-    pub(crate) fn search(&mut self) {
+    fn search(&mut self) {
         let quotient_states = Vec::new();
         let component_faces = self.component_faces();
         let coordinate_domains = self
@@ -4366,7 +4363,7 @@ pub(crate) fn reconstruct_incidence_candidates(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn visit_incidence_endpoint_pair_solutions<F, V>(
+fn visit_incidence_endpoint_pair_solutions<F, V>(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
@@ -4502,3 +4499,6 @@ where
         outcome
     }
 }
+
+#[cfg(test)]
+mod tests;

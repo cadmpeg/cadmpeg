@@ -172,7 +172,7 @@ pub(crate) struct ConsolidatedEdgeDefinition {
 }
 
 impl ConsolidatedEdgeDefinition {
-    pub(super) fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
+    fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
         consolidated_edge_definition_data(self.class.into(), &self.frame.payload)
     }
 }
@@ -423,7 +423,7 @@ fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25P
 /// Native endpoint-incidence graph of complete consolidated edge runs.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub(in crate::families::consolidated) struct ConsolidatedNativeEdgeGraph {
+struct ConsolidatedNativeEdgeGraph {
     /// Persistent native vertex identities in first-incidence order.
     pub(super) vertex_identities: Vec<u32>,
     /// Edge runs in serialization order, with endpoints indexing
@@ -436,7 +436,7 @@ pub(in crate::families::consolidated) struct ConsolidatedNativeEdgeGraph {
 /// One edge in a consolidated native endpoint-incidence graph.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub(super) struct ConsolidatedNativeGraphEdge {
+struct ConsolidatedNativeGraphEdge {
     /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
     pub(super) vertices: [usize; 2],
 }
@@ -519,7 +519,7 @@ struct ConsolidatedCarriers<'a> {
 /// B-family class-`0x23` range packet.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
+fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
     consolidated_edge_blocks_from_records(data, &records)
 }
@@ -577,7 +577,7 @@ fn consolidated_edge_blocks_from_records(
 /// other framed record do not form a run.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
+fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
     consolidated_topology_edge_runs_from_records(data, &records)
 }
@@ -631,9 +631,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 /// class-`0x23` definition must close under the eight-scalar grammar.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_analytic_circle_edge_runs(
-    data: &[u8],
-) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
+fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
     consolidated_analytic_circle_edge_runs_from_records(data, &records)
 }
@@ -698,7 +696,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 /// both close under their typed grammars.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
+fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
     consolidated_class25_edge_runs_from_records(data, &records)
 }
@@ -760,7 +758,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 /// availability. Records separated by another framed record do not form a run.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
+fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
     consolidated_edge_use_runs_from_records(data, &records)
 }
@@ -1170,7 +1168,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
 /// edge runs. A broken use/edge allocation chain invalidates the graph.
 #[must_use]
 #[cfg(test)]
-pub(super) fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
+fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
     let runs = consolidated_topology_edge_runs(data);
     if runs.is_empty() {
         return None;
@@ -1228,7 +1226,7 @@ pub(super) fn consolidated_native_edge_graph(data: &[u8]) -> Option<Consolidated
 /// families, remain unresolved.
 #[must_use]
 #[cfg(test)]
-pub(super) fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
+fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
     resolve_consolidated_edge_blocks_from_records(
         data,
@@ -1867,3 +1865,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod decoder_tests;

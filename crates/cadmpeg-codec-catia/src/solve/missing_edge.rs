@@ -266,7 +266,7 @@ fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     fbb_edge_port_identities_with_namespace(bytes, false)
 }
 
-pub(super) fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities_with_namespace(bytes, true)
 }
 
@@ -1251,7 +1251,7 @@ pub(crate) fn resolve_edge_faces_from_runs(
 
 /// One uncovered run in a trim-mesh boundary cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct MeshBoundaryGap {
+struct MeshBoundaryGap {
     /// Boundary-cycle ordinal within the face.
     cycle: usize,
     /// First uncovered boundary-segment index.
@@ -1262,7 +1262,7 @@ pub(super) struct MeshBoundaryGap {
 
 /// Exact matched and unmatched physical-edge coverage for one trim face.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::solve) struct MeshFaceCoverage {
+struct MeshFaceCoverage {
     /// Positional face ordinal.
     pub(super) face: usize,
     /// Maximal uncovered runs after matching every serialized edge interior.
@@ -1288,7 +1288,7 @@ pub(super) struct StandardMeshBoundaryContext {
 }
 
 impl StandardMeshBoundaryContext {
-    pub(super) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
+    fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
         Self::parse_ports(bytes, edge_faces, false)
     }
 
@@ -1335,7 +1335,7 @@ impl StandardMeshBoundaryContext {
 /// trim-boundary gap. Domains contain only placements participating in a
 /// complete end-to-end partition of every gap on the face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(in crate::solve) struct MeshEdgePlacementCandidate {
+struct MeshEdgePlacementCandidate {
     /// Physical edge-row ordinal.
     pub(super) edge: usize,
     /// Positional face ordinal.
@@ -1358,7 +1358,7 @@ impl MeshEdgePlacementCandidate {
 /// pairs allowed by its two currently bound trim corners. An absent domain
 /// means that at least one corner has no exact point binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::solve) struct MeshEdgePlacementEndpointCandidate {
+struct MeshEdgePlacementEndpointCandidate {
     /// Span-consistent placement in its face boundary.
     placement: MeshEdgePlacementCandidate,
     /// Unordered logical-point pairs allowed at the placement corners.
@@ -1410,7 +1410,7 @@ pub(crate) struct MeshFaceBoundaryAssignment {
 /// matched interior occurs on one of its two serialized incident faces.
 #[must_use]
 #[cfg(test)]
-pub(super) fn standard_mesh_face_coverage(
+fn standard_mesh_face_coverage(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<MeshFaceCoverage>> {
@@ -2409,7 +2409,7 @@ fn standard_mesh_missing_edge_assignment_domains(
     ))
 }
 
-pub(super) fn standard_mesh_missing_edge_assignments(
+fn standard_mesh_missing_edge_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
@@ -2438,7 +2438,7 @@ pub(super) fn standard_mesh_missing_edge_assignments(
 /// matched to the boundary.
 #[cfg(test)]
 #[must_use]
-pub(super) fn standard_mesh_missing_edge_placements(
+fn standard_mesh_missing_edge_placements(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
@@ -2468,7 +2468,7 @@ pub(crate) fn standard_mesh_boundary_assignments(
     standard_mesh_boundary_assignments_from_context(&context, edge_candidates)
 }
 
-pub(super) fn standard_mesh_boundary_assignments_from_context(
+fn standard_mesh_boundary_assignments_from_context(
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
@@ -2603,7 +2603,7 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
 /// each ordered edge use into its abstract logical-corner quotient.
 #[cfg(test)]
 #[must_use]
-pub(super) fn parse_standard_mesh_selection(
+fn parse_standard_mesh_selection(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     selected_assignments: &[usize],
@@ -2967,7 +2967,7 @@ fn standard_mesh_assignment_corner_points(
 /// assignment. Assignment and placement order are unchanged from the serialized
 /// face and edge order.
 #[must_use]
-pub(super) fn standard_mesh_missing_edge_endpoint_assignments(
+fn standard_mesh_missing_edge_endpoint_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
@@ -3027,7 +3027,7 @@ pub(super) fn standard_mesh_missing_edge_endpoint_assignments(
 /// domains across correlated face assignments. A face assignment is removed as
 /// a unit when any of its placements has no compatible endpoint pair.
 #[must_use]
-pub(super) fn standard_mesh_pruned_missing_edge_endpoint_assignments(
+fn standard_mesh_pruned_missing_edge_endpoint_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],

@@ -1,27 +1,10 @@
 //! Behavioral tests for standard B-rep topology solvers and parsers.
 
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 fn repeated_domain(domain: HashSet<usize>, count: usize) -> Vec<Arc<HashSet<usize>>> {
     let domain = Arc::new(domain);
     vec![domain; count]
-}
-
-fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
-    faces
-        .iter()
-        .map(|degrees| {
-            degrees
-                .iter()
-                .copied()
-                .enumerate()
-                .filter_map(|(point, degree)| (degree != 0).then_some((point, degree)))
-                .collect()
-        })
-        .collect()
 }
 
 fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -34,7 +17,7 @@ fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
 
 mod coordinate_closure;
 mod incidence_components;
-mod incidence_search;
+mod incidence_reconstruction;
 mod mesh_quotient;
 mod record_decoders;
 mod trim;

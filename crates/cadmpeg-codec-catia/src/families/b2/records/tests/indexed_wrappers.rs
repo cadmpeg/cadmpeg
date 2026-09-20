@@ -1,5 +1,5 @@
-use crate::families::b2::tests::b2_nurbs_curve_stream;
-use crate::families::b2::tests::b2_spatial_circle_stream;
+use crate::families::b2::records::tests::b2_nurbs_curve_stream;
+use crate::families::b2::records::tests::b2_spatial_circle_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream, b2_class5b5c_stream,
     b2_cone_stream, b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream,
