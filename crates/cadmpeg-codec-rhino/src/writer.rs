@@ -1054,6 +1054,25 @@ fn brep_loop_type(role: LoopBoundaryRole, first_on_face: bool) -> i32 {
 }
 
 fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
+    let Some(reference) = model.vertices.first().map(|vertex| vertex.point) else {
+        return 0;
+    };
+    let scale = model
+        .vertices
+        .iter()
+        .map(|vertex| {
+            let delta = vertex.point.vector_from(reference);
+            delta.x.abs().max(delta.y.abs()).max(delta.z.abs())
+        })
+        .fold(0.0, f64::max);
+    if !scale.is_finite() || scale == 0.0 {
+        return 0;
+    }
+    let local = |point: cadmpeg_ir::math::Point3| {
+        let delta = point.vector_from(reference);
+        cadmpeg_ir::math::Vector3::new(delta.x / scale, delta.y / scale, delta.z / scale)
+    };
+    let mut correction = 0.0;
     let mut volume6 = 0.0;
     for loop_ in &model.loops {
         let ring = loop_
@@ -1063,11 +1082,13 @@ fn planar_solid_orientation(model: &WritableModel<'_>) -> i32 {
             .collect::<Vec<_>>();
         if let Some(origin) = ring.first() {
             for triangle in ring[1..].windows(2) {
-                let a = triangle[0];
-                let b = triangle[1];
-                volume6 += origin.x * (a.y * b.z - a.z * b.y)
-                    + origin.y * (a.z * b.x - a.x * b.z)
-                    + origin.z * (a.x * b.y - a.y * b.x);
+                let a = local(triangle[0]);
+                let b = local(triangle[1]);
+                let term = local(*origin).dot(a.cross(b));
+                let adjusted = term - correction;
+                let total = volume6 + adjusted;
+                correction = (total - volume6) - adjusted;
+                volume6 = total;
             }
         }
     }

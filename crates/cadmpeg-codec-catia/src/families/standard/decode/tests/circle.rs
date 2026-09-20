@@ -176,3 +176,38 @@ fn sphere_section_axis_preserves_a_subnormal_center_offset() {
         Some(Vector3::new(0.0, 0.0, 1.0))
     );
 }
+
+#[test]
+fn analytic_curve_angles_preserve_extreme_radii() {
+    use cadmpeg_ir::geometry::{
+        analytic::{CircleCurve, EllipseCurve},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    for radius in [1e-200, 1.0, 1e200] {
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let axis = Vector3::new(0.0, 0.0, 1.0);
+        let reference = Vector3::new(1.0, 0.0, 0.0);
+        for geometry in [
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(center, axis, reference, radius).unwrap(),
+            )),
+            CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
+                EllipseCurve::try_new(center, axis, reference, radius, 0.5 * radius).unwrap(),
+            )),
+        ] {
+            assert_eq!(
+                super::super::standard_analytic_curve_angle(
+                    &geometry,
+                    Point3::new(radius, 0.0, 0.0)
+                ),
+                Some(0.0)
+            );
+            assert!(super::super::standard_analytic_curve_angle(
+                &geometry,
+                Point3::new(2.0 * radius, 0.0, 0.0)
+            )
+            .is_none());
+        }
+    }
+}

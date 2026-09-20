@@ -1166,3 +1166,32 @@ fn the_join_projections_read_the_key_records() {
         std::collections::HashMap::from([(face, 7)])
     );
 }
+
+#[test]
+fn circle_recognition_is_invariant_under_common_weight_scale() {
+    for curve in [exact_circle_directrix(), degree_elevated_circle()] {
+        for scale in [1e-200, 1.0, 1e200] {
+            let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                curve.degree(),
+                curve.knots().to_vec(),
+                curve.control_points(),
+                Some(curve.weights().unwrap().iter().map(|w| w * scale).collect()),
+                false,
+            )
+            .unwrap();
+            assert!(rational_four_arc_circle(&rescaled).is_some());
+        }
+    }
+    let curve = exact_circle_directrix();
+    for scale in [1e-200, 1.0, 1e200] {
+        let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            curve.degree(),
+            curve.knots().to_vec(),
+            curve.control_points(),
+            Some(vec![scale; 9]),
+            false,
+        )
+        .unwrap();
+        assert!(rational_four_arc_circle(&polynomial).is_none());
+    }
+}

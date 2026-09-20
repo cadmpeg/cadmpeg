@@ -828,3 +828,29 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
         .message
         .contains("spatial point distance requires two points")));
 }
+
+#[test]
+fn extreme_lines_preserve_parallelism_and_span_separation() {
+    let line = |start, end| {
+        SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap()
+    };
+    let horizontal = line(Point2::new(0.0, 0.0), Point2::new(1e200, 0.0));
+    let perpendicular = line(Point2::new(0.0, 1.0), Point2::new(0.0, 1e200));
+    assert!(super::planar_parallel_line_distance(&horizontal, &perpendicular).is_none());
+    let separated = line(Point2::new(2e200, 1.0), Point2::new(3e200, 1.0));
+    assert_eq!(
+        super::planar_parallel_line_distance(&horizontal, &separated),
+        Some(1.0)
+    );
+    assert!(super::planar_parallel_line_span_distance(
+        &horizontal,
+        &separated,
+        TEST_LINEAR_TOLERANCE
+    )
+    .is_none());
+    let overlapping = line(Point2::new(0.5e200, 1.0), Point2::new(1.5e200, 1.0));
+    assert_eq!(
+        super::planar_parallel_line_span_distance(&horizontal, &overlapping, TEST_LINEAR_TOLERANCE),
+        Some(1.0)
+    );
+}

@@ -3,7 +3,7 @@
 
 use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{planar::line_circle_parameters, Point2, Point3, Vector3};
 
 use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
 use crate::vecmath::{cross, dot};
@@ -16,12 +16,12 @@ const EPS_POSITIVE_RADIUS: f64 = 1.0e-12;
 const EPS_AXIS_ORTHO: f64 = 1.0e-10;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
+const EPS_PLANE_CYLINDER_SECANT_SQUARED: f64 = 1e-18;
 const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-12;
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_SLOPE_NONZERO: f64 = 1.0e-12;
 const EPS_METRIC_AGREEMENT: f64 = 1.0e-10;
 const EPS_DETERMINANT: f64 = 1.0e-12;
-const EPS_DISCRIMINANT: f64 = 1.0e-9;
 const EPS_PARAMETER_DEDUP: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
@@ -46,11 +46,11 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
         normal,
         std::array::from_fn(|index| cylinder.origin[index] - plane.origin[index]),
     );
-    let scale = cylinder.radius.max(1.0);
-    let offset_squared = cylinder
-        .radius
-        .mul_add(cylinder.radius, -(signed_distance * signed_distance));
-    if offset_squared <= 1e-18 * scale * scale {
+    let scale = cylinder.radius.max(signed_distance.abs());
+    let radius = cylinder.radius / scale;
+    let distance = signed_distance / scale;
+    let offset_squared = (radius - distance.abs()) * (radius + distance.abs());
+    if offset_squared <= EPS_PLANE_CYLINDER_SECANT_SQUARED {
         return Vec::new();
     }
     let closest: [f64; 3] =
@@ -58,7 +58,7 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     let Some(transverse) = normalize(cross(axis, normal)) else {
         return Vec::new();
     };
-    let offset = offset_squared.sqrt();
+    let offset = offset_squared.sqrt() * scale;
     [-1.0, 1.0]
         .into_iter()
         .filter_map(|sense| {
@@ -101,27 +101,32 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     let axial = dot(relative, first_axis);
     let transverse: [f64; 3] =
         std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
-    let distance = dot(transverse, transverse).sqrt();
-    let scale = first.radius.max(second.radius).max(distance).max(1.0);
-    if distance <= EPS_DISTANCE_NONZERO * scale
-        || distance >= first.radius + second.radius - EPS_GEOMETRY_AGREEMENT * scale
-        || distance <= (first.radius - second.radius).abs() + EPS_GEOMETRY_AGREEMENT * scale
+    let distance = transverse[0].hypot(transverse[1]).hypot(transverse[2]);
+    let scale = first.radius.max(second.radius).max(distance);
+    let first_radius = first.radius / scale;
+    let second_radius = second.radius / scale;
+    let separation = distance / scale;
+    if separation <= EPS_DISTANCE_NONZERO
+        || separation >= first_radius + second_radius - EPS_GEOMETRY_AGREEMENT
+        || separation <= (first_radius - second_radius).abs() + EPS_GEOMETRY_AGREEMENT
     {
         return Vec::new();
     }
     let center_direction = transverse.map(|value| value / distance);
-    let along = (first.radius * first.radius - second.radius * second.radius + distance * distance)
-        / (2.0 * distance);
-    let height_squared = first.radius.mul_add(first.radius, -(along * along));
-    if height_squared <= EPS_HEIGHT_RESIDUAL * scale * scale {
+    let along = 0.5
+        * (separation
+            + (first_radius - second_radius) * (first_radius + second_radius) / separation);
+    let height_squared = (first_radius - along) * (first_radius + along);
+    if height_squared <= EPS_HEIGHT_RESIDUAL {
         return Vec::new();
     }
     let Some(perpendicular) = normalize(cross(first_axis, center_direction)) else {
         return Vec::new();
     };
+    let along = along * scale;
     let base: [f64; 3] =
         std::array::from_fn(|index| first.origin[index] + along * center_direction[index]);
-    let height = height_squared.sqrt();
+    let height = height_squared.sqrt() * scale;
     [-height, height]
         .into_iter()
         .filter_map(|offset| {
@@ -157,17 +162,17 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
         std::array::from_fn(|index| sphere.center[index] - cylinder.origin[index]);
     let axial = dot(relative, axis);
     let transverse: [f64; 3] = std::array::from_fn(|index| relative[index] - axial * axis[index]);
-    let scale = sphere.radius.max(cylinder.radius).max(1.0);
+    let scale = sphere.radius.max(cylinder.radius);
     if sphere.radius <= 0.0
         || cylinder.radius <= 0.0
-        || dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale
+        || transverse[0].hypot(transverse[1]).hypot(transverse[2]) > EPS_CENTER_ALIGNMENT * scale
     {
         return Vec::new();
     }
-    let offset_squared = sphere
-        .radius
-        .mul_add(sphere.radius, -(cylinder.radius * cylinder.radius));
-    let offset_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    let sphere_radius = sphere.radius / scale;
+    let cylinder_radius = cylinder.radius / scale;
+    let offset_squared = (sphere_radius - cylinder_radius) * (sphere_radius + cylinder_radius);
+    let offset_tolerance = EPS_TANGENT_ROOT;
     if offset_squared < -offset_tolerance {
         return Vec::new();
     }
@@ -177,7 +182,7 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
     let (offsets, tag) = if offset_squared.abs() <= offset_tolerance {
         (vec![0.0], "coaxial_cylinder_sphere_tangent_circle")
     } else {
-        let offset = offset_squared.sqrt();
+        let offset = offset_squared.sqrt() * scale;
         (
             vec![-offset, offset],
             "coaxial_cylinder_sphere_secant_circle",
@@ -543,43 +548,37 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
     let sphere_axial = dot(relative, axis);
     let transverse: [f64; 3] =
         std::array::from_fn(|index| relative[index] - sphere_axial * axis[index]);
-    let scale = cone.radius().max(sphere.radius).max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
+    let scale = cone.radius().max(sphere.radius).max(sphere_axial.abs());
+    if transverse[0].hypot(transverse[1]).hypot(transverse[2]) > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let slope = cone.half_angle().tan();
     if slope.abs() <= EPS_NONZERO_SLOPE || cone.radius() < 0.0 {
         return Vec::new();
     }
-    let quadratic = 1.0 + slope * slope;
-    let linear = 2.0 * (cone.radius() * slope - sphere_axial);
-    let constant =
-        cone.radius() * cone.radius() + sphere_axial * sphere_axial - sphere.radius * sphere.radius;
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let discriminant_scale = linear
-        .abs()
-        .max((4.0 * quadratic * constant).abs().sqrt())
-        .max(1.0);
-    let discriminant_tolerance = EPS_TANGENT_ROOT * discriminant_scale * discriminant_scale;
-    if discriminant < -discriminant_tolerance {
+    let radial_origin = cone.radius() / scale;
+    let Some(parameters) = line_circle_parameters(
+        Point2::new(radial_origin, 0.0),
+        Point2::new(radial_origin + slope, 1.0),
+        Point2::new(0.0, sphere_axial / scale),
+        sphere.radius / scale,
+    ) else {
         return Vec::new();
-    }
+    };
     let Some(reference) = normalize(cone.ref_direction()) else {
         return Vec::new();
     };
-    let (deltas, tag) = if discriminant.abs() <= discriminant_tolerance {
-        (vec![0.0], "coaxial_cone_sphere_tangent_circle")
+    let tag = if parameters[0] == parameters[1] {
+        "coaxial_cone_sphere_tangent_circle"
     } else {
-        let root_delta = discriminant.sqrt();
-        (
-            vec![-root_delta, root_delta],
-            "coaxial_cone_sphere_secant_circle",
-        )
+        "coaxial_cone_sphere_secant_circle"
     };
-    deltas
+    parameters
         .into_iter()
-        .filter_map(|delta| {
-            let parameter = (-linear + delta) / (2.0 * quadratic);
+        .enumerate()
+        .filter(|(index, parameter)| *index == 0 || *parameter != parameters[0])
+        .filter_map(|(_, parameter)| {
+            let parameter = parameter * scale;
             let radius = (cone.radius() + parameter * slope).abs();
             if radius <= EPS_POSITIVE_RADIUS * scale {
                 return None;
@@ -633,9 +632,9 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         .radius()
         .max(torus.major_radius)
         .max(torus.minor_radius)
-        .max(1.0);
+        .max(torus_axial.abs());
     let slope = cone.half_angle().tan();
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
+    if transverse[0].hypot(transverse[1]).hypot(transverse[2]) > EPS_GEOMETRY_AGREEMENT * scale
         || cone.radius() < 0.0
         || torus.major_radius <= EPS_RADIUS_NONZERO * scale
         || torus.minor_radius <= EPS_RADIUS_NONZERO * scale
@@ -644,30 +643,19 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         return Vec::new();
     }
 
-    let quadratic = 1.0 + slope * slope;
     let mut parameters = Vec::<f64>::new();
     for radial_sense in [-1.0, 1.0] {
-        let radial_offset = radial_sense * cone.radius() - torus.major_radius;
-        let radial_slope = radial_sense * slope;
-        let linear = 2.0 * (radial_offset * radial_slope - torus_axial);
-        let constant = radial_offset * radial_offset + torus_axial * torus_axial
-            - torus.minor_radius * torus.minor_radius;
-        let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-        let discriminant_scale = linear
-            .abs()
-            .max((4.0 * quadratic * constant).abs().sqrt())
-            .max(1.0);
-        let tolerance = EPS_DISCRIMINANT * discriminant_scale * discriminant_scale;
-        let deltas = if discriminant < -tolerance {
+        let radial_origin = radial_sense * cone.radius() / scale;
+        let Some(roots) = line_circle_parameters(
+            Point2::new(radial_origin, 0.0),
+            Point2::new(radial_origin + radial_sense * slope, 1.0),
+            Point2::new(torus.major_radius / scale, torus_axial / scale),
+            torus.minor_radius / scale,
+        ) else {
             continue;
-        } else if discriminant.abs() <= tolerance {
-            vec![0.0]
-        } else {
-            let root = discriminant.sqrt();
-            vec![-root, root]
         };
-        for delta in deltas {
-            let parameter = (-linear + delta) / (2.0 * quadratic);
+        for root in roots {
+            let parameter = root * scale;
             let radius = radial_sense * (cone.radius() + parameter * slope);
             if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
@@ -729,23 +717,23 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
     let scale = torus
         .major_radius
         .max(torus.minor_radius)
-        .max(cylinder.radius)
-        .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
+        .max(cylinder.radius);
+    if transverse[0].hypot(transverse[1]).hypot(transverse[2]) > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let radial_delta = cylinder.radius - torus.major_radius;
-    let height_squared = torus
-        .minor_radius
-        .mul_add(torus.minor_radius, -(radial_delta * radial_delta));
-    let height_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    let radial_scale = torus.minor_radius.max(radial_delta.abs());
+    let minor = torus.minor_radius / radial_scale;
+    let delta = radial_delta / radial_scale;
+    let height_squared = (minor - delta.abs()) * (minor + delta.abs());
+    let height_tolerance = EPS_TANGENT_ROOT;
     if height_squared < -height_tolerance || cylinder.radius <= EPS_POSITIVE_RADIUS * scale {
         return Vec::new();
     }
     let (offsets, tag) = if height_squared.abs() <= height_tolerance {
         (vec![0.0], "coaxial_cylinder_torus_tangent_circle")
     } else {
-        let height = height_squared.sqrt();
+        let height = height_squared.sqrt() * radial_scale;
         (
             vec![-height, height],
             "coaxial_cylinder_torus_secant_circle",
@@ -793,11 +781,12 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
     }
     let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - torus.center[index]);
     let axial = dot(relative, axis);
-    let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
-    let radial_offset_squared = torus
-        .minor_radius
-        .mul_add(torus.minor_radius, -(axial * axial));
-    let radial_offset_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    let scale = torus.major_radius.max(torus.minor_radius);
+    let radial_scale = torus.minor_radius.max(axial.abs());
+    let minor = torus.minor_radius / radial_scale;
+    let height = axial / radial_scale;
+    let radial_offset_squared = (minor - height.abs()) * (minor + height.abs());
+    let radial_offset_tolerance = EPS_TANGENT_ROOT;
     if radial_offset_squared < -radial_offset_tolerance {
         return Vec::new();
     }
@@ -805,7 +794,7 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
     let (radii, tag) = if radial_offset_squared.abs() <= radial_offset_tolerance {
         (vec![torus.major_radius], "plane_torus_tangent_circle")
     } else {
-        let radial_offset = radial_offset_squared.sqrt();
+        let radial_offset = radial_offset_squared.sqrt() * radial_scale;
         (
             vec![
                 torus.major_radius - radial_offset,

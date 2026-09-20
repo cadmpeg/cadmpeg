@@ -6085,18 +6085,27 @@ fn reflected_geometry_matches(
     }
 }
 
+const EPS_REFLECTION_AXIS_LENGTH: f64 = 1.0e-9;
+
 fn reflect_point(point: Point2, axis_start: Point2, axis_end: Point2) -> Option<Point2> {
-    let du = axis_end.u - axis_start.u;
-    let dv = axis_end.v - axis_start.v;
-    let norm_squared = du * du + dv * dv;
-    (norm_squared > 1.0e-18).then(|| {
-        let projection =
-            ((point.u - axis_start.u) * du + (point.v - axis_start.v) * dv) / norm_squared;
-        Point2::new(
-            2.0 * (axis_start.u + projection * du) - point.u,
-            2.0 * (axis_start.v + projection * dv) - point.v,
-        )
-    })
+    let direction =
+        cadmpeg_ir::math::Vector3::new(axis_end.u - axis_start.u, axis_end.v - axis_start.v, 0.0);
+    if direction.norm() <= EPS_REFLECTION_AXIS_LENGTH {
+        return None;
+    }
+    let unit = direction.unit_nonzero()?;
+    let normal = Point2::new(-unit.y, unit.x);
+    let distance = normal
+        .u
+        .mul_add(point.u - axis_start.u, normal.v * (point.v - axis_start.v));
+    if !distance.is_finite() {
+        return None;
+    }
+    let reflected = Point2::new(
+        (-2.0 * normal.u).mul_add(distance, point.u),
+        (-2.0 * normal.v).mul_add(distance, point.v),
+    );
+    reflected.is_finite().then_some(reflected)
 }
 
 fn sketch_points_close(first: Point2, second: Point2) -> bool {

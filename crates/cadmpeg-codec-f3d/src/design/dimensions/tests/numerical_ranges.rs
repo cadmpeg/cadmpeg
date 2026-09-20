@@ -24,3 +24,30 @@ fn numerical_ranges_offset_rejects_huge_perpendicular_lines() {
     let c = line(Point2::new(0., 1.), Point2::new(1e200, 1.));
     assert_eq!(parallel_line_offset(&a, &c), Some(1.));
 }
+
+#[test]
+fn reflection_preserves_finite_points_at_extreme_scales() {
+    use cadmpeg_ir::math::Point2;
+    assert_eq!(
+        super::super::reflect_point(
+            Point2::new(1e200, 1.0),
+            Point2::new(0.0, 0.0),
+            Point2::new(1e200, 0.0)
+        ),
+        Some(Point2::new(1e200, -1.0))
+    );
+    assert_eq!(
+        super::super::reflect_point(
+            Point2::new(1e308, 2.0),
+            Point2::new(1e308, 0.0),
+            Point2::new(1e308, 1.0)
+        ),
+        Some(Point2::new(1e308, 2.0))
+    );
+    assert!(super::super::reflect_point(
+        Point2::new(1.0, 1.0),
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 0.0)
+    )
+    .is_none());
+}

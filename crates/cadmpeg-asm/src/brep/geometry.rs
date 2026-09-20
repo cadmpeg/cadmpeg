@@ -846,11 +846,16 @@ pub(super) fn rational_four_arc_circle(
     {
         return None;
     }
+    let weight_scale = weights.iter().copied().map(f64::abs).fold(0.0, f64::max);
+    if !weight_scale.is_finite() || weight_scale == 0.0 {
+        return None;
+    }
     let homogeneous = curve
         .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| {
+            let weight = weight / weight_scale;
             let homogeneous = [point.x * weight, point.y * weight, point.z * weight, weight];
             (point.is_finite()
                 && weight.is_finite()
@@ -867,7 +872,7 @@ pub(super) fn rational_four_arc_circle(
         })
         .collect::<Option<Vec<_>>>()?;
     let base_weight = quadratics[0][0][3];
-    let weight_scale = base_weight.abs().max(1.0);
+    let weight_scale = base_weight.abs();
     let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
     if !base_weight.is_finite()
         || base_weight == 0.0
@@ -968,11 +973,11 @@ fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<
         if reduced.iter().flatten().any(|value| !value.is_finite()) {
             return None;
         }
-        let scale = control
-            .iter()
-            .flatten()
-            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
         if (0..4).any(|coordinate| {
+            let scale = control
+                .iter()
+                .map(|point| point[coordinate].abs())
+                .fold(0.0, f64::max);
             (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
                 > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
         }) {

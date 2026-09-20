@@ -351,3 +351,32 @@ fn conic_classification_preserves_common_coefficient_scale() {
         assert!((ellipse.minor_radius() - 1.0).abs() <= 8.0 * f64::EPSILON);
     }
 }
+
+#[test]
+fn parabola_projection_preserves_common_large_coefficient_scale() {
+    for parameters in [
+        b"104,1D308,0,0,0,-1D308,0,0,1,1,-1,1;".as_slice(),
+        b"104,0,0,1D308,-1D308,0,0,0,1,1,1,-1;".as_slice(),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(3, parameters)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            result.ir().model.curves.len(),
+            1,
+            "{:?}",
+            result.report().losses
+        );
+        let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola)) =
+            &result.ir().model.curves[0].geometry
+        else {
+            panic!("expected parabola")
+        };
+        assert_eq!(parabola.focal_distance(), 0.25);
+        assert!(result.report().losses.is_empty());
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+    }
+}

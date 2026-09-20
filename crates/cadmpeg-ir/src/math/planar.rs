@@ -84,30 +84,42 @@ pub fn line_circle_parameters(
     if direction_scale == 0.0 {
         return None;
     }
-    let (o, geometry_scale) = scaled_displacement(center, start, radius);
-    let r = radius / geometry_scale;
-    let a = d.u.mul_add(d.u, d.v * d.v);
-    if a == 0.0 {
+    let length = d.u.hypot(d.v);
+    let unit = Point2::new(d.u / length, d.v / length);
+    let perpendicular = super::sum::finite_dot(
+        [start.u, -center.u, start.v, -center.v],
+        [unit.v, unit.v, -unit.u, -unit.u],
+    )?
+    .abs();
+    let radial_scale = radius.max(perpendicular);
+    let r = radius / radial_scale;
+    let perpendicular = perpendicular / radial_scale;
+    // Only radial quantities contribute to this comparison. A distant line origin
+    // must not widen the circle into a false tangent.
+    let error = 32.0 * f64::EPSILON * r.max(perpendicular);
+    if perpendicular > r && perpendicular - r > error {
         return None;
     }
-    let b = 2.0 * o.u.mul_add(d.u, o.v * d.v);
-    let c = o.u.mul_add(o.u, o.v * o.v) - r * r;
-    let discriminant = b.mul_add(b, -4.0 * a * c);
-    let error = 64.0 * f64::EPSILON * (b * b + (4.0 * a * c).abs());
-    if discriminant < -error {
-        return None;
-    }
-    let root = discriminant.max(0.0).sqrt();
-    let q = -0.5 * (b + root.copysign(b));
-    let parameters = if root == 0.0 {
-        [-b / (2.0 * a); 2]
-    } else {
-        [q / a, c / q]
+    let half_chord = (r - perpendicular).max(0.0).sqrt() * (r + perpendicular).sqrt();
+    let mut denominator = ExactSignedSum::default();
+    denominator.add_product(length, direction_scale);
+    let denominator = denominator.finish()?;
+    let parameter = |sign| {
+        let mut numerator = ExactSignedSum::default();
+        for (coordinate, direction) in [
+            (center.u, unit.u),
+            (-start.u, unit.u),
+            (center.v, unit.v),
+            (-start.v, unit.v),
+        ] {
+            numerator.add_product(coordinate, direction);
+        }
+        numerator.add_product(sign * half_chord, radial_scale);
+        numerator
+            .finish()
+            .map_or(Some(0.0), |value| value.quotient(denominator))
     };
-    Some([
-        super::multiply_divide(parameters[0], geometry_scale, direction_scale)?,
-        super::multiply_divide(parameters[1], geometry_scale, direction_scale)?,
-    ])
+    Some([parameter(-1.0)?, parameter(1.0)?])
 }
 
 /// The finite intersections of two positive-radius circles.
@@ -165,6 +177,37 @@ pub fn circle_intersections(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn distant_line_origin_does_not_change_circle_intersections() {
+        let center = Point2::new(0.0, 0.0);
+        assert!(line_circle_parameters(
+            Point2::new(1e8, 2.0),
+            Point2::new(1e8 + 1.0, 2.0),
+            center,
+            1.0
+        )
+        .is_none());
+        let mut roots = line_circle_parameters(
+            Point2::new(1e8, 0.0),
+            Point2::new(1e8 + 1.0, 0.0),
+            center,
+            1.0,
+        )
+        .unwrap();
+        roots.sort_by(f64::total_cmp);
+        assert_eq!(roots, [-1e8 - 1.0, -1e8 + 1.0]);
+        assert_eq!(
+            line_circle_parameters(
+                Point2::new(1e8, 1.0),
+                Point2::new(1e8 + 1.0, 1.0),
+                center,
+                1.0
+            )
+            .unwrap(),
+            [-1e8; 2]
+        );
+    }
+
     #[test]
     fn intersections_preserve_independent_direction_and_position_scales() {
         let mut roots = line_circle_parameters(

@@ -436,8 +436,9 @@ fn spatial_parallel_line_span_distance(
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
     let second_max = second_interval[0].max(second_interval[1]);
-    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance)
-        .then_some(lines.distance)
+    let lower = first_min.max(second_min);
+    let upper = first_max.min(second_max);
+    (lower <= upper || lower - upper <= linear_tolerance).then_some(lines.distance)
 }
 
 fn spatial_length_parameter_matches(
@@ -1525,19 +1526,27 @@ fn planar_parallel_lines(
     {
         return None;
     }
-    let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
-    if cross.abs() > EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9 * first_length * second_length {
+    let first_unit =
+        crate::math::Vector3::new(first_direction.u, first_direction.v, 0.0).unit_nonzero()?;
+    let second_unit =
+        crate::math::Vector3::new(second_direction.u, second_direction.v, 0.0).unit_nonzero()?;
+    if first_unit.cross(second_unit).norm() > EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9 {
         return None;
     }
-    let offset = crate::math::Point2::new(
-        second_start.u - first_start.u,
-        second_start.v - first_start.v,
-    );
+    let distance = crate::math::sum::finite_dot(
+        [
+            second_start.u,
+            -first_start.u,
+            second_start.v,
+            -first_start.v,
+        ],
+        [first_unit.y, first_unit.y, -first_unit.x, -first_unit.x],
+    )?
+    .abs();
     Some(PlanarParallelLines {
         first: [*first_start, *first_end],
         second: [*second_start, *second_end],
-        distance: (offset.u * first_direction.v - offset.v * first_direction.u).abs()
-            / first_length,
+        distance,
     })
 }
 
@@ -1551,17 +1560,22 @@ fn planar_parallel_line_span_distance(
     let [second_start, second_end] = lines.second;
     let direction =
         crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
-    let length = direction.u.hypot(direction.v);
-    let project =
-        |point: crate::math::Point2| (point.u * direction.u + point.v * direction.v) / length;
-    let first_interval = [project(first_start), project(first_end)];
-    let second_interval = [project(second_start), project(second_end)];
+    let unit = crate::math::Vector3::new(direction.u, direction.v, 0.0).unit_nonzero()?;
+    let project = |point: crate::math::Point2| {
+        crate::math::sum::finite_dot(
+            [point.u, -first_start.u, point.v, -first_start.v],
+            [unit.x, unit.x, unit.y, unit.y],
+        )
+    };
+    let first_interval = [0.0, project(first_end)?];
+    let second_interval = [project(second_start)?, project(second_end)?];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);
     let second_max = second_interval[0].max(second_interval[1]);
-    (first_min.max(second_min) <= first_max.min(second_max) + linear_tolerance)
-        .then_some(lines.distance)
+    let lower = first_min.max(second_min);
+    let upper = first_max.min(second_max);
+    (lower <= upper || lower - upper <= linear_tolerance).then_some(lines.distance)
 }
 
 fn oriented_endpoints(

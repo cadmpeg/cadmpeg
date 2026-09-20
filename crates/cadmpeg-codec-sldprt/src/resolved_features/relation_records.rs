@@ -471,6 +471,22 @@ pub(super) fn relation_instances(
 #[cfg(test)]
 mod relation_records_tests {
     #[test]
+    fn line_angles_retain_shallow_and_near_opposite_angles() {
+        const ANGLE: f64 = 1e-8;
+        let first = [[0.0, 0.0], [1.0, 0.0]];
+        let second = [[0.0, 0.0], [ANGLE.cos(), ANGLE.sin()]];
+        assert!(
+            (super::line_line_angle(first, second).unwrap() - ANGLE).abs() <= f64::EPSILON * ANGLE
+        );
+        let opposite = [[0.0, 0.0], [-ANGLE.cos(), ANGLE.sin()]];
+        assert!(
+            (super::line_line_angle(first, opposite).unwrap() - (std::f64::consts::PI - ANGLE))
+                .abs()
+                <= f64::EPSILON * std::f64::consts::PI
+        );
+    }
+
+    #[test]
     fn numerical_audit_line_angles_are_finite_for_large_directions() {
         let x = [[0.0, 0.0], [1.0e200, 0.0]];
         let y = [[0.0, 0.0], [0.0, 1.0e200]];
@@ -2254,13 +2270,9 @@ pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Op
     if first.norm() <= SKETCH_POINT_TOLERANCE || second.norm() <= SKETCH_POINT_TOLERANCE {
         return None;
     }
-    Some(
-        first
-            .unit_nonzero()?
-            .dot(second.unit_nonzero()?)
-            .clamp(-1.0, 1.0)
-            .acos(),
-    )
+    let first = first.unit_nonzero()?;
+    let second = second.unit_nonzero()?;
+    Some(first.cross(second).norm().atan2(first.dot(second)))
 }
 
 fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
