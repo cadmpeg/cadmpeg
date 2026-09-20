@@ -46,6 +46,8 @@ fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, P
     }
 }
 
+// Line origins, directions, and the intersection parameter use mathematical names.
+#[allow(clippy::many_single_char_names)]
 pub(in crate::decode) fn intersect_section_lines(
     first: &SketchGeometry,
     second: &SketchGeometry,
@@ -833,6 +835,8 @@ mod tests {
         );
     }
     #[test]
+    // These finite, nondegenerate fixture definitions must admit successfully.
+    #[allow(clippy::unwrap_used)]
     fn small_section_carriers_do_not_acquire_false_tangencies() {
         use cadmpeg_ir::{
             math::Point2,
