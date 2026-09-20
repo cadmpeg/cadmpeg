@@ -30,5 +30,4 @@ mod instances_and_stores;
 mod operation_records;
 mod operation_state;
 mod pattern_lanes;
-mod registry;
 mod sketch_payload;

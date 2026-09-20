@@ -8,7 +8,7 @@ const FIELD_START_PROBE_LIMIT: usize = 256;
 
 /// Encoding family of a value in an OM registry declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RegistryTokenForm {
+enum RegistryTokenForm {
     /// One direct byte in `00..7f`.
     Direct,
     /// `80..8f` followed by one low byte, with a one-based decoded value.
@@ -38,7 +38,7 @@ impl RegistryToken {
         }
     }
 
-    pub(super) fn form(self) -> RegistryTokenForm {
+    fn form(self) -> RegistryTokenForm {
         match self.0 {
             RegistryValue::Direct(_) => RegistryTokenForm::Direct,
             RegistryValue::Compact(_) => RegistryTokenForm::Compact,
@@ -46,7 +46,7 @@ impl RegistryToken {
         }
     }
 
-    pub(super) fn width(self) -> usize {
+    fn width(self) -> usize {
         match self.form() {
             RegistryTokenForm::Direct => 1,
             RegistryTokenForm::Compact => 2,
@@ -99,7 +99,7 @@ impl RegistryDeclaration<'_> {
     }
 }
 
-pub(super) fn registry_token_at(tail: &[u8], offset: usize) -> Option<RegistryToken> {
+fn registry_token_at(tail: &[u8], offset: usize) -> Option<RegistryToken> {
     let prefix = *tail.get(offset)?;
     let value = match prefix {
         0x00..=0x7f => RegistryValue::Direct(prefix),
@@ -349,3 +349,6 @@ fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefin
         registry_tail: &bytes[name_end..=name_end],
     })
 }
+
+#[cfg(test)]
+mod tests;
