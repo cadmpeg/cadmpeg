@@ -6875,21 +6875,12 @@ fn refine_nurbs_surface_point(
         let partials =
             cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v)?;
         let residual = partials.point.vector_from(point);
-        let du_squared = partials.du.dot(partials.du);
-        let mixed = partials.du.dot(partials.dv);
-        let dv_squared = partials.dv.dot(partials.dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite()
-            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
-        {
+        let Some((u, v)) =
+            cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
+        else {
             break;
-        }
-        let du_residual = partials.du.dot(residual);
-        let dv_residual = partials.dv.dot(residual);
-        let step = Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
+        };
+        let step = Point2::new(u, v);
         let current = nurbs_surface_point_distance_squared(surface, point, parameters)?;
         let mut scale = 1.0;
         let mut accepted = None;
@@ -9819,5 +9810,27 @@ mod circle_axis_tests {
         let length = 5.0_f64.sqrt();
         assert!((axis.x - 2.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
         assert!((axis.y + 1.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
+    }
+    #[test]
+    fn anisotropic_surface_chart_retains_its_point_witness() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+        let u = NurbsSurfaceAxis::new(1, vec![0., 0., 1e-10, 1e-10], false);
+        let v = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
+        let surface = NurbsSurface::from_lanes(
+            u,
+            v,
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
+                    vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap();
+        let residual =
+            super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.)).unwrap();
+        assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2));
     }
 }

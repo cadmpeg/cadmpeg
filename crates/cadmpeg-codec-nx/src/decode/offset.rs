@@ -1759,7 +1759,28 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
 }
 
 pub(super) fn lift_periodic_parameter(value: f64, reference: f64, period: f64) -> f64 {
-    value + ((reference - value) / period).round() * period
+    let direct = value + ((reference - value) / period).round() * period;
+    if direct.is_finite()
+        || !value.is_finite()
+        || !reference.is_finite()
+        || !period.is_finite()
+        || period <= 0.0
+    {
+        return direct;
+    }
+    let mut delta = value.rem_euclid(period) - reference.rem_euclid(period);
+    let half = period * 0.5;
+    if delta > half || (delta == half && reference < value) {
+        delta -= period;
+    } else if delta < -half || (delta == -half && reference > value) {
+        delta += period;
+    }
+    let lifted = reference + delta;
+    if lifted.is_finite() {
+        lifted
+    } else {
+        (reference - period.copysign(delta)) + delta
+    }
 }
 
 pub(super) fn surface_parameter_periods_with_index(
@@ -1942,12 +1963,17 @@ fn intersection_parameter_tangent(
         tangent[side * 2] = u;
         tangent[side * 2 + 1] = v;
     }
+    let scale = tangent
+        .iter()
+        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+    if !scale.is_finite() || scale == 0.0 {
+        return None;
+    }
+    let tangent = tangent.map(|value| value / scale);
     let norm = tangent
         .iter()
-        .map(|value| value * value)
-        .sum::<f64>()
-        .sqrt();
-    (norm.is_finite() && norm > 1.0e-14).then(|| tangent.map(|value| value / norm))
+        .fold(0.0_f64, |norm, value| norm.hypot(*value));
+    Some(tangent.map(|value| value / norm))
 }
 
 fn intersection_parameter_jacobian(
@@ -2029,7 +2055,21 @@ fn determinant_3x3(matrix: [[f64; 3]; 3]) -> f64 {
         + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
 }
 
-fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
+fn null_vector_3x4(mut matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
+    for row in &mut matrix {
+        if row.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let scale = row
+            .iter()
+            .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+        if scale == 0.0 {
+            return None;
+        }
+        for value in row {
+            *value /= scale;
+        }
+    }
     let mut vector = [0.0; 4];
     for (omitted, component) in vector.iter_mut().enumerate() {
         let minor = std::array::from_fn(|row| {
@@ -2045,7 +2085,9 @@ fn null_vector_3x4(matrix: [[f64; 4]; 3]) -> Option<[f64; 4]> {
         });
         *component = if omitted % 2 == 0 { 1.0 } else { -1.0 } * determinant_3x3(minor);
     }
-    let norm = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let norm = vector
+        .iter()
+        .fold(0.0_f64, |norm, value| norm.hypot(*value));
     (norm.is_finite() && norm > 1.0e-14).then(|| vector.map(|value| value / norm))
 }
 
@@ -2529,5 +2571,25 @@ mod tests {
         .expect("linear support extension refinement");
         assert!((refined.u - 3.0).abs() <= fit_tolerance);
         assert!((refined.v - 0.25).abs() <= fit_tolerance);
+    }
+    #[test]
+    fn intersection_null_vector_is_invariant_under_row_scaling() {
+        for a in [1e-200, 1e-5, 1., 1e100, 1e200] {
+            let v = super::null_vector_3x4([[a, 0., -a, 0.], [0., a, 0., 0.], [0., 0., 0., -a]])
+                .unwrap();
+            assert_eq!(v[0], v[2]);
+            assert_eq!(v[1], 0.);
+            assert_eq!(v[3], 0.);
+            assert!((v[0].abs() - std::f64::consts::FRAC_1_SQRT_2).abs() <= f64::EPSILON);
+        }
+        assert!(super::null_vector_3x4([[0.; 4]; 3]).is_none());
+    }
+    #[test]
+    fn periodic_lift_avoids_overflowing_the_parameter_difference() {
+        let lifted = super::lift_periodic_parameter(-1e308, 1e308, 1e307);
+        assert!(lifted.is_finite());
+        assert!((lifted / 1e308 - 1.).abs() < 4. * f64::EPSILON);
+        assert_eq!(super::lift_periodic_parameter(0., 1., 2.), 2.);
+        assert_eq!(super::lift_periodic_parameter(0., -1., 2.), -2.);
     }
 }

@@ -2702,11 +2702,26 @@ fn solve_planar_chart_rechart(
     // Two-dimensional orthogonal Procrustes. `dot` and `cross` accumulate the
     // rotation's cosine and sine lanes; the reflected solution swaps the sign
     // of the image's second chart coordinate.
+    // Scale each chart before centering: both covariance products and differences
+    // then stay finite, while the recovered rigid map uses the original units.
+    let chart_scale =
+        |values: &[[f64; 2]]| values.iter().flatten().fold(0.0_f64, |a, b| a.max(b.abs()));
+    let stored_scale = chart_scale(sites);
+    let image_scale = chart_scale(&images);
+    if stored_scale == 0.0 || image_scale == 0.0 {
+        return None;
+    }
     let (mut dot, mut cross) = (0.0, 0.0);
     let (mut reflected_dot, mut reflected_cross) = (0.0, 0.0);
     for (stored, image) in sites.iter().zip(&images) {
-        let [su, sv] = [stored[0] - stored_center[0], stored[1] - stored_center[1]];
-        let [iu, iv] = [image[0] - image_center[0], image[1] - image_center[1]];
+        let [su, sv] = [
+            stored[0] / stored_scale - stored_center[0] / stored_scale,
+            stored[1] / stored_scale - stored_center[1] / stored_scale,
+        ];
+        let [iu, iv] = [
+            image[0] / image_scale - image_center[0] / image_scale,
+            image[1] / image_scale - image_center[1] / image_scale,
+        ];
         dot += su * iu + sv * iv;
         cross += su * iv - sv * iu;
         reflected_dot += su * iu - sv * iv;
@@ -4267,5 +4282,28 @@ mod tests {
             "the note the route states must carry the cause: {}",
             note.message
         );
+    }
+    #[test]
+    fn large_planar_sites_recover_the_identity_chart() {
+        use cadmpeg_ir::{
+            geometry::{analytic::PlaneSurface, SolvedSurfaceGeometry, SurfaceGeometry},
+            math::{Point3, Vector3},
+        };
+        let target = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+            )
+            .unwrap(),
+        ));
+        for a in [1., 1e200] {
+            let sites = [[a, 0.], [0., a], [-a, 0.], [0., -a]];
+            let loci = sites.map(|p| Point3::new(p[0], p[1], 0.));
+            let chart = super::solve_planar_chart_rechart(&sites, &loci, &target).unwrap();
+            for point in sites {
+                assert_eq!(chart.point(point), point);
+            }
+        }
     }
 }

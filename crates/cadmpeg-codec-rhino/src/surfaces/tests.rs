@@ -1087,3 +1087,20 @@ fn procedural_surface_dispatch_accepts_native_legacy_and_sum_uuids() {
     }
     assert_ne!(native.to_string(), legacy.to_string());
 }
+
+#[test]
+fn plane_parameter_maps_preserve_extreme_finite_domains() {
+    for a in [1e-200, 1e200] {
+        assert_eq!(super::map_parameter(a, [0., a], [0., a]), a);
+        assert_eq!(super::map_parameter(0.5 * a, [0., a], [0., a]), 0.5 * a);
+    }
+    assert_eq!(super::map_parameter(0., [-1e308, 1e308], [-1., 1.]), 0.);
+}
+#[test]
+fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
+    assert!(!super::periodic_knots(
+        &[-1e308, -1e308, -9e307, 9e307, 1e308, 1e308],
+        3,
+        5
+    ));
+}

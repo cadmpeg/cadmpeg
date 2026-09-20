@@ -969,7 +969,20 @@ fn read_plane_surface_with_parameterization(
 }
 
 fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
-    extents[0] + (value - domain[0]) * (extents[1] - extents[0]) / (domain[1] - domain[0])
+    if value == domain[0] {
+        return extents[0];
+    }
+    if value == domain[1] {
+        return extents[1];
+    }
+    let width = domain[1] - domain[0];
+    let offset = value - domain[0];
+    let fraction = if width.is_finite() && offset.is_finite() {
+        offset / width
+    } else {
+        (0.5 * value - 0.5 * domain[0]) / (0.5 * domain[1] - 0.5 * domain[0])
+    };
+    (1.0 - fraction) * extents[0] + fraction * extents[1]
 }
 
 fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {
@@ -1071,14 +1084,20 @@ pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bo
     if order > 4 && cv_count < 2 * order - 2 {
         return false;
     }
-    let mut tolerance = (knots[order - 1] - knots[order - 3]).abs() * f64::EPSILON.sqrt();
-    tolerance = tolerance.max((knots[cv_count - 1] - knots[order - 2]).abs() * f64::EPSILON.sqrt());
+    let scale = knots
+        .iter()
+        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+    if scale == 0.0 || !scale.is_finite() || knots.iter().any(|knot| !knot.is_finite()) {
+        return false;
+    }
+    let knot = |index: usize| knots[index] / scale;
+    let mut tolerance = (knot(order - 1) - knot(order - 3)).abs() * f64::EPSILON.sqrt();
+    tolerance = tolerance.max((knot(cv_count - 1) - knot(order - 2)).abs() * f64::EPSILON.sqrt());
     let mut paired = 2 * (order - 2);
     let mut index = 0;
     let mut other = cv_count - order + 1;
     while paired > 0 {
-        if ((knots[index + 1] - knots[index]) + (knots[other] - knots[other + 1])).abs() > tolerance
-        {
+        if ((knot(index + 1) - knot(index)) + (knot(other) - knot(other + 1))).abs() > tolerance {
             return false;
         }
         index += 1;

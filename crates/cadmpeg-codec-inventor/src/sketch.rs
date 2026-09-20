@@ -1602,12 +1602,13 @@ fn line_carrier_matches(
     if norm <= f64::EPSILON || span_norm <= f64::EPSILON {
         return false;
     }
-    let scale = norm * span_norm;
-    let parallel_error = (direction[0] * span[1] - direction[1] * span[0]).abs() / scale;
+    let unit = [direction[0] / norm, direction[1] / norm];
+    let parallel_error = (unit[0] * (span[1] / span_norm) - unit[1] * (span[0] / span_norm)).abs();
     let from_origin = [start[0] - origin[0], start[1] - origin[1]];
-    let origin_scale = norm * from_origin[0].hypot(from_origin[1]).max(1.0);
-    let carrier_error =
-        (direction[0] * from_origin[1] - direction[1] * from_origin[0]).abs() / origin_scale;
+    let origin_scale = from_origin[0].hypot(from_origin[1]).max(1.0);
+    let carrier_error = (unit[0] * (from_origin[1] / origin_scale)
+        - unit[1] * (from_origin[0] / origin_scale))
+        .abs();
     parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
         && carrier_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
 }
@@ -2346,5 +2347,20 @@ mod tests {
                 .expect("constant-prefix transform fixture is valid")
                 .prefix_present
         );
+    }
+    #[test]
+    fn large_collinear_sketch_carrier_matches() {
+        assert!(super::line_carrier_matches(
+            [0., 0.],
+            [1e200, 1e200],
+            [1e200, 1e200],
+            [2e200, 2e200]
+        ));
+        assert!(!super::line_carrier_matches(
+            [0., 0.],
+            [1e200, 0.],
+            [0., 0.],
+            [0., 1e200]
+        ));
     }
 }

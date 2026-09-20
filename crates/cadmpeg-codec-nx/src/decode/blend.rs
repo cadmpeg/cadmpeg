@@ -2674,7 +2674,7 @@ fn lift_periodic_parameters(
     };
     let period = domain[1] - domain[0];
     for parameter in &mut parameters {
-        *parameter += ((seed - *parameter) / period).round() * period;
+        *parameter = super::offset::lift_periodic_parameter(*parameter, seed, period);
     }
     parameters.sort_by(|first, second| {
         (first - seed)
