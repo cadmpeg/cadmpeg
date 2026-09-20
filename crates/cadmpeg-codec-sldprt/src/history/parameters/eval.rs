@@ -259,9 +259,9 @@ impl<'a> ParameterExpressionParser<'a> {
 
 fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
     Some(match value {
-        ParameterValue::Length(value) => ParameterValue::Length(Length::new(-value.get())?),
-        ParameterValue::Angle(value) => ParameterValue::Angle(Angle::new(-value.get())?),
-        ParameterValue::Real(value) => ParameterValue::Real(FiniteReal::new(-value.get())?),
+        ParameterValue::Length(value) => ParameterValue::Length(value.negated()),
+        ParameterValue::Angle(value) => ParameterValue::Angle(value.negated()),
+        ParameterValue::Real(value) => ParameterValue::Real(value.negated()),
         ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_neg()?),
         ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
     })

@@ -7659,8 +7659,8 @@ impl HelicalSweepTravel {
     /// Admit finite signed travel with nonzero height or radial growth.
     pub fn new(height: Length, radial_growth: Length) -> Option<Self> {
         match (
-            NonZeroLength::new(height.get()),
-            NonZeroLength::new(radial_growth.get()),
+            NonZeroLength::try_from(height).ok(),
+            NonZeroLength::try_from(radial_growth).ok(),
         ) {
             (None, None) => None,
             (Some(height), None) => Some(Self::Axial { height }),

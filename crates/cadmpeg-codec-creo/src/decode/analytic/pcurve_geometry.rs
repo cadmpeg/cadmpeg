@@ -92,9 +92,9 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
             let origin = cone.origin();
             let axis = cone.axis();
             let ref_direction = cone.ref_direction();
-            let radius = cone.radius();
-            let ratio = cone.ratio();
-            let half_angle = cone.half_angle();
+            let radius = cone.radius().get();
+            let ratio = cone.ratio().get();
+            let half_angle = cone.half_angle().get();
             half_angle.tan().is_finite().then_some(())?;
             (
                 *origin,
@@ -362,20 +362,13 @@ pub(in crate::decode) fn ruled_generator_line_pcurve(
                 let radius = cylinder_surface.radius();
                 (*origin, *axis, *ref_direction, radius, 1.0, 0.0)
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let radius = cone_surface.radius();
-                    let ratio = cone_surface.ratio();
-                    let half_angle = cone_surface.half_angle();
-                    radius.is_finite() && ratio.is_finite() && ratio > 0.0 && half_angle.is_finite()
-                } =>
-            {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
-                let radius = cone_surface.radius();
-                let ratio = cone_surface.ratio();
-                let half_angle = cone_surface.half_angle();
+                let radius = cone_surface.radius().get();
+                let ratio = cone_surface.ratio().get();
+                let half_angle = cone_surface.half_angle().get();
                 let slope = half_angle.tan();
                 slope.is_finite().then_some((
                     *origin,

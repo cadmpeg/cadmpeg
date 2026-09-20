@@ -2304,15 +2304,19 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                     })?
             };
+            let linear = reader.f64().map_err(malformed)? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
-                reader.f64().map_err(malformed)? * scale.value(),
+                cadmpeg_ir::scalar::PositiveLength::new(linear),
+                linear,
                 CadIr::empty().tolerances.linear,
                 "linear",
                 &mut tolerance_losses,
             );
             let _relative_tolerance = reader.f64().map_err(malformed)?;
+            let angular = reader.f64().map_err(malformed)?;
             ir.tolerances.angular = crate::decode::admitted_tolerance(
-                reader.f64().map_err(malformed)?,
+                cadmpeg_ir::scalar::PositiveAngle::new(angular),
+                angular,
                 CadIr::empty().tolerances.angular,
                 "angular",
                 &mut tolerance_losses,

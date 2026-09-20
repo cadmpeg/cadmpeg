@@ -638,14 +638,14 @@ fn refine_consolidated_analytic_surfaces(
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
-                    let radius = cone_surface.radius();
-                    let ratio = cone_surface.ratio();
+                    let radius = cone_surface.radius().get();
+                    let ratio = cone_surface.ratio().get();
                     radius == 0.0 && ratio == 1.0
                 } =>
             {
                 let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
-                let half_angle = cone_surface.half_angle();
+                let half_angle = cone_surface.half_angle().get();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(*origin, cone.apex)
                         && same_axis(*axis, cone.axis.get())
@@ -833,7 +833,7 @@ mod consolidated_analytic_refinement_tests {
             })
         );
         assert!(
-            matches!(surfaces[1], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) if { cone_surface.half_angle() == 0.25 })
+            matches!(surfaces[1], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) if { cone_surface.half_angle().get() == 0.25 })
         );
     }
 }
@@ -6218,8 +6218,8 @@ fn same_cone_generator_pair(
     };
     let origin = cone_surface.origin();
     let axis = cone_surface.axis();
-    let radius = cone_surface.radius();
-    let half_angle = cone_surface.half_angle();
+    let radius = cone_surface.radius().get();
+    let half_angle = cone_surface.half_angle().get();
     let tangent = half_angle.tan();
     if !tangent.is_finite() || tangent == 0.0 {
         return false;
@@ -7311,8 +7311,8 @@ fn standard_pcurve_geometry(
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface {
         let origin = cone_surface.origin();
         let axis = cone_surface.axis();
-        let radius = cone_surface.radius();
-        let half_angle = cone_surface.half_angle();
+        let radius = cone_surface.radius().get();
+        let half_angle = cone_surface.half_angle().get();
         let tangent = half_angle.tan();
         if tangent.is_finite() && tangent != 0.0 {
             let apex_offset = -radius / tangent;
@@ -7499,10 +7499,7 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let ratio = cone_surface.ratio();
-            if !ratio.is_finite() || ratio == 0.0 {
-                return None;
-            }
+            let ratio = cone_surface.ratio().get();
             let offset = point.vector_from(*origin);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
@@ -7589,8 +7586,8 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let axial = point.vector_from(*origin).dot(*axis);
             let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
@@ -7677,8 +7674,8 @@ fn standard_spline_line(
         ) if { support.faces[0] == support.faces[1] } => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let tangent = half_angle.tan();
             if !tangent.is_finite() || tangent == 0.0 {
                 false
@@ -9514,8 +9511,8 @@ fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             let offset = center.vector_from(*origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);

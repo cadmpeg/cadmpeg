@@ -4344,7 +4344,10 @@ fn construction_carrier_interval(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     fallback: [f64; 2],
 ) -> Result<[f64; 2], CodecError> {
-    match procedural.record_bounds() {
+    match procedural
+        .record_bounds()
+        .map(cadmpeg_ir::geometry::RecordBounds::get)
+    {
         None => {
             if matches!(
                 geometry,
@@ -4360,11 +4363,7 @@ fn construction_carrier_interval(
                 Ok(fallback)
             }
         }
-        Some([Some(start), Some(end), _, _])
-            if start.is_finite() && end.is_finite() && start < end =>
-        {
-            Ok([start, end])
-        }
+        Some([Some(start), Some(end), _, _]) if start < end => Ok([start, end]),
         Some(_) => Err(CodecError::Malformed(
             "IGES procedural surface directrix bounds are invalid".into(),
         )),
@@ -4946,23 +4945,15 @@ fn surface_entities(
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             if !same_float(ratio, 1.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES analytic cone writer only encodes circular cones".into(),
                 ));
             }
-            if !radius.is_finite() || radius < 0.0 {
-                return Err(CodecError::Malformed(
-                    "IGES cone radius must be finite and non-negative".into(),
-                ));
-            }
-            if !half_angle.is_finite()
-                || half_angle <= 0.0
-                || half_angle >= std::f64::consts::FRAC_PI_2
-            {
+            if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return Err(CodecError::Malformed(
                     "IGES cone semi-angle must be in (0, 90) degrees".into(),
                 ));

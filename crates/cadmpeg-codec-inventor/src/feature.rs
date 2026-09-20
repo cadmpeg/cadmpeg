@@ -1205,7 +1205,7 @@ fn project_extrusion(
     let taper = cadmpeg_ir::scalar::SlopeAngle::new(angle_parameter(source, 5, index)?.get())?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
         1 if length.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(length.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::try_from(length).ok()?,
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -1432,26 +1432,26 @@ fn project_hole(
     let kind = match hole_form {
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(point_angle.get())?,
+            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
         },
         1 => HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(head_angle.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
+            angle: cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?,
         },
         2 if point_angle.get() == 0.0 => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
-            depth: cadmpeg_ir::scalar::PositiveLength::new(head_depth.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
+            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
         },
         2 => HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(head_diameter.get())?,
-            depth: cadmpeg_ir::scalar::PositiveLength::new(head_depth.get())?,
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(point_angle.get())?,
+            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
+            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
+            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
         },
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         1 if depth.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(depth.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::try_from(depth).ok()?,
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -1524,7 +1524,7 @@ fn project_hole(
                             specification: None,
                         },
                         None,
-                        Some(cadmpeg_ir::scalar::PositiveLength::new(diameter.get())?),
+                        Some(cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?),
                     )
                     .ok()?,
 

@@ -306,9 +306,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
-                    let radius = cone_surface.radius();
-        let ratio = cone_surface.ratio();
-        let half_angle = cone_surface.half_angle();
+                    let radius = cone_surface.radius().get();
+        let ratio = cone_surface.ratio().get();
+        let half_angle = cone_surface.half_angle().get();
                     radius == 5.0 && ratio == 1.0 && half_angle == 0.25
                 })
     ));
@@ -433,8 +433,8 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));

@@ -224,18 +224,21 @@ fn build_result(
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
     let mut losses = Vec::new();
-    for (name, value, tolerance) in [
-        ("linear", header.linear, &mut ir.tolerances.linear),
-        ("angular", header.angular, &mut ir.tolerances.angular),
-    ] {
-        if let Some(value) = value {
-            if let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(value) {
-                *tolerance = value;
-            } else {
-                losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
-                    "header {name} tolerance {value} is not positive and finite; keeping the default"
-                )));
-            }
+    let mut unresolved_tolerance = |name: &str, value: f64| {
+        losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
+            "header {name} tolerance {value} is not positive and finite; keeping the default"
+        )));
+    };
+    if let Some(value) = header.linear {
+        match cadmpeg_ir::scalar::PositiveLength::new(value) {
+            Some(linear) => ir.tolerances.linear = linear,
+            None => unresolved_tolerance("linear", value),
+        }
+    }
+    if let Some(value) = header.angular {
+        match cadmpeg_ir::scalar::PositiveAngle::new(value) {
+            Some(angular) => ir.tolerances.angular = angular,
+            None => unresolved_tolerance("angular", value),
         }
     }
 

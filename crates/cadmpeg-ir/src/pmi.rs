@@ -100,7 +100,9 @@ pub struct PmiMagnitude(PmiValue);
 impl PmiMagnitude {
     /// Construct a nonnegative tolerance magnitude.
     pub fn new(value: PmiValue) -> Option<Self> {
-        crate::scalar::NonNegativeReal::new(value.value.get()).map(|_| Self(value))
+        crate::scalar::NonNegativeReal::try_from(value.value)
+            .ok()
+            .map(|_| Self(value))
     }
 
     /// Return the finite semantic quantity.

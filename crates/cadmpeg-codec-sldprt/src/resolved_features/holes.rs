@@ -2377,9 +2377,9 @@ fn drilled_hole_topology_candidates(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
-                    let candidate_radius = cone_surface.radius();
-                    let ratio = cone_surface.ratio();
-                    let half_angle = cone_surface.half_angle();
+                    let candidate_radius = cone_surface.radius().get();
+                    let ratio = cone_surface.ratio().get();
+                    let half_angle = cone_surface.half_angle().get();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
                         && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY

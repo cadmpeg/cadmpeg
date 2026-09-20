@@ -195,10 +195,12 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("source line revolution surface");
         let source_carrier_end = surface_construction(original.ir(), &source_surface.id)
             .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds)
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let round_carrier_end = procedural
             .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
@@ -269,6 +271,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("source line extrusion construction");
         let source_carrier_end = source_procedural
             .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("source line carrier interval");
         let plan = Encoder::plan(
@@ -302,6 +305,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("round-trip line extrusion construction");
         let round_carrier_end = round_procedural
             .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get)
             .and_then(|bounds| bounds[1])
             .expect("round-trip line carrier interval");
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_EXTRUSION_ROUND_TRIP);
@@ -379,15 +383,18 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
     let mut source_without_record_bounds = original.ir().clone();
     for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
         {
-            let replacement = None;
+            let replacement: Option<[Option<f64>; 4]> = None;
             edit::replace(procedural, |previous| {
-                cadmpeg_ir::geometry::RecordBounds::try_option(replacement).map(|bounds| {
-                    cadmpeg_ir::geometry::ProceduralSurface::new(
-                        previous.id.clone(),
-                        previous.definition().clone(),
-                        bounds,
-                    )
-                })
+                replacement
+                    .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                    .transpose()
+                    .map(|bounds| {
+                        cadmpeg_ir::geometry::ProceduralSurface::new(
+                            previous.id.clone(),
+                            previous.definition().clone(),
+                            bounds,
+                        )
+                    })
             })
         }
         .expect("clearing record bounds");

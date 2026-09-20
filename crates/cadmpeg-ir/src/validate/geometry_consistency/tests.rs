@@ -763,7 +763,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         .set_position(crate::math::Point3::new(moved.x, moved.y, moved.z + 0.015))
         .expect("a finite position is a point");
     source_tolerant.tolerances.linear =
-        crate::scalar::PositiveReal::new(0.02).expect("positive finite tolerance");
+        crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
     let report = validate_neutral(&source_tolerant, Vec::new());
     assert!(
         !report
