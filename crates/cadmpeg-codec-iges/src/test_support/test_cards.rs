@@ -71,7 +71,7 @@ pub(crate) fn parameter_card(data: &[u8], directory_sequence: u32, sequence: u32
     card(&payload, b'P', sequence)
 }
 
-pub(crate) fn parameter_cards(
+pub(super) fn parameter_cards(
     data: &[u8],
     directory_sequence: u32,
     first_sequence: u32,
@@ -89,11 +89,11 @@ pub(crate) fn parameter_cards(
         .collect()
 }
 
-pub(crate) fn parameter_fragment_count(data: &[u8]) -> usize {
+pub(super) fn parameter_fragment_count(data: &[u8]) -> usize {
     parameter_fragments(data).len()
 }
 
-pub(crate) fn raw_parameter_cards(
+pub(super) fn raw_parameter_cards(
     data: &[u8],
     directory_sequence: u32,
     first_sequence: u32,
@@ -110,7 +110,7 @@ pub(crate) fn raw_parameter_cards(
         .collect()
 }
 
-pub(crate) fn raw_parameter_fragment_count(data: &[u8]) -> usize {
+pub(super) fn raw_parameter_fragment_count(data: &[u8]) -> usize {
     data.len().div_ceil(64)
 }
 

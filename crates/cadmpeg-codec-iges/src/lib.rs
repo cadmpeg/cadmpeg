@@ -22,7 +22,7 @@ mod global;
 mod graph;
 mod ids;
 /// Byte-offset constants generated from `docs/layouts/iges.toml`.
-pub(crate) mod layout;
+mod layout;
 mod loss;
 mod native;
 mod parameter;
@@ -48,7 +48,7 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Cursor;
 
-pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
+const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
 /// IGES specification version selected for semantic output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,11 +108,11 @@ impl IgesVersion {
         }
     }
 
-    pub(crate) const fn name(self) -> &'static str {
+    const fn name(self) -> &'static str {
         version::VersionFlag::from_write_version(self).name()
     }
 
-    pub(crate) const fn global_flag(self) -> u8 {
+    const fn global_flag(self) -> u8 {
         version::VersionFlag::from_write_version(self).value() as u8
     }
 }
@@ -121,7 +121,7 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-pub(crate) fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
+fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
     Ok(document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)?)
 }
 
@@ -194,4 +194,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

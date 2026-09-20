@@ -124,7 +124,7 @@ enum SuppliedReal {
 
 /// Global field boundaries recovered from the card stream, with no values resolved.
 #[derive(Debug)]
-pub(crate) struct RawGlobal {
+struct RawGlobal {
     parameter_delimiter: u8,
     record_delimiter: u8,
     values: Vec<Value>,
@@ -1421,7 +1421,7 @@ impl ResolvedGlobal {
         self.sender_product.clone()
     }
 
-    pub(crate) fn receiver_product(&self) -> Option<String> {
+    fn receiver_product(&self) -> Option<String> {
         self.receiver_product.clone()
     }
 

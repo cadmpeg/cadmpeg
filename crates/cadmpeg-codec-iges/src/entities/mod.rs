@@ -12,7 +12,7 @@ use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 
-pub(crate) fn directed_cycle(
+fn directed_cycle(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
     successors: impl Fn(u32) -> Vec<u32>,
@@ -114,23 +114,23 @@ pub(crate) fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option
     (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
 }
 
-pub(crate) mod analytic_surfaces;
+mod analytic_surfaces;
 pub(crate) mod annotation;
-pub(crate) mod brep;
-pub(crate) mod composite;
-pub(crate) mod conics;
+mod brep;
+mod composite;
+mod conics;
 pub(crate) mod copious;
-pub(crate) mod csg;
+mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
-pub(crate) mod evaluation;
+mod evaluation;
 pub(crate) mod geometry;
-pub(crate) mod offsets;
-pub(crate) mod presentation;
-pub(crate) mod splines;
+mod offsets;
+mod presentation;
+mod splines;
 pub(crate) mod structure;
-pub(crate) mod surfaces;
-pub(crate) mod trimming;
+mod surfaces;
+mod trimming;
 
 #[cfg(test)]
 mod tests;

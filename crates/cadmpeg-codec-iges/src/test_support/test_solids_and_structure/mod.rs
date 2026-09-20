@@ -17,7 +17,7 @@ use crate::test_support::test_solids_and_structure::test_general_note_variants::
     new_general_note_parameters,
 };
 pub(crate) mod test_annotation_variants;
-pub(crate) mod test_general_note_variants;
+mod test_general_note_variants;
 
 pub(crate) fn parametrically_bounded_plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
@@ -271,7 +271,7 @@ pub(crate) fn explicit_tetrahedron_solid_with_boolean_file() -> Vec<u8> {
     explicit_tetrahedron_solid_file_extended(false, false, true)
 }
 
-pub(crate) fn explicit_tetrahedron_solid_file_extended(
+fn explicit_tetrahedron_solid_file_extended(
     transformed: bool,
     inconsistent_radial_sense: bool,
     with_boolean: bool,

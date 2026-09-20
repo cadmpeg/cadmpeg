@@ -1481,7 +1481,7 @@ fn attribute_table_rows<'a>(
 /// Collects at most one overdeclared-count verdict per Directory Entry. The
 /// first verdict a record earns is the one its loss reports.
 #[derive(Default)]
-pub(crate) struct OverdeclaredCounts(BTreeMap<u32, OverdeclaredCount>);
+struct OverdeclaredCounts(BTreeMap<u32, OverdeclaredCount>);
 
 impl OverdeclaredCounts {
     fn counted_tail(
@@ -1862,7 +1862,7 @@ struct NativeParameterRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct NativeEntity {
+struct NativeEntity {
     id: String,
     directory_sequence: u32,
     entity_type: i64,

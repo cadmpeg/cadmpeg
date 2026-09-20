@@ -1476,10 +1476,7 @@ pub(crate) fn explicit_multi_pcurve_loop_file_with_first_edge(first_edge: &str) 
     )
 }
 
-pub(crate) fn explicit_multi_pcurve_loop_file_with_carriers(
-    first_pcurve: &str,
-    first_edge: &str,
-) -> Vec<u8> {
+fn explicit_multi_pcurve_loop_file_with_carriers(first_pcurve: &str, first_edge: &str) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {
             entity_type: 116,

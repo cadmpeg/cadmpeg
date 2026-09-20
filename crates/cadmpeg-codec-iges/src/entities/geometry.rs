@@ -190,10 +190,7 @@ fn planar_segments_intersect_beyond_endpoint(
     contacts.any(|point| Some(point) != allowed_endpoint)
 }
 
-pub(crate) fn point_display_symbol_type_allowed(
-    entity_type: i64,
-    global_table: GlobalTable,
-) -> bool {
+fn point_display_symbol_type_allowed(entity_type: i64, global_table: GlobalTable) -> bool {
     match global_table {
         GlobalTable::Legacy => matches!(entity_type, 308 | 408),
         GlobalTable::V4_0 => entity_type == 408,
@@ -316,7 +313,7 @@ fn control_points_fit_plane(points: &[Point3], normal: Vector3, tolerance: f64) 
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct DeclaredInterval {
+pub(super) struct DeclaredInterval {
     lower: f64,
     upper: f64,
 }
@@ -329,7 +326,7 @@ impl DeclaredInterval {
         }
     }
 
-    pub(crate) fn around(value: f64, uncertainty: f64) -> Self {
+    pub(super) fn around(value: f64, uncertainty: f64) -> Self {
         if uncertainty == 0.0 {
             Self {
                 lower: value,
@@ -340,15 +337,15 @@ impl DeclaredInterval {
         }
     }
 
-    pub(crate) fn add(self, other: Self) -> Self {
+    pub(super) fn add(self, other: Self) -> Self {
         Self::outward(self.lower + other.lower, self.upper + other.upper)
     }
 
-    pub(crate) fn subtract(self, other: Self) -> Self {
+    pub(super) fn subtract(self, other: Self) -> Self {
         Self::outward(self.lower - other.upper, self.upper - other.lower)
     }
 
-    pub(crate) fn multiply(self, other: Self) -> Self {
+    pub(super) fn multiply(self, other: Self) -> Self {
         let products = [
             self.lower * other.lower,
             self.lower * other.upper,
@@ -361,11 +358,11 @@ impl DeclaredInterval {
         )
     }
 
-    pub(crate) fn scale(self, factor: f64) -> Self {
+    pub(super) fn scale(self, factor: f64) -> Self {
         self.multiply(Self::around(factor, 0.0))
     }
 
-    pub(crate) fn reciprocal(self) -> Option<Self> {
+    pub(super) fn reciprocal(self) -> Option<Self> {
         if self.contains(0.0) {
             return None;
         }
@@ -374,34 +371,34 @@ impl DeclaredInterval {
         Some(Self::outward(lower.min(upper), lower.max(upper)))
     }
 
-    pub(crate) fn sqrt(self) -> Option<Self> {
+    pub(super) fn sqrt(self) -> Option<Self> {
         if self.upper < 0.0 {
             return None;
         }
         Some(Self::outward(self.lower.max(0.0).sqrt(), self.upper.sqrt()))
     }
 
-    pub(crate) fn contains(self, value: f64) -> bool {
+    pub(super) fn contains(self, value: f64) -> bool {
         self.lower <= value && value <= self.upper
     }
 
-    pub(crate) fn is_finite(self) -> bool {
+    pub(super) fn is_finite(self) -> bool {
         self.lower.is_finite() && self.upper.is_finite()
     }
 
-    pub(crate) fn is_strictly_positive(self) -> bool {
+    pub(super) fn is_strictly_positive(self) -> bool {
         self.lower > 0.0
     }
 
-    pub(crate) fn lower_bound(self) -> f64 {
+    pub(super) fn lower_bound(self) -> f64 {
         self.lower
     }
 
-    pub(crate) fn upper_bound(self) -> f64 {
+    pub(super) fn upper_bound(self) -> f64 {
         self.upper
     }
 
-    pub(crate) fn overlaps(self, other: Self) -> bool {
+    pub(super) fn overlaps(self, other: Self) -> bool {
         self.lower <= other.upper && other.lower <= self.upper
     }
 }
@@ -453,7 +450,7 @@ pub(super) fn type126_declared_control_points(
 /// condition without choosing a representative from any source interval. A
 /// non-finite interval or bound is rejected instead of being treated as an
 /// unconstrained value after arithmetic overflow.
-pub(crate) fn declared_affine_progression(values: &[f64], uncertainties: &[f64]) -> bool {
+pub(super) fn declared_affine_progression(values: &[f64], uncertainties: &[f64]) -> bool {
     if values.len() < 2
         || values.len() != uncertainties.len()
         || values
@@ -513,7 +510,7 @@ pub(super) fn unit_vector(vector: Vector3) -> Option<Vector3> {
     (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
 }
 
-pub(crate) fn declared_unit_vector(
+pub(super) fn declared_unit_vector(
     record: &ParameterRecord,
     start: usize,
     vector: Vector3,
@@ -534,7 +531,7 @@ pub(crate) fn declared_unit_vector(
         .then_some(normalized)
 }
 
-pub(crate) fn declared_orthogonal_vectors(
+pub(super) fn declared_orthogonal_vectors(
     record: &ParameterRecord,
     left_start: usize,
     left: Vector3,

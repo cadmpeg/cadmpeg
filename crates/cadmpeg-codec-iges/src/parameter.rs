@@ -65,13 +65,13 @@ pub(crate) struct ParameterRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TrailingPointerGroups {
-    pub(crate) token_start: usize,
+    token_start: usize,
     pub(crate) association_pointers: Vec<TrailingPointer>,
     pub(crate) property_pointers: Vec<TrailingPointer>,
 }
 
 impl TrailingPointerGroups {
-    pub(crate) fn fully_valid(self) -> Option<ResolvedGroups> {
+    fn fully_valid(self) -> Option<ResolvedGroups> {
         Some(ResolvedGroups {
             token_start: self.token_start,
             associations: self
@@ -88,14 +88,14 @@ impl TrailingPointerGroups {
     }
 
     #[cfg(test)]
-    pub(crate) fn associations(&self) -> impl Iterator<Item = &u32> {
+    fn associations(&self) -> impl Iterator<Item = &u32> {
         self.association_pointers
             .iter()
             .filter_map(|pointer| pointer.resolved.as_ref())
     }
 
     #[cfg(test)]
-    pub(crate) fn properties(&self) -> impl Iterator<Item = &u32> {
+    fn properties(&self) -> impl Iterator<Item = &u32> {
         self.property_pointers
             .iter()
             .filter_map(|pointer| pointer.resolved.as_ref())
@@ -182,7 +182,7 @@ impl TrailingPointerAnalysis {
 pub(crate) struct TrailingPointer {
     pub(crate) token_index: usize,
     pub(crate) raw_pointer: i64,
-    pub(crate) resolved: Option<u32>,
+    resolved: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -348,7 +348,7 @@ impl ParameterRecord {
     }
 
     /// Return a nonnegative declared count only when all fixed-width items fit.
-    pub(crate) fn count_with_stride(&self, index: usize, stride: usize) -> Option<usize> {
+    fn count_with_stride(&self, index: usize, stride: usize) -> Option<usize> {
         self.count_with_stride_before(index, stride, self.parameter_end())
     }
 
@@ -462,7 +462,7 @@ impl ParameterRecord {
     /// holds its final item in whole or in part, because the record delimiter
     /// supplies every remaining field under IGES 5.3 §2.2.3. A list that a
     /// trailing suffix follows holds only its complete items.
-    pub(crate) fn items_before_default_tail_at(
+    fn items_before_default_tail_at(
         &self,
         item_start: usize,
         stride: usize,
@@ -516,7 +516,7 @@ fn analyze_trailing_pointer_groups_for_global_table(
 #[cfg(test)]
 // Existing boundary fixtures use the fully specified later-profile default;
 // every production caller supplies the resolved file global_table explicitly.
-pub(crate) fn analyze_trailing_pointer_groups(
+fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> TrailingPointerAnalysis {
@@ -1167,7 +1167,7 @@ pub(crate) fn entity_primary_end_for_global_table(
 #[cfg(test)]
 // Keep the legacy test fixture adapter global_table-explicit so it cannot be used
 // by production assembly when a file's resolved global_table is available.
-pub(crate) fn entity_primary_end(
+fn entity_primary_end(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<usize> {
@@ -2501,7 +2501,7 @@ impl Serialize for ParameterDefect {
 }
 
 impl ParameterDefect {
-    pub(crate) fn key(self) -> &'static str {
+    fn key(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "hollerith-count-unreadable",
             Self::HollerithCountZero => "hollerith-count-zero",
@@ -2842,10 +2842,10 @@ fn hollerith(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MacroParameterData {
     pub(crate) statement_spans: Vec<Range<usize>>,
-    pub(crate) record_end: usize,
+    record_end: usize,
     pub(crate) defined_entity_type: i64,
-    pub(crate) entity_type_span: Range<usize>,
-    pub(crate) header_payload_start: usize,
+    entity_type_span: Range<usize>,
+    header_payload_start: usize,
 }
 
 fn trim_macro_span(bytes: &[u8], span: Range<usize>) -> Range<usize> {

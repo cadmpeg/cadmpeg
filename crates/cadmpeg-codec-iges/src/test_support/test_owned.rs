@@ -50,7 +50,7 @@ pub(crate) fn owned_test_file_with_colors(
     owned_test_file_with_display(entities, colors, &[])
 }
 
-pub(crate) fn owned_test_file_with_display(
+pub(super) fn owned_test_file_with_display(
     entities: &[OwnedTestEntity],
     colors: &[(u32, i64)],
     line_fonts: &[(u32, i64)],
@@ -58,21 +58,21 @@ pub(crate) fn owned_test_file_with_display(
     owned_test_file_with_attributes(entities, colors, line_fonts, &[], &[])
 }
 
-pub(crate) fn owned_test_file_with_levels(
+pub(super) fn owned_test_file_with_levels(
     entities: &[OwnedTestEntity],
     levels: &[(u32, i64)],
 ) -> Vec<u8> {
     owned_test_file_with_attributes(entities, &[], &[], levels, &[])
 }
 
-pub(crate) fn owned_test_file_with_line_weights(
+pub(super) fn owned_test_file_with_line_weights(
     entities: &[OwnedTestEntity],
     line_weights: &[(u32, i64)],
 ) -> Vec<u8> {
     owned_test_file_with_attributes(entities, &[], &[], &[], line_weights)
 }
 
-pub(crate) fn owned_test_file_with_attributes(
+fn owned_test_file_with_attributes(
     entities: &[OwnedTestEntity],
     colors: &[(u32, i64)],
     line_fonts: &[(u32, i64)],

@@ -30,7 +30,7 @@ pub(crate) enum ReferenceKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Resolution {
+enum Resolution {
     Resolved(u32),
     OutOfRange,
     EvenSequence(Option<u32>),

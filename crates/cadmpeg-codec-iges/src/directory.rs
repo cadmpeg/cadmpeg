@@ -87,7 +87,7 @@ pub(crate) enum Subordinate {
 }
 
 impl Subordinate {
-    pub(crate) fn parse(value: u8) -> Option<Self> {
+    fn parse(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::Independent),
             1 => Some(Self::Physically),
@@ -243,7 +243,7 @@ impl Serialize for DirectoryDefect {
 }
 
 impl DirectoryDefect {
-    pub(crate) fn key(self) -> &'static str {
+    fn key(self) -> &'static str {
         match self {
             Self::FieldNotAscii(_) => "field-not-ascii",
             Self::FieldNotAnInteger(_) => "field-not-an-integer",

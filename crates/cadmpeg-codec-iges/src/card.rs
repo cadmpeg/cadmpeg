@@ -116,7 +116,7 @@ struct UnframedLine {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CardScan<'a> {
-    pub(crate) source: &'a [u8],
+    source: &'a [u8],
     pub(crate) lines: Vec<ScannedLine>,
     pub(crate) recoveries: FramingRecoveries,
 }
