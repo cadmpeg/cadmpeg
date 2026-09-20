@@ -56,17 +56,17 @@ impl TrimPacket {
     }
 
     #[cfg(test)]
-    pub(crate) fn independent_count(&self) -> usize {
+    pub(super) fn independent_count(&self) -> usize {
         self.independent_count
     }
 
     #[cfg(test)]
-    pub(crate) fn strip_lengths(&self) -> &[usize] {
+    pub(super) fn strip_lengths(&self) -> &[usize] {
         &self.strip_lengths
     }
 
     #[cfg(test)]
-    pub(crate) fn fan_lengths(&self) -> &[usize] {
+    pub(super) fn fan_lengths(&self) -> &[usize] {
         &self.fan_lengths
     }
 

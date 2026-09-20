@@ -40,7 +40,7 @@ impl UnionFind {
     }
 
     /// Returns the representative of `node` without mutating the forest.
-    pub(crate) fn root(&self, mut node: usize) -> usize {
+    pub(super) fn root(&self, mut node: usize) -> usize {
         while self.parents[node] != node {
             node = self.parents[node];
         }

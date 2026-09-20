@@ -5,7 +5,7 @@
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use std::collections::{HashSet, VecDeque};
 
-pub(crate) fn domains_have_distinct_matching<'a>(
+pub(super) fn domains_have_distinct_matching<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
 ) -> bool {
@@ -157,7 +157,7 @@ pub(crate) fn distinct_domain_matching_with_budget<'a>(
     assignment.into_iter().collect()
 }
 
-pub(crate) fn repair_distinct_domain_matching_with_budget<'a>(
+pub(super) fn repair_distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
     matching: &[usize],

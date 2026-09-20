@@ -43,7 +43,7 @@ const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
 #[derive(Debug, Clone)]
-pub(crate) struct B2OffsetSupport {
+pub(in crate::families) struct B2OffsetSupport {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Referenced carrier-surface identifier.
@@ -132,7 +132,7 @@ pub(crate) enum B2ParameterPointPayload {
 
 #[cfg(test)]
 impl B2ParameterPointPayload {
-    pub(crate) const fn layout(&self) -> u8 {
+    pub(super) const fn layout(&self) -> u8 {
         match self {
             Self::Scalar { .. } => 0x0a,
             Self::Uv { .. } => 0x12,
@@ -186,7 +186,7 @@ pub(crate) enum B2PlaneCarrierPayload {
 
 #[cfg(test)]
 impl B2PlaneCarrierPayload {
-    pub(crate) const fn selector(&self) -> u8 {
+    pub(super) const fn selector(&self) -> u8 {
         match self {
             Self::PointDirection2 { .. } => 0xe4,
             Self::PointDirection3 { .. } => 0xc4,
@@ -1895,7 +1895,7 @@ impl B2Circle {
 
 /// One clamped rational NURBS curve stored in a `b2 03 16` record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B2NurbsCurve {
+pub(in crate::families) struct B2NurbsCurve {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Width-coded record token.
@@ -1906,7 +1906,7 @@ pub(crate) struct B2NurbsCurve {
 
 /// One spatial circle carrier stored in a `b2 03 0f` record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B2SpatialCircle {
+pub(in crate::families) struct B2SpatialCircle {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Width-coded record token.

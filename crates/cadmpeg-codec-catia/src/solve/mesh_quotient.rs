@@ -4660,13 +4660,13 @@ fn endpoint_configuration_directions(
 }
 
 #[derive(Clone)]
-pub(crate) struct MeshEndpointRelationChoice {
+pub(super) struct MeshEndpointRelationChoice {
     pub(super) id: usize,
     pub(super) selection: MeshEndpointRelationSelection,
 }
 /// Enumerated endpoint relation or deferred enumeration.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum MeshEndpointRelationSelection {
+pub(super) enum MeshEndpointRelationSelection {
     Enumerated {
         assignments: Vec<usize>,
         edge_pairs: MeshFaceEndpointConfiguration,

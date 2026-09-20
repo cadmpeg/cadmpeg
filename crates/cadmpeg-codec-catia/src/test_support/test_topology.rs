@@ -139,7 +139,7 @@ pub(crate) fn fbb_only_quad_unmatched_edge_topology_stream() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn fbb_only_quad_surface_stream() -> Vec<u8> {
+pub(super) fn fbb_only_quad_surface_stream() -> Vec<u8> {
     let mut bytes = vec![0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
     bytes.resize(49, 0);
     bytes[48] = 0x01;

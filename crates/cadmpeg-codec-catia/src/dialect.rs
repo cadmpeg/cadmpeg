@@ -48,7 +48,7 @@ const DECLARED_BUILD_DATE: &str = "last_save_build_date";
 impl Variant {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 7] = [
+    const ALL: [Self; 7] = [
         Self::StandardNested,
         Self::FbbOnly,
         Self::ZeroEntity,
@@ -91,7 +91,7 @@ impl Variant {
 ///
 /// [`Variant::Unknown`] matches no route at all, so no declared strategy was
 /// applied to it: [`Admission::Residual`].
-pub(crate) fn matched(variant: Variant) -> DialectMatch {
+fn matched(variant: Variant) -> DialectMatch {
     let id = variant.id();
     match variant {
         Variant::StandardNested

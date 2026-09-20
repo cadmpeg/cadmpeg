@@ -903,7 +903,7 @@ pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT: Coverage
     CoverageKey::new("typed_object_stream_loop_framing_controls_05_03_count");
 
 #[cfg(test)]
-pub(crate) const ALL: &[CoverageKey] = &[
+const ALL: &[CoverageKey] = &[
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
     RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,

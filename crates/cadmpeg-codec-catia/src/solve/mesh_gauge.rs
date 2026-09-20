@@ -24,18 +24,18 @@ type MeshEdgeGaugeKey = (MeshEdgeGaugeBaseKey, Vec<[usize; 2]>);
 type MeshTopologyEdgeGaugeBaseKey = (u8, EdgeBoundaryLayout, MeshEdgeGeometry, usize, Vec<usize>);
 type MeshTopologyEdgeGaugeKey = (MeshTopologyEdgeGaugeBaseKey, Vec<[usize; 2]>);
 
-pub(crate) struct MeshCoordinateGauge {
+pub(in crate::solve) struct MeshCoordinateGauge {
     components: Vec<Vec<Vec<usize>>>,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct MeshCandidateGauge<'a> {
-    pub(crate) edge_rows: &'a [EdgeRow],
-    pub(crate) edge_faces: &'a [[usize; 2]],
-    pub(crate) edge_geometry: &'a [MeshEdgeGeometry],
-    pub(crate) edge_candidates: &'a [Vec<[usize; 2]>],
-    pub(crate) edge_identity_evidence: &'a [bool],
-    pub(crate) coordinate_gauge: Option<&'a MeshCoordinateGauge>,
+    pub(super) edge_rows: &'a [EdgeRow],
+    pub(super) edge_faces: &'a [[usize; 2]],
+    pub(super) edge_geometry: &'a [MeshEdgeGeometry],
+    pub(super) edge_candidates: &'a [Vec<[usize; 2]>],
+    pub(super) edge_identity_evidence: &'a [bool],
+    pub(super) coordinate_gauge: Option<&'a MeshCoordinateGauge>,
 }
 
 fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) {
@@ -201,7 +201,7 @@ fn intern_gauge_signatures<T: Ord>(signatures: impl IntoIterator<Item = T>) -> V
         .collect()
 }
 
-pub(crate) fn build_mesh_coordinate_gauge(
+pub(super) fn build_mesh_coordinate_gauge(
     point_count: usize,
     edge_rows: &[EdgeRow],
     edge_faces: &[[usize; 2]],
@@ -572,7 +572,7 @@ fn canonicalize_partial_endpoint_pair_gauge(
     Some(canonical)
 }
 
-pub(crate) fn canonicalize_complete_endpoint_pairs(
+pub(super) fn canonicalize_complete_endpoint_pairs(
     pairs: &[[usize; 2]],
     gauge: MeshCandidateGauge<'_>,
 ) -> Option<Vec<[usize; 2]>> {
@@ -892,7 +892,7 @@ fn canonicalize_mesh_candidate(
 ///
 /// Returns `None` when the candidate does not satisfy the canonicalizer's
 /// structural invariants or its bounded working storage is unavailable.
-pub(crate) fn canonicalize_mesh_candidate_for_output(
+pub(super) fn canonicalize_mesh_candidate_for_output(
     topology: &StandardTopology,
     point_assignment: &[usize],
     gauge: Option<MeshCandidateGauge<'_>>,
@@ -938,7 +938,7 @@ pub(crate) fn mesh_candidates_equivalent_with_gauge(
     )
 }
 
-pub(crate) fn mesh_candidates_equivalent_with_context(
+pub(super) fn mesh_candidates_equivalent_with_context(
     left: &(StandardTopology, Vec<usize>),
     right: &(StandardTopology, Vec<usize>),
     gauge: Option<MeshCandidateGauge<'_>>,
@@ -1246,7 +1246,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     ));
 }
 
-pub(crate) fn canonicalize_endpoint_relation_state(
+pub(super) fn canonicalize_endpoint_relation_state(
     domains: &[Vec<MeshEndpointRelationChoice>],
     assigned: &[Option<[usize; 2]>],
     gauge: MeshCandidateGauge<'_>,

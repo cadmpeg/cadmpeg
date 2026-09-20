@@ -579,7 +579,7 @@ pub(super) enum B5SupportedSurfaceParameters {
 
 /// One class-`06` incidence lane connecting curves to parameters at a vertex.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B5ParameterIncidence {
+pub(in crate::families) struct B5ParameterIncidence {
     /// This record's stream object id.
     pub(super) object_id: u32,
     /// Curve, parameter, and control triples in serialized order.
@@ -599,7 +599,7 @@ pub(in crate::families) struct B5IncidenceLane {
 
 /// One complete class-`5e` physical-edge reference production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct B5Edge {
+pub(in crate::families) struct B5Edge {
     /// This record's stream object id.
     object_id: u32,
     /// Referenced curve-support wrapper.
@@ -614,7 +614,7 @@ pub(crate) struct B5Edge {
 
 /// One complete class-`5d` vertex-to-incidence reference production.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct B5VertexIncidenceLink {
+pub(in crate::families) struct B5VertexIncidenceLink {
     /// This record's stream object id.
     object_id: u32,
     /// Referenced counted class-`05` incidence roster.
@@ -627,7 +627,7 @@ pub(crate) struct B5VertexIncidenceLink {
 /// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B5Pcurve {
+pub(in crate::families) struct B5Pcurve {
     /// This record's stream `object_id`.
     pub(super) object_id: u32,
     /// `object_id` of the owning surface, taken directly from the pcurve's
@@ -759,7 +759,7 @@ pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
 
 /// One structurally complete class-`5f` face reference production.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct B5FaceRecord {
+pub(in crate::families) struct B5FaceRecord {
     /// This record's stream object id.
     pub(in crate::families) object_id: u32,
     /// Ordered native references.
@@ -772,7 +772,7 @@ pub(crate) struct B5FaceRecord {
 /// A resolved `b5 03 62` loop node: payload `<0x80 + n_refs>
 /// (pcurve_ref edge_ref)* surface_ref` ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct B5Loop {
+pub(in crate::families) struct B5Loop {
     /// This record's stream `object_id`.
     pub(super) object_id: u32,
     /// Pcurve/edge occurrences in serialized order, each with its native
@@ -1658,7 +1658,7 @@ pub(in crate::families) fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32,
 /// class-`23` curve-support wrapper.
 #[must_use]
 #[cfg(test)]
-pub(crate) fn edge_support_pcurve_references(
+fn edge_support_pcurve_references(
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, [u32; 2]> {
@@ -1801,7 +1801,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
 /// of the dominant topology run.
 #[must_use]
 #[cfg(test)]
-pub(crate) fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
+fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
     let frames = object_stream_frames(bytes);
     targeted_geometry_graph_from_frames(bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
@@ -5047,7 +5047,7 @@ pub(in crate::families) enum ObjectStreamSelection {
 
 #[cfg(test)]
 impl ObjectStreamSelection {
-    pub(crate) fn run_count(&self) -> usize {
+    pub(in crate::families) fn run_count(&self) -> usize {
         match self {
             Self::Exhausted { run_count }
             | Self::Unselected { run_count, .. }
@@ -5055,29 +5055,29 @@ impl ObjectStreamSelection {
         }
     }
 
-    pub(crate) fn selected(&self) -> bool {
+    pub(in crate::families) fn selected(&self) -> bool {
         matches!(self, Self::Selected { .. })
     }
 
-    pub(crate) fn exhausted(&self) -> bool {
+    pub(in crate::families) fn exhausted(&self) -> bool {
         matches!(self, Self::Exhausted { .. })
     }
 
-    pub(crate) fn source(&self) -> &[u8] {
+    pub(in crate::families) fn source(&self) -> &[u8] {
         match self {
             Self::Selected { source, .. } => source,
             Self::Exhausted { .. } | Self::Unselected { .. } => &[],
         }
     }
 
-    pub(crate) fn records(&self) -> &[B5Record] {
+    pub(in crate::families) fn records(&self) -> &[B5Record] {
         match self {
             Self::Selected { records, .. } => records,
             Self::Exhausted { .. } | Self::Unselected { .. } => &[],
         }
     }
 
-    pub(crate) fn census_records(&self) -> &[B5Record] {
+    fn census_records(&self) -> &[B5Record] {
         match self {
             Self::Selected { census_records, .. } | Self::Unselected { census_records, .. } => {
                 census_records
@@ -5478,7 +5478,7 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 /// Read every structurally complete face record independently of target
 /// resolution.
 #[cfg(test)]
-pub(crate) fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
+fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_face_records_from_records(&records)
@@ -5496,7 +5496,7 @@ pub(in crate::families) fn typed_face_records_from_records(
 /// Read every structurally complete loop record independently of target
 /// resolution.
 #[cfg(test)]
-pub(crate) fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
+fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_loop_records_from_records(&records)
@@ -5514,7 +5514,7 @@ pub(in crate::families) fn typed_loop_records_from_records(
 /// Read every structurally complete physical-edge record independently of
 /// topology resolution.
 #[cfg(test)]
-pub(crate) fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
+fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_edge_records_from_records(&records)
@@ -5532,7 +5532,7 @@ pub(in crate::families) fn typed_edge_records_from_records(
 /// Read every structurally complete vertex-incidence link independently of
 /// topology resolution.
 #[cfg(test)]
-pub(crate) fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
+fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_vertex_incidence_links_from_records(&records)
@@ -5552,7 +5552,7 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
 /// Read every structurally complete class-`21` pcurve independently of
 /// support and topology resolution.
 #[cfg(test)]
-pub(crate) fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
+fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_class_21_pcurves_from_records(&records)
@@ -5570,7 +5570,7 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 /// Read every structurally complete parameter incidence independently of
 /// curve, edge, and topology resolution.
 #[cfg(test)]
-pub(crate) fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
+fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_parameter_incidences_from_records(&records)
@@ -5590,7 +5590,7 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 /// Read every structurally complete vertex-incidence roster independently of
 /// member and topology resolution.
 #[cfg(test)]
-pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
+fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
     typed_vertex_incidence_rosters_from_records(&records)
@@ -5609,7 +5609,7 @@ pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
 
 /// Read each face's leading surface reference independently of its loop grammar.
 #[cfg(test)]
-pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     let frames = object_stream_frames(bytes);
     face_surface_references_from_frames(bytes, &frames)
 }

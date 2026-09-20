@@ -122,7 +122,7 @@ pub(crate) struct SurfacePrefix {
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
 #[derive(Debug, Clone)]
-pub(in crate::families) enum StandardSurfaceRecord {
+pub(super) enum StandardSurfaceRecord {
     /// Fixed-length analytic carrier record.
     Analytic(SurfacePrefix),
     /// Face bounds and orientation for a carrier linked through an outer alias.
@@ -140,7 +140,7 @@ pub(in crate::families) enum StandardSurfaceRecord {
 
 /// Spatial bounds stored by one standard face roster core.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(in crate::families) struct StandardFaceBounds {
+pub(super) struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
     pub(super) aabb_center: [f64; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
@@ -629,7 +629,7 @@ pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
 
 /// Geometry family carried by one positional standard `0x60` edge row.
 #[derive(Debug, Clone)]
-pub(in crate::families) enum StandardCurveGeometry {
+pub(super) enum StandardCurveGeometry {
     /// The line equation is derived from endpoints or adjacent surfaces.
     Line,
     /// Inline circle parameters.
@@ -647,7 +647,7 @@ pub(in crate::families) enum StandardCurveGeometry {
 /// [§5.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#55-0x60-curve-support-edge-incidence-table)): `60 <tag:u24le> <curve_body> <face_ref> <face_ref>`, one row per
 /// spine edge.
 #[derive(Debug, Clone)]
-pub(in crate::families) struct StandardCurveSupport {
+pub(super) struct StandardCurveSupport {
     /// Offset of the `0x60` row marker in the BREP stream.
     pub(super) pos: usize,
     /// Little-endian u24 object id in the file-global allocation journal.

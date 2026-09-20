@@ -1262,7 +1262,7 @@ pub(super) struct MeshBoundaryGap {
 
 /// Exact matched and unmatched physical-edge coverage for one trim face.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MeshFaceCoverage {
+pub(in crate::solve) struct MeshFaceCoverage {
     /// Positional face ordinal.
     pub(super) face: usize,
     /// Maximal uncovered runs after matching every serialized edge interior.
@@ -1335,7 +1335,7 @@ impl StandardMeshBoundaryContext {
 /// trim-boundary gap. Domains contain only placements participating in a
 /// complete end-to-end partition of every gap on the face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) struct MeshEdgePlacementCandidate {
+pub(in crate::solve) struct MeshEdgePlacementCandidate {
     /// Physical edge-row ordinal.
     pub(super) edge: usize,
     /// Positional face ordinal.

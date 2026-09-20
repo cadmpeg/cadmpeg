@@ -917,13 +917,13 @@ pub(crate) fn parse_standard_edge_tables_scoped(
 }
 
 #[cfg(test)]
-pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+pub(super) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
     parse_edge_tables_scoped_at(bytes, position)
         .map(|(rows, _, vertex_header)| (rows, vertex_header))
 }
 
 #[cfg(test)]
-pub(crate) fn parse_edge_tables_scoped_at(
+pub(super) fn parse_edge_tables_scoped_at(
     bytes: &[u8],
     position: usize,
 ) -> Option<(Vec<EdgeRow>, Vec<usize>, usize)> {
@@ -1156,7 +1156,7 @@ enum TrimLengthLane {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct TrimRecordLayout {
+pub(in crate::families::standard) struct TrimRecordLayout {
     kind: u8,
     independent_count: usize,
     strip_count: usize,
@@ -1168,7 +1168,7 @@ pub(crate) struct TrimRecordLayout {
 }
 
 #[cfg(test)]
-pub(crate) fn parse_trim_record_layout(
+pub(super) fn parse_trim_record_layout(
     bytes: &[u8],
     start: usize,
     width: usize,
@@ -1293,7 +1293,7 @@ fn parse_trim_record_layout_with_length_encoding(
 }
 
 #[cfg(test)]
-pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
+pub(super) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
     let compact = parse_trim_record_with_length_encoding(bytes, start, width, false);
     let wide_u16be =
         (width == 2).then(|| parse_trim_record_with_length_encoding(bytes, start, width, true));

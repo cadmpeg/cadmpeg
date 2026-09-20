@@ -290,7 +290,7 @@ pub(super) fn revolution_surface(
     ))
 }
 
-pub(super) fn profile_nurbs(
+fn profile_nurbs(
     profile: &B5Profile,
     interval: [f64; 2],
     record: &dyn std::fmt::Display,
@@ -497,7 +497,7 @@ pub(super) fn revolve_nurbs(
     )
 }
 
-pub(super) fn append_quadratic_span_knots(
+fn append_quadratic_span_knots(
     knots: &mut Vec<f64>,
     interval: [f64; 2],
     span: usize,
@@ -515,7 +515,7 @@ pub(super) fn append_quadratic_span_knots(
     }
 }
 
-pub(super) fn circle_point(
+fn circle_point(
     center: [f64; 3],
     direction_x: [f64; 3],
     direction_y: [f64; 3],
@@ -534,7 +534,7 @@ pub(super) fn circle_point(
     )
 }
 
-pub(super) fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
+fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
     add(
         add(
             scale(value, angle.cos()),
@@ -544,7 +544,7 @@ pub(super) fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64
     )
 }
 
-pub(super) fn orthonormal_plane(
+fn orthonormal_plane(
     origin: [f64; 3],
     direction_u: [f64; 3],
     direction_v: [f64; 3],

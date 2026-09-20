@@ -147,7 +147,7 @@ pub(crate) fn surf_stream() -> Vec<u8> {
 /// One descriptor block: a `0x54`-byte header (logical length at `+0x0c`, the
 /// UTF-16LE name at `+0x10`, the extent count at `+0x50`) followed by one 20-byte
 /// extent. `phys_off` is measured from the inner magic.
-pub(crate) fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
+pub(super) fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
     let mut b = vec![0u8; 0x54];
     b[0x0c..0x10].copy_from_slice(&be32(phys_len)); // logical_length == cum
     let mut np = 0x10;

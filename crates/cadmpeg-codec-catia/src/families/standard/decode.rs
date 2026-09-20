@@ -9053,7 +9053,7 @@ fn standard_line_segments_are_simple(
 }
 
 #[cfg(test)]
-pub(crate) fn standard_line_pair_solution_is_simple(
+fn standard_line_pair_solution_is_simple(
     points: &[Point],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     endpoint_options: &[Vec<[usize; 2]>],
@@ -9117,7 +9117,7 @@ pub(crate) fn standard_line_pair_solution_is_simple(
 }
 
 #[cfg(test)]
-pub(crate) fn standard_line_pair_solution_is_simple_cached(
+fn standard_line_pair_solution_is_simple_cached(
     points: &[Point],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     endpoint_options: &[Vec<[usize; 2]>],

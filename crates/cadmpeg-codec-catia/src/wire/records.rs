@@ -90,7 +90,7 @@ impl ConsolidatedPcurve {
     }
 }
 
-pub(crate) fn parse_consolidated_pcurve(
+fn parse_consolidated_pcurve(
     data: &[u8],
     pos: usize,
     payload: usize,

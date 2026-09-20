@@ -118,7 +118,7 @@ impl DesignFeatureTransfer {
     /// operation roles remain unresolved. A malformed owner cycle or a parent
     /// that does not precede its child is omitted rather than creating an
     /// invalid neutral history.
-    pub(crate) fn assign_feature_parents(
+    fn assign_feature_parents(
         &self,
         ir: &mut CadIr,
         native: &CatiaNative,
@@ -186,7 +186,7 @@ impl DesignFeatureTransfer {
     /// structural dependencies. A target may resolve through its complete
     /// owner-design-object chain. Storage selectors, unresolved targets,
     /// self-links, and forward targets do not establish history edges.
-    pub(crate) fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
+    fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
         let design_objects = native
             .design_objects
             .iter()
@@ -782,7 +782,7 @@ impl NativeOperationClass {
     }
 }
 
-pub(crate) fn is_admitted_native_reference_plane_class(name: &str) -> bool {
+fn is_admitted_native_reference_plane_class(name: &str) -> bool {
     matches!(name, "GSMPlaneAngle" | "GSMPlaneOffset")
 }
 

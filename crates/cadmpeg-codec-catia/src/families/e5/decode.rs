@@ -2597,7 +2597,7 @@ fn e5_boundary_curve(
 }
 
 #[cfg(test)]
-pub(crate) fn e5_occurrence_intersection_context(
+fn e5_occurrence_intersection_context(
     sides: &[(SurfaceId, PcurveGeometry, [f64; 2])],
 ) -> Option<IntcurveSupportContext> {
     let [left, right] = sides else {

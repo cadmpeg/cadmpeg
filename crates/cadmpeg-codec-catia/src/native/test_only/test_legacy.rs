@@ -32,7 +32,7 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 
-pub(super) fn legacy_schema_identifiers(
+fn legacy_schema_identifiers(
     program: &CatiaLegacySchemaProgram,
 ) -> Option<Vec<CatiaLegacySchemaIdentifier>> {
     let program_offset = usize::try_from(program.byte_offset).ok()?;
@@ -47,7 +47,7 @@ pub(super) fn legacy_schema_identifiers(
     )
 }
 
-pub(super) fn legacy_value_name(
+fn legacy_value_name(
     roles: &[CatiaLegacyRoleSelector],
     fields: &[CatiaLegacyTextField],
     entity_id: u32,
