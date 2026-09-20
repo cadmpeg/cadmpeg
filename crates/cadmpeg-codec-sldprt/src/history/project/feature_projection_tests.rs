@@ -2,8 +2,6 @@
 //! Feature-class, hole, plane, and profile projection tests.
 #![allow(clippy::unwrap_used)]
 
-use super::feature;
-use super::feature_input_lane;
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::order_model_features_for_regeneration;
 use crate::history::classify::feature_tree_node_role;
@@ -26,6 +24,8 @@ use crate::history::project::projected_parameter_names;
 use crate::history::project::solid::hole_sketch_construction;
 use crate::history::project::solid::project_extrude;
 use crate::history::project::solid::project_hole;
+use crate::history::tests::feature;
+use crate::history::tests::feature_input_lane;
 use crate::history::write::features::sync_neutral_features;
 use crate::records::Feature;
 use crate::records::FeatureContent;

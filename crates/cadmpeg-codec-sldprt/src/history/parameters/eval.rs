@@ -15,7 +15,7 @@ enum Token {
     Bare(String),
 }
 
-pub(in crate::history) struct ParameterExpressionParser<'a> {
+pub(super) struct ParameterExpressionParser<'a> {
     input: &'a str,
     offset: usize,
     aliases: ParameterAliasMap<'a>,
@@ -66,7 +66,7 @@ impl<'a> ParameterExpressionParser<'a> {
         }
     }
 
-    pub(in crate::history) fn parse(mut self) -> Option<ParameterValue> {
+    pub(super) fn parse(mut self) -> Option<ParameterValue> {
         self.skip_space();
         self.take('=');
         self.skip_space();
@@ -294,7 +294,7 @@ fn add_parameter_values(
     })
 }
 
-pub(in crate::history) fn compare_parameter_values(
+pub(super) fn compare_parameter_values(
     left: &ParameterValue,
     right: &ParameterValue,
     operator: &str,
@@ -423,7 +423,7 @@ fn multiply_parameter_values(
     }
 }
 
-pub(in crate::history) fn exponentiate_parameter_value(
+pub(super) fn exponentiate_parameter_value(
     base: &ParameterValue,
     exponent: &ParameterValue,
 ) -> Option<ParameterValue> {
@@ -489,7 +489,7 @@ fn integer_power_real(base: i64, exponent: i64) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(in crate::history) enum ParameterFunction {
+pub(super) enum ParameterFunction {
     Iif,
     Abs,
     Sin,
@@ -544,7 +544,7 @@ impl ParameterFunction {
         }
     }
 
-    pub(in crate::history) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
+    pub(super) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
         let unary = || {
             let [argument] = arguments else {
                 return None;

@@ -30,7 +30,7 @@ fn history_from_nameless_block_keeps_annotation_owner() {
         .any(|provenance| provenance.stream() == "block@8"));
 }
 
-fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
+pub(in crate::history) fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     Feature {
         id: id.into(),
         parent: "history".into(),
@@ -51,7 +51,10 @@ fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     }
 }
 
-fn feature_input_lane(id: &str, configuration: Option<&str>) -> crate::records::FeatureInputLane {
+pub(in crate::history) fn feature_input_lane(
+    id: &str,
+    configuration: Option<&str>,
+) -> crate::records::FeatureInputLane {
     crate::records::FeatureInputLane {
         id: id.into(),
         configuration: configuration.map(str::to_string),
@@ -140,8 +143,6 @@ mod configuration;
 mod equations;
 mod extrusion_profile;
 mod feature_operations;
-mod feature_projection;
-mod offset_planes;
 mod parameters;
 mod sketch_bind;
 mod sketch_relations;

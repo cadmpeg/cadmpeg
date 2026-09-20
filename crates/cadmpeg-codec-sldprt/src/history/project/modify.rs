@@ -548,7 +548,7 @@ pub(super) fn project_scale(feature: &Feature) -> FeatureDefinition {
     })
 }
 
-pub(in crate::history) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
     let length = |name, positional| {
         feature
             .parameters
