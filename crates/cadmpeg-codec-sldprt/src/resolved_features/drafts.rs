@@ -698,12 +698,12 @@ mod tests {
                 panic!("typed draft");
             };
             *faces = FaceSelection::Native("explicit-faces".into());
-            let pull = match anchor {
-                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    pull: Some(pull), ..
-                }
-                | cadmpeg_ir::features::DraftAnchor::PartingLine { pull, .. } => pull,
-                _ => panic!("draft pull fixture"),
+            let (cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                pull: Some(pull), ..
+            }
+            | cadmpeg_ir::features::DraftAnchor::PartingLine { pull, .. }) = anchor
+            else {
+                panic!("draft pull fixture");
             };
             pull.direction =
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();

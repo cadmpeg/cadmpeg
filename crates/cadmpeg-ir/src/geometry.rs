@@ -5658,7 +5658,7 @@ pub enum LawExpression {
 impl LawExpression {
     /// Whether every scalar this expression and its operands carry is finite.
     ///
-    /// An operand tree deeper than [`LAW_EXPRESSION_DEPTH_LIMIT`] is refused.
+    /// An operand tree deeper than the internal law-expression depth limit is refused.
     #[must_use]
     pub fn values_are_finite(&self) -> bool {
         self.values_are_finite_at_depth(0)

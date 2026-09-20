@@ -92,7 +92,7 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     let record = RetainedSourceRecord::from_bytes(
         "sldprt",
         0,
-        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: data },
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data },
     )
     .expect("source image extent");
     fidelity

@@ -983,7 +983,7 @@ fn pcurve_surface_mismatch_is_flagged() {
                 },
             )
             .unwrap(),
-        )
+        );
     });
     let exact_report = validate_neutral(&procedural, Vec::new());
     assert!(

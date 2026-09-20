@@ -154,11 +154,11 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -202,11 +202,11 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
                 plane: cadmpeg_ir::features::PrincipalPlane::Right,
@@ -239,11 +239,11 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
@@ -263,11 +263,11 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature {
@@ -295,11 +295,11 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         ordinal: 2,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -362,11 +362,11 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature {
@@ -398,11 +398,11 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPlane {
                 frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(

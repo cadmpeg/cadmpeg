@@ -64,11 +64,11 @@ fn subd_round_trip_and_directed_ring_validation() {
         serde_json::json!("smooth_x")
     );
     let cage = &ir.model.subds[0].cage;
-    let mut edges = cage.faces[0].edges.to_vec();
+    let mut edges = cage.faces[0].edges.clone();
     edges[1].reversed = true;
     assert!(crate::subd::SubdCage::new(
-        cage.vertices.to_vec(),
-        cage.edges.to_vec(),
+        cage.vertices.clone(),
+        cage.edges.clone(),
         vec![SubdFace::new(edges).unwrap()],
         Vec::new()
     )

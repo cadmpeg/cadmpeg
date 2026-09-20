@@ -104,22 +104,21 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         let shift = &mut shift_value;
         let mut scale_value = *definition_payload.scale();
         let scale = &mut scale_value;
-        edit::with_output(context, |previous| {
-            let mut sides = previous.sides().clone();
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
             let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
-            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
-                           context_parameter_range: &mut [f64; 2],
-                           _: &mut [Vec<f64>; 3]| {
+            let discontinuities = previous.discontinuities().clone();
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+
                 (*context_parameter_range) = [-1.5, 2.5];
                 *discontinuity_flag = false;
                 *base_u_range = [-2.0, 5.0];
                 *base_v_range = [-6.0, 7.0];
                 *base_range = [-0.75, 1.75];
                 (*distance, *shift, *scale) = (3.5, -0.25, 0.8);
-            })(&mut sides, &mut range, &mut discontinuities);
+            };
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-                .map(|candidate| (candidate, output))
         })
         .unwrap();
         let restored_cache = definition_payload.legacy_cache();
@@ -1230,7 +1229,10 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.knots().to_vec();
-        (|knots: &mut [f64]| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
             previous.degree(),
             knots,

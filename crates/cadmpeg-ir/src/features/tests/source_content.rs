@@ -46,11 +46,11 @@ fn feature_membership_is_checked_on_standalone_and_model_wire_routes() {
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: crate::features::FeatureContent::default(),
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),

@@ -1183,7 +1183,7 @@ mod route_tests {
                     },
                 )
                 .expect("finite ordered exact-spline fixture ranges"),
-            )
+            );
         });
         assert_eq!(unresolved_carrier_counts(&ir), (0, 0));
     }

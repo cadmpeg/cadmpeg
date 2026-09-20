@@ -729,33 +729,28 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
         IntcurveSupportContext::try_new(sides, [0.0, 1.0], [vec![f64::NAN], vec![], vec![]])
             .is_err()
     );
-    assert!(edit::with_output(&mut context, |previous| {
-        let mut sides = previous.sides().clone();
+    assert!(edit::replace(&mut context, |previous| {
+        let sides = previous.sides().clone();
         let mut range = previous.parameter_range();
-        let mut discontinuities = previous.discontinuities().clone();
-        let output = (|_: &mut [crate::geometry::IntcurveSupportSide; 2],
-                       range: &mut [f64; 2],
-                       _: &mut [Vec<f64>; 3]| *range = [1.0, 1.0])(
-            &mut sides,
-            &mut range,
-            &mut discontinuities,
-        );
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let range: &mut [f64; 2] = &mut range;
+            *range = [1.0, 1.0];
+        };
         crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-            .map(|candidate| (candidate, output))
     })
     .is_err());
     assert_eq!(context, original);
-    assert!(edit::with_output(&mut context, |previous| {
-        let mut sides = previous.sides().clone();
-        let mut range = previous.parameter_range();
+    assert!(edit::replace(&mut context, |previous| {
+        let sides = previous.sides().clone();
+        let range = previous.parameter_range();
         let mut discontinuities = previous.discontinuities().clone();
-        let output = (|_: &mut [crate::geometry::IntcurveSupportSide; 2],
-                       _: &mut [f64; 2],
-                       discontinuities: &mut [Vec<f64>; 3]| {
-            discontinuities[1].push(f64::INFINITY)
-        })(&mut sides, &mut range, &mut discontinuities);
+        {
+            let discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
+
+            discontinuities[1].push(f64::INFINITY);
+        };
         crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-            .map(|candidate| (candidate, output))
     })
     .is_err());
     assert_eq!(context, original);
@@ -766,33 +761,32 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     );
     wire["parameter_range"] = serde_json::json!([1.0, 1.0]);
     assert!(serde_json::from_value::<IntcurveSupportContext>(wire).is_err());
-    edit::with_output(&mut context, |previous| {
+    edit::replace(&mut context, |previous| {
         let mut sides = previous.sides().clone();
         let mut range = previous.parameter_range();
-        let mut discontinuities = previous.discontinuities().clone();
-        let output = (|sides: &mut [crate::geometry::IntcurveSupportSide; 2],
-                       range: &mut [f64; 2],
-                       _: &mut [Vec<f64>; 3]| {
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+            let range: &mut [f64; 2] = &mut range;
+
             sides[0].pcurve.as_mut().unwrap().parameter_range = None;
             *range = [1.0, 1.0];
-        })(&mut sides, &mut range, &mut discontinuities);
+        };
         crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-            .map(|candidate| (candidate, output))
     })
     .unwrap();
     let unchanged = context.clone();
-    assert!(edit::with_output(&mut context, |previous| {
+    assert!(edit::replace(&mut context, |previous| {
         let mut sides = previous.sides().clone();
-        let mut range = previous.parameter_range();
-        let mut discontinuities = previous.discontinuities().clone();
-        let output = (|sides: &mut [crate::geometry::IntcurveSupportSide; 2],
-                       _: &mut [f64; 2],
-                       _: &mut [Vec<f64>; 3]| {
+        let range = previous.parameter_range();
+        let discontinuities = previous.discontinuities().clone();
+        {
+            let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
+
             sides[0].pcurve.as_mut().unwrap().parameter_range =
                 Some(DirectedParameterRange::new([5.0, 2.0]).unwrap());
-        })(&mut sides, &mut range, &mut discontinuities);
+        };
         crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-            .map(|candidate| (candidate, output))
     })
     .is_err());
     assert_eq!(context, unchanged);

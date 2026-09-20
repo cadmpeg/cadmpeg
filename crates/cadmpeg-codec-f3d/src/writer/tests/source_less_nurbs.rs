@@ -1072,7 +1072,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     };
     assert_eq!(form.revision, 23100);
     assert_eq!(form.flags, [true]);
-    assert!(!form.cache.parameterization().is_some());
+    assert!(form.cache.parameterization().is_none());
     assert_eq!(form.cache.parameterization(), None);
     assert_eq!(
         form.discontinuities,

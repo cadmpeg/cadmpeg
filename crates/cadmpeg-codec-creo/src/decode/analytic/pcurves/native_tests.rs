@@ -299,7 +299,7 @@ fn boundary_nurbs_endpoint_witnesses_use_the_intrinsic_domain() {
                 replacement,
             )
         })
-        .unwrap()
+        .expect("admitted periodic fixture");
     };
     assert!(
         nonperiodic_nurbs_endpoint_points(&CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(

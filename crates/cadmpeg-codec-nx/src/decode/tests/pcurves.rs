@@ -818,7 +818,7 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                 previous.normal_reversed(),
             )
         })
-        .unwrap()
+        .unwrap();
     };
     {
         let replacement = true;
@@ -838,7 +838,7 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
                 previous.normal_reversed(),
             )
         })
-        .unwrap()
+        .unwrap();
     };
 
     assert_eq!(

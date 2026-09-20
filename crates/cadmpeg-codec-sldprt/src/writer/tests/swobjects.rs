@@ -676,13 +676,16 @@ fn encoder_writes_source_less_line_sketches() {
             .unwrap();
         edit::replace(&mut point.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Point { position } = definition else {
                     panic!("point geometry")
                 };
                 position.u = 7.0;
                 position.v = 8.0;
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();

@@ -165,7 +165,10 @@ fn semantic_writer_applies_line_sketch_edits() {
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     panic!("line sketch entity");
                 };
@@ -175,7 +178,7 @@ fn semantic_writer_applies_line_sketch_edits() {
                 if entity.endpoint_refs[1] == point_ref {
                     end.u += 1.0;
                 }
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -222,7 +225,10 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     panic!("line sketch entity");
                 };
@@ -232,7 +238,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
                 if entity.endpoint_refs[1] == point_ref {
                     end.v += 2.0;
                 }
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -292,12 +298,15 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, .. } = definition else {
                     panic!("line sketch entity");
                 };
                 start.u += 1.0;
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -332,13 +341,16 @@ fn semantic_writer_applies_circle_sketch_edits() {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Circle { center, radius } = definition else {
                     panic!("circle sketch entity");
                 };
                 center.u = 250.0;
                 *radius = Length::new(750.0).unwrap();
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -379,7 +391,10 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Ellipse {
                     center,
                     major_angle,
@@ -394,7 +409,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
                 *major_angle = Angle::new(0.25).unwrap();
                 *major_radius = Length::new(1500.0).unwrap();
                 *minor_radius = Length::new(500.0).unwrap();
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -449,7 +464,10 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             .expect("arc sketch entity");
         edit::replace(&mut arc.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Arc {
                     center,
                     radius,
@@ -463,7 +481,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
                 *radius = Length::new(800.0).unwrap();
                 *start_angle = Angle::new(0.25).unwrap();
                 *end_angle = Angle::new(1.25).unwrap();
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();

@@ -1256,13 +1256,15 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     let surface = &mut carriers[0].geometry;
     edit::replace(surface, |previous| {
         let mut knots = previous.u_knots().to_vec();
-        (|knots: &mut [f64]| {
+        {
+            let knots: &mut [f64] = &mut knots;
+
             let lower = knots[0];
             let span = knots.last().copied().expect("nonempty knots") - lower;
             for knot in knots {
                 *knot = (*knot - lower) / span * tiny;
             }
-        })(&mut knots);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
@@ -1281,13 +1283,15 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     .unwrap();
     edit::replace(surface, |previous| {
         let mut knots = previous.v_knots().to_vec();
-        (|knots: &mut [f64]| {
+        {
+            let knots: &mut [f64] = &mut knots;
+
             let lower = knots[0];
             let span = knots.last().copied().expect("nonempty knots") - lower;
             for knot in knots {
                 *knot = (*knot - lower) / span * tiny;
             }
-        })(&mut knots);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),

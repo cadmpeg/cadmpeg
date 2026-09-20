@@ -78,13 +78,13 @@ fn generated_projection_decodes_and_writes_source_less() {
         let discontinuity_flag = &mut edited_discontinuity_flag;
         let tail = &mut edited_tail;
 
-        edit::with_output(context, |previous| {
-            let mut sides = previous.sides().clone();
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
             let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
-            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
-                           context_parameter_range: &mut [f64; 2],
-                           _: &mut [Vec<f64>; 3]| {
+            let discontinuities = previous.discontinuities().clone();
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+
                 (*context_parameter_range) = [-1.0, 2.0];
                 *discontinuity_flag = false;
                 let ProjectionTail::Ranged {
@@ -98,9 +98,8 @@ fn generated_projection_decodes_and_writes_source_less() {
                 *flag = false;
                 *parameter_range = [-4.0, 5.0];
                 *role = ProjectionRole::Surf1;
-            })(&mut sides, &mut range, &mut discontinuities);
+            };
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-                .map(|candidate| (candidate, output))
         })
         .unwrap();
         *definition_payload =
@@ -263,18 +262,17 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         let context = &mut edited_context;
         let selector = &mut edited_selector;
 
-        edit::with_output(context, |previous| {
-            let mut sides = previous.sides().clone();
+        edit::replace(context, |previous| {
+            let sides = previous.sides().clone();
             let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
-            let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
-                           context_parameter_range: &mut [f64; 2],
-                           _: &mut [Vec<f64>; 3]| {
+            let discontinuities = previous.discontinuities().clone();
+            {
+                let context_parameter_range: &mut [f64; 2] = &mut range;
+
                 (*context_parameter_range) = [-1.0, 2.0];
                 *selector = -4;
-            })(&mut sides, &mut range, &mut discontinuities);
+            };
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
-                .map(|candidate| (candidate, output))
         })
         .unwrap();
         *definition_payload =
@@ -360,7 +358,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
                 unreachable!()
             };
-            edit::with_output(
+            edit::replace(
                 &mut *(match family {
                     cadmpeg_ir::geometry::SurfaceCurveFamily::Blend { context, .. }
                     | cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained {
@@ -371,22 +369,19 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
                     | cadmpeg_ir::geometry::SurfaceCurveFamily::Skin { context, .. } => context,
                 }),
                 |previous| {
-                    let mut sides = previous.sides().clone();
+                    let sides = previous.sides().clone();
                     let mut range = previous.parameter_range();
-                    let mut discontinuities = previous.discontinuities().clone();
-                    let output = (|_: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
-                                   range: &mut [f64; 2],
-                                   _: &mut [Vec<f64>; 3]| {
-                        *range = [-1.0, 2.0]
-                    })(
-                        &mut sides, &mut range, &mut discontinuities
-                    );
+                    let discontinuities = previous.discontinuities().clone();
+                    {
+                        let range: &mut [f64; 2] = &mut range;
+
+                        *range = [-1.0, 2.0];
+                    };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
                     )
-                    .map(|candidate| (candidate, output))
                 },
             )
             .unwrap();

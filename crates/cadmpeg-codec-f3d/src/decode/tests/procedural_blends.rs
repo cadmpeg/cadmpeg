@@ -242,7 +242,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         assert_eq!(native.shape_prefix, 1);
         assert_eq!(native.parameters, [0.1, 0.2]);
         assert_eq!(native.tail, 17);
-        assert!(!native.cache.parameterization().is_some());
+        assert!(native.cache.parameterization().is_none());
         assert_eq!(native.cache.parameterization(), None);
         assert_eq!(
             native.discontinuities,
@@ -842,7 +842,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.v_lower, None);
         assert_eq!(construction.cache.shape_prefix(), 11);
         assert_eq!(construction.shape_length, 6.0);
-        assert!(!construction.cache.parameterization().is_some());
+        assert!(construction.cache.parameterization().is_none());
         assert_eq!(
             construction.discontinuities,
             [

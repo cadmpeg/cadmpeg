@@ -112,7 +112,7 @@ fn refusal(
     (
         refusal.format(),
         {
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -499,8 +499,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             plan.report(),
             "identity/target",
         )
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("a STEP write always names its schema");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");
