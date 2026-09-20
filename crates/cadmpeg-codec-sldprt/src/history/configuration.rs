@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration-lane enrichment and design-state projection.
 
+#[cfg(test)]
+mod lane_tests;
+
 use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -766,7 +769,7 @@ pub(crate) fn project_configuration_sketch_states(
     Ok(losses)
 }
 
-pub(super) fn inherit_configuration_shared_semantics(
+fn inherit_configuration_shared_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -805,7 +808,7 @@ pub(super) fn inherit_configuration_shared_semantics(
     Ok(())
 }
 
-pub(super) fn inherit_configuration_hole_semantics(
+fn inherit_configuration_hole_semantics(
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
     inherit_placements: bool,
@@ -1021,7 +1024,7 @@ fn configuration_reference_plane_frame(
 
 /// Reuse a document-level datum reference when a scoped state omits the
 /// reference or retains its frame with only the face selector unresolved.
-pub(super) fn inherit_configuration_reference_plane_semantics(
+fn inherit_configuration_reference_plane_semantics(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
 ) {
@@ -1124,7 +1127,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
     }
 }
 
-pub(super) fn configuration_surface_carriers(
+fn configuration_surface_carriers(
     ir: &cadmpeg_ir::CadIr,
     configuration_index: usize,
 ) -> Vec<cadmpeg_ir::geometry::Surface> {

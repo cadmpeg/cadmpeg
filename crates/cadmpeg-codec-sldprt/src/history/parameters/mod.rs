@@ -28,6 +28,8 @@ use crate::history::project::{
 
 const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
 
+#[cfg(test)]
+mod alias_tests;
 pub(crate) mod eval;
 #[cfg(test)]
 mod literal_tests;
@@ -384,7 +386,7 @@ fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
 }
 
 #[cfg(test)]
-pub(super) fn parameter_aliases(
+fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
@@ -411,7 +413,7 @@ fn insert_parameter_alias(
         .or_insert_with(|| Some(parameter.clone()));
 }
 
-pub(super) struct ParameterAliases {
+struct ParameterAliases {
     global: HashMap<String, Option<ParameterId>>,
     exact: HashMap<String, Option<ParameterId>>,
     document_local: HashMap<String, Option<ParameterId>>,
@@ -730,7 +732,7 @@ pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_>
         })
 }
 
-pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
     expression_identifier_tokens(expression)
         .into_iter()
         .flatten()

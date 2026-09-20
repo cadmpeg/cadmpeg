@@ -414,7 +414,7 @@ pub(crate) struct MeshQuotient {
 }
 
 #[derive(Clone)]
-pub(crate) struct MeshCoordinateRootDomains {
+pub(super) struct MeshCoordinateRootDomains {
     domains: Vec<Vec<usize>>,
     edges: Arc<Vec<[usize; 2]>>,
     root_edges: Arc<Vec<Vec<usize>>>,
@@ -423,7 +423,7 @@ pub(crate) struct MeshCoordinateRootDomains {
     point_count: usize,
 }
 
-pub(crate) struct MeshImplicitEdgeCandidates {
+pub(super) struct MeshImplicitEdgeCandidates {
     source: MeshImplicitEdgeCandidateSource,
 }
 
@@ -502,7 +502,7 @@ impl Iterator for MeshImplicitEdgeCandidates {
     }
 }
 
-pub(crate) enum MeshEndpointCandidates<'a> {
+pub(super) enum MeshEndpointCandidates<'a> {
     Explicit(&'a [[usize; 2]]),
     Implicit(MeshImplicitEdgeCandidates),
     Selected([usize; 2]),
@@ -889,7 +889,7 @@ impl MeshCoordinateRootDomains {
     }
 }
 
-pub(crate) fn initial_mesh_quotient(
+pub(super) fn initial_mesh_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
     point_count: usize,
     port_identities: &[[u32; 2]],
@@ -1095,7 +1095,7 @@ impl MeshQuotient {
         components
     }
 
-    pub(crate) fn root_count(&mut self) -> usize {
+    pub(super) fn root_count(&mut self) -> usize {
         (0..self.union.len())
             .filter(|node| self.union.find(*node) == *node)
             .count()
@@ -1134,7 +1134,7 @@ impl MeshQuotient {
         )
     }
 
-    pub(crate) fn prepare_coordinate_root_domains(
+    pub(super) fn prepare_coordinate_root_domains(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -1384,7 +1384,7 @@ impl MeshQuotient {
         true
     }
 
-    pub(crate) fn merge_singleton_coordinate_roots(
+    pub(super) fn merge_singleton_coordinate_roots(
         &mut self,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> bool {
@@ -1429,7 +1429,7 @@ impl MeshQuotient {
         }
     }
 
-    pub(crate) fn close_coordinate_roots(
+    pub(super) fn close_coordinate_roots(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -1440,7 +1440,7 @@ impl MeshQuotient {
     }
 
     #[cfg(test)]
-    pub(crate) fn close_coordinate_roots_for_incidence_with_budget(
+    pub(super) fn close_coordinate_roots_for_incidence_with_budget(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
@@ -4094,7 +4094,7 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
     Some(true)
 }
 
-pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
+pub(super) fn mesh_assignment_endpoint_cycles_viable_where(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget<'_>>,
@@ -4113,7 +4113,7 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable_where(
     )
 }
 
-pub(crate) fn mesh_assignment_endpoint_cycle_support_by<'a>(
+pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
     assignment: &MeshFaceBoundaryAssignment,
     budget: Option<&WorkBudget<'_>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
@@ -4300,7 +4300,7 @@ fn mesh_assignment_endpoint_cycles_viable_with(
 }
 
 #[cfg(test)]
-pub(crate) fn mesh_assignment_endpoint_cycles_viable(
+pub(super) fn mesh_assignment_endpoint_cycles_viable(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> bool {
@@ -4308,7 +4308,7 @@ pub(crate) fn mesh_assignment_endpoint_cycles_viable(
         .unwrap_or(true)
 }
 
-pub(crate) fn mesh_face_endpoint_configurations(
+pub(super) fn mesh_face_endpoint_configurations(
     assignments: &[MeshFaceBoundaryAssignment],
     edge_candidates: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
@@ -6302,7 +6302,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
     outcome.into()
 }
 
-pub(crate) fn prune_mesh_endpoint_pair_support(
+pub(super) fn prune_mesh_endpoint_pair_support(
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
 ) -> bool {
@@ -6313,7 +6313,7 @@ pub(crate) fn prune_mesh_endpoint_pair_support(
     )
 }
 
-pub(crate) fn prune_mesh_endpoint_pair_support_with_limit(
+pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
     limit: usize,
@@ -7642,7 +7642,7 @@ fn mesh_assignment_can_merge(
     })
 }
 
-pub(crate) fn mesh_edge_points_compatible(
+pub(super) fn mesh_edge_points_compatible(
     closed_ports: bool,
     candidates: &[[usize; 2]],
     points: [usize; 2],

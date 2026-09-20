@@ -19,7 +19,7 @@ use crate::history::literals::{
     parse_valid_direction, parse_vector3,
 };
 
-pub(in crate::history) fn project_fillet(feature: &Feature) -> FeatureDefinition {
+pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
     let radius = if let Some(radius) = feature
         .parameters
         .get("Radius")

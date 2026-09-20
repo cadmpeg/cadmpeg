@@ -31,6 +31,8 @@ pub(crate) mod pattern;
 pub(super) mod sketch;
 pub(crate) mod solid;
 mod spin;
+#[cfg(test)]
+mod split_and_identity_tests;
 mod surface;
 
 use self::datum::{
