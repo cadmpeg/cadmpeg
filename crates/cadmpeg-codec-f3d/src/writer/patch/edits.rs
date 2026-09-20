@@ -3182,9 +3182,9 @@ pub(super) fn validate_pcurve_edits(
         };
         // `PcurveNurbs::new` and `PcurveNurbs::edit_control_points` both
         // require finite poles, so pole finiteness is not a condition this
-        // chain can refuse. A 2D pole weight is a `PositiveReal`
-        // (`cadmpeg-ir/src/geometry/pcurve.rs:25`), which admits a finite
-        // positive value alone, so the weight value is not one either.
+        // chain can refuse. The `WeightedPole2::weight` field is a
+        // `PositiveReal`, which admits a finite positive value alone, so the
+        // weight value is not one either.
         let valid = id.starts_with("f3d:brep:entity#")
             && writable_nurbs_degree(after_nurbs.degree())
             && unchanged_unique_knot_count(before_nurbs.knots(), after_nurbs.knots())
@@ -3292,9 +3292,8 @@ pub(super) fn validate_surface_edits(
                 // The record holds the reference direction scaled by the
                 // radius, which a zero radius erases. The record states the
                 // half angle as a sine and a cosine whose signs carry the axis
-                // and normal senses, and the reader rebuilds the angle as
-                // `sine.abs().atan2(cosine.abs())`
-                // (`cadmpeg-asm/src/brep/geometry.rs:149`), whose range is
+                // and normal senses, and the ASM surface reader rebuilds the
+                // angle as `sine.abs().atan2(cosine.abs())`, whose range is
                 // [0, pi/2]. A negative half angle and one above pi/2 are
                 // shapes no f3d document holds.
                 if cone_surface.radius().get() == 0.0 {
