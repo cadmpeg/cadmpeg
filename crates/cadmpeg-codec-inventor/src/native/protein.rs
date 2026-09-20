@@ -203,7 +203,7 @@ pub(crate) struct ProteinEntryRecord {
 pub(crate) struct ProteinAssetRecord {
     pub(crate) id: String,
     pub(crate) entry_name: InstancePropertiesEntry,
-    pub(crate) asset: cadmpeg_protein::DecodedRecord,
+    asset: cadmpeg_protein::DecodedRecord,
 }
 
 #[derive(Serialize, Deserialize)]

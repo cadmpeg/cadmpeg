@@ -85,7 +85,7 @@ pub(crate) struct SketchInventory {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcSketchConstraintPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcConstraintHeader,
     pub(crate) kind: PmDcSketchConstraintKind,
 }
@@ -93,15 +93,15 @@ pub(crate) struct PmDcSketchConstraintPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcConstraintHeader {
     pub(crate) content: PmDcContentHeader,
-    pub(crate) state: i32,
+    state: i32,
     pub(crate) group: PmDcReference,
     pub(crate) scalar_map: PmDcReferenceScalarMap,
     pub(crate) reference_map: PmDcReferencePairMap,
     pub(crate) parameter: PmDcReference,
 }
 
-pub(crate) type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<f64>;
-pub(crate) type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
+type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<f64>;
+type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
@@ -189,9 +189,9 @@ pub(crate) struct PmDcSketchPayload {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcSketchEntityPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) entity_flags: u32,
+    entity_flags: u32,
     pub(crate) sketch: PmDcReference,
     pub(crate) kind: PmDcSketchEntityKind,
 }

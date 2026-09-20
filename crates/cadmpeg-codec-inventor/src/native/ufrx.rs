@@ -52,11 +52,11 @@ pub(crate) enum UfrxRecord {
     into = "UfrxRepresentationRecordWire"
 )]
 pub(crate) struct UfrxRepresentationRecord {
-    pub(crate) prefix: u16,
+    prefix: u16,
     pub(crate) active_representation: Option<(NonBlankString, NonBlankString)>,
-    pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: NonBlankString,
-    pub(crate) active_model_state_state: [u16; 2],
+    secondary_active_lod_state: [u16; 2],
+    active_model_state: NonBlankString,
+    active_model_state_state: [u16; 2],
 }
 
 #[derive(Serialize, Deserialize)]
@@ -123,13 +123,13 @@ impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
     into = "UfrxModelStateRecordWire"
 )]
 pub(crate) struct UfrxModelStateRecord {
-    pub(crate) id: String,
+    id: String,
     pub(crate) ordinal: u32,
-    pub(crate) prefix: u8,
+    prefix: u8,
     name: NonBlankString,
-    pub(crate) state: [u16; 2],
-    pub(crate) prefix_count: u32,
-    pub(crate) parameters: Vec<UfrxModelStateParameterRecord>,
+    state: [u16; 2],
+    prefix_count: u32,
+    parameters: Vec<UfrxModelStateParameterRecord>,
     suffix_sha256: Sha256Hex,
 }
 
@@ -442,16 +442,16 @@ pub(crate) struct ExternalReferenceRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
     identity: ExternalReferenceIdentity,
-    pub(crate) library_id: i32,
-    pub(crate) library_name: String,
-    pub(crate) display_name: String,
-    pub(crate) state_groups: Vec<[u16; 3]>,
+    library_id: i32,
+    library_name: String,
+    display_name: String,
+    state_groups: Vec<[u16; 3]>,
     pub(crate) state: [u16; 2],
-    pub(crate) database_id: String,
+    database_id: String,
     pub(crate) reference_id: u32,
     pub(crate) occurrence_count: u32,
-    pub(crate) version: u32,
-    pub(crate) flags: u32,
+    version: u32,
+    flags: u32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -566,19 +566,19 @@ impl ExternalReferenceRecord {
     into = "EmbeddedReferenceRecordWire"
 )]
 pub(crate) struct EmbeddedReferenceRecord {
-    pub(crate) id: String,
+    id: String,
     pub(crate) ordinal: u32,
-    pub(crate) value_0: u32,
-    pub(crate) filetime: u64,
-    pub(crate) value_1: u32,
-    pub(crate) extended_value: Option<u32>,
-    pub(crate) value_2: u32,
-    pub(crate) path: String,
-    pub(crate) library_id: i32,
-    pub(crate) library_name: String,
-    pub(crate) state: u16,
-    pub(crate) display_name: String,
-    pub(crate) state_values: [u8; 8],
+    value_0: u32,
+    filetime: u64,
+    value_1: u32,
+    extended_value: Option<u32>,
+    value_2: u32,
+    path: String,
+    library_id: i32,
+    library_name: String,
+    state: u16,
+    display_name: String,
+    state_values: [u8; 8],
     record_len: NonZeroU64,
     record_sha256: Sha256Hex,
 }
@@ -656,10 +656,10 @@ impl From<EmbeddedReferenceRecord> for EmbeddedReferenceRecordWire {
 pub(crate) struct UfrxOccurrenceRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    pub(crate) end_string_flag: u32,
+    end_string_flag: u32,
     pub(crate) file_reference_id: u32,
     pub(crate) occurrence_id: u32,
-    pub(crate) header_value: u32,
+    header_value: u32,
     pub(crate) title: Option<String>,
     header_padding_words: u8,
     record_len: NonZeroU64,

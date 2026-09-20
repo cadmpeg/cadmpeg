@@ -22,7 +22,7 @@ use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecor
 pub(crate) struct StorageBand(u32);
 
 impl StorageBand {
-    pub(crate) fn parse(component: &str) -> Option<Self> {
+    fn parse(component: &str) -> Option<Self> {
         let (prefix, digits) = component.split_at_checked(1)?;
         if !prefix.eq_ignore_ascii_case("V") {
             return None;
@@ -44,7 +44,7 @@ pub(crate) struct SegmentToken(IdentityKey);
 
 /// Which of the two `RSe` streams a segment name introduces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SegmentPrefix {
+enum SegmentPrefix {
     Metadata,
     Bulk,
 }

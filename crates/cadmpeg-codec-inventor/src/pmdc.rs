@@ -80,7 +80,7 @@ pub(crate) struct PmDcContentHeader {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
 pub(crate) struct PmDcReferenceList {
-    pub(crate) marker: u16,
+    marker: u16,
     items: Option<(PmDcListMetadata, Vec<PmDcReference>)>,
 }
 
@@ -176,7 +176,7 @@ impl<M> Default for PmDcPairedReferenceList<M> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PmDcU32ListWire", into = "PmDcU32ListWire")]
 pub(crate) struct PmDcU32List {
-    pub(crate) marker: u16,
+    marker: u16,
     items: Option<(PmDcListMetadata, Vec<u32>)>,
 }
 
@@ -234,10 +234,7 @@ impl TryFrom<PmDcU32ListWire> for PmDcU32List {
 
 // The outer option reports a mismatched metadata/list pair; the inner option is an empty list.
 #[allow(clippy::option_option)]
-pub(crate) fn paired_items<M, T>(
-    metadata: Option<M>,
-    values: Vec<T>,
-) -> Option<Option<(M, Vec<T>)>> {
+fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> Option<Option<(M, Vec<T>)>> {
     match (metadata, values.is_empty()) {
         (None, true) => Some(None),
         (Some(metadata), false) => Some(Some((metadata, values))),

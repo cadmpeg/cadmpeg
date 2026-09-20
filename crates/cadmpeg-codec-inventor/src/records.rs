@@ -13,9 +13,9 @@ const SECTION_11_PAYLOAD_LEN: usize = 0x48;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BlockDescriptor {
-    pub(crate) ordinal: u32,
-    pub(crate) stored: bool,
-    pub(crate) payload_len: u32,
+    ordinal: u32,
+    stored: bool,
+    payload_len: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +131,7 @@ pub(crate) struct RseRecordFrame<'a> {
     pub(crate) type_id: [u8; 16],
     pub(crate) payload_offset: u64,
     pub(crate) payload: View<'a>,
-    pub(crate) trailing_length_written: bool,
+    trailing_length_written: bool,
     pub(crate) trailer: View<'a>,
 }
 

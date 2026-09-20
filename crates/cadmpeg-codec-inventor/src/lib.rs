@@ -22,7 +22,7 @@ mod feature;
 pub mod fuzz;
 mod kernel;
 /// Byte-offset constants generated from `docs/layouts/inventor.toml`.
-pub(crate) mod layout;
+mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod materials;
@@ -46,7 +46,7 @@ use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{report::check::Finding, CadIr};
 
-pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
+fn issue_detail(error: CodecError) -> Result<String, CodecError> {
     if matches!(&error, CodecError::ResourceLimit(_)) {
         Err(error)
     } else {
@@ -93,4 +93,4 @@ impl CodecBackend for InventorCodec {
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;
