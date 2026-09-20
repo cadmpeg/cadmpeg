@@ -3088,11 +3088,12 @@ pub(super) fn validate_curve_edits(
             ) => {}
             (Some(SolvedCurveGeometry::Nurbs(before)), Some(SolvedCurveGeometry::Nurbs(after))) => {
                 // `NurbsCurve` admission states finite poles and finite
-                // nonzero weights, so this writer refuses only what the byte
-                // patcher cannot write: a carrier it does not address, a
-                // degree no spline record states, a knot layout of another
-                // shape, a changed rational form or pole count, and a weight
-                // the native lane cannot carry.
+                // nonzero weights. A degree outside 1..=20 is malformed: no
+                // spline layout reader admits such a record, so no f3d
+                // document holds one. The rest are edits an f3d document can
+                // state and this writer does not write: a carrier it does not
+                // address, a changed distinct-knot count, a changed rational
+                // form or pole count, and a negative weight.
                 if !(id.starts_with("f3d:brep:entity#")
                     || id.starts_with("f3d:brep:tolerant-coedge-curve#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
@@ -3108,17 +3109,17 @@ pub(super) fn validate_curve_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.knots(), after.knots()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} changes the NURBS knot layout"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} changes the NURBS rational form"
                     )));
                 }
                 if before.pole_count() != after.pole_count() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} changes the NURBS control-point count"
                     )));
                 }
@@ -3126,7 +3127,7 @@ pub(super) fn validate_curve_edits(
                     .weights()
                     .is_some_and(|weights| weights.iter().any(|weight| *weight < 0.0))
                 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D curve {id} has a negative NURBS weight"
                     )));
                 }
@@ -3315,11 +3316,12 @@ pub(super) fn validate_surface_edits(
                 Some(SolvedSurfaceGeometry::Nurbs(after)),
             ) => {
                 // `NurbsSurface` admission states finite poles and finite
-                // nonzero weights, so this writer refuses only what the byte
-                // patcher cannot write: a carrier it does not address, a
-                // degree no spline record states, a knot layout of another
-                // shape, a changed rational form or pole count, and a weight
-                // the native lane cannot carry.
+                // nonzero weights. A u or v degree outside 1..=20 is
+                // malformed: no spline layout reader admits such a record, so
+                // no f3d document holds one. The rest are edits an f3d
+                // document can state and this writer does not write: a carrier
+                // it does not address, a changed distinct-knot count, a changed
+                // rational form or pole count, and a negative weight.
                 if !(id.starts_with("f3d:brep:entity#")
                     || (id.starts_with("f3d:brep:procedural_surface#")
                         && (id.ends_with(":support0") || id.ends_with(":support1"))))
@@ -3334,7 +3336,7 @@ pub(super) fn validate_surface_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.u_knots(), after.u_knots()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS u knot layout"
                     )));
                 }
@@ -3344,22 +3346,22 @@ pub(super) fn validate_surface_edits(
                     )));
                 }
                 if !unchanged_unique_knot_count(before.v_knots(), after.v_knots()) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS v knot layout"
                     )));
                 }
                 if before.u_count() != after.u_count() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS u control-point count"
                     )));
                 }
                 if before.v_count() != after.v_count() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS v control-point count"
                     )));
                 }
                 if before.weights().is_some() != after.weights().is_some() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} changes the NURBS rational form"
                     )));
                 }
@@ -3367,7 +3369,7 @@ pub(super) fn validate_surface_edits(
                     .pole_weights()
                     .is_some_and(|weights| weights.into_iter().any(|weight| weight < 0.0))
                 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::NotImplemented(format!(
                         "edited F3D surface {id} has a negative NURBS weight"
                     )));
                 }
@@ -3994,7 +3996,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_curve_edit_that_changes_the_knot_multiplicity_is_malformed() {
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_knot_multiplicity_is_not_implemented() {
         let nurbs = |knots: Vec<f64>| curve("f3d:brep:entity#7", nurbs_curve(knots, 2, None));
         let error = validate_curve_edits(
             &nurbs(vec![0.0, 0.0, 1.0, 1.0]),
@@ -4048,7 +4050,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_curve_edit_that_changes_the_rational_form_is_malformed() {
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_rational_form_is_not_implemented() {
         let error = validate_curve_edits(
             &curve(
                 "f3d:brep:entity#7",
@@ -4069,7 +4071,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_curve_edit_that_changes_the_pole_count_is_malformed() {
+    fn a_same_kind_nurbs_curve_edit_that_changes_the_pole_count_is_not_implemented() {
         let error = validate_curve_edits(
             &curve(
                 "f3d:brep:entity#7",
@@ -4090,7 +4092,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_curve_edit_that_writes_a_negative_weight_is_malformed() {
+    fn a_same_kind_nurbs_curve_edit_that_writes_a_negative_weight_is_not_implemented() {
         let error = validate_curve_edits(
             &curve(
                 "f3d:brep:entity#7",
@@ -4101,7 +4103,7 @@ mod tests {
                 nurbs_curve(vec![0.0, 0.0, 1.0, 1.0], 2, Some(vec![1.0, -1.0])),
             ),
         )
-        .expect_err("a native weight lane carries positive weights");
+        .expect_err("this writer does not write a negative weight");
         assert!(
             error
                 .to_string()
@@ -4175,7 +4177,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_knot_multiplicity_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_knot_multiplicity_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4208,7 +4210,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_knot_multiplicity_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_knot_multiplicity_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4307,7 +4309,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_pole_count_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_u_pole_count_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4340,7 +4342,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_pole_count_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_v_pole_count_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4373,7 +4375,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_changes_the_rational_form_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_changes_the_rational_form_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4406,7 +4408,7 @@ mod tests {
     }
 
     #[test]
-    fn a_same_kind_nurbs_surface_edit_that_writes_a_negative_weight_is_malformed() {
+    fn a_same_kind_nurbs_surface_edit_that_writes_a_negative_weight_is_not_implemented() {
         let error = validate_surface_edits(
             &surface(
                 "f3d:brep:entity#9",
@@ -4429,7 +4431,7 @@ mod tests {
                 ),
             ),
         )
-        .expect_err("a native weight grid carries positive weights");
+        .expect_err("this writer does not write a negative weight");
         assert!(
             error
                 .to_string()
