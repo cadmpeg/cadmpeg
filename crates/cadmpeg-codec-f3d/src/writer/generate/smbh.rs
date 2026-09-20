@@ -1144,7 +1144,7 @@ fn encode_face_topology_smbh(
                 let center = *sphere_surface.center();
                 let axis = *sphere_surface.axis();
                 let ref_direction = *sphere_surface.ref_direction();
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 native_surface_base(&mut records, "sphere")?;
                 native_point(
                     &mut records,

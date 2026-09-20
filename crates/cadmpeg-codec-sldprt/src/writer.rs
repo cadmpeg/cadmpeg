@@ -644,11 +644,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
-                    let radius = sphere_surface.radius();
+                    let radius = sphere_surface.radius().get();
                     radius < 0.0
                 } =>
             {
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
                     surface.id.as_str(), radius
@@ -3182,7 +3182,7 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             if radius < 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT compact sphere carriers require a positive radius".into(),

@@ -315,7 +315,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
         if {
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             radius == 5.0
         })
     ));

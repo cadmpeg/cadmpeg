@@ -4191,7 +4191,7 @@ mod tests {
                     let center = sphere_surface.center();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
-                    (sphere_surface.radius() == 5.0)
+                    (sphere_surface.radius().get() == 5.0)
                         && (*center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))

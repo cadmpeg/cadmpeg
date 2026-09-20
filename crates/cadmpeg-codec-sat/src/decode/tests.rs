@@ -31,7 +31,7 @@ fn sphere_radius(result: &DecodeResult) -> f64 {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
 
-    sphere_surface.radius()
+    sphere_surface.radius().get()
 }
 
 #[test]

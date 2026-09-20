@@ -6069,7 +6069,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
         return None;
     };
     let center = sphere_surface.center();
-    let radius = sphere_surface.radius();
+    let radius = sphere_surface.radius().get();
     ((radius).is_finite() && radius > 0.0 && center.is_finite()).then_some((
         body,
         *center,

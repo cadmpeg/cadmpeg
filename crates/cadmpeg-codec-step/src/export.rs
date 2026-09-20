@@ -3737,7 +3737,7 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|surface| match &surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                    let radius = sphere_surface.radius();
+                    let radius = sphere_surface.radius().get();
                     radius < 0.0
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {

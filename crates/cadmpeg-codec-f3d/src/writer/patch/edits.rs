@@ -3292,14 +3292,9 @@ pub(super) fn validate_surface_edits(
             Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Sphere(_))) } =>
             {
-                let center = sphere_surface.center();
                 let axis = sphere_surface.axis();
                 let ref_direction = sphere_surface.ref_direction();
-                let radius = sphere_surface.radius();
-                center.is_finite()
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && radius != 0.0
+                orthonormal_pair(*axis, *ref_direction)
             }
             Some(SolvedSurfaceGeometry::Torus(torus_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Torus(_))) } =>

@@ -284,7 +284,7 @@ fn transform_surface(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 placed_point(transform, *center)?,
                 placed_vector(transform, *axis)?,

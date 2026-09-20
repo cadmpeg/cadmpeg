@@ -1191,15 +1191,12 @@ fn linear_pcurve_carrier(
             }
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-            if {
-                let radius = sphere_surface.radius();
-                start[1] == end[1] && radius.is_finite() && radius > 0.0
-            } =>
+            if start[1] == end[1] && sphere_surface.radius().get() > 0.0 =>
         {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1212,15 +1209,12 @@ fn linear_pcurve_carrier(
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-            if {
-                let radius = sphere_surface.radius();
-                start[0] == end[0] && radius.is_finite() && radius > 0.0
-            } =>
+            if start[0] == end[0] && sphere_surface.radius().get() > 0.0 =>
         {
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],

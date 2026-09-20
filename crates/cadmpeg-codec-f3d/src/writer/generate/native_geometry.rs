@@ -5780,7 +5780,7 @@ fn native_embedded_surface(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,
@@ -6254,7 +6254,7 @@ fn native_embedded_surface_with_bounds(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             native_ident(bytes, "sphere")?;
             native_point(
                 bytes,

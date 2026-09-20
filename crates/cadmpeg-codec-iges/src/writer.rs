@@ -4980,10 +4980,10 @@ fn surface_entities(
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
-            if !radius.is_finite() || radius <= 0.0 {
+            let radius = sphere_surface.radius().get();
+            if radius <= 0.0 {
                 return Err(CodecError::Malformed(
-                    "IGES sphere radius must be positive and finite".into(),
+                    "IGES sphere radius must be positive".into(),
                 ));
             }
             let (mut entities, location, axis, reference) =

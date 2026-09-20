@@ -2398,14 +2398,14 @@ fn boundary_curve_speed_bound_with_index(
         Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if { direction.v == 0.0 && direction.u != 0.0 } =>
         {
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let speed = radius.abs() * origin.v.cos().abs() * direction.u.abs();
             speed.is_finite().then_some(speed)
         }
         Some(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if { direction.u == 0.0 && direction.v != 0.0 } =>
         {
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             let speed = radius.abs() * direction.v.abs();
             speed.is_finite().then_some(speed)
         }

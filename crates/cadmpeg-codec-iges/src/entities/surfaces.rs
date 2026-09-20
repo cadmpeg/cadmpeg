@@ -944,7 +944,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius();
+            let radius = sphere_surface.radius().get();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     *center,
@@ -2539,7 +2539,7 @@ pub(super) fn project(
         let regular = match &geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => true,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let radius = sphere_surface.radius();
+                let radius = sphere_surface.radius().get();
                 radius > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
