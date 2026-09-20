@@ -26,6 +26,7 @@ mod lexical;
 mod macros;
 mod presentation_forms;
 mod solid_entity_boundaries;
+mod type_fem;
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {
     let mut bytes = owned_test_file(&[OwnedTestEntity {
@@ -78,7 +79,7 @@ fn parameter_owner_field_uses_blank_column_65_and_right_aligned_seven_digits() {
     }
 }
 
-pub(super) fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
+fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
     ParameterRecord {
         directory_sequence: sequence,
         line_range: 1..2,

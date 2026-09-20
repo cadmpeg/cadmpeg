@@ -3,10 +3,11 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::DirectoryEntry;
-use crate::parameter::tests::{directory_target_with_form, integer_parameter_record};
 use std::collections::BTreeMap;
 
-use super::{
+use super::{directory_target_with_form, integer_parameter_record};
+
+use crate::parameter::{
     analyze_trailing_pointer_groups, entity_primary_end, groups_for_candidate,
     structural_pointer_group_candidates, ParameterRecord, Token, TokenValue,
 };
@@ -142,7 +143,10 @@ fn fem_table_boundaries_precede_fully_valid_structural_alternatives() {
 
         let analysis = analyze_trailing_pointer_groups(&record, &directory);
         assert_eq!(
-            analysis.candidate_count(&record, super::entity_primary_end(&record, &directory)),
+            analysis.candidate_count(
+                &record,
+                crate::parameter::entity_primary_end(&record, &directory)
+            ),
             1
         );
         assert_eq!(analysis.valid_candidate_count(), 1);
