@@ -208,6 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-ir --features schema --lib
+          cargo test -q -p cadmpeg-asm --features schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
