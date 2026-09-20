@@ -3727,15 +3727,17 @@ fn parse_geometry_table<T>(
     let start = tokens
         .iter()
         .position(|token| *token == table)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {table} table")))?
+        .ok_or_else(|| CodecError::malformed(format_args!("text B-rep has no {table} table")))?
         + 2;
     let end = tokens
         .iter()
         .position(|token| *token == next_table)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {next_table} table")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("text B-rep has no {next_table} table"))
+        })?;
     let count = section_counts.get(table).copied().unwrap_or(0);
     let mut cursor = TokenCursor::new(tokens.get(start..end).ok_or_else(|| {
-        CodecError::Malformed(format!("text B-rep {table} table has invalid bounds"))
+        CodecError::malformed(format_args!("text B-rep {table} table has invalid bounds"))
     })?);
     // Every row consumes at least its type token.
     let mut curves = Vec::with_capacity(cursor.bounded(count, 1, &format!("text {table}"))?);
@@ -3743,7 +3745,7 @@ fn parse_geometry_table<T>(
         curves.push(parse(&mut cursor, 0, index + 1)?);
     }
     if !cursor.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "text B-rep {table} table contains trailing tokens"
         )));
     }

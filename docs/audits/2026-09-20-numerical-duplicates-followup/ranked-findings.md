@@ -8,7 +8,7 @@ P1: incorrect geometry representation or false boundary certificate. P2: wrong r
 
 P2 · Numerical · Confidence: High
 
-Sources: [`ellipse_to_nurbs`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-asm/src/nurbs/proc_surface.rs:1623), [`let radius = (major[0] * major[0]`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2880).
+Sources: [`ellipse_to_nurbs`](../../../crates/cadmpeg-asm/src/nurbs/proc_surface.rs:1623), [`let radius = (major[0] * major[0]`](../../../crates/cadmpeg-asm/src/nurbs/proc_curve.rs:2880).
 
 **Evidence.** ellipse_to_nurbs accepts a unit major radius but rejects 1e200 and 1e-200 with unit normal and ratio 0.5, although all output coordinates can remain finite. The text and binary support-cone branches repeat the same squared-major-length calculation.
 
@@ -24,7 +24,7 @@ Sources: [`ellipse_to_nurbs`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-asm/src/
 
 P2 · Numerical · Confidence: High
 
-Sources: [`quadratic_real_roots`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-creo/src/decode/analytic/equations.rs:516), [`quadratic_roots`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-creo/src/decode/sketch/equations_coordinate.rs:990).
+Sources: [`quadratic_real_roots`](../../../crates/cadmpeg-codec-creo/src/decode/analytic/equations.rs:516), [`quadratic_roots`](../../../crates/cadmpeg-codec-creo/src/decode/sketch/equations_coordinate.rs:990).
 
 **Evidence.** x^2-1 returns [-1,1]. Multiplying every coefficient by 1e-10 yields [-0] in both solvers; multiplying by 1e-20 yields no roots. Absolute floors control degree and discriminant classification.
 
@@ -38,7 +38,7 @@ Sources: [`quadratic_real_roots`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-code
 
 P2 · Numerical · Confidence: High
 
-Sources: [`trim_circle_circle_intersection`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-creo/src/feature/definitions.rs:3535).
+Sources: [`trim_circle_circle_intersection`](../../../crates/cadmpeg-codec-creo/src/feature/definitions.rs:3535).
 
 **Evidence.** Two circles of radius 1e-6 with centers (0,0) and (1e-6,0) have two intersections. The function returns the single point (0.5e-6,0), which lies on neither circle.
 
@@ -52,7 +52,7 @@ Sources: [`trim_circle_circle_intersection`](/home/pcurve/side2/cadmpeg/crates/c
 
 P3 · Duplicate / forwarding layer · Confidence: High
 
-Sources: [`curve_array_elements`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-creo/src/legacy_geometry.rs:202), [`surface_array_elements`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-creo/src/legacy_geometry.rs:377).
+Sources: [`curve_array_elements`](../../../crates/cadmpeg-codec-creo/src/legacy_geometry.rs:202), [`surface_array_elements`](../../../crates/cadmpeg-codec-creo/src/legacy_geometry.rs:377).
 
 **Evidence.** The signatures and lookup/uniqueness/parent/completeness logic are identical. Only the array name, crv_array versus srf_array, differs.
 
@@ -66,7 +66,7 @@ Sources: [`curve_array_elements`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-code
 
 P2 · Numerical · Confidence: High
 
-Sources: [`line_arc_intersects`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f3d/src/design/geometry.rs:2315), [`line_arc_intersection_points`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f3d/src/design/geometry.rs:672).
+Sources: [`line_arc_intersects`](../../../crates/cadmpeg-codec-f3d/src/design/geometry.rs:2315), [`line_arc_intersection_points`](../../../crates/cadmpeg-codec-f3d/src/design/geometry.rs:672).
 
 **Evidence.** A line from (-1e-4,2e-4) to (1e-4,2e-4) and circle of radius 1e-4 at the origin are disjoint. The boolean routine returns true while the corrected point-producing routine returns no intersections.
 
@@ -80,7 +80,7 @@ Sources: [`line_arc_intersects`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec
 
 P2 · Numerical · Confidence: High
 
-Sources: [`nurbs_speed_bound`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f3d/src/design/geometry.rs:1862).
+Sources: [`nurbs_speed_bound`](../../../crates/cadmpeg-codec-f3d/src/design/geometry.rs:1862).
 
 **Evidence.** The same unit pcurve has bound Some(1) with weights [1,1] and None with [1e-200,1e-200]. The unscaled squared minimum weight produces 0/0.
 
@@ -94,7 +94,7 @@ Sources: [`nurbs_speed_bound`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f
 
 P3 · Duplicate / forwarding layer · Confidence: High duplication; medium refactor benefit
 
-Sources: [`decode_canvas_images`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f3d/src/design/decode/canvas.rs:28), [`decode_decal_images`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-f3d/src/design/decode/decal.rs:33).
+Sources: [`decode_canvas_images`](../../../crates/cadmpeg-codec-f3d/src/design/decode/canvas.rs:28), [`decode_decal_images`](../../../crates/cadmpeg-codec-f3d/src/design/decode/decal.rs:33).
 
 **Evidence.** Both traverse design bulkstreams, match native stream identities, filter a scope kind, parse matching scopes, and sort/deduplicate image IDs. Their kind, parser, and output record differ.
 
@@ -108,7 +108,7 @@ Sources: [`decode_canvas_images`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-code
 
 P2 · Numerical · Confidence: High
 
-Sources: [`uniform_scale`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1821).
+Sources: [`uniform_scale`](../../../crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1821).
 
 **Evidence.** Columns (1e-6,0,0), (0.5e-6,sqrt(0.75)*1e-6,0), and (0,0,1e-6) pass as a similarity. The first two columns are 60 degrees apart. The dot-product threshold has units of length rather than squared length and floors scale at 1.
 
@@ -122,7 +122,7 @@ Sources: [`uniform_scale`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freec
 
 P2 · Numerical · Confidence: High
 
-Sources: [`transform_normalized_vector`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1919).
+Sources: [`transform_normalized_vector`](../../../crates/cadmpeg-codec-freecad/src/topology_transfer.rs:1919).
 
 **Evidence.** Uniform transform scales 1e200 and 1e-200 return normal lengths 1e200 and 1e-200 instead of 1. The manual norm overflows/underflows, then the fallback returns the transformed vector unchanged.
 
@@ -136,7 +136,7 @@ Sources: [`transform_normalized_vector`](/home/pcurve/side2/cadmpeg/crates/cadmp
 
 P3 · Duplicate / forwarding layer · Confidence: High
 
-Sources: [`validate_gui_geom_format_list`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/gui.rs:2053), [`validate_gui_cosmetic_edge_list`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/gui.rs:2229), [`validate_gui_center_line_list`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/gui.rs:2278).
+Sources: [`validate_gui_geom_format_list`](../../../crates/cadmpeg-codec-freecad/src/gui.rs:2053), [`validate_gui_cosmetic_edge_list`](../../../crates/cadmpeg-codec-freecad/src/gui.rs:2229), [`validate_gui_center_line_list`](../../../crates/cadmpeg-codec-freecad/src/gui.rs:2278).
 
 **Evidence.** The three functions repeat single-root admission, list-tag checks, count parsing, element counting, child tag/type checks, and record dispatch. The literal names and record validator differ.
 
@@ -148,7 +148,7 @@ Sources: [`validate_gui_geom_format_list`](/home/pcurve/side2/cadmpeg/crates/cad
 
 P3 · Duplicate / forwarding layer · Confidence: High duplication; medium refactor benefit
 
-Sources: [`transfer_edge_appearance`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/gui.rs:909), [`transfer_vertex_appearance`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/gui.rs:976).
+Sources: [`transfer_edge_appearance`](../../../crates/cadmpeg-codec-freecad/src/gui.rs:909), [`transfer_vertex_appearance`](../../../crates/cadmpeg-codec-freecad/src/gui.rs:976).
 
 **Evidence.** The two functions repeat payload-prefix selection, provider identity handling, packed RGBA conversion, nonnegative size filtering, appearance construction, and binding creation.
 
@@ -160,7 +160,7 @@ Sources: [`transfer_edge_appearance`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-
 
 P3 · Duplicate / forwarding layer · Confidence: High
 
-Sources: [`parse_curve2ds`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/brep.rs:3707), [`parse_curves`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/brep.rs:4963), [`parse_surfaces`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-freecad/src/brep.rs:4535).
+Sources: [`parse_curve2ds`](../../../crates/cadmpeg-codec-freecad/src/brep.rs:3707), [`parse_curves`](../../../crates/cadmpeg-codec-freecad/src/brep.rs:4963), [`parse_surfaces`](../../../crates/cadmpeg-codec-freecad/src/brep.rs:4535).
 
 **Evidence.** All three find start/end table tokens, take the declared count, bound minimum token consumption, parse indexed rows, and reject trailing tokens. Only section labels and row parsers differ.
 
@@ -174,7 +174,7 @@ Sources: [`parse_curve2ds`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-free
 
 P1 · Numerical · Confidence: High
 
-Sources: [`homogeneous_bezier_spans`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-iges/src/entities/surfaces.rs:436), [`homogeneous_curve_boundary_matches`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-iges/src/entities/surfaces.rs:914), [`surface_boundary_is_closed`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-iges/src/entities/surfaces.rs:992).
+Sources: [`homogeneous_bezier_spans`](../../../crates/cadmpeg-codec-iges/src/entities/surfaces.rs:436), [`homogeneous_curve_boundary_matches`](../../../crates/cadmpeg-codec-iges/src/entities/surfaces.rs:914), [`surface_boundary_is_closed`](../../../crates/cadmpeg-codec-iges/src/entities/surfaces.rs:992).
 
 **Evidence.** The same unclamped and discontinuous examples as IR2-01 produce wrong spans. Two degree-2 curves with full internal multiplicity that differ only at their final control point are reported equal at resolution 0; their separation at t=1.5 is 1.
 
@@ -188,7 +188,7 @@ Sources: [`homogeneous_bezier_spans`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-
 
 P1 · Numerical · Confidence: High
 
-Sources: [`homogeneous_curve_boundary_matches`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-iges/src/entities/surfaces.rs:914).
+Sources: [`homogeneous_curve_boundary_matches`](../../../crates/cadmpeg-codec-iges/src/entities/surfaces.rs:914).
 
 **Evidence.** Two parallel unit lines separated by 2, both weighted [1e-200,1e-200], compare equal at resolution 1e-6. Both cross-products and the threshold underflow to zero.
 
@@ -204,7 +204,7 @@ Sources: [`homogeneous_curve_boundary_matches`](/home/pcurve/side2/cadmpeg/crate
 
 P2 · Numerical · Confidence: High
 
-Sources: [`parse_jt9_geometric_transform_body`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-nx/src/native/display_jt.rs:2005).
+Sources: [`parse_jt9_geometric_transform_body`](../../../crates/cadmpeg-codec-nx/src/native/display_jt.rs:2005).
 
 **Evidence.** Byte fixtures differing only in uniform diagonal scale accept 1 but reject 1e20 and 1e-30. Squaring finite f32 rows produces infinity or zero.
 
@@ -218,7 +218,7 @@ Sources: [`parse_jt9_geometric_transform_body`](/home/pcurve/side2/cadmpeg/crate
 
 P3 · Duplicate / forwarding layer · Confidence: High duplication; medium refactor benefit
 
-Sources: [`data_block_linked_index_rows`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-nx/src/native/om/column_row.rs:125), [`data_block_target_index_rows`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-nx/src/native/om/column_row.rs:173).
+Sources: [`data_block_linked_index_rows`](../../../crates/cadmpeg-codec-nx/src/native/om/column_row.rs:125), [`data_block_target_index_rows`](../../../crates/cadmpeg-codec-nx/src/native/om/column_row.rs:173).
 
 **Evidence.** Both traverse indexed sections, derive storage/base offsets, locate the opening block, absolutize the frame, resolve control-index references, assign row ordinals, and collect records. Scanner and output wrapper differ.
 
@@ -230,7 +230,7 @@ Sources: [`data_block_linked_index_rows`](/home/pcurve/side2/cadmpeg/crates/cadm
 
 P3 · Duplicate / forwarding layer · Confidence: High duplication; medium refactor benefit
 
-Sources: [`class_definitions`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-nx/src/native/om.rs:2924), [`field_definitions`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-nx/src/native/om.rs:2988).
+Sources: [`class_definitions`](../../../crates/cadmpeg-codec-nx/src/native/om.rs:2924), [`field_definitions`](../../../crates/cadmpeg-codec-nx/src/native/om.rs:2988).
 
 **Evidence.** Both independently merge framed and indexed definitions into a BTreeMap keyed by entry/offset, prefer framed records, and construct the same ordinal/provenance/tail fields.
 
@@ -244,7 +244,7 @@ Sources: [`class_definitions`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-n
 
 P2 · Numerical · Confidence: High
 
-Sources: [`vertex.point_sum[0] +=`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-rhino/src/brep.rs:1323), [`accumulated.vertex.point = Point3`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-rhino/src/brep.rs:1366).
+Sources: [`vertex.point_sum[0] +=`](../../../crates/cadmpeg-codec-rhino/src/brep.rs:1323), [`accumulated.vertex.point = Point3`](../../../crates/cadmpeg-codec-rhino/src/brep.rs:1366).
 
 **Evidence.** The current accumulator and final mean expressions turn two identical endpoints (1e308,0,0) into (infinity,0,0). Their exact mean is the same finite endpoint.
 
@@ -258,7 +258,7 @@ Sources: [`vertex.point_sum[0] +=`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-co
 
 P3 · Duplicate / forwarding layer · Confidence: High duplication; medium refactor benefit
 
-Sources: [`optional_curve`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-rhino/src/morph.rs:189), [`optional_surface`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-rhino/src/morph.rs:217).
+Sources: [`optional_curve`](../../../crates/cadmpeg-codec-rhino/src/morph.rs:189), [`optional_surface`](../../../crates/cadmpeg-codec-rhino/src/morph.rs:217).
 
 **Evidence.** Both read an anonymous child, apply the same version gate, read a presence boolean, parse the payload, skip trailing child bytes, and advance the parent. Labels and the payload parser differ.
 
@@ -272,7 +272,7 @@ Sources: [`optional_curve`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-rhin
 
 P2 · Numerical · Confidence: High
 
-Sources: [`planar_arc_segments`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-sldprt/src/tessellation.rs:1664).
+Sources: [`planar_arc_segments`](../../../crates/cadmpeg-codec-sldprt/src/tessellation.rs:1664).
 
 **Evidence.** For span 1e-5, radius 1e12, and requested tolerance 1e-9, the cap is 4096 segments. Reported error is 0, while 2*r*sin(span/(4*n))^2 gives 7.4505805969e-7.
 
@@ -286,7 +286,7 @@ Sources: [`planar_arc_segments`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec
 
 P3 · Duplicate / forwarding layer · Confidence: High
 
-Sources: [`nurbs_seeded_surface_projection`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-sldprt/src/brep/graph.rs:4978).
+Sources: [`nurbs_seeded_surface_projection`](../../../crates/cadmpeg-codec-sldprt/src/brep/graph.rs:4978).
 
 **Evidence.** The wrapper forwards all three arguments unchanged to nurbs_surface_parameter_near_point and returns its result unchanged. Caller residual checks remain outside it.
 
@@ -300,7 +300,7 @@ Sources: [`nurbs_seeded_surface_projection`](/home/pcurve/side2/cadmpeg/crates/c
 
 P2 · Numerical · Confidence: High
 
-Sources: [`mesh_properties`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-step/src/reader/validation.rs:330).
+Sources: [`mesh_properties`](../../../crates/cadmpeg-codec-step/src/reader/validation.rs:330).
 
 **Evidence.** A closed tetrahedron with vertices (0,0,0),(2,0,0),(0,1,0),(0,0,1) has volume 1/3 and centroid (0.5,0.25,0.25). At translation (1e6,1e6,1e6), the routine switches to an area centroid with relative x=0.5833333333. At translation 1e9 it reports volume about 666666666.7.
 
@@ -316,7 +316,7 @@ Sources: [`mesh_properties`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-codec-ste
 
 P1 · Numerical · Confidence: High
 
-Sources: [`homogeneous_bezier_spans`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:269), [`rational_surface_patches_with_budget`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:325).
+Sources: [`homogeneous_bezier_spans`](../../../crates/cadmpeg-ir/src/eval.rs:269), [`rational_surface_patches_with_budget`](../../../crates/cadmpeg-ir/src/eval.rs:325).
 
 **Evidence.** For degree 2, knots [-1,-1,0,1,2,2] and poles (0,0), (1,1), (2,0), the decomposed midpoint has y=0.5; the spline has y=0.75. With knots [0,0,0,1,1,1,2,2,2] and x poles 0..5, the second span evaluates to x=3 instead of 4.
 
@@ -330,7 +330,7 @@ Sources: [`homogeneous_bezier_spans`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-
 
 P2 · Numerical · Confidence: High
 
-Sources: [`nurbs_surface_parameter_near_point`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1280).
+Sources: [`nurbs_surface_parameter_near_point`](../../../crates/cadmpeg-ir/src/eval.rs:1280).
 
 **Evidence.** A 1e-5 by 1e-5 bilinear plane, target (0.3e-5,0.4e-5,0), and seed (0,0) return (0,0), although one Newton step gives (0.3,0.4). The determinant is 1e-20 and is rejected against absolute machine epsilon.
 
@@ -344,7 +344,7 @@ Sources: [`nurbs_surface_parameter_near_point`](/home/pcurve/side2/cadmpeg/crate
 
 P2 · Numerical · Confidence: High
 
-Sources: [`nurbs_curve_speed_bound_about`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1780), [`nurbs_curve_parameter_near_point`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1622), [`nurbs_pcurve_contains_point`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:2203).
+Sources: [`nurbs_curve_speed_bound_about`](../../../crates/cadmpeg-ir/src/eval.rs:1780), [`nurbs_curve_parameter_near_point`](../../../crates/cadmpeg-ir/src/eval.rs:1622), [`nurbs_pcurve_contains_point`](../../../crates/cadmpeg-ir/src/eval.rs:2203).
 
 **Evidence.** The same unit line has speed bound Some(1) with weights [1,1], but None with [1e-200,1e-200]. minimum_weight.powi(2) underflows, producing 0/0. The pcurve containment path repeats this formula.
 
@@ -358,7 +358,7 @@ Sources: [`nurbs_curve_speed_bound_about`](/home/pcurve/side2/cadmpeg/crates/cad
 
 P2 · Numerical · Confidence: High
 
-Sources: [`map_nurbs_curve_parameter`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1957).
+Sources: [`map_nurbs_curve_parameter`](../../../crates/cadmpeg-ir/src/eval.rs:1957).
 
 **Evidence.** A periodic curve with domain [-1e308,-9e307] and finite parameter 1e308 returns Some(NaN): parameter-lower overflows before rem_euclid.
 
@@ -372,7 +372,7 @@ Sources: [`map_nurbs_curve_parameter`](/home/pcurve/side2/cadmpeg/crates/cadmpeg
 
 P2 · Numerical · Confidence: High
 
-Sources: [`nurbs_curve_parameter_near_point`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1622), [`nearest_boundary_witness`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:1914).
+Sources: [`nurbs_curve_parameter_near_point`](../../../crates/cadmpeg-ir/src/eval.rs:1622), [`nearest_boundary_witness`](../../../crates/cadmpeg-ir/src/eval.rs:1914).
 
 **Evidence.** For a unit X-axis line and point (0,1e-200,0), tolerance 0 returns the endpoint witness 0. The current squared-distance closure underflows to zero; the actual distance is 1e-200.
 
@@ -386,7 +386,7 @@ Sources: [`nurbs_curve_parameter_near_point`](/home/pcurve/side2/cadmpeg/crates/
 
 P2 · Numerical · Confidence: High
 
-Sources: [`scalar_sweep_law_differential`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:5027).
+Sources: [`scalar_sweep_law_differential`](../../../crates/cadmpeg-ir/src/eval.rs:5027).
 
 **Evidence.** At X=1, X/1e200 has derivative 0 instead of 1e-200. X/1e-200 returns None although its value and derivative, 1e200, are finite. The quotient rule squares the denominator.
 
@@ -400,7 +400,7 @@ Sources: [`scalar_sweep_law_differential`](/home/pcurve/side2/cadmpeg/crates/cad
 
 P2 · Numerical · Confidence: High
 
-Sources: [`scalar_unary_sweep_law_differential`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/eval.rs:5108).
+Sources: [`scalar_unary_sweep_law_differential`](../../../crates/cadmpeg-ir/src/eval.rs:5108).
 
 **Evidence.** TANH at value 20 and incoming derivative 1e20 returns derivative 0; the stable result is about 1699.341702. ARCSINH at value/derivative 1e200 returns derivative 0 instead of approximately 1. ARCOTH(1e20) returns value 0 instead of approximately 1e-20.
 
@@ -414,7 +414,7 @@ Sources: [`scalar_unary_sweep_law_differential`](/home/pcurve/side2/cadmpeg/crat
 
 P2 · Numerical · Confidence: High
 
-Sources: [`impl HelixPathConstruction`](/home/pcurve/side2/cadmpeg/crates/cadmpeg-ir/src/geometry.rs:1933).
+Sources: [`impl HelixPathConstruction`](../../../crates/cadmpeg-ir/src/geometry.rs:1933).
 
 **Evidence.** The current admission expressions accept orthogonal equal-radius vectors at radius 1, but reject them at finite radii 1e200 and 1e-200. Squared lengths overflow or underflow before the radius comparison.
 
