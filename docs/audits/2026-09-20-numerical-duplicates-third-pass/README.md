@@ -2,7 +2,7 @@
 
 33 new ranked entries: 22 numerical defect families and 11 consolidation candidates. All 21 crate directories were screened. No crate reached the requested limit of 80; no findings were omitted to meet it.
 
-This pass reports findings only. It does not implement repairs. Items already resolved by the [first audit](../2026-09-20-numerical-duplicates/resolutions.md) and [second audit](../2026-09-20-numerical-duplicates-followup/resolutions.md) are excluded. A separate remaining copy or owner is identified when a related problem was repaired previously.
+This document records the original findings. All 33 repairs and their verification are recorded in [the resolution report](resolutions.md). Items already resolved by the [first audit](../2026-09-20-numerical-duplicates/resolutions.md) and [second audit](../2026-09-20-numerical-duplicates-followup/resolutions.md) are excluded. A separate remaining copy or owner is identified when a related problem was repaired previously.
 
 Within each crate, correctness findings precede consolidation candidates. P2 means a demonstrated correctness issue with a material path or a parameter-scale trigger; P3 means a rare finite-range trigger or a maintenance opportunity. These are relative priorities, not a release-blocking determination. Duplicate entries do not claim a current output defect.
 

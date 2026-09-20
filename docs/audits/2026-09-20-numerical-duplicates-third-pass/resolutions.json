@@ -1,0 +1,373 @@
+[
+  {
+    "id": "ASM3-01",
+    "status": "fixed",
+    "resolution": "Unique cache scanning shares width, marker and ambiguity handling; curve and surface grammars stay separate.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-asm/src/nurbs/core.rs"
+    ],
+    "test_selection": "nurbs::"
+  },
+  {
+    "id": "CATIA3-01",
+    "status": "fixed",
+    "resolution": "Surface refinement calls the shared column-scaled least-squares solver.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-catia/src/families/standard/decode.rs"
+    ],
+    "test_selection": "anisotropic_surface_chart"
+  },
+  {
+    "id": "CATIA3-02",
+    "status": "fixed",
+    "resolution": "Rigid chart fitting scales centered coordinates before covariance; review also covers translated charts with small local spread.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-catia/src/families/freeform/mod.rs"
+    ],
+    "test_selection": "large_planar_sites"
+  },
+  {
+    "id": "CREO3-01",
+    "status": "fixed",
+    "resolution": "Line/circle intersection uses scaled roots and checks the returned point against the circle.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/decode/sketch/intersect.rs"
+    ],
+    "test_selection": "small_section_carriers"
+  },
+  {
+    "id": "CREO3-02",
+    "status": "fixed",
+    "resolution": "Circle tangency uses relative geometry and verifies both radial residuals.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/decode/sketch/intersect.rs"
+    ],
+    "test_selection": "small_section_carriers"
+  },
+  {
+    "id": "CREO3-03",
+    "status": "fixed",
+    "resolution": "Line intersection normalizes each direction before the angular rank check.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/decode/sketch/intersect.rs"
+    ],
+    "test_selection": "small_section_carriers"
+  },
+  {
+    "id": "CREO3-04",
+    "status": "fixed",
+    "resolution": "Profile line/arc and arc/arc predicates use the shared scaled planar solvers.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/decode/sweep/profiles.rs"
+    ],
+    "test_selection": "large_profile_circle"
+  },
+  {
+    "id": "CREO3-05",
+    "status": "fixed",
+    "resolution": "Cross-section selection, relocation and sorting share one collector without a new record trait or extra result allocation.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/container.rs"
+    ],
+    "test_selection": "container::tests"
+  },
+  {
+    "id": "CREO3-06",
+    "status": "fixed",
+    "resolution": "Replay ID agreement uses one iterator consensus function.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-creo/src/decode/feature_history/dependencies.rs"
+    ],
+    "test_selection": "decode::feature_history::dependencies"
+  },
+  {
+    "id": "F3D3-01",
+    "status": "fixed",
+    "resolution": "Segment intersection compares orientation signs; uncertain signs use exact products.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-f3d/src/design/geometry.rs"
+    ],
+    "test_selection": "scaled_planar_intersections"
+  },
+  {
+    "id": "F3D3-02",
+    "status": "fixed",
+    "resolution": "Both arc intersection paths share circle geometry; coincident-arc overlap retains its own policy.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-f3d/src/design/geometry.rs"
+    ],
+    "test_selection": "scaled_planar_intersections"
+  },
+  {
+    "id": "F3D3-03",
+    "status": "fixed",
+    "resolution": "Point distance uses hypot; segment projection scales direction and displacement independently.",
+    "implementation_commit": "409e437769",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-f3d/src/design/geometry.rs"
+    ],
+    "test_selection": "scaled_planar_intersections disparate_segment"
+  },
+  {
+    "id": "F3D3-04",
+    "status": "fixed",
+    "resolution": "Point and text decoding share design-stream selection and metadata association.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+    ],
+    "test_selection": "design::decode::sketch"
+  },
+  {
+    "id": "F3D3-05",
+    "status": "fixed",
+    "resolution": "Timestamp and optional generated ordinal share an entry and one target dispatch; source precedence and model-order numbering are preserved.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-f3d/src/writer/generate/attributes.rs"
+    ],
+    "test_selection": "writer::tests::source_less_bodies generated_f3d_rewrites_creation_timestamp"
+  },
+  {
+    "id": "IGES3-01",
+    "status": "fixed",
+    "resolution": "BRep and CSG checks call Point3::distance; the local squared-distance copy is removed.",
+    "implementation_commit": "13dfe81fd6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-iges/src/entities/evaluation.rs",
+      "crates/cadmpeg-codec-iges/src/entities/brep.rs",
+      "crates/cadmpeg-codec-iges/src/entities/csg.rs"
+    ],
+    "test_selection": "entities::brep::tests entities::csg::tests"
+  },
+  {
+    "id": "INVENTOR3-01",
+    "status": "fixed",
+    "resolution": "Sketch line agreement normalizes vectors before direction and displacement products.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-inventor/src/sketch.rs"
+    ],
+    "test_selection": "large_collinear_sketch"
+  },
+  {
+    "id": "NX3-01",
+    "status": "fixed",
+    "resolution": "Null-vector cofactors use row scaling and hypot; the chord fallback normalizes its tangent without raw squares.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-nx/src/decode/offset.rs"
+    ],
+    "test_selection": "intersection_null_vector"
+  },
+  {
+    "id": "NX3-02",
+    "status": "fixed",
+    "resolution": "Periodic lifting uses a finite remainder fallback and one implementation for offset and blend callers.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-nx/src/decode/offset.rs",
+      "crates/cadmpeg-codec-nx/src/decode/blend.rs"
+    ],
+    "test_selection": "periodic_lift"
+  },
+  {
+    "id": "NX3-03",
+    "status": "fixed",
+    "resolution": "Intersection enrichment and chart sampling use Point3::distance.",
+    "implementation_commit": "13dfe81fd6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-nx/src/intersection.rs"
+    ],
+    "test_selection": "intersection::tests"
+  },
+  {
+    "id": "NX3-04",
+    "status": "fixed",
+    "resolution": "Labeled and unlabeled operation visitors share section-link resolution and source offsets.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-nx/src/native/features.rs"
+    ],
+    "test_selection": "native::features"
+  },
+  {
+    "id": "NX3-05",
+    "status": "fixed",
+    "resolution": "Pattern and trim-surface predicates share absence-of-body-evidence logic.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-nx/src/decode/feature_completeness.rs"
+    ],
+    "test_selection": "feature_completeness"
+  },
+  {
+    "id": "RHINO3-01",
+    "status": "fixed",
+    "resolution": "Plane parameter mapping preserves endpoints and uses a scaled ratio and interpolation.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-rhino/src/surfaces.rs"
+    ],
+    "test_selection": "plane_parameter_maps"
+  },
+  {
+    "id": "RHINO3-02",
+    "status": "fixed",
+    "resolution": "Periodic knot gaps and their tolerance are compared in a scaled frame.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-rhino/src/surfaces.rs"
+    ],
+    "test_selection": "large_nonperiodic"
+  },
+  {
+    "id": "RHINO3-03",
+    "status": "fixed",
+    "resolution": "Legacy curve and surface objects use one RhinoIO envelope reader.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-rhino/src/legacy.rs"
+    ],
+    "test_selection": "legacy::"
+  },
+  {
+    "id": "SLDPRT3-01",
+    "status": "fixed",
+    "resolution": "Grid keys preserve coordinates outside i64 range; integer transforms explicitly refuse them. Hole and sketch keys share the grid owner.",
+    "implementation_commit": "48660eb47d",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/transforms.rs",
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_loci.rs",
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs"
+    ],
+    "test_selection": "resolved_features::"
+  },
+  {
+    "id": "SLDPRT3-02",
+    "status": "fixed",
+    "resolution": "Parallel line distance compares unit directions, and the entity form delegates to the array geometry owner.",
+    "implementation_commit": "48660eb47d",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs",
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/relation_loci.rs"
+    ],
+    "test_selection": "resolved_features::"
+  },
+  {
+    "id": "SLDPRT3-03",
+    "status": "fixed",
+    "resolution": "Ellipse membership rejects nonfinite displacement and residual calculations.",
+    "implementation_commit": "48660eb47d",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-sldprt/src/resolved_features/typed_relations.rs"
+    ],
+    "test_selection": "resolved_features::"
+  },
+  {
+    "id": "SLDPRT3-04",
+    "status": "fixed",
+    "resolution": "Configuration state hashes share keyed-record ordering and hashing with unchanged serialized inputs.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-sldprt/src/history/hash.rs"
+    ],
+    "test_selection": "history::hash"
+  },
+  {
+    "id": "STEP3-01",
+    "status": "fixed",
+    "resolution": "Similarity checks compare relative lengths and normalized dot products in 2D and 3D.",
+    "implementation_commit": "c13aa55bf4",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-step/src/geometry.rs"
+    ],
+    "test_selection": "small_shears"
+  },
+  {
+    "id": "STEP3-02",
+    "status": "fixed",
+    "resolution": "Geometry and PMI readers use ValueExt::typed_number; plain-number parsing keeps its original admission policy.",
+    "implementation_commit": "cdc4e33fc6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-codec-step/src/reader/geometry.rs",
+      "crates/cadmpeg-codec-step/src/reader/pmi.rs"
+    ],
+    "test_selection": "reader::geometry::tests reader::pmi::tests"
+  },
+  {
+    "id": "IR3-01",
+    "status": "fixed",
+    "resolution": "Curve inversion, support separation and geometric validation use the shared hypot-based point distance.",
+    "implementation_commit": "13dfe81fd6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-ir/src/eval.rs",
+      "crates/cadmpeg-ir/src/validate/geometry_consistency.rs"
+    ],
+    "test_selection": "analytic_line_search numerical_"
+  },
+  {
+    "id": "IR3-02",
+    "status": "fixed",
+    "resolution": "Eight inverse and reciprocal hyperbolic laws retain extended-range chain derivatives and stable values. Review also covers subnormal ARCCSCH arguments.",
+    "implementation_commit": "13dfe81fd6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-ir/src/eval.rs"
+    ],
+    "test_selection": "inverse_laws reciprocal_hyperbolic inverse_cosecant_hyperbolic"
+  },
+  {
+    "id": "IR3-03",
+    "status": "fixed",
+    "resolution": "Carrier reachability uses the existing recursive law-curve collector.",
+    "implementation_commit": "13dfe81fd6",
+    "review_commit": "dcf60f1f4e",
+    "owners": [
+      "crates/cadmpeg-ir/src/validate/carriers_parameterization.rs"
+    ],
+    "test_selection": "validate::carriers_parameterization::tests"
+  }
+]

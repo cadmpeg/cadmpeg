@@ -1,0 +1,10 @@
+error[E0432]: unresolved imports `cadmpeg_ir::math::Transform`, `cadmpeg_ir::math::Transform2`
+  --> crates/cadmpeg-codec-step/src/geometry/support_tests.rs:72:28
+   |
+72 |     use cadmpeg_ir::math::{Transform, Transform2};
+   |                            ^^^^^^^^^  ^^^^^^^^^^ no `Transform2` in `math`
+   |                            |
+   |                            no `Transform` in `math`
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `cadmpeg-codec-step` (lib test) due to 1 previous error
