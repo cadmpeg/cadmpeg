@@ -1540,7 +1540,7 @@ pub(super) fn normalize_indexed_curve_entities(lane: &mut FeatureInputLane) {
     }
 }
 
-pub(super) fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
+fn bind_resolved_curve_vertices(lane: &mut FeatureInputLane) {
     let selected_axis_endpoints = {
         let markers_by_id = lane
             .sketch_entities

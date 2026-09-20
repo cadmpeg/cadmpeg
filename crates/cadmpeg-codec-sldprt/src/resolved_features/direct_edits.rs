@@ -19,7 +19,7 @@ const EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12: f64 = 1.0e-12;
 pub(super) struct MoveBodyTranslationRecord {
     pub(super) selection_offset: usize,
     pub(super) local_body_ids: Vec<u32>,
-    pub(super) translation_m: Vector3,
+    translation_m: Vector3,
 }
 
 pub(super) fn move_body_translation_record(

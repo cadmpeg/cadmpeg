@@ -68,7 +68,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     resolved
 }
 
-pub(super) fn resolve_operand_marker<'a>(
+fn resolve_operand_marker<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
     address: u16,
@@ -76,7 +76,7 @@ pub(super) fn resolve_operand_marker<'a>(
     resolve_operand_marker_excluding(entities, kind, address, &HashSet::new())
 }
 
-pub(super) fn resolve_operand_marker_excluding<'a>(
+fn resolve_operand_marker_excluding<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
     address: u16,

@@ -3261,7 +3261,7 @@ pub(super) fn resolved_marker_locus(
     unique_locus(&linked)
 }
 
-pub(super) fn unique_locus(loci: &[SketchLocus]) -> Option<SketchLocus> {
+fn unique_locus(loci: &[SketchLocus]) -> Option<SketchLocus> {
     let [locus] = loci else {
         return None;
     };

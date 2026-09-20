@@ -134,7 +134,7 @@ pub(crate) enum SldprtLossCode {
 
 impl SldprtLossCode {
     /// Every code, in declaration order.
-    pub(crate) const ALL: &'static [SldprtLossCode] = &[
+    const ALL: &'static [SldprtLossCode] = &[
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -187,7 +187,7 @@ impl SldprtLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    pub(crate) const fn code(self) -> &'static str {
+    const fn code(self) -> &'static str {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
@@ -242,7 +242,7 @@ impl SldprtLossCode {
 
     /// The severity of this loss.
     #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::GeometryParasolidNotTransferred
             | Self::TopologyGraphNotTransferred

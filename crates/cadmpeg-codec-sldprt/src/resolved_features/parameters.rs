@@ -263,7 +263,7 @@ pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) 
     .then_some(header_offset + VALUE_ONLY_SCALAR_HEADER.len())
 }
 
-pub(super) fn native_scalar_matches_discrete_parameter(
+fn native_scalar_matches_discrete_parameter(
     feature: &crate::records::Feature,
     name: &str,
     expression: &str,

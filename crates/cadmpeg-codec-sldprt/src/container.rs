@@ -104,7 +104,7 @@ fn is_bmp_thumbnail(payload: &[u8]) -> bool {
 /// Decode a nibble-swapped section name.
 ///
 /// Returns `None` when any decoded byte falls outside printable ASCII.
-pub(crate) fn nibble_swap_name(raw: &[u8]) -> Option<String> {
+fn nibble_swap_name(raw: &[u8]) -> Option<String> {
     let mut s = String::with_capacity(raw.len());
     for &b in raw {
         let swapped = b.rotate_left(4);
@@ -245,7 +245,7 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn display_name(self) -> String {
+    fn display_name(self) -> String {
         self.source_stream().as_str().to_owned()
     }
 
@@ -1000,9 +1000,7 @@ pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> 
 /// Return the active configuration's unique manifest identity, when one
 /// manifest row provides it. A manifest with zero or several `YES` rows is
 /// deliberately not an index source.
-pub(crate) fn manifest_active_configuration(
-    scan: &ContainerScan<'_>,
-) -> Option<(usize, Option<String>)> {
+fn manifest_active_configuration(scan: &ContainerScan<'_>) -> Option<(usize, Option<String>)> {
     scan.solidworks.manifest_active_configuration.unique()
 }
 

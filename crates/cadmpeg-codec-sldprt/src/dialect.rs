@@ -96,7 +96,7 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
 /// carrying no `swSolidWorks` XML payload at all. The value is the attribute
 /// text exactly as written, including declarations that do not read as a
 /// number.
-pub(crate) const DECLARED_SW_VERSION: &str = "sw_version";
+const DECLARED_SW_VERSION: &str = "sw_version";
 
 /// One row of `docs/dialects.toml` under the `sldprt` namespace.
 ///
@@ -135,7 +135,7 @@ impl LayerClassification {
 
 /// Embedded Parasolid schema rows this codec reads with their own declared
 /// grammar. Every other schema is recovered on the kernel's residual path.
-pub(crate) const VERIFIED_KERNELS: [DialectId; 3] = [
+const VERIFIED_KERNELS: [DialectId; 3] = [
     cadmpeg_core::dialect_id!("parasolid:sch-sw-33103"),
     cadmpeg_core::dialect_id!("parasolid:sch-sw-32001"),
     cadmpeg_core::dialect_id!("parasolid:format-13006"),
@@ -177,7 +177,7 @@ pub(crate) fn classify_layers(scan: &ContainerScan<'_>) -> LayerClassification {
 
 impl SldprtDialect {
     /// Every dialect identity this enum can name.
-    pub(crate) const ALL: [Self; 3] = [
+    const ALL: [Self; 3] = [
         Self::SwVersionPre12000,
         Self::SwVersion12000Plus,
         Self::Unknown,
@@ -251,7 +251,7 @@ impl SldprtDialect {
     /// The read is [`crate::container::declared_sw_version`], so the retained
     /// declaration has one extraction and one report location.
     #[cfg(test)]
-    pub(crate) fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
+    fn classify_scan(scan: &ContainerScan<'_>) -> DialectMatch {
         Self::classify(crate::container::declared_sw_version(scan))
     }
 }
@@ -262,7 +262,7 @@ impl SldprtDialect {
 /// this reads that field rather than reclassifying. The biconditional the
 /// decode policy requires is therefore structural: the note charged and the
 /// admission reported come from one value, not from two authors agreeing.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     match matched.admission() {
         Admission::Admitted | Admission::Refused => None,
         Admission::Unverified { .. } | Admission::Residual => {
@@ -292,7 +292,7 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 }
 
 /// Losses charged by every unverified layer in a classified document.
-pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
+fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
     layers.iter().filter_map(dialect_loss).collect()
 }
 

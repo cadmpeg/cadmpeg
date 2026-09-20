@@ -2117,7 +2117,7 @@ fn has_core_tessellation_channels(
             && (normals.item_size(), normals.kind()) == (12, 100))
 }
 
-pub(super) fn sequential_tessellation(
+fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
     if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
@@ -3686,7 +3686,7 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
         bef64(out, *value);
     }
 }
-pub(crate) fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
+fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
     parasolid_stream_named(body, schema, "partition body")
 }
 

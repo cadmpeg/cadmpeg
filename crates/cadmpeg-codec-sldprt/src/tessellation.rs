@@ -83,17 +83,17 @@ impl Default for Mesh {
 
 impl Mesh {
     /// Number of vertices the strips span.
-    pub(crate) fn vertex_count(&self) -> usize {
+    fn vertex_count(&self) -> usize {
         self.mesh.vertex_count()
     }
 
     /// Number of triangles the strips expand to.
-    pub(crate) fn triangle_count(&self) -> usize {
+    fn triangle_count(&self) -> usize {
         self.mesh.triangle_count()
     }
 
     /// Number of strips in the mesh.
-    pub(crate) fn strip_count(&self) -> usize {
+    fn strip_count(&self) -> usize {
         self.mesh.strip_lengths().len()
     }
 
@@ -115,7 +115,7 @@ pub(crate) struct ByteRange {
 
 impl ByteRange {
     /// The interval `start..end`, when it is ordered.
-    pub(crate) fn new(start: usize, end: usize) -> Option<Self> {
+    fn new(start: usize, end: usize) -> Option<Self> {
         (start <= end).then_some(Self { start, end })
     }
 
@@ -130,7 +130,7 @@ impl ByteRange {
     }
 
     /// This interval truncated at `end`, empty when `end` precedes its start.
-    pub(crate) fn truncated(self, end: usize) -> Self {
+    fn truncated(self, end: usize) -> Self {
         Self {
             start: self.start,
             end: end.min(self.end).max(self.start),
@@ -567,7 +567,7 @@ pub(crate) fn section_display_faces(
     Ok(faces)
 }
 
-pub(crate) fn section_meshes(section: Section<'_>) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
+fn section_meshes(section: Section<'_>) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
     Ok(section_display_faces(section)?
         .into_iter()
         .map(|face| face.mesh)
@@ -728,9 +728,7 @@ fn persistent_surface_references(
     references
 }
 
-pub(crate) fn section_summary(
-    section: Section<'_>,
-) -> Result<Option<Summary>, cadmpeg_core::CodecError> {
+fn section_summary(section: Section<'_>) -> Result<Option<Summary>, cadmpeg_core::CodecError> {
     let meshes = section_meshes(section)?;
     Ok((!meshes.is_empty()).then(|| Summary {
         vertices: meshes.iter().map(Mesh::vertex_count).sum(),

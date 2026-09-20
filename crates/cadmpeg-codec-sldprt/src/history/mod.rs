@@ -48,7 +48,7 @@ fn keyed_attributes(
 ///
 /// Composed from the two integers, so the key is key text by construction and
 /// the projection recovers it from the id without a fallible re-parse.
-pub(crate) fn history_record_key(source: usize, ordinal: usize) -> cadmpeg_ir::ids::IdentityKey {
+fn history_record_key(source: usize, ordinal: usize) -> cadmpeg_ir::ids::IdentityKey {
     cadmpeg_ir::ids::IdentityKey::from(source).colon(ordinal)
 }
 

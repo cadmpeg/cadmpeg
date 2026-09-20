@@ -2038,7 +2038,7 @@ pub(super) fn compact_legacy_object_line_endpoints<'a>(
         .then_some(endpoints)
 }
 
-pub(super) fn extended_wide_selected_axis_endpoints<'a>(
+fn extended_wide_selected_axis_endpoints<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -2153,7 +2153,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     (endpoints[0].coordinates_m != endpoints[1].coordinates_m).then_some(endpoints)
 }
 
-pub(super) fn one_based_point_roster_line_endpoint_markers<'a>(
+fn one_based_point_roster_line_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -2204,7 +2204,7 @@ pub(super) fn one_based_point_roster_line_endpoint_markers<'a>(
     (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
 }
 
-pub(super) fn legacy_point_roster_line_endpoint_markers<'a>(
+fn legacy_point_roster_line_endpoint_markers<'a>(
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -2377,7 +2377,7 @@ pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: u
         && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
-pub(super) fn current_coordinate_linked_line_endpoints<'a>(
+fn current_coordinate_linked_line_endpoints<'a>(
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -2430,7 +2430,7 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
     endpoints.next().is_none().then_some([line, endpoint])
 }
 
-pub(super) fn coordinate_centered_line_endpoints<'a>(
+fn coordinate_centered_line_endpoints<'a>(
     payload: &[u8],
     line: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
@@ -2499,7 +2499,7 @@ fn coordinate_centered_line_center(payload: &[u8], offset: usize) -> Option<[f64
     None
 }
 
-pub(super) fn consecutive_legacy_profile_line_endpoints<'a>(
+fn consecutive_legacy_profile_line_endpoints<'a>(
     payload: &[u8],
     line: &'a SketchInputEntity,
     markers: &[&'a SketchInputEntity],

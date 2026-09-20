@@ -54,15 +54,15 @@ impl RelationScalars {
         })
     }
 
-    pub(crate) fn refs(&self) -> &[String] {
+    pub(super) fn refs(&self) -> &[String] {
         &self.refs
     }
 
-    pub(crate) fn parameter(&self) -> Option<&str> {
+    pub(super) fn parameter(&self) -> Option<&str> {
         self.parameter.map(|index| self.refs[index].as_str())
     }
 
-    pub(crate) fn display(&self) -> Option<&str> {
+    pub(super) fn display(&self) -> Option<&str> {
         self.display.map(|index| self.refs[index].as_str())
     }
 
@@ -87,7 +87,7 @@ impl RelationScalars {
 }
 
 #[derive(Deserialize)]
-pub(super) struct Wire {
+struct Wire {
     scalar_refs: Vec<String>,
     #[serde(default, deserialize_with = "deserialize_parameter_scalar_ref")]
     parameter_scalar_ref: Option<String>,

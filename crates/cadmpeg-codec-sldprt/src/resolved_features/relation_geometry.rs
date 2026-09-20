@@ -44,10 +44,10 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
-pub(crate) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
-pub(crate) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
-pub(crate) const RELATION_PARAMETER_ROLE_REFERENCE: &str = "reference";
-pub(crate) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
+pub(super) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
+pub(super) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
+pub(super) const RELATION_PARAMETER_ROLE_REFERENCE: &str = "reference";
+pub(super) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
 
 pub(crate) fn is_reference_relation_parameter(
     parameter: &cadmpeg_ir::features::DesignParameter,
@@ -773,7 +773,7 @@ pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
     format!("{feature}:solver-line:{index}")
 }
 
-pub(super) fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
+fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
         FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7)
@@ -2643,7 +2643,7 @@ pub(crate) fn owned_relation_parameters<'a>(
     owned
 }
 
-pub(super) fn relation_display_scalar<'a>(
+fn relation_display_scalar<'a>(
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputScalar> {

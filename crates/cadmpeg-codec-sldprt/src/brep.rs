@@ -44,7 +44,7 @@ pub(crate) mod topology;
 pub(crate) mod typed;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
-pub(crate) const LEN_TO_MM: f64 = 1000.0;
+const LEN_TO_MM: f64 = 1000.0;
 
 pub(crate) mod feature_source;
 pub(crate) mod graph;
@@ -82,15 +82,15 @@ fn unit(v: &[f64]) -> Vector3 {
 /// marker:u8(0x2b|0x2d) values:f64[n]`; deltas replace each reference with a
 /// `[hi][lo][01]` triple ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)). Offsets below are measured from the
 /// tag byte; the optional `0xff` shifts everything after it by one.
-pub(crate) mod tag {
-    pub(crate) const LINE: u8 = 0x1e;
-    pub(crate) const CIRCLE: u8 = 0x1f;
-    pub(crate) const ELLIPSE: u8 = 0x20;
-    pub(crate) const PLANE: u8 = 0x32;
-    pub(crate) const CYLINDER: u8 = 0x33;
-    pub(crate) const CONE: u8 = 0x34;
-    pub(crate) const SPHERE: u8 = 0x35;
-    pub(crate) const TORUS: u8 = 0x36;
+mod tag {
+    pub(super) const LINE: u8 = 0x1e;
+    pub(super) const CIRCLE: u8 = 0x1f;
+    pub(super) const ELLIPSE: u8 = 0x20;
+    pub(super) const PLANE: u8 = 0x32;
+    pub(super) const CYLINDER: u8 = 0x33;
+    pub(super) const CONE: u8 = 0x34;
+    pub(super) const SPHERE: u8 = 0x35;
+    pub(super) const TORUS: u8 = 0x36;
 }
 
 const COMPACT_REF_COUNT: usize = 5;
@@ -163,24 +163,24 @@ pub(crate) enum Carrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CurveCarrier {
-    pub(crate) attr: u16,
-    pub(crate) offset: usize,
+    attr: u16,
+    offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
-    pub(crate) parameter_range: Option<[f64; 2]>,
+    parameter_range: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct SurfaceCarrier {
-    pub(crate) attr: u16,
-    pub(crate) offset: usize,
+    attr: u16,
+    offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: SurfaceGeometry,
-    pub(crate) orientation_reversed: bool,
+    orientation_reversed: bool,
 }
 
 impl SurfaceCarrier {
-    pub(crate) fn frame(&self) -> Option<(Vector3, Vector3)> {
+    fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let normal = plane_surface.normal();

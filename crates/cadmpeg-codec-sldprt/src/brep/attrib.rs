@@ -41,7 +41,7 @@ const ATOM_LOCAL: usize = 4;
 
 /// One face's producing-feature identity.
 #[derive(Debug, Clone)]
-pub(crate) struct RawFaceAtom {
+pub(super) struct RawFaceAtom {
     /// Attribute id of the face bridge record owning the attribute.
     pub(super) face_attr: u16,
     pub(super) identity: Option<super::PersistentFaceIdentity>,

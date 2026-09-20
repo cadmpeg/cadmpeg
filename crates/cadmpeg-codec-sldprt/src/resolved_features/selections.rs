@@ -184,7 +184,7 @@ pub(crate) fn compact_body_retention_mode_for_selection(
     compact_body_retention_mode(&lane.native_payload, start, end, token)
 }
 
-pub(super) fn compact_body_retention_mode(
+fn compact_body_retention_mode(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -220,12 +220,7 @@ fn compact_body_state_id(payload: &[u8], offset: usize, token: [u8; 2]) -> Optio
     .then_some(body_id)
 }
 
-pub(super) fn compact_body_state_ids(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    token: u16,
-) -> Vec<u32> {
+fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
     const HEADER_LEN: usize = 83;
     let token = token.to_le_bytes();
     let mut result = Vec::new();
@@ -999,7 +994,7 @@ fn compact_surface_selection_candidates_for_class(
         .collect()
 }
 
-pub(super) fn history_features_with_object_sources(
+fn history_features_with_object_sources(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<crate::records::Feature> {
@@ -1033,7 +1028,7 @@ pub(crate) fn enrich_feature_object_sources(
     }
 }
 
-pub(super) fn cosmetic_thread_cylinder_references(
+fn cosmetic_thread_cylinder_references(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_start: usize,
@@ -1071,7 +1066,7 @@ pub(super) fn cosmetic_thread_cylinder_references(
 /// `moEdgeRef_c` child. Restrict both scans to that wrapper and keep the normal
 /// single-candidate check in `compact_surface_selections`; unrelated compact
 /// vectors in the thread's other children must not become face selections.
-pub(super) fn cosmetic_thread_component_references(
+fn cosmetic_thread_component_references(
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
@@ -1244,7 +1239,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
         .collect()
 }
 
-pub(super) fn cosmetic_thread_diameter_child_tail(
+fn cosmetic_thread_diameter_child_tail(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
 ) -> Option<std::ops::Range<usize>> {
@@ -1283,7 +1278,7 @@ pub(super) fn cosmetic_thread_diameter_child_tail(
     (start < end).then_some(start..end)
 }
 
-pub(super) fn cosmetic_thread_cylinder_reference_at(
+fn cosmetic_thread_cylinder_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
@@ -1324,7 +1319,7 @@ fn cosmetic_thread_cylinder_reference_marker_layout_at(
         })
 }
 
-pub(super) fn component_face_reference_at(
+fn component_face_reference_at(
     payload: &[u8],
     body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
@@ -1452,7 +1447,7 @@ pub(super) fn component_face_reference_in_record(
     Some(reference.clone())
 }
 
-pub(super) fn compact_sketch_surface_component_path_at(
+fn compact_sketch_surface_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1496,7 +1491,7 @@ pub(super) fn compact_sketch_surface_component_path_at(
     }
 }
 
-pub(super) fn compact_surface_selection_at(
+fn compact_surface_selection_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1529,7 +1524,7 @@ pub(super) fn compact_surface_selection_at(
     (!components.is_empty()).then_some(components)
 }
 
-pub(crate) fn compact_surface_reference_at(
+fn compact_surface_reference_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1792,7 +1787,7 @@ pub(super) fn compact_mixed_component_path(
     Some((components, cursor))
 }
 
-pub(super) fn counted_surface_component_path_at(
+fn counted_surface_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -1897,7 +1892,7 @@ fn inline_mirror_surface_paths(
     result
 }
 
-pub(super) fn inline_surface_reference_at(
+fn inline_surface_reference_at(
     payload: &[u8],
     offset: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
@@ -2173,7 +2168,7 @@ pub(crate) fn compact_edge_component_path_at(
         })
 }
 
-pub(crate) fn compact_component_reference_list_at(
+fn compact_component_reference_list_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
@@ -2269,7 +2264,7 @@ fn compact_component_reference_list(
     (!require_distinct_framing || has_reference_framing).then_some(references)
 }
 
-pub(crate) fn variable_fillet_control_references(
+pub(super) fn variable_fillet_control_references(
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_end: usize,
@@ -2316,7 +2311,7 @@ pub(crate) fn variable_fillet_control_references(
     (!result.is_empty()).then_some(result)
 }
 
-pub(crate) fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
+fn variable_fillet_dimension_index(name: &str) -> Option<usize> {
     let suffix = name.strip_prefix("D0")?;
     let index = if suffix.is_empty() {
         0
@@ -2721,7 +2716,7 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
     (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
 }
 
-pub(super) fn compact_body_selection_vector(
+fn compact_body_selection_vector(
     payload: &[u8],
     base: usize,
     next_object_token: Option<u16>,

@@ -58,7 +58,7 @@ pub(super) struct SketchPlaneFrame {
 }
 
 impl SketchPlaneFrame {
-    pub(super) fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
+    fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
         Self {
             origin,
             normal,
@@ -97,7 +97,7 @@ fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlane
     }
 }
 
-pub(super) fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
+fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
@@ -481,15 +481,12 @@ pub(super) fn slot_curve_and_center_indices(
     ))
 }
 
-pub(super) struct SlotReferenceLayout {
+struct SlotReferenceLayout {
     indices: [usize; 6],
     continuation_stride: Option<usize>,
 }
 
-pub(super) fn slot_curve_reference_cells(
-    payload: &[u8],
-    offset: usize,
-) -> Option<SlotReferenceLayout> {
+fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotReferenceLayout> {
     if marker_native_code(payload, offset).is_none()
         || payload.get(offset + 23..offset + 29) != Some(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00])
         || payload.get(offset + 31..offset + 39)
@@ -2015,7 +2012,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     Some(*candidate)
 }
 
-pub(super) fn ordered_compact_line_profile(
+fn ordered_compact_line_profile(
     lines: &[(
         SketchEntityId,
         &SketchInputEntity,

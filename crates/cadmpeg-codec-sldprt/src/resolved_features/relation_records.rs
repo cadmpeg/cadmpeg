@@ -149,7 +149,7 @@ fn relation_scope_end(
     }
 }
 
-pub(super) fn relation_declaration_candidates<'a>(
+fn relation_declaration_candidates<'a>(
     classes: &'a [FeatureInputClass],
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
@@ -1951,7 +1951,7 @@ fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
     }
 }
 
-pub(super) fn relation_signature(
+fn relation_signature(
     family: FeatureInputRelationFamily,
     operands: &[FeatureInputOperand],
 ) -> bool {
@@ -2026,7 +2026,7 @@ pub(super) fn relation_signature(
     }
 }
 
-pub(super) fn is_solver_point_operand(kind: FeatureInputOperandKind) -> bool {
+fn is_solver_point_operand(kind: FeatureInputOperandKind) -> bool {
     matches!(
         kind,
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_8100 | NativeOperandTag::TAG_820F)
@@ -2269,7 +2269,7 @@ pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Op
     )
 }
 
-pub(super) fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
     let angle = line_line_angle(first, second)?;
     Some(angle.min(std::f64::consts::PI - angle))
 }
@@ -2627,7 +2627,7 @@ pub(super) fn shifted_value_only_scalar_trailer(payload: &[u8], trailer_offset: 
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
 }
 
-pub(super) fn shifted_value_only_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
+fn shifted_value_only_scalar_layout(payload: &[u8], trailer_offset: usize) -> bool {
     shifted_value_only_scalar_trailer(payload, trailer_offset)
         && payload
             .get(trailer_offset + 35..trailer_offset + 47)

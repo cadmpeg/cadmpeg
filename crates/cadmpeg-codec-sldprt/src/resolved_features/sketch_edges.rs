@@ -342,7 +342,7 @@ pub(super) fn project_point(
 }
 
 #[cfg(test)]
-pub(super) fn dot(left: Vector3, right: Vector3) -> f64 {
+fn dot(left: Vector3, right: Vector3) -> f64 {
     left.dot(right)
 }
 

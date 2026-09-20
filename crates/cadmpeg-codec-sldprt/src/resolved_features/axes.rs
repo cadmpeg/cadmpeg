@@ -471,7 +471,7 @@ pub(super) fn compact_line_reference_directions(
     directions
 }
 
-pub(super) fn revolution_line_reference_inputs(
+fn revolution_line_reference_inputs(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
@@ -1176,7 +1176,7 @@ pub(crate) fn bind_profile_revolution_axes(
     }
 }
 
-pub(super) fn profile_roster_construction_axis(
+fn profile_roster_construction_axis(
     lane: &FeatureInputLane,
     profile_native: &str,
     sketch: &Sketch,
@@ -1346,7 +1346,7 @@ fn profile_generated_surface_axis(
     Some(axis)
 }
 
-pub(super) fn common_generated_surface_axis(
+fn common_generated_surface_axis(
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     const DIRECTION_TOLERANCE: f64 = 1e-9;
@@ -1438,7 +1438,7 @@ pub(super) fn common_generated_surface_axis(
     })
 }
 
-pub(super) fn profile_roster_origin_axis_endpoints(
+fn profile_roster_origin_axis_endpoints(
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
@@ -1532,7 +1532,7 @@ pub(super) fn profile_roster_origin_axis_endpoints(
     Some(**axis)
 }
 
-pub(super) fn profile_roster_principal_axis_endpoints(
+fn profile_roster_principal_axis_endpoints(
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
@@ -1710,7 +1710,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .then_some(endpoints)
 }
 
-pub(super) fn bounded_profile_axis_endpoints(
+fn bounded_profile_axis_endpoints(
     profile_native: &str,
     markers: &[&SketchInputEntity],
     curve_endpoints: &HashSet<&str>,

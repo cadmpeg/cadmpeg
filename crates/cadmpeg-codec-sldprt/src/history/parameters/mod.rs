@@ -385,7 +385,7 @@ fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
 }
 
 #[cfg(test)]
-pub(crate) fn parameter_aliases(
+pub(super) fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
@@ -493,7 +493,7 @@ impl ParameterAliases {
     }
 
     #[cfg(test)]
-    pub(crate) fn materialize(
+    pub(super) fn materialize(
         &self,
         owner: Option<&FeatureId>,
     ) -> HashMap<String, Option<ParameterId>> {

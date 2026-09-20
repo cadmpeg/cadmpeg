@@ -11,7 +11,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) fn component_path_features(
+pub(super) fn component_path_features(
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
 ) -> Vec<String> {
@@ -91,7 +91,7 @@ pub(crate) fn surface_selection_producer_features(
     producers
 }
 
-pub(crate) fn component_path_terminal_feature(
+pub(super) fn component_path_terminal_feature(
     components: &[FeatureInputComponentPathEntry],
     features: &[crate::records::Feature],
 ) -> Option<String> {
@@ -341,7 +341,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
 }
 
-pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
+pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
     native_object_class(feature.input_class.as_deref().unwrap_or_default())
         == NativeClassKind::ProfileFeature
         || (feature.input_class.is_none()
@@ -349,7 +349,7 @@ pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bo
             && feature.source_value().is_some_and(|source| source != 0))
 }
 
-pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
+pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     profile: &crate::records::Feature,
     objects: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> bool {

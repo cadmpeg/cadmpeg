@@ -85,7 +85,7 @@ mod endpoints;
 
 pub(crate) mod hashes;
 
-pub(crate) mod helix;
+mod helix;
 
 pub(crate) mod holes;
 

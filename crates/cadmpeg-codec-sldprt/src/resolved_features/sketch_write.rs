@@ -826,7 +826,7 @@ fn lift_point(point: Point2, origin: Point3, u_axis: Vector3, v_axis: Vector3) -
     )
 }
 
-pub(super) fn distance(left: Point3, right: Point3) -> f64 {
+fn distance(left: Point3, right: Point3) -> f64 {
     (left.x - right.x)
         .hypot(left.y - right.y)
         .hypot(left.z - right.z)

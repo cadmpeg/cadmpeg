@@ -20,7 +20,7 @@ pub(crate) fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) 
     b
 }
 
-pub(crate) const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
 pub(crate) const DIRTY_TERMINAL_KNOT: [u8; 8] = 0x7ff8_0000_0000_0001u64.to_be_bytes();
 
@@ -73,12 +73,7 @@ pub(crate) fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> 
 }
 
 /// A compact type-56 constant-radius rolling-ball blend.
-pub(crate) fn blend_surface_carrier(
-    attr: u16,
-    supports: [u16; 2],
-    spine: u16,
-    signed_radius: f64,
-) -> Vec<u8> {
+fn blend_surface_carrier(attr: u16, supports: [u16; 2], spine: u16, signed_radius: f64) -> Vec<u8> {
     let mut bytes = vec![0x00, 0x38];
     be16(&mut bytes, attr);
     be32(&mut bytes, 0);
@@ -129,7 +124,7 @@ pub(crate) fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8>
     b
 }
 
-pub(crate) fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
+fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1e];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -222,7 +217,7 @@ pub(crate) fn torus_carrier(
     b
 }
 
-pub(crate) fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
+fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x35];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -378,7 +373,7 @@ pub(crate) fn u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
     b
 }
 
-pub(crate) fn remove_array_type_markers(bytes: &mut Vec<u8>) {
+fn remove_array_type_markers(bytes: &mut Vec<u8>) {
     let mut offset = 0;
     while offset + 2 < bytes.len() {
         if bytes[offset] == 0
@@ -441,7 +436,7 @@ pub(crate) fn typed_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16)
     bytes
 }
 
-pub(crate) fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let mult_attr = descriptor_attr + 2;
     let knot_attr = descriptor_attr + 3;
@@ -575,7 +570,7 @@ pub(crate) fn compact_f64_array(attr: u16, values: &[f64]) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn compact_u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
+fn compact_u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
     let mut bytes = vec![
         0,
         u8::try_from(values.len()).expect("compact u16 array count"),
@@ -829,7 +824,7 @@ pub(crate) fn coedge(
     b
 }
 
-pub(crate) fn tripled_coedge(
+fn tripled_coedge(
     attr: u16,
     owner_loop: u16,
     next: u16,
@@ -854,11 +849,7 @@ pub(crate) fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
 /// Bare edge-use `refs[0]` names the forward coedge that stores the edge
 /// direction. A zero canonical reference is reserved for compact fixtures
 /// whose unique forward coedge supplies the same relation.
-pub(crate) fn edge_use_with_canonical(
-    attr: u16,
-    canonical_coedge: u16,
-    curve_attr: u16,
-) -> Vec<u8> {
+fn edge_use_with_canonical(attr: u16, canonical_coedge: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr); // p+0
     be32(&mut b, 0); // p+2 seq
@@ -871,7 +862,7 @@ pub(crate) fn edge_use_with_canonical(
     b
 }
 
-pub(crate) fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -885,7 +876,7 @@ pub(crate) fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
-pub(crate) fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -912,7 +903,7 @@ pub(crate) fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     b
 }
 
-pub(crate) fn tripled_vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
+fn tripled_vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x12];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -938,7 +929,7 @@ pub(crate) fn world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
     b
 }
 
-pub(crate) fn tripled_world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
+fn tripled_world_point(attr: u16, xyz: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1d];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -1009,7 +1000,7 @@ fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {
 }
 
 /// Append one validated XT ownership graph for a compact face bridge.
-pub(crate) fn typed_single_face_ownership(
+fn typed_single_face_ownership(
     bytes: &mut Vec<u8>,
     body_attr: u16,
     shell_attr: u16,
@@ -1225,7 +1216,7 @@ pub(crate) fn untyped_triangle(x: f64) -> Vec<u8> {
     body
 }
 
-pub(crate) fn circular_sketch_body() -> Vec<u8> {
+pub(super) fn circular_sketch_body() -> Vec<u8> {
     let mut body = Vec::new();
     body.extend(plane_carrier(
         100,
@@ -1244,7 +1235,7 @@ pub(crate) fn circular_sketch_body() -> Vec<u8> {
     body
 }
 
-pub(crate) fn arc_sketch_body() -> Vec<u8> {
+pub(super) fn arc_sketch_body() -> Vec<u8> {
     let mut body = Vec::new();
     body.extend(plane_carrier(
         100,

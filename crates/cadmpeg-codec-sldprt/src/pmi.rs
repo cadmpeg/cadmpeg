@@ -68,7 +68,7 @@ mod tests;
 /// Record identity and byte locations are intentionally excluded. `SolidWorks`
 /// can retain multiple GUID records for one owner-qualified dimension. Every
 /// editable semantic field must agree before those records are aliases.
-pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
+fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
     left.cad_text == right.cad_text
         && left.item_count == right.item_count
         && left.subtype == right.subtype
@@ -82,7 +82,7 @@ pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -
 
 /// Return one deterministic representative for each owner-qualified dimension
 /// whose retained records all agree semantically.
-pub(crate) fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDimension> {
+fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDimension> {
     let mut groups = BTreeMap::<&str, Vec<&PmiDimension>>::new();
     for record in records {
         groups

@@ -98,25 +98,25 @@
 
 mod annotations;
 mod appearance;
-pub(crate) mod brep;
+mod brep;
 mod classification;
-pub(crate) mod container;
-pub(crate) mod decode;
+mod container;
+mod decode;
 mod dialect;
 mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;
 /// Byte-offset constants generated from `docs/layouts/sldprt.toml`.
-pub(crate) mod lane_refusal;
-pub(crate) mod layout;
+mod lane_refusal;
+mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by the writer and hidden facade.
-pub(crate) mod loss;
+mod loss;
 mod metadata;
 mod native;
-pub(crate) mod parasolid;
+mod parasolid;
 mod pmi;
-pub(crate) mod records;
+mod records;
 mod resolved_features;
 mod swift;
 mod tessellation;
@@ -435,7 +435,7 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;
 
 #[cfg(test)]
 mod tests {

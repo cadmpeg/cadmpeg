@@ -25,25 +25,25 @@ pub(crate) struct AppearanceDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum DisplayAppearanceTarget {
+enum DisplayAppearanceTarget {
     Body(Vec<usize>),
     Face(usize),
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DisplayAppearanceAssignment {
-    pub(crate) target: DisplayAppearanceTarget,
-    pub(crate) definition: AppearanceDefinition,
+struct DisplayAppearanceAssignment {
+    target: DisplayAppearanceTarget,
+    definition: AppearanceDefinition,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct FeatureAppearanceAssignment {
     pub(crate) feature_source_id: FeatureSourceId,
-    pub(crate) feature_timestamp: u32,
-    pub(crate) packed_color: u32,
-    pub(crate) color: Color,
-    pub(crate) source_name: StreamName,
-    pub(crate) record_offset: usize,
+    feature_timestamp: u32,
+    packed_color: u32,
+    color: Color,
+    source_name: StreamName,
+    record_offset: usize,
 }
 
 pub(crate) struct ResolvedDisplayAppearances {
@@ -51,7 +51,7 @@ pub(crate) struct ResolvedDisplayAppearances {
     pub(crate) matched_feature_sources: BTreeSet<FeatureSourceId>,
 }
 
-pub(crate) fn packed_rgb(packed: u32) -> Color {
+fn packed_rgb(packed: u32) -> Color {
     Color::from_rgba8(packed as u8, (packed >> 8) as u8, (packed >> 16) as u8, 255)
 }
 
@@ -124,7 +124,7 @@ fn inline_definitions(section: Section<'_>, start: usize, end: usize) -> Vec<App
 }
 
 /// Decode body/default and face-local assignments from `DisplayLists`.
-pub(crate) fn display_assignments(
+fn display_assignments(
     section: Section<'_>,
     faces: &[DisplayFace],
 ) -> Vec<DisplayAppearanceAssignment> {
