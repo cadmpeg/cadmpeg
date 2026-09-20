@@ -34,7 +34,7 @@ fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
     exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
 }
 
-pub(in crate::decode) fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+pub(super) fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     let scale = first
         .into_iter()
         .chain(second)
@@ -71,10 +71,7 @@ fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
     })
 }
 
-pub(in crate::decode) fn line_line_intersection(
-    first: &CurveGeometry,
-    second: &CurveGeometry,
-) -> Option<[f64; 3]> {
+fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
     let (
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve_2)),
@@ -122,10 +119,7 @@ pub(in crate::decode) fn line_line_intersection(
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
-pub(in crate::decode) fn line_conic_intersections(
-    line: &CurveGeometry,
-    conic: &CurveGeometry,
-) -> Vec<[f64; 3]> {
+fn line_conic_intersections(line: &CurveGeometry, conic: &CurveGeometry) -> Vec<[f64; 3]> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = line else {
         return Vec::new();
     };
@@ -270,10 +264,7 @@ fn restrict_planar_conic_to_chart(
     }
 }
 
-pub(in crate::decode) fn conic_conic_intersections(
-    first: &CurveGeometry,
-    second: &CurveGeometry,
-) -> Vec<[f64; 3]> {
+fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> Vec<[f64; 3]> {
     let Some(first_equation) = planar_conic_equation(first) else {
         return Vec::new();
     };
@@ -348,9 +339,7 @@ pub(in crate::decode) fn conic_conic_intersections(
         .collect()
 }
 
-pub(in crate::decode) fn incident_analytic_vertex_domain(
-    curves: &[&CurveGeometry],
-) -> Vec<[f64; 3]> {
+fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
     let mut candidates = Vec::new();
     for first in 0..curves.len() {
         for second in first + 1..curves.len() {
@@ -664,6 +653,9 @@ pub(in crate::decode) fn solved_topological_vertices(
 ) -> BTreeMap<u32, [f64; 3]> {
     solve_topological_vertices(scan, ir, carriers, nurbs_endpoint_witnesses).points
 }
+
+#[cfg(test)]
+mod topological_tests;
 
 #[cfg(test)]
 mod tests {
