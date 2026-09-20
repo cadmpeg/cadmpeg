@@ -6,12 +6,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
@@ -486,7 +489,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = geometry else {
         return None;
     };
-    let origin = cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
     let radius = cone_surface.radius().get();
@@ -504,20 +507,20 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
         || !ref_length.is_finite()
         || (ref_length - 1.0).abs() > EPS_ORTHO
         || dot(axis_values, ref_values).abs() > EPS_ORTHO
-        || !origin.is_finite()
     {
         return None;
     }
+    let origin = FinitePoint3::new(Point3::new(-origin.x, -origin.y, -origin.z))?;
+    let mut frame = cone_surface.frame();
+    frame.reverse_axis();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(-origin.x, -origin.y, -origin.z),
-            Vector3::new(-axis.x, -axis.y, -axis.z),
-            *ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        )
-        .ok()?,
+        cadmpeg_ir::geometry::analytic::ConeSurface::new(
+            origin,
+            frame,
+            cone_surface.radius(),
+            cone_surface.ratio(),
+            cone_surface.half_angle(),
+        ),
     )))
 }
 
@@ -1072,7 +1075,7 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { start[0] == end[0] } =>
         {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
@@ -1101,18 +1104,15 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if start[1] == end[1] =>
         {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
-            let radius = cylinder_surface.radius().get();
+            let center = FinitePoint3::new(offset_point(origin, *axis, start[1]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(*origin, *axis, start[1]),
-                    *axis,
-                    *ref_direction,
-                    radius,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    center,
+                    cylinder_surface.frame(),
+                    cylinder_surface.radius(),
+                ),
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
@@ -1133,7 +1133,7 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if { start[1] == end[1] } =>
         {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -1145,7 +1145,7 @@ fn linear_pcurve_carrier(
             if !first_radius.is_finite() || !second_radius.is_finite() {
                 return None;
             }
-            let center = offset_point(*origin, *axis, start[1]);
+            let center = offset_point(origin, *axis, start[1]);
             if (first_radius - second_radius).abs()
                 <= EPS_NEAR_ZERO * first_radius.max(second_radius).max(1.0)
             {
@@ -1193,7 +1193,7 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if start[1] == end[1] =>
         {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
@@ -1201,7 +1201,7 @@ fn linear_pcurve_carrier(
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(*center, *axis, radius * start[1].sin()),
+                    offset_point(center, *axis, radius * start[1].sin()),
                     *axis,
                     scaled_vector(*ref_direction, ring.signum()),
                     ring.abs(),
@@ -1212,11 +1212,9 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
             if start[0] == end[0] =>
         {
-            let center = sphere_surface.center();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
-            let radius = sphere_surface.radius().get();
-            (radius > 0.0).then_some(())?;
+            let radius = PositiveLength::try_from(sphere_surface.radius()).ok()?;
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1227,20 +1225,20 @@ fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            let frame =
+                OrthonormalFrame3::new(Vector3::new(normal[0], normal[1], normal[2]), radial)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    *center,
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    radial,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    sphere_surface.center(),
+                    frame,
                     radius,
-                )
-                .ok()?,
+                ),
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if start[1] == end[1] =>
         {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -1249,7 +1247,7 @@ fn linear_pcurve_carrier(
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(*center, *axis, minor_radius * start[1].sin()),
+                    offset_point(center, *axis, minor_radius * start[1].sin()),
                     *axis,
                     scaled_vector(*ref_direction, ring.signum()),
                     ring.abs(),
@@ -1260,12 +1258,11 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
             if start[0] == end[0] =>
         {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            (minor_radius > 0.0).then_some(())?;
+            let minor_radius = PositiveLength::try_from(torus_surface.minor_radius()).ok()?;
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1276,14 +1273,11 @@ fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
+            let center = FinitePoint3::new(offset_point(center, radial, major_radius))?;
+            let frame =
+                OrthonormalFrame3::new(Vector3::new(normal[0], normal[1], normal[2]), radial)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(*center, radial, major_radius),
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    radial,
-                    minor_radius,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, minor_radius),
             )))
         }
         _ => None,
@@ -1707,7 +1701,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let u_axis = plane_surface.u_axis();
     let origin = [origin.x, origin.y, origin.z];

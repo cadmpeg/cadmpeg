@@ -494,7 +494,7 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let origin = *plane_surface.origin();
+                let origin = plane_surface.origin().get();
                 let normal = *plane_surface.normal();
                 let u_axis = *plane_surface.u_axis();
                 edited_surfaces
@@ -510,7 +510,7 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let center = *sphere_surface.center();
+                let center = sphere_surface.center().get();
                 let axis = *sphere_surface.axis();
                 let ref_direction = *sphere_surface.ref_direction();
                 let radius = sphere_surface.radius().get();
@@ -530,7 +530,7 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = *torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = *torus_surface.axis();
                 let ref_direction = *torus_surface.ref_direction();
                 let major_radius = torus_surface.major_radius().get();
@@ -551,7 +551,7 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = *cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = *cylinder_surface.axis();
                 let ref_direction = *cylinder_surface.ref_direction();
                 let radius = cylinder_surface.radius().get();
@@ -563,7 +563,7 @@ pub(crate) fn write_semantic(
                 })
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = *cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = *cone_surface.axis();
                 let ref_direction = *cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();

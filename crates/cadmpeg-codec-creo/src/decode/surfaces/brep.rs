@@ -855,7 +855,7 @@ fn ordered_two_edge_circle_loops<'a>(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return None;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let circle_loops = loops
         .iter()
@@ -874,7 +874,7 @@ fn ordered_two_edge_circle_loops<'a>(
             .max(circle.center.x.abs())
             .max(circle.center.y.abs())
             .max(circle.center.z.abs());
-        let distance_from_surface = circle.center.vector_from(*origin).dot(*normal).abs();
+        let distance_from_surface = circle.center.vector_from(origin).dot(*normal).abs();
         !points_are_geometrically_coincident(circle.center, reference.center)
             || !vectors_are_parallel(circle.axis, reference.axis)
             || !vectors_are_parallel(circle.axis, *normal)

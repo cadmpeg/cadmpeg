@@ -154,7 +154,7 @@ pub(crate) fn classify_planar_boundaries(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
         return unspecified();
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let u_axis = plane_surface.u_axis();
     let Some(normal) = normal.unit() else {
@@ -176,7 +176,7 @@ pub(crate) fn classify_planar_boundaries(
                 boundary
                     .iter()
                     .map(|point| {
-                        let offset = point.vector_from(*origin);
+                        let offset = point.vector_from(origin);
                         Point2::new(offset.dot(u_axis), offset.dot(v_axis))
                     })
                     .collect::<Vec<_>>()

@@ -13,6 +13,13 @@
 //! and model code reach the same stored state through one admission path. A
 //! getter returns the checked type of the stored value, so an unchanged
 //! component moves into another model object without a second admission.
+//!
+//! Raw construction reports component admission failures before relationships
+//! between components. For example, an ellipse with radii `-1` and `2` reports
+//! the invalid major radius before checking radius ordering. Sphere radii and
+//! torus minor radii use a single field-specific finite/nonzero error for both
+//! restrictions. This replaces the separate zero check used before checked
+//! constructor composition; callers must not depend on the old error precedence.
 
 use crate::features::FinitePoint3;
 use crate::math::{Point3, Vector3};

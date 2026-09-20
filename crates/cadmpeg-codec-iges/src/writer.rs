@@ -4863,7 +4863,7 @@ fn surface_entities(
         analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
@@ -4879,11 +4879,11 @@ fn surface_entities(
                     label: "PLANE",
                     status: EntityStatus::Independent,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
-                    transform: Some(placement(*origin, u_axis, v_axis, normal)?),
+                    transform: Some(placement(origin, u_axis, v_axis, normal)?),
                 }]);
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, *origin, *normal, *u_axis)?;
+                pointer_surface_support(base_index, origin, *normal, *u_axis)?;
             entities.push(Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES plane has no analytic surface family".into())
@@ -4904,12 +4904,12 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, origin, *axis, *ref_direction)?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cylinder has no analytic surface family".into())
@@ -4931,7 +4931,7 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
@@ -4948,7 +4948,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, *origin, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, origin, *axis, *ref_direction)?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cone has no analytic surface family".into())
@@ -4971,7 +4971,7 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
@@ -4981,7 +4981,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, center, *axis, *ref_direction)?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES sphere has no analytic surface family".into())
@@ -5003,7 +5003,7 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -5014,7 +5014,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, *center, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, center, *axis, *ref_direction)?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES torus has no analytic surface family".into())

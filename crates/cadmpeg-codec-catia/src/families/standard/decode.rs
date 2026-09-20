@@ -86,11 +86,11 @@ fn bind_consolidated_revolution_faces_and_seams(
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = geometry else {
             return false;
         };
-        let center = torus_surface.center();
+        let center = torus_surface.center().get();
         let axis = torus_surface.axis();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
-        let offset = point.vector_from(*center);
+        let offset = point.vector_from(center);
         let axial = offset.dot(*axis);
         let radial = Vector3::new(
             offset.x - axial * axis.x,
@@ -115,7 +115,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = geometry else {
             return None;
         };
-        let center = torus_surface.center();
+        let center = torus_surface.center().get();
         let axis = torus_surface.axis();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
@@ -125,7 +125,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         {
             return None;
         }
-        let start_offset = start.vector_from(*center);
+        let start_offset = start.vector_from(center);
         let start_axial = start_offset.dot(*axis);
         let start_radial = Vector3::new(
             start_offset.x - start_axial * axis.x,
@@ -626,11 +626,11 @@ fn refine_consolidated_analytic_surfaces(
     for (index, surface) in surfaces.iter_mut().enumerate() {
         let replacement = match surface.as_ref() {
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
-                let origin = cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = cylinder_surface.axis();
                 let radius = cylinder_surface.radius().get();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
-                    (same_point(*origin, cylinder.origin)
+                    (same_point(origin, cylinder.origin)
                         && same_axis(*axis, cylinder.axis.get())
                         && radius.to_bits() == quantized(cylinder.radius.get()).to_bits())
                     .then_some((cylinder.surface_geometry()?, cylinder.pos))
@@ -643,11 +643,11 @@ fn refine_consolidated_analytic_surfaces(
                     radius == 0.0 && ratio == 1.0
                 } =>
             {
-                let origin = cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = cone_surface.axis();
                 let half_angle = cone_surface.half_angle().get();
                 exactly_one(cones.iter().filter(|cone| {
-                    same_point(*origin, cone.apex)
+                    same_point(origin, cone.apex)
                         && same_axis(*axis, cone.axis.get())
                         && half_angle.to_bits() == quantized(cone.half_angle).to_bits()
                 }))
@@ -669,10 +669,10 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
-                let center = sphere_surface.center();
+                let center = sphere_surface.center().get();
                 let radius = sphere_surface.radius().get();
                 exactly_one(spheres.iter().filter(|sphere| {
-                    same_point(*center, sphere.center)
+                    same_point(center, sphere.center)
                         && radius.to_bits() == quantized(sphere.radius.get()).to_bits()
                 }))
                 .and_then(|sphere| {
@@ -683,12 +683,12 @@ fn refine_consolidated_analytic_surfaces(
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
-                let center = torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = torus_surface.axis();
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
                 exactly_one(tori.iter().filter(|torus| {
-                    same_point(*center, torus.center)
+                    same_point(center, torus.center)
                         && same_axis(*axis, torus.axis.get())
                         && major_radius.to_bits() == quantized(torus.major_radius.get()).to_bits()
                         && minor_radius.to_bits() == quantized(torus.minor_radius.get()).to_bits()
@@ -742,7 +742,7 @@ mod consolidated_analytic_refinement_tests {
             assert!(
                 matches!(surface, Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
-                    let center = torus_surface.center();
+                    let center = torus_surface.center().get();
                     center.x == exact_x
                 })
             );
@@ -775,7 +775,7 @@ mod consolidated_analytic_refinement_tests {
         assert!(
             matches!(unique[0], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)))
             if {
-                let center = sphere_surface.center();
+                let center = sphere_surface.center().get();
                 center.x == exact_x
             })
         );
@@ -6216,7 +6216,7 @@ fn same_cone_generator_pair(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = left else {
         return false;
     };
-    let origin = cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = cone_surface.axis();
     let radius = cone_surface.radius().get();
     let half_angle = cone_surface.half_angle().get();
@@ -7309,7 +7309,7 @@ fn standard_pcurve_geometry(
         analytic_surface_uv(surface, end)?,
     ];
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface {
-        let origin = cone_surface.origin();
+        let origin = cone_surface.origin().get();
         let axis = cone_surface.axis();
         let radius = cone_surface.radius().get();
         let half_angle = cone_surface.half_angle().get();
@@ -7477,18 +7477,18 @@ fn witnessed_surface_circle_end(
 fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            let offset = point.vector_from(*origin);
+            let offset = point.vector_from(origin);
             let v_axis = (*normal).cross(*u_axis);
             Some(Point2::new(offset.dot(*u_axis), offset.dot(v_axis)))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
-            let offset = point.vector_from(*origin);
+            let offset = point.vector_from(origin);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
                 offset.dot(tangent).atan2(offset.dot(*ref_direction)),
@@ -7496,11 +7496,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let ratio = cone_surface.ratio().get();
-            let offset = point.vector_from(*origin);
+            let offset = point.vector_from(origin);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
                 (offset.dot(tangent) / ratio).atan2(offset.dot(*ref_direction)),
@@ -7508,11 +7508,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
-            let offset = point.vector_from(*center);
+            let offset = point.vector_from(center);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
                 offset.dot(tangent).atan2(offset.dot(*ref_direction)),
@@ -7520,11 +7520,11 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
-            let offset = point.vector_from(*center);
+            let offset = point.vector_from(center);
             let tangent = (*axis).cross(*ref_direction);
             let u = offset.dot(tangent).atan2(offset.dot(*ref_direction));
             let radial = Vector3::new(
@@ -7568,39 +7568,39 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
     const TOLERANCE: f64 = 1e-3;
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            point.vector_from(*origin).dot(*normal).abs()
+            point.vector_from(origin).dot(*normal).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
-            let axial = point.vector_from(*origin).dot(*axis);
-            let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
+            let axial = point.vector_from(origin).dot(*axis);
+            let radial = (point.vector_from(origin) - axis.scale(axial)).norm();
             (radial - radius).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
-            let axial = point.vector_from(*origin).dot(*axis);
-            let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
+            let axial = point.vector_from(origin).dot(*axis);
+            let radial = (point.vector_from(origin) - axis.scale(axial)).norm();
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let radius = sphere_surface.radius().get();
-            (point.distance(*center) - radius.abs()).abs()
+            (point.distance(center) - radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
-            let axial = point.vector_from(*center).dot(*axis);
-            let radial = (point.vector_from(*center) - axis.scale(axial)).norm();
+            let axial = point.vector_from(center).dot(*axis);
+            let radial = (point.vector_from(center) - axis.scale(axial)).norm();
             ((radial - major_radius).hypot(axial) - minor_radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
@@ -7669,7 +7669,7 @@ fn standard_spline_line(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)),
         ) if { support.faces[0] == support.faces[1] } => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
@@ -7677,7 +7677,7 @@ fn standard_spline_line(
             if !tangent.is_finite() || tangent == 0.0 {
                 false
             } else {
-                let apex = (*origin).translated(*axis, -radius / tangent);
+                let apex = origin.translated(*axis, -radius / tangent);
                 apex.vector_from(start)
                     .cross(direction.scale(1.0 / length))
                     .norm()
@@ -7720,11 +7720,11 @@ fn standard_spline_circle(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
-                let center = sphere_surface.center();
+                let center = sphere_surface.center().get();
                 let radius = sphere_surface.radius().get();
-                let origin = plane_surface.origin();
+                let origin = plane_surface.origin().get();
                 let normal = plane_surface.normal();
-                (*center, radius, *origin, *normal)
+                (center, radius, origin, *normal)
             }
             (
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
@@ -7921,7 +7921,7 @@ fn standard_spline_perpendicular_cylinders(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
             ) => {
-                let origin = cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = cylinder_surface.axis();
                 let radius = cylinder_surface.radius().get();
                 let second_origin = cylinder_surface_2.origin();
@@ -7929,7 +7929,7 @@ fn standard_spline_perpendicular_cylinders(
                 let second_radius = cylinder_surface_2.radius().get();
                 (
                     *axis,
-                    *origin,
+                    origin,
                     radius,
                     *second_axis,
                     *second_origin,
@@ -9485,26 +9485,26 @@ fn circle_axis_from_carrier(
 ) -> Option<Vector3> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            close_length(center.vector_from(*origin).dot(*normal), 0.0).then_some(*normal)
+            close_length(center.vector_from(origin).dot(*normal), 0.0).then_some(*normal)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
-            let offset = center.vector_from(*origin);
+            let offset = center.vector_from(origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             (close_length(radial.norm(), 0.0) && close_length(circle_radius, radius))
                 .then_some(*axis)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
-            let offset = center.vector_from(*origin);
+            let offset = center.vector_from(origin);
             let axial = offset.dot(*axis);
             let radial = offset - (*axis).scale(axial);
             let section_radius = (radius + axial * half_angle.tan()).abs();
@@ -9668,9 +9668,9 @@ fn plane_for_face(
         .find(|surface| surface.id == *surface_id)?;
     match &surface.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            Some((*origin, *normal))
+            Some((origin, *normal))
         }
         _ => None,
     }

@@ -251,14 +251,10 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
             &mut surface.geometry
         {
-            let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
-            let mut origin = *origin;
-            origin = shift(&origin);
+            let origin = shift(&plane_surface.origin().get());
+            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
             *plane_surface =
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
-                    .unwrap();
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, plane_surface.frame());
         }
     }
 }

@@ -1360,9 +1360,9 @@ fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vecto
     let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
     match surface.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            Some((*origin, *normal))
+            Some((origin, *normal))
         }
         _ => None,
     }

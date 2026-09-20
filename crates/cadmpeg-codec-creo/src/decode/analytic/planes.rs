@@ -401,7 +401,7 @@ pub(in crate::decode) fn reconciled_model_plane(
         [] => None,
         [surface] => match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let origin = plane_surface.origin();
+                let origin = plane_surface.origin().get();
                 let normal = plane_surface.normal();
                 Some(PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],

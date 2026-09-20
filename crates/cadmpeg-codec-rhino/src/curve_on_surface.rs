@@ -200,7 +200,7 @@ mod tests {
         else {
             panic!("expected plane support surface");
         };
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         assert_eq!(origin.x, 10.0);
         assert_eq!(origin.y, 20.0);
         assert_eq!(origin.z, 30.0);

@@ -2365,20 +2365,14 @@ fn e5_boundary_curve(
         crate::families::e5::graph::E5Pcurve::Circle { center, radius, .. },
     ) = (surface, native_pcurve)
     {
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
-        let center = (*origin)
+        let center = origin
             .translated(*u_axis, center[0] * uv_scale[0])
             .translated(v_axis, center[1] * uv_scale[1]);
-        if !center.is_finite()
-            || !normal.is_finite()
-            || !u_axis.is_finite()
-            || !v_axis.is_finite()
-            || !radius.is_finite()
-            || *radius <= 0.0
-        {
+        if !center.is_finite() || !v_axis.is_finite() || !radius.is_finite() || *radius <= 0.0 {
             return None;
         }
         return Some((
@@ -2400,7 +2394,7 @@ fn e5_boundary_curve(
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
@@ -2408,15 +2402,12 @@ fn e5_boundary_curve(
             .control_points()
             .iter()
             .map(|point| {
-                (*origin)
+                origin
                     .translated(*u_axis, point.u)
                     .translated(v_axis, point.v)
             })
             .collect::<Vec<_>>();
-        if !origin.is_finite()
-            || !normal.is_finite()
-            || !u_axis.is_finite()
-            || !v_axis.is_finite()
+        if !v_axis.is_finite()
             || !range.into_iter().all(f64::is_finite)
             || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points
@@ -2453,7 +2444,7 @@ fn e5_boundary_curve(
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let u_axis = plane_surface.u_axis();
         let v_axis = (*normal).cross(*u_axis);
@@ -2461,15 +2452,12 @@ fn e5_boundary_curve(
             .control_points()
             .iter()
             .map(|point| {
-                (*origin)
+                origin
                     .translated(*u_axis, point.u)
                     .translated(v_axis, point.v)
             })
             .collect::<Vec<_>>();
-        if !origin.is_finite()
-            || !normal.is_finite()
-            || !u_axis.is_finite()
-            || !v_axis.is_finite()
+        if !v_axis.is_finite()
             || !range.into_iter().all(f64::is_finite)
             || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points
@@ -2826,39 +2814,39 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
 fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
-            Some(((*origin).translated(*axis, v), radius, *axis))
+            Some((origin.translated(*axis, v), radius, *axis))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             Some((
-                (*origin).translated(*axis, v),
+                origin.translated(*axis, v),
                 (radius + v * half_angle.tan()).abs(),
                 *axis,
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let radius = sphere_surface.radius().get();
             Some((
-                (*center).translated(*axis, radius * v.sin()),
+                center.translated(*axis, radius * v.sin()),
                 radius * v.cos().abs(),
                 *axis,
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             Some((
-                (*center).translated(*axis, minor_radius * v.sin()),
+                center.translated(*axis, minor_radius * v.sin()),
                 (major_radius + minor_radius * v.cos()).abs(),
                 *axis,
             ))
@@ -2870,16 +2858,16 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
 fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f64, Vector3)> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
-            Some((*center, radius, (*axis).cross(radial)))
+            Some((center, radius, (*axis).cross(radial)))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
@@ -2887,7 +2875,7 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
             Some((
-                (*center).translated(radial, major_radius),
+                center.translated(radial, major_radius),
                 minor_radius,
                 (*axis).cross(radial),
             ))

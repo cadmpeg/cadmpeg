@@ -851,10 +851,10 @@ fn linear_boundary_geometry(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = support else {
         return None;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
-    let model_plane = (*origin, *normal);
+    let model_plane = (origin, *normal);
     if items.iter().any(|item| {
         let Some(curve) = index.curves(item.model_curve.as_str()) else {
             return true;

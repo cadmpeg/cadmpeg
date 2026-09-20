@@ -372,50 +372,50 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
-            let pl = placement(e, *origin, *normal, *u_axis);
+            let pl = placement(e, origin, *normal, *u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
-            let pl = placement(e, *origin, *axis, *ref_direction);
+            let pl = placement(e, origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(radius)))
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
-            let pl = placement(e, *origin, *axis, *ref_direction);
+            let pl = placement(e, origin, *axis, *ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
                 &format!("'',{pl},{},{}", real(radius), real(half_angle)),
             )
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
-            let pl = placement(e, *center, *axis, *ref_direction);
+            let pl = placement(e, center, *axis, *ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
                 &format!("'',{pl},{}", real(radius.abs())),
             )
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
-            let pl = placement(e, *center, *axis, *ref_direction);
+            let pl = placement(e, center, *axis, *ref_direction);
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(

@@ -90,7 +90,7 @@ fn revolution_boundary_pcurve(
     };
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let normal = vector(*normal);
@@ -102,7 +102,7 @@ fn revolution_boundary_pcurve(
                 axis_origin[2] - origin.z,
             ];
             let center = [dot(axis_relative, u_axis), dot(axis_relative, v_axis)];
-            let relative = point_from(*origin);
+            let relative = point_from(origin);
             let uv = [dot(relative, u_axis), dot(relative, v_axis)];
             let radial = [uv[0] - center[0], uv[1] - center[1]];
             let radius = radial[0].hypot(radial[1]);
@@ -123,11 +123,11 @@ fn revolution_boundary_pcurve(
             )?)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let ref_direction = cylinder_surface.ref_direction();
             let carrier_axis = vector(*axis);
-            let relative = point_from(*origin);
+            let relative = point_from(origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
             let v = dot(relative, carrier_axis);
             let direction = if dot(carrier_axis, axis_direction).is_sign_negative() {
@@ -138,11 +138,11 @@ fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
             let carrier_axis = vector(*axis);
-            let relative = point_from(*origin);
+            let relative = point_from(origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
             let v = dot(relative, carrier_axis);
             let direction = if dot(carrier_axis, axis_direction).is_sign_negative() {
@@ -153,11 +153,11 @@ fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + direction, v])?)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let carrier_axis = vector(*axis);
-            let relative = point_from(*center);
+            let relative = point_from(center);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
             let axial = dot(relative, carrier_axis);
             let radial = std::array::from_fn::<_, 3, _>(|index| {
@@ -167,14 +167,14 @@ fn revolution_boundary_pcurve(
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v])?)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let carrier_axis = vector(*axis);
             let reference = vector(*ref_direction);
-            let relative = point_from(*center);
+            let relative = point_from(center);
             let axial = dot(relative, carrier_axis);
             let radial = std::array::from_fn::<_, 3, _>(|index| {
                 relative[index] - axial * carrier_axis[index]

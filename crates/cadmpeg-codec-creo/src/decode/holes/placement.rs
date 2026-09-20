@@ -193,7 +193,7 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = plane else {
         return None;
     };
-    let origin = plane_surface.origin();
+    let origin = plane_surface.origin().get();
     let normal = plane_surface.normal();
     let axis = normalize([normal.x, normal.y, normal.z])?;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;

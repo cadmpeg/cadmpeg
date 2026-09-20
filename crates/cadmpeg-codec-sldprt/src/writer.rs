@@ -3108,7 +3108,7 @@ pub(super) fn surface_values(
     let scaled = |value: f64| value * length_scale;
     let result = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
             (
                 0x32,
@@ -3126,7 +3126,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin();
+            let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius().get();
             (
@@ -3146,7 +3146,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin();
+            let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
@@ -3180,7 +3180,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = sphere_surface.center();
+            let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
             let radius = sphere_surface.radius().get();
             if radius < 0.0 {
@@ -3206,7 +3206,7 @@ pub(super) fn surface_values(
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center();
+            let center = torus_surface.center().get();
             let axis = torus_surface.axis();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();

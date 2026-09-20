@@ -5454,7 +5454,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let source_origin = *plane_surface.origin();
+            let source_origin = plane_surface.origin().get();
             let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
             let origin = placed_point(transform, source_origin)?;

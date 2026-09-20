@@ -122,7 +122,7 @@ fn project_brep(
         else {
             continue;
         };
-        let origin = plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = plane_surface.normal();
         let u_axis = plane_surface.u_axis();
         let Ok(sketch_id) = SketchId::mint(format!(
@@ -131,7 +131,7 @@ fn project_brep(
             continue;
         };
         let Ok(placement) =
-            cadmpeg_ir::sketches::SketchPlacement::try_resolved(*origin, *normal, *u_axis)
+            cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, *normal, *u_axis)
         else {
             continue;
         };
@@ -168,7 +168,7 @@ fn project_brep(
                         &points,
                         &curves,
                         super::sketch_edges::SketchPlaneFrame {
-                            origin: *origin,
+                            origin: origin,
                             u_axis: *u_axis,
                             v_axis,
                         },
@@ -242,7 +242,7 @@ fn project_brep(
                 continue;
             };
             let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: project_point(*position, *origin, *u_axis, v_axis),
+                position: project_point(*position, origin, *u_axis, v_axis),
             }) else {
                 continue;
             };

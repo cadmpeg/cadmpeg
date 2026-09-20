@@ -110,17 +110,17 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         };
         match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = *cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = *cylinder_surface.axis();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = *cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = *cone_surface.axis();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = *torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = *torus_surface.axis();
                 axes.push((center, axis));
             }
@@ -129,7 +129,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
                 plane_normals.push(normal);
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let center = *sphere_surface.center();
+                let center = sphere_surface.center().get();
                 sphere_centers.push(center);
             }
             _ => return None,

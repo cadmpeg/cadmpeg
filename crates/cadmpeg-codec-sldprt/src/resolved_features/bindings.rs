@@ -740,9 +740,9 @@ fn admitted_direction(
 fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3, Vector3)> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
+            let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
-            Some((*origin, normal.unit()?))
+            Some((origin, normal.unit()?))
         }
         SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             let (origin, normal) = mirror_plane_from_surface(basis)?;

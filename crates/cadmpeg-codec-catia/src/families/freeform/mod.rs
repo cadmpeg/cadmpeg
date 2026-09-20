@@ -4188,11 +4188,11 @@ mod tests {
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
-                    let center = sphere_surface.center();
+                    let center = sphere_surface.center().get();
         let axis = sphere_surface.axis();
         let ref_direction = sphere_surface.ref_direction();
                     (sphere_surface.radius().get() == 5.0)
-                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                        && (center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
                 })));
@@ -4208,12 +4208,12 @@ mod tests {
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
-                    let center = torus_surface.center();
+                    let center = torus_surface.center().get();
         let axis = torus_surface.axis();
         let ref_direction = torus_surface.ref_direction();
                     (torus_surface.major_radius().get() == 7.0)
                         && (torus_surface.minor_radius().get() == 2.0)
-                        && (*center == Point3::new(1.0, 2.0, 3.0)
+                        && (center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
                             && *ref_direction == Vector3::new(1.0, 0.0, 0.0))
                 })));
@@ -4229,11 +4229,11 @@ mod tests {
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
-                    let origin = cylinder_surface.origin();
+                    let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
                     (cylinder_surface.radius().get() == 4.0)
-                        && (*origin == Point3::new(0.0, 0.0, 0.0)
+                        && (origin == Point3::new(0.0, 0.0, 0.0)
                             && *axis == Vector3::new(0.0, 1.0, 0.0)
                             && *ref_direction == Vector3::new(0.0, 0.0, 1.0))
                 })));

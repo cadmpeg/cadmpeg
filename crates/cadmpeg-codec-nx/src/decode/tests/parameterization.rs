@@ -1319,7 +1319,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = support.geometry.solved() else {
             panic!("plane support");
         };
-        let origin = *plane_surface.origin();
+        let origin = plane_surface.origin().get();
         let normal = *plane_surface.normal();
         let u_axis = *plane_surface.u_axis();
         let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))

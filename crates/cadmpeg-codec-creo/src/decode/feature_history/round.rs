@@ -1014,7 +1014,7 @@ fn chamfer_cone_equation(
     let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = surface.geometry.solved() else {
         return None;
     };
-    let origin = cone_surface.origin();
+    let origin = cone_surface.origin().get();
     let axis = cone_surface.axis();
     let ref_direction = cone_surface.ref_direction();
     let radius = cone_surface.radius().get();

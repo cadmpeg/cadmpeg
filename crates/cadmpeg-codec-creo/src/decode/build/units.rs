@@ -2433,10 +2433,10 @@ mod tests {
         else {
             panic!("test surface changed family");
         };
-        let origin = cylinder_surface.origin();
+        let origin = cylinder_surface.origin().get();
         let axis = cylinder_surface.axis();
         let radius = cylinder_surface.radius().get();
-        assert_point3(*origin, [25.4, 50.8, 76.2]);
+        assert_point3(origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
         assert_close(radius, 101.6);
         let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = curve else {

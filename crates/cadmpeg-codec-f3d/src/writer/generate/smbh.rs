@@ -1062,7 +1062,7 @@ fn encode_face_topology_smbh(
     for surface in &model.surfaces {
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let origin = *plane_surface.origin();
+                let origin = plane_surface.origin().get();
                 let normal = *plane_surface.normal();
                 let u_axis = *plane_surface.u_axis();
                 native_surface_base(&mut records, "plane")?;
@@ -1079,7 +1079,7 @@ fn encode_face_topology_smbh(
                 records.push(0x0b);
             }
             Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = *cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = *cylinder_surface.axis();
                 let ref_direction = *cylinder_surface.ref_direction();
                 let radius = cylinder_surface.radius().get();
@@ -1109,7 +1109,7 @@ fn encode_face_topology_smbh(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = *cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = *cone_surface.axis();
                 let ref_direction = *cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();
@@ -1141,7 +1141,7 @@ fn encode_face_topology_smbh(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let center = *sphere_surface.center();
+                let center = sphere_surface.center().get();
                 let axis = *sphere_surface.axis();
                 let ref_direction = *sphere_surface.ref_direction();
                 let radius = sphere_surface.radius().get();
@@ -1169,7 +1169,7 @@ fn encode_face_topology_smbh(
                 }
             }
             Some(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = *torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = *torus_surface.axis();
                 let ref_direction = *torus_surface.ref_direction();
                 let major_radius = torus_surface.major_radius().get();

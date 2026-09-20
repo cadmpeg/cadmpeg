@@ -1357,19 +1357,19 @@ fn common_generated_surface_axis(
         .iter()
         .filter_map(|surface| match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = cylinder_surface.origin();
+                let origin = cylinder_surface.origin().get();
                 let axis = cylinder_surface.axis();
-                Some((*origin, *axis))
+                Some((origin, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = cone_surface.origin();
+                let origin = cone_surface.origin().get();
                 let axis = cone_surface.axis();
-                Some((*origin, *axis))
+                Some((origin, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = torus_surface.center();
+                let center = torus_surface.center().get();
                 let axis = torus_surface.axis();
-                Some((*center, *axis))
+                Some((center, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => None,
