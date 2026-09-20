@@ -1845,12 +1845,6 @@ impl SketchRectangularPattern {
     pub fn rows(&self) -> &[Vec<SketchPatternInstance>] {
         &self.rows
     }
-
-    /// Number of instances along each direction.
-    #[must_use]
-    pub fn counts(&self) -> [u32; 2] {
-        [self.rows.len() as u32, self.rows[0].len() as u32]
-    }
 }
 
 /// Checked circular sketch pattern.
@@ -1877,21 +1871,12 @@ pub struct SketchCircularPattern {
 ///
 /// The pattern states its instance count as the population plus the seed, in
 /// a `u32`. The bound therefore belongs on the population, not on the count:
-/// this type is the one place it is proven, `count` is exact for every value
-/// that exists, and a population the width cannot count is refused at
-/// construction. `TryFrom<Vec<T>>` is the only constructor, and the type
+/// this type proves the bound at construction and refuses a population the
+/// width cannot count. `TryFrom<Vec<T>>` is the only constructor, and the type
 /// hands out a slice, so no value can grow past the count it proved.
 #[derive(Debug, Clone, PartialEq)]
 struct SeededMembers<T> {
     members: Vec<T>,
-    count: u32,
-}
-
-impl<T> SeededMembers<T> {
-    /// The population with the seed counted.
-    fn count(&self) -> u32 {
-        self.count
-    }
 }
 
 impl<T> TryFrom<Vec<T>> for SeededMembers<T> {
@@ -1901,13 +1886,13 @@ impl<T> TryFrom<Vec<T>> for SeededMembers<T> {
         if members.is_empty() {
             return Err("population states no member");
         }
-        let Some(count) = u32::try_from(members.len())
+        let Some(_) = u32::try_from(members.len())
             .ok()
             .and_then(|population| population.checked_add(1))
         else {
             return Err("population holds more members than the seeded count can state");
         };
-        Ok(Self { members, count })
+        Ok(Self { members })
     }
 }
 
@@ -2016,27 +2001,6 @@ impl SketchCircularPattern {
     #[must_use]
     pub fn center(&self) -> &SketchEntityId {
         &self.center
-    }
-
-    /// Evaluated angular span stored by the native pattern.
-    #[must_use]
-    pub fn angle(&self) -> Angle {
-        self.angle
-    }
-
-    /// Number of instances, including the seed instance.
-    ///
-    /// The instance population carries the bound and states the figure, so
-    /// this derivation is total: no fold, no cast and no addition here.
-    #[must_use]
-    pub fn count(&self) -> u32 {
-        self.instances.count()
-    }
-
-    /// Seed entities in fixed order.
-    #[must_use]
-    pub fn seed(&self) -> &[SketchEntityId] {
-        &self.seed
     }
 
     /// Driving angular-span parameter.

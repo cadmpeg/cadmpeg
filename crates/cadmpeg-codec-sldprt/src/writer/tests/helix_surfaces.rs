@@ -1643,11 +1643,11 @@ fn semantic_writer_round_trips_typed_revolution() {
         axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
         axis.direction =
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
-        construction.set_extent(Some(RevolveExtent::OneSided {
+        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
-        }));
+        };
         *op = BooleanOp::Cut;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
@@ -1810,11 +1810,11 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         else {
             panic!("typed revolution");
         };
-        construction.set_extent(Some(RevolveExtent::OneSided {
+        *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(0.75).unwrap(),
             },
-        }));
+        };
         *op = BooleanOp::Intersect;
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }

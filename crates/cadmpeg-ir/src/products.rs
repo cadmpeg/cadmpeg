@@ -490,10 +490,9 @@ impl std::error::Error for AssemblyGraphError {
     }
 }
 
-/// Validated, memoized view over a canonical occurrence tree.
+/// Validated lookup view over a canonical occurrence tree.
 pub struct AssemblyGraph<'a> {
     occurrences: HashMap<&'a str, &'a Occurrence>,
-    resolved: HashMap<&'a str, Transform>,
 }
 
 #[cfg(test)]
@@ -696,12 +695,18 @@ mod tests {
         let occurrences = [child, root];
         let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
-            graph
-                .resolved_transform(
-                    &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
-                )
-                .expect("resolved child")
-                .rows()[0][3],
+            super::resolve_occurrence(
+                graph
+                    .occurrence(
+                        &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
+                    )
+                    .unwrap(),
+                &graph.occurrences,
+                &mut std::collections::HashMap::new(),
+                &mut std::collections::HashSet::new()
+            )
+            .expect("resolved child")
+            .rows()[0][3],
             13.0
         );
     }
@@ -894,7 +899,7 @@ mod tests {
 }
 
 impl<'a> AssemblyGraph<'a> {
-    /// Validates parent links and precomputes every resolved occurrence transform.
+    /// Validates parent links and every composed occurrence transform.
     pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
         let mut by_id = HashMap::with_capacity(occurrences.len());
         for occurrence in occurrences {
@@ -908,20 +913,12 @@ impl<'a> AssemblyGraph<'a> {
         for occurrence in occurrences {
             resolve_occurrence(occurrence, &by_id, &mut resolved, &mut HashSet::new())?;
         }
-        Ok(Self {
-            occurrences: by_id,
-            resolved,
-        })
+        Ok(Self { occurrences: by_id })
     }
 
     /// Returns an occurrence by identity.
     pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
         self.occurrences.get(id.as_str()).copied()
-    }
-
-    /// Returns the transform composed from the root through this occurrence.
-    pub fn resolved_transform(&self, id: &OccurrenceId) -> Option<Transform> {
-        self.resolved.get(id.as_str()).copied()
     }
 }
 

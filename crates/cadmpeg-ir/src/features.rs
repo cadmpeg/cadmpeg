@@ -2296,21 +2296,6 @@ impl TreeChildren {
     pub fn insert(&mut self, child: FeatureId) {
         self.children.insert(child);
     }
-
-    /// Select an active child from the current members.
-    pub fn set_active_child(
-        &mut self,
-        active_child: Option<FeatureId>,
-    ) -> Result<(), &'static str> {
-        if active_child
-            .as_ref()
-            .is_some_and(|active| !self.children.contains(active))
-        {
-            return Err("active_child must belong to children");
-        }
-        self.active_child = active_child;
-        Ok(())
-    }
 }
 
 impl std::ops::Deref for TreeChildren {
@@ -4472,56 +4457,6 @@ impl RevolveConstruction {
         }
     }
 
-    /// Replaces the angular extent, naming the resolution state the new operand
-    /// set produces.
-    pub fn set_extent(&mut self, extent: Option<RevolveExtent>) {
-        let profile = self.profile().cloned();
-        let axis = self.axis().cloned();
-        let RevolveSelections {
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = self.selections();
-        *self = match (profile, axis, extent) {
-            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), Some(axis), None) => {
-                Self::Unresolved(PartialRevolveConstruction::Extent {
-                    profile,
-                    axis,
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                })
-            }
-            (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
-                profile,
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            },
-        };
-    }
-
     /// Returns the standalone solid selection, when carried.
     pub const fn solid(&self) -> Option<bool> {
         match self {
@@ -4532,19 +4467,6 @@ impl RevolveConstruction {
                 | PartialRevolveConstruction::Extent { solid, .. },
             ) => *solid,
         }
-    }
-
-    /// Replaces the standalone solid selection.
-    pub const fn set_solid(&mut self, solid: Option<bool>) {
-        let slot = match self {
-            Self::Resolved { solid, .. }
-            | Self::Unresolved(
-                PartialRevolveConstruction::Profile { solid, .. }
-                | PartialRevolveConstruction::Axis { solid, .. }
-                | PartialRevolveConstruction::Extent { solid, .. },
-            ) => solid,
-        };
-        *slot = solid;
     }
 
     /// Returns the standalone face-maker selection, when carried.
@@ -8315,17 +8237,6 @@ impl PathRef {
         Ok(Self::SpatialSketchCurves {
             sketch,
             curves: curves.try_into()?,
-        })
-    }
-
-    /// Admits native path selections in one spatial sketch.
-    pub fn spatial_sketch_selection(
-        sketch: crate::sketches::SpatialSketchId,
-        selections: Vec<String>,
-    ) -> Result<Self, BodySelectionError> {
-        Ok(Self::SpatialSketchSelection {
-            sketch,
-            selections: selections.try_into()?,
         })
     }
 
