@@ -480,7 +480,7 @@ pub(crate) fn write_semantic(
         .iter()
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = *degenerate_curve.point();
+                let point = degenerate_curve.point().get();
                 edited_curves
                     .contains(curve.id.as_str())
                     .then(|| (curve.id.as_str().to_owned(), point))

@@ -1616,7 +1616,7 @@ fn legacy_decoded_curve_endpoints(
             Ok([endpoint, endpoint])
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let point = degenerate_curve.point();
+            let point = degenerate_curve.point().get();
             let point = Point3([point.x, point.y, point.z]);
             Ok([point, point])
         }

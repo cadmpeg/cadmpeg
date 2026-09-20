@@ -367,8 +367,8 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert!(
         matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve))
         if {
-            let point = degenerate_curve.point();
-            *point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
+            let point = degenerate_curve.point().get();
+            point == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
         })
     );
     let vertex = result

@@ -647,9 +647,9 @@ fn scale_decoded_curve(
                 *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-                let point = degenerate_curve.point();
+                let point = degenerate_curve.point().get();
                 *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
-                    scale_ir_point(*point, scale).ok_or_else(|| {
+                    scale_ir_point(point, scale).ok_or_else(|| {
                         GeometryError::malformed(
                             offset,
                             "scaled plane-space curve point is invalid",

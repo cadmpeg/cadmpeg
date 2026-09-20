@@ -478,20 +478,20 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             e.emit("PARABOLA", &format!("'',{pl},{}", real(focal_distance)))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let center = hyperbola_curve.center();
+            let center = hyperbola_curve.center().get();
             let axis = hyperbola_curve.axis();
             let major_direction = hyperbola_curve.major_direction();
-            let major_radius = hyperbola_curve.major_radius();
-            let minor_radius = hyperbola_curve.minor_radius();
-            let pl = placement(e, *center, *axis, *major_direction);
+            let major_radius = hyperbola_curve.major_radius().get();
+            let minor_radius = hyperbola_curve.minor_radius().get();
+            let pl = placement(e, center, *axis, *major_direction);
             e.emit(
                 "HYPERBOLA",
                 &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),
             )
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let collapsed = degenerate_curve.point();
-            let point = point(e, *collapsed);
+            let collapsed = degenerate_curve.point().get();
+            let point = point(e, collapsed);
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, n),

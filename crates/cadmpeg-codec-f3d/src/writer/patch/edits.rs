@@ -3082,11 +3082,10 @@ pub(super) fn validate_curve_edits(
                 let major_direction = ellipse_curve.major_direction();
                 orthonormal_pair(*axis, *major_direction)
             }
-            Some(SolvedCurveGeometry::Degenerate(degenerate_curve))
+            Some(SolvedCurveGeometry::Degenerate(_))
                 if { matches!(before, Some(SolvedCurveGeometry::Degenerate(_))) } =>
             {
-                let point = degenerate_curve.point();
-                point.is_finite()
+                true
             }
             Some(SolvedCurveGeometry::Nurbs(after)) => {
                 let Some(SolvedCurveGeometry::Nurbs(before)) = before else {
