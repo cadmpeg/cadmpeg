@@ -781,6 +781,23 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     Some((full_knots, controls))
 }
 
+pub(crate) fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
+    let capacity = multiplicities
+        .iter()
+        .try_fold(0usize, |sum, value| sum.checked_add(*value as usize))?;
+    let mut knots = Vec::with_capacity(capacity);
+    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
+        knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
+    }
+    Some(knots)
+}
+
+pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
+    multiplicities
+        .iter()
+        .try_fold(0u32, |sum, value| sum.checked_add(*value))?
+        .checked_sub(degree + 1)
+}
 
 #[cfg(test)]
 mod tests {
@@ -794,9 +811,8 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::{
-        canonical_model_curve_range, circular_helix_cache,
-        quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
-        reverse_pcurve_geometry, LaneRefusals,
+        canonical_model_curve_range, circular_helix_cache, quintic_jet_bspline,
+        reverse_curve_geometry, reverse_helix_definition, reverse_pcurve_geometry, LaneRefusals,
     };
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
@@ -1038,7 +1054,11 @@ mod tests {
             false,
         )
         .unwrap();
-        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(&surface, cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, tiny * 0.5)
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &surface,
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            tiny * 0.5,
+        )
         .expect("tiny rational surface isocurve");
         assert_eq!(
             curve.control_points(),
@@ -1071,7 +1091,8 @@ mod tests {
             )
             .unwrap()
         };
-        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(&surface(
+        assert!(cadmpeg_ir::eval::nurbs_surface_isocurve(
+            &surface(
                 vec![
                     Point3::new(f64::MAX, 0.0, 0.0),
                     Point3::new(f64::MAX, 0.0, 0.0),
@@ -1079,7 +1100,10 @@ mod tests {
                     Point3::new(-f64::MAX, 0.0, 0.0),
                 ],
                 Some(vec![1.0, 1.0, -0.5, -0.5]),
-            ), cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U, 0.5)
+            ),
+            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
+            0.5
+        )
         .is_none());
     }
 
