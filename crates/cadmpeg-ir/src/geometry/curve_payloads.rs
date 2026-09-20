@@ -99,11 +99,18 @@ struct SurfaceOffsetCurveConstructionWire {
 }
 
 impl SurfaceOffsetCurveConstruction {
-    pub(super) fn revision_cache_mut(
+    pub(super) fn write_revision_fit_tolerance(
         &mut self,
-    ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
-        self.cache.form_mut().map(|form| &mut form.cache)
+        value: super::FitTolerance,
+        write: super::ToleranceWrite,
+    ) -> super::RevisionCacheWrite {
+        super::write_revision_form_tolerance(
+            self.cache.form_mut().map(|form| &mut form.cache),
+            value,
+            write,
+        )
     }
+
     /// Admit the construction parameters.
     pub fn try_new(
         context: IntcurveSupportContext,
@@ -244,11 +251,14 @@ struct DeformableCurveConstructionWire {
 }
 
 impl DeformableCurveConstruction {
-    pub(super) fn revision_cache_mut(
+    pub(super) fn write_revision_fit_tolerance(
         &mut self,
-    ) -> &mut super::RevisionCacheForm<super::CacheFirstCurveParameterization> {
-        &mut self.cache_first.cache
+        value: super::FitTolerance,
+        write: super::ToleranceWrite,
+    ) -> super::RevisionCacheWrite {
+        super::write_revision_form_tolerance(Some(&mut self.cache_first.cache), value, write)
     }
+
     /// Admit the construction parameters.
     pub fn try_new(
         context: IntcurveSupportContext,
@@ -1124,10 +1134,16 @@ impl TryFrom<ProjectionCurvePayloadWire> for ProjectionCurvePayload {
 }
 
 impl SpringCurvePayload {
-    pub(super) fn revision_cache_mut(
+    pub(super) fn write_revision_fit_tolerance(
         &mut self,
-    ) -> Option<&mut super::RevisionCacheForm<super::CacheFirstCurveParameterization>> {
-        self.layout.cache_first_mut().map(|form| &mut form.cache)
+        value: super::FitTolerance,
+        write: super::ToleranceWrite,
+    ) -> super::RevisionCacheWrite {
+        super::write_revision_form_tolerance(
+            self.layout.cache_first_mut().map(|form| &mut form.cache),
+            value,
+            write,
+        )
     }
 }
 

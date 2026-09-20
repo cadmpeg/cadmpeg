@@ -940,22 +940,28 @@ impl ProceduralSurfaceDefinition {
         value: FitTolerance,
         write: ToleranceWrite,
     ) -> RevisionCacheWrite {
-        let form = match self {
-            Self::Exact(payload) => payload.revision_cache_mut(),
-            Self::Taper(payload) => payload.revision_cache_mut(),
-            Self::Extrusion(payload) => payload.revision_cache_mut(),
-            Self::Revolution(payload) => payload.revision_cache_mut(),
-            Self::Sum(payload) => payload.revision_cache_mut(),
-            Self::Offset(payload) => payload.revision_cache_mut(),
-            Self::Loft(payload) => payload.revision_cache_mut(),
-            Self::RevisionCompoundLoft { construction } => Some(&mut construction.cache),
-            Self::RevisionG2Blend { construction } => Some(&mut construction.cache),
-            Self::Sweep(payload) => payload.revision_cache_mut(),
-            Self::TSpline { construction } => {
-                construction.cache.form_mut().map(|form| &mut form.cache)
+        match self {
+            Self::Exact(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Taper(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Extrusion(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Revolution(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Sum(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Offset(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Loft(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::RevisionCompoundLoft { construction } => {
+                construction.cache.write_fit_tolerance(value, write)
             }
-            Self::Deformable(payload) => payload.revision_cache_mut(),
-            Self::Blend(payload) => payload.revision_cache_mut(),
+            Self::RevisionG2Blend { construction } => {
+                construction.cache.write_fit_tolerance(value, write)
+            }
+            Self::Sweep(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::TSpline { construction } => write_revision_form_tolerance(
+                construction.cache.form_mut().map(|form| &mut form.cache),
+                value,
+                write,
+            ),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Blend(payload) => payload.write_revision_fit_tolerance(value, write),
             Self::Compound(_)
             | Self::SubSurface(_)
             | Self::CompoundLoft(_)
@@ -976,9 +982,8 @@ impl ProceduralSurfaceDefinition {
             | Self::CurveBounded { .. }
             | Self::Ruled { .. }
             | Self::RollingBallJet(_)
-            | Self::Unknown { .. } => None,
-        };
-        write_revision_form_tolerance(form, value, write)
+            | Self::Unknown { .. } => RevisionCacheWrite::NoForm,
+        }
     }
 
     /// Whether the construction owns a revision-gated cache form, which then
@@ -7440,15 +7445,22 @@ impl SurfaceCurveFamily {
         }
     }
 
-    fn revision_cache_mut(
+    /// Write the fit tolerance of the revision-gated solved cache.
+    ///
+    /// The narrow write route: the borrow of the cache form stays inside this
+    /// method, so the family lends no admitted interior for writing.
+    fn write_revision_fit_tolerance(
         &mut self,
-    ) -> Option<&mut RevisionCacheForm<CacheFirstCurveParameterization>> {
-        match self {
+        value: FitTolerance,
+        write: ToleranceWrite,
+    ) -> RevisionCacheWrite {
+        let form = match self {
             Self::Blend { tail, .. }
             | Self::SurfaceConstrained { tail, .. }
             | Self::Skin { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
             Self::Parametric { tail, .. } => tail.as_mut().map(|first| &mut first.form.cache),
-        }
+        };
+        write_revision_form_tolerance(form, value, write)
     }
 
     /// Return whether two families have the same discriminant and cache-first
@@ -7857,14 +7869,13 @@ impl ProceduralCurveDefinition {
         value: FitTolerance,
         write: ToleranceWrite,
     ) -> RevisionCacheWrite {
-        let form = match self {
-            Self::SurfaceCurve { family } => family.revision_cache_mut(),
-            Self::SurfaceOffset(payload) => payload.revision_cache_mut(),
-            Self::Spring(payload) => payload.revision_cache_mut(),
-            Self::Deformable(payload) => Some(payload.revision_cache_mut()),
-            _ => None,
-        };
-        write_revision_form_tolerance(form, value, write)
+        match self {
+            Self::SurfaceCurve { family } => family.write_revision_fit_tolerance(value, write),
+            Self::SurfaceOffset(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Spring(payload) => payload.write_revision_fit_tolerance(value, write),
+            Self::Deformable(payload) => payload.write_revision_fit_tolerance(value, write),
+            _ => RevisionCacheWrite::NoForm,
+        }
     }
 }
 
