@@ -160,16 +160,6 @@ impl PresentationDocument {
             PresentationStateKind::Native(_) => None,
         })
     }
-
-    /// Mutable persisted active camera, when a Camera state is present.
-    pub fn camera_mut(&mut self) -> Option<&mut CameraState> {
-        self.states
-            .iter_mut()
-            .find_map(|state| match &mut state.kind {
-                PresentationStateKind::Camera(camera) => Some(camera),
-                PresentationStateKind::Native(_) => None,
-            })
-    }
 }
 
 impl From<PresentationDocument> for PresentationDocumentWire {
