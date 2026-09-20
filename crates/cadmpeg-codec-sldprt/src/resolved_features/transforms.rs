@@ -1,8 +1,6 @@
 //! Marker-to-sketch transform selection.
 
-use super::grid::GridCoordinate;
-
-use super::grid::{quantize, GridPoint};
+use super::grid::{quantize, GridCoordinate, GridPoint};
 
 use crate::records::{SketchInputEntity, SketchInputKind};
 use cadmpeg_ir::math::Point2;
@@ -193,10 +191,14 @@ fn axis_aligned_sketch_frame_marker_transform(
             u: u_sign,
             v: v_sign,
         },
-        translation: (
-            (-origin[u_axis_index] * f64::from(u_sign.value()) / quantum).round() as i64,
-            (-origin[v_axis_index] * f64::from(v_sign.value()) / quantum).round() as i64,
-        ),
+        translation: quantize(
+            Point2::new(
+                -origin[u_axis_index] * f64::from(u_sign.value()),
+                -origin[v_axis_index] * f64::from(v_sign.value()),
+            ),
+            quantum,
+        )
+        .cells()?,
     })
 }
 
@@ -261,10 +263,11 @@ fn affine_sketch_frame_marker_transform(
         / normal[normal_axis];
     Some(MarkerTransform {
         axes: Axes::Affine(matrix),
-        translation: (
-            (dot(zero_world_delta, u_axis) / quantum).round() as i64,
-            (dot(zero_world_delta, v_axis) / quantum).round() as i64,
-        ),
+        translation: quantize(
+            Point2::new(dot(zero_world_delta, u_axis), dot(zero_world_delta, v_axis)),
+            quantum,
+        )
+        .cells()?,
     })
 }
 
