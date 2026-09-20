@@ -1763,8 +1763,8 @@ mod tests {
                 assert_eq!(elevated.knots()[elevated.control_points().len()], end);
                 for fraction in [0.0, 0.125, 0.25, 0.5, 0.625, 0.875, 1.0] {
                     let at = start + (end - start) * fraction;
-                    let expected = curve_point_solved(&SolvedCurveGeometry::Nurbs { nurbs: curve.clone() }, at).unwrap();
-                    let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs { nurbs: elevated.clone() }, at).unwrap();
+                    let expected = curve_point_solved(&SolvedCurveGeometry::Nurbs(curve.clone()), at).unwrap();
+                    let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(elevated.clone()), at).unwrap();
                     assert!(actual.distance(expected) <= 64.0 * f64::EPSILON);
                 }
             }
@@ -1780,7 +1780,7 @@ mod tests {
         let second = NurbsCurve::from_lanes(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)], Some(vec![1.0; 3]), false).unwrap();
         let joined = super::join_nurbs_segments(vec![first, second], 0).unwrap();
-        let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs { nurbs: joined.curve }, 1.5).unwrap();
+        let actual = curve_point_solved(&SolvedCurveGeometry::Nurbs(joined.curve), 1.5).unwrap();
         assert_eq!(actual, Point3::new(0.25, 0.75, 0.0));
     }
 
