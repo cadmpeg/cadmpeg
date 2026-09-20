@@ -699,7 +699,7 @@ pub(crate) fn exact_nurbs(
                 let radius = circle_curve.radius().get();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {
-                    center: center,
+                    center,
                     axis: *axis,
                     xaxis: *ref_direction,
                     yaxis,

@@ -1477,11 +1477,10 @@ fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f
     if !period.is_finite() || period <= 0.0 || !angularly_equal(period, std::f64::consts::TAU) {
         return false;
     }
-    match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => true,
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => true,
-        _ => false,
-    }
+    matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+    )
 }
 
 #[derive(Clone, Copy)]

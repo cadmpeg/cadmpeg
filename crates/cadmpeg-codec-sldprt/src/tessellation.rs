@@ -1507,7 +1507,7 @@ fn planar_boundary_samples(
             )?;
             let span = shortest_arc_span(start_parameter, end_parameter)?;
             PlanarArc {
-                center: center,
+                center,
                 first_direction: reference,
                 second_direction: transverse,
                 first_radius: radius,
@@ -1562,7 +1562,7 @@ fn planar_boundary_samples(
             )?;
             let span = shortest_arc_span(start_parameter, end_parameter)?;
             PlanarArc {
-                center: center,
+                center,
                 first_direction: major_direction,
                 second_direction: minor_direction,
                 first_radius: major_radius,
