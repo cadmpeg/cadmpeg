@@ -1277,7 +1277,8 @@ fn numerical_seventh_sphere_tangency_and_membership_preserve_scale() {
             CarrierEquation::Sphere(sphere(0.0))
         ));
         assert!(tangent_sphere_point(sphere(0.0), sphere(3.0 * radius)).is_none());
-        let tangent = tangent_sphere_point(sphere(0.0), sphere(2.0 * radius)).unwrap();
+        let tangent = tangent_sphere_point(sphere(0.0), sphere(2.0 * radius))
+            .expect("externally tangent spheres share one point");
         assert!((tangent[0] / radius - 1.0).abs() <= 8.0 * f64::EPSILON);
         let plane = PlaneEquation {
             origin: [0.0; 3],

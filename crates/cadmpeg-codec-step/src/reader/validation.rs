@@ -341,7 +341,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
     })?;
     let extent = meshes
         .clone()
-        .flat_map(|mesh| mesh.vertices())
+        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
         .fold(0.0_f64, |scale, point| {
             scale
                 .max((point.x - origin.x).abs())
