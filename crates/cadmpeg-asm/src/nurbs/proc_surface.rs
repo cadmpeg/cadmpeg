@@ -76,7 +76,8 @@ impl DecodedProceduralSurface {
     }
 
     /// Return the tolerance stored outside a legacy construction.
-    pub fn legacy_cache_fit_tolerance(&self) -> Option<f64> {
+    #[cfg(test)]
+    pub(crate) fn legacy_cache_fit_tolerance(&self) -> Option<f64> {
         match self.cache {
             ProceduralSurfaceCache::Legacy(tolerance) => tolerance,
             ProceduralSurfaceCache::Revision => None,
