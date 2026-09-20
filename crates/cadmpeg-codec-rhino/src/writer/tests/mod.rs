@@ -14,6 +14,7 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod encoding;
 mod free_geometry;
+mod model;
 mod nurbs;
 mod planar;
 mod targets;
@@ -66,7 +67,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
     }
 }
 
-pub(super) fn polygon_sheet(points: &[Point3]) -> CadIr {
+fn polygon_sheet(points: &[Point3]) -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -329,7 +330,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
     ir.finalize();
 }
 
-pub(super) fn adjacent_quad_sheet() -> CadIr {
+fn adjacent_quad_sheet() -> CadIr {
     use cadmpeg_ir::geometry::{
         Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
