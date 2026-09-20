@@ -199,11 +199,6 @@ pub struct Region {
 }
 
 impl Region {
-    /// Exterior boundary of a solid region.
-    pub fn exterior_shell(&self) -> Option<&ShellId> {
-        self.shells.first()
-    }
-
     /// Ordered void boundaries of a solid region.
     pub fn void_shells(&self) -> impl Iterator<Item = &ShellId> {
         self.shells.iter().skip(1)

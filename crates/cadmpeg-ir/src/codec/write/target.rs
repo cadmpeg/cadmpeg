@@ -150,12 +150,6 @@ impl<'a> ResolvedWrite<'a> {
         }
     }
 
-    /// Whether the resolution is an off-catalog preserved source.
-    #[must_use]
-    pub const fn is_preserved(&self) -> bool {
-        matches!(self.target, ResolvedTarget::Preserved { .. })
-    }
-
     /// Whether the resolved dialect is the recorded same-format source
     /// dialect.
     #[must_use]

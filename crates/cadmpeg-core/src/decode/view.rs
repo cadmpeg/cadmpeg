@@ -430,14 +430,6 @@ const fn decode_i16_be(bytes: [u8; 2]) -> i16 {
     assemble_u16_be(bytes) as i16
 }
 
-const fn decode_i32_be(bytes: [u8; 4]) -> i32 {
-    assemble_u32_be(bytes) as i32
-}
-
-const fn decode_i64_be(bytes: [u8; 8]) -> i64 {
-    assemble_u64_be(bytes) as i64
-}
-
 macro_rules! view_readers {
     ($(($probe:ident, $req:ident, $at:ident, $ty:ty, $decode:ident, $size:literal)),* $(,)?) => {
         impl View<'_> {
@@ -484,9 +476,7 @@ view_readers!(
     (u16_be, req_u16_be, u16_be_at, u16, assemble_u16_be, 2),
     (i16_be, req_i16_be, i16_be_at, i16, decode_i16_be, 2),
     (u32_be, req_u32_be, u32_be_at, u32, assemble_u32_be, 4),
-    (i32_be, req_i32_be, i32_be_at, i32, decode_i32_be, 4),
     (u64_be, req_u64_be, u64_be_at, u64, assemble_u64_be, 8),
-    (i64_be, req_i64_be, i64_be_at, i64, decode_i64_be, 8),
     (f32_be, req_f32_be, f32_be_at, f32, assemble_f32_be, 4),
     (f64_be, req_f64_be, f64_be_at, f64, assemble_f64_be, 8),
 );

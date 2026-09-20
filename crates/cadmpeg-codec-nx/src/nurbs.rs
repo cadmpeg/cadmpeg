@@ -180,6 +180,7 @@ fn decode_surfaces(
 }
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
+#[cfg(test)]
 pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);

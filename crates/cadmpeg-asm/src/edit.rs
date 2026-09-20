@@ -175,16 +175,6 @@ impl AsmEditSet {
         self.records.iter().find(|record| record.index == index)
     }
 
-    /// Integer and reference payload width for this SAB stream.
-    pub const fn ref_width(&self) -> RefWidth {
-        self.ref_width
-    }
-
-    /// Positive finite ASM length scale, absent when the native scale is invalid.
-    pub const fn header_scale(&self) -> Option<f64> {
-        self.header_scale
-    }
-
     /// Locate a payload value token and require its exact tag.
     pub fn required_payload_field(
         &self,

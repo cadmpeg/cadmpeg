@@ -176,24 +176,6 @@ impl<C> PatternKind<C> {
         &self.0
     }
 
-    /// Edits the transform and re-admits it, preserving the pattern on refusal.
-    ///
-    /// # Errors
-    ///
-    /// Returns the admission message when the edited transform is inadmissible.
-    pub fn try_edit(
-        &mut self,
-        edit: impl FnOnce(&mut PatternTransform<C>),
-    ) -> Result<(), &'static str>
-    where
-        C: Clone,
-    {
-        let mut candidate = self.0.clone();
-        edit(&mut candidate);
-        *self = Self::new(candidate)?;
-        Ok(())
-    }
-
     /// Returns the curve path slot without exposing repetition geometry.
     pub fn curve_path_mut(&mut self) -> Option<&mut Option<PathRef>> {
         match &mut self.0 {
@@ -447,17 +429,6 @@ impl CompositePattern {
         self.0
             .get(index)
             .map(|stage| stage_combination(index, stage))
-    }
-
-    /// Each stage paired with the rule that combines it with the stages
-    /// before it.
-    pub fn combinations(
-        &self,
-    ) -> impl Iterator<Item = (&PatternStage, PatternStageCombination)> + '_ {
-        self.0
-            .iter()
-            .enumerate()
-            .map(|(index, stage)| (stage, stage_combination(index, stage)))
     }
 }
 

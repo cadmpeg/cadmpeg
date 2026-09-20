@@ -38,16 +38,6 @@ impl FcstdPropertyValue {
         }
     }
 
-    /// Construct a value element with escaped text content.
-    pub fn text(tag: impl Into<String>, text: impl Into<String>) -> Self {
-        Self {
-            tag: tag.into(),
-            attributes: BTreeMap::new(),
-            text: Some(text.into()),
-            children: Vec::new(),
-        }
-    }
-
     /// Construct an empty value element.
     pub fn empty(tag: impl Into<String>) -> Self {
         Self {

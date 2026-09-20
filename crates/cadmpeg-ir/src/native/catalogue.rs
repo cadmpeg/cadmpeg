@@ -66,11 +66,6 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
         Self { rows }
     }
 
-    /// Returns the declared rows in stable order.
-    pub const fn rows(&self) -> &'a [FamilyRow<M, A, N, E>] {
-        self.rows
-    }
-
     /// Emits every family through its row function, empty families included.
     pub fn emit_all(&self, model: &M, namespace: &mut N) -> Result<(), NativeConvertError> {
         for row in self.rows {

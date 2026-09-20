@@ -9,10 +9,8 @@ use serde::{Deserialize, Serialize};
 
 /// A format-specific product record.
 ///
-/// The `Deserialize` derive has a live reader: `CadIr::native_unknowns_iter`
-/// and `CadIr::all_native_unknowns_iter` read this type out of the reserved
-/// `unknowns` arena through `arena_iter_as`, whose bound is
-/// `T: DeserializeOwned`.
+/// `CadIr::native_unknowns_iter` reads this type from the reserved `unknowns`
+/// arena through `arena_iter_as`, whose bound is `T: DeserializeOwned`.
 ///
 /// The product projection contains only identity and links. Extra source
 /// fields require an explicit raw [`UnknownRecord`] read; this reader must not
