@@ -396,6 +396,23 @@ struct BoundedCoefficient {
 /// that same ratio. The fifth multiple covers both.
 const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
 
+/// A real root beside the distance from it inside which the exact root lies,
+/// and whether the derivative states zero there as well.
+///
+/// The three producers of a root state different accuracies, and a caller that
+/// reads a coordinate off the root cannot tell them apart from the value. A
+/// bisected root is known to the half-width of the bracket the bisection ended
+/// with, which is an absolute width and says nothing about the value's own
+/// significand. `multiple` marks a root the polynomial shares with its
+/// derivative, which is a root of even order: two intersections that coincide
+/// rather than two that are apart.
+#[derive(Clone, Copy)]
+struct PolynomialRoot {
+    value: f64,
+    error: f64,
+    multiple: bool,
+}
+
 /// Return the finite real roots in ascending order.
 ///
 /// The degree is stated by each leading coefficient against its own bound: a
@@ -403,7 +420,7 @@ const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
 /// the polynomial is of lower degree. A residue kept as a leading coefficient
 /// states roots of order `1 / residue` that no exact polynomial has; a real
 /// leading coefficient dropped loses the roots it carries.
-fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<f64> {
+fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialRoot> {
     let scale = coefficients
         .iter()
         .map(|coefficient| coefficient.value.abs())
@@ -434,7 +451,20 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<f64> {
         .map(|coefficient| coefficient.value)
         .collect::<Vec<_>>();
     if degree == 1 {
-        return vec![-coefficients[0] / coefficients[1]];
+        // The pop loop stopped because the leading coefficient is outside its
+        // own bound, so the difference below is positive. The exact root is
+        // `-(c0 + e0)/(c1 + e1)` for some `|e| <= bound`, which is within
+        // `(b0 + |root| b1)/(|c1| - b1)` of the stated one, and the division
+        // itself rounds once.
+        let value = -coefficients[0] / coefficients[1];
+        let error = (scaled[0].bound + value.abs() * scaled[1].bound)
+            / (coefficients[1].abs() - scaled[1].bound)
+            + cancellation_bound(value);
+        return vec![PolynomialRoot {
+            value,
+            error,
+            multiple: false,
+        }];
     }
     let derivative = scaled
         .iter()
@@ -453,22 +483,37 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<f64> {
             .map(f64::abs)
             .fold(0.0, f64::max)
             / leading;
-    let mut boundaries = vec![-bound];
+    // The stations are the Cauchy interval's ends and the derivative's roots.
+    // A station the derivative owns at which the polynomial also states zero is
+    // a root the two share, so it is marked and keeps the derivative's own
+    // accuracy: the derivative of a polynomial with a root of even order has a
+    // root of one lower order at the same place, which bisection locates as an
+    // ordinary sign change where the polynomial itself has none.
+    let station = |value: f64| PolynomialRoot {
+        value,
+        error: cancellation_bound(value),
+        multiple: false,
+    };
+    let mut boundaries = vec![station(-bound)];
     boundaries.extend(
         real_polynomial_roots(&derivative)
             .into_iter()
-            .filter(|root| root.is_finite() && *root > -bound && *root < bound),
+            .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
+            .map(|root| PolynomialRoot {
+                multiple: true,
+                ..root
+            }),
     );
-    boundaries.push(bound);
-    boundaries.sort_by(f64::total_cmp);
+    boundaries.push(station(bound));
+    boundaries.sort_by(|left, right| left.value.total_cmp(&right.value));
     let value_tolerance = EPS_POLY_ROOT_VALUE;
     let mut roots = boundaries
         .iter()
         .copied()
-        .filter(|parameter| polynomial_value(&coefficients, *parameter).abs() <= value_tolerance)
+        .filter(|station| polynomial_value(&coefficients, station.value).abs() <= value_tolerance)
         .collect::<Vec<_>>();
     for interval in boundaries.windows(2) {
-        let (mut lower, mut upper) = (interval[0], interval[1]);
+        let (mut lower, mut upper) = (interval[0].value, interval[1].value);
         let mut lower_value = polynomial_value(&coefficients, lower);
         let upper_value = polynomial_value(&coefficients, upper);
         if lower_value * upper_value >= 0.0 {
@@ -484,20 +529,36 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<f64> {
                 lower_value = midpoint_value;
             }
         }
-        roots.push(0.5 * (lower + upper));
+        // The bracket still holds the sign change, so the exact root is within
+        // half its width of the midpoint stated here.
+        roots.push(PolynomialRoot {
+            value: 0.5 * (lower + upper),
+            error: 0.5 * (upper - lower).abs(),
+            multiple: false,
+        });
     }
-    roots.sort_by(f64::total_cmp);
+    roots.sort_by(|left, right| left.value.total_cmp(&right.value));
     roots
         .into_iter()
-        .fold(Vec::<f64>::new(), |mut unique, root| {
+        .fold(Vec::<PolynomialRoot>::new(), |mut unique, root| {
             if let Some(previous) = unique.last_mut() {
-                let tolerance = EPS_ROOT_CLUSTER * previous.abs().max(root.abs()).max(1.0);
-                if (*previous - root).abs() <= tolerance {
-                    if polynomial_value(&coefficients, root).abs()
-                        < polynomial_value(&coefficients, *previous).abs()
+                let tolerance =
+                    EPS_ROOT_CLUSTER * previous.value.abs().max(root.value.abs()).max(1.0);
+                let separation = (previous.value - root.value).abs();
+                if separation <= tolerance {
+                    // Two roots this close are one root of the exact
+                    // polynomial or two the stated coefficients cannot tell
+                    // apart, so the survivor carries their separation and both
+                    // accuracies, and is multiple if either is.
+                    let error = previous.error.max(root.error).max(separation);
+                    let multiple = previous.multiple || root.multiple;
+                    if polynomial_value(&coefficients, root.value).abs()
+                        < polynomial_value(&coefficients, previous.value).abs()
                     {
-                        *previous = root;
+                        previous.value = root.value;
                     }
+                    previous.error = error;
+                    previous.multiple = multiple;
                     return unique;
                 }
             }
@@ -779,7 +840,8 @@ pub(super) fn common_plane_conic_parameters(
 ) -> Vec<[f64; 2]> {
     let resultant = conic_resultant(first, second);
     let mut parameters = Vec::<[f64; 2]>::new();
-    for u in real_polynomial_roots(&resultant) {
+    for root in real_polynomial_roots(&resultant) {
+        let u = root.value;
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
@@ -901,25 +963,28 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
         value: polynomial[power],
         bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(polynomial_terms[power]),
     });
-    let coordinate_scale = torus
-        .center
-        .into_iter()
-        .chain(line_origin)
-        .map(f64::abs)
-        .fold(
-            torus.major_radius.max(torus.minor_radius).max(1.0),
-            f64::max,
-        );
     real_polynomial_roots(&polynomial)
         .into_iter()
-        .map(|parameter| {
+        .map(|root| {
             std::array::from_fn(|index| {
-                let coordinate = line_origin[index] + parameter * direction[index];
-                if coordinate.abs() <= 1e-14 * coordinate_scale {
-                    0.0
-                } else {
-                    coordinate
+                // The coordinate is the two-term sum `origin + parameter *
+                // direction`. Its distance from the coordinate at the exact
+                // root is the root's own error scaled by the direction cosine,
+                // plus the rounding of the product and the sum over the two
+                // terms' magnitudes. A coordinate inside that distance states
+                // the zero the exact root gives it; one outside states its own
+                // value. The torus is a surface of revolution about its axis
+                // and its intersection with a line carries no coordinate
+                // exactly, so nothing here rounds a coordinate to a tidier
+                // value that the arithmetic does not already hold.
+                let offset = root.value * direction[index];
+                let coordinate = line_origin[index] + offset;
+                let coordinate_bound = direction[index].abs() * root.error
+                    + cancellation_bound(line_origin[index].abs() + offset.abs());
+                if coordinate.abs() <= coordinate_bound {
+                    return 0.0;
                 }
+                coordinate
             })
         })
         .filter(|point| point_on_carrier(*point, CarrierEquation::Torus(torus)))
@@ -1184,7 +1249,7 @@ pub(in crate::decode) fn plane_cone_conic(
 
 #[cfg(test)]
 mod tests {
-    use super::{ConeEquation, PlaneConicEquation};
+    use super::{ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation};
     use crate::decode::quadratic::Coefficient;
     use std::f64::consts::FRAC_PI_2;
 
@@ -1223,6 +1288,44 @@ mod tests {
 
         assert_eq!(resultant.len(), 5);
         assert!(resultant[4].value != 0.0);
+    }
+
+    #[test]
+    fn numerical_followup_torus_line_keeps_a_coordinate_the_plane_pair_states() {
+        // The plane x = 1e-15 meets the equatorial plane in a line along y
+        // whose x coordinate is that offset exactly: the direction has no x
+        // component, so no error of the polynomial root reaches it and the only
+        // distance it carries is the rounding of a one-term sum, which is
+        // 1e-31. A rule that states zero below a fixed fraction of the torus
+        // radii replaces the offset the plane pair carries by a tidier value.
+        const OFFSET: f64 = 1.0e-15;
+        const EPS_TEST_TORUS_POINT: f64 = 1.0e-9;
+        let offset_plane = PlaneEquation {
+            origin: [OFFSET, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let equatorial_plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let torus = TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 3.0,
+            minor_radius: 1.0,
+        };
+
+        let mut points =
+            super::intersect_two_planes_with_torus(offset_plane, equatorial_plane, torus);
+        points.sort_by(|left, right| left[1].total_cmp(&right[1]));
+
+        assert_eq!(points.len(), 4);
+        for (point, expected) in points.iter().zip([-4.0, -2.0, 2.0, 4.0]) {
+            assert_eq!(point[0], OFFSET);
+            assert_eq!(point[2], 0.0);
+            assert!((point[1] - expected).abs() <= EPS_TEST_TORUS_POINT);
+        }
     }
 
     #[test]
