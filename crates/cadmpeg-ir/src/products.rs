@@ -1131,14 +1131,21 @@ impl JointLimits {
 #[serde(tag = "bounds", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum JointLimitsWire {
+    /// Only the lower bound is enabled.
     Minimum {
+        /// Lower bound.
         minimum: FiniteReal,
     },
+    /// Only the upper bound is enabled.
     Maximum {
+        /// Upper bound.
         maximum: FiniteReal,
     },
+    /// Both bounds are enabled, in order.
     Range {
+        /// Lower bound.
         minimum: FiniteReal,
+        /// Upper bound, at or above `minimum`.
         maximum: FiniteReal,
     },
 }

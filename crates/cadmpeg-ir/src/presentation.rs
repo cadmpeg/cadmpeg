@@ -95,21 +95,26 @@ pub struct PresentationDocument {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PresentationDocumentWire {
+    /// Globally unique presentation identity.
     id: PresentationId,
+    /// Persisted GUI schema version.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_schema_version"
     )]
     schema_version: Option<u32>,
+    /// Active view name or identity.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_active_view"
     )]
     active_view: Option<String>,
+    /// Ordered document-level GUI states.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     states: Vec<PresentationState>,
+    /// Native GUI document record supplying this state.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

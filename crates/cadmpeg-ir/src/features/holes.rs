@@ -358,7 +358,9 @@ enum PartialCountersinkDimension {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleKindWire {
+    /// Entry-treatment family whose dimensions remain unresolved.
     Unresolved {
+        /// Identified entry-treatment family of an unresolved construction.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -366,42 +368,67 @@ enum HoleKindWire {
         )]
         form: Option<HoleForm>,
     },
+    /// Independently retained counterbore diameter and depth.
     PartialCounterbore {
+        /// Independently retained counterbore diameter and depth.
         dimension: PartialCounterboreDimension,
     },
+    /// Independently retained countersink diameter and included angle.
     PartialCountersink {
+        /// Independently retained countersink diameter and included angle.
         dimension: PartialCountersinkDimension,
     },
+    /// Plain cylindrical hole with no entry feature.
     Simple {},
+    /// Hole with a chamfered entry.
     Chamfer {
+        /// Entry chamfer diameter.
         diameter: PositiveLength,
+        /// Included chamfer angle.
         angle: InteriorAngle,
     },
+    /// Plain cylindrical hole terminating in a conical drill point.
     SimpleDrilled {
+        /// Included angle of the conical drill point.
         drill_point_angle: InteriorAngle,
     },
+    /// Hole with a wider, flat-bottomed counterbore at the entry.
     Counterbore {
+        /// Counterbore diameter, wider than the hole diameter.
         diameter: PositiveLength,
+        /// Counterbore depth.
         depth: PositiveLength,
     },
+    /// Counterbored hole terminating in a conical drill point.
     CounterboreDrilled {
+        /// Counterbore diameter, wider than the hole diameter.
         diameter: PositiveLength,
+        /// Axial depth of the counterbore.
         depth: PositiveLength,
+        /// Included angle of the conical drill point.
         drill_point_angle: InteriorAngle,
     },
+    /// Hole with a conical countersink at the entry.
     Countersink {
+        /// Countersink diameter at the surface, wider than the hole diameter.
         diameter: PositiveLength,
+        /// Countersink included angle.
         angle: InteriorAngle,
     },
+    /// Hole with a conical entry followed by a wider cylindrical recess.
     Counterdrill {
+        /// Cylindrical recess diameter.
         diameter: PositiveLength,
+        /// Larger entry diameter, when the source states one.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_entry_diameter"
         )]
         entry_diameter: Option<PositiveLength>,
+        /// Cylindrical recess depth.
         depth: PositiveLength,
+        /// Included conical entry angle.
         angle: InteriorAngle,
     },
 }
@@ -550,9 +577,13 @@ pub enum HoleBottom {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleBottomWire {
+    /// Flat-bottomed cylindrical end.
     Flat {},
+    /// Conical drill point.
     Angled {
+        /// Included drill-point angle.
         included_angle: InteriorAngle,
+        /// Whether the declared blind depth reaches the tip instead of the shoulder.
         depth_to_tip: bool,
     },
 }
@@ -712,8 +743,11 @@ pub enum HoleThreadDepth {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum HoleThreadDepthWire {
+    /// Thread follows the complete hole depth.
     HoleDepth {},
+    /// Explicit thread length.
     Blind { depth: PositiveLength },
+    /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard {},
 }
 

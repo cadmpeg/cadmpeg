@@ -33,9 +33,13 @@ pub struct Color {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ColorWire {
+    /// Red component.
     r: f32,
+    /// Green component.
     g: f32,
+    /// Blue component.
     b: f32,
+    /// Opacity component.
     a: f32,
 }
 
@@ -705,7 +709,9 @@ pub struct LoopRing {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LoopRingWire {
+    /// Coedges in source traversal order.
     coedges: Vec<CoedgeId>,
+    /// Pole occurrences in source traversal order.
     #[serde(default)]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
@@ -1043,12 +1049,14 @@ pub struct EdgeCarrier {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct EdgeCarrierWire {
+    /// Curve carrying the edge, when the source states one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_curve"
     )]
     curve: Option<CurveId>,
+    /// Parameter endpoints on the carrier, when the source states them.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1183,8 +1191,11 @@ pub struct Point {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PointWire {
+    /// Arena id.
     id: PointId,
+    /// Coordinates in the document's length unit.
     position: Point3,
+    /// Source object carrying this free point, when known.
     #[serde(default, deserialize_with = "deserialize_source_object")]
     source_object: Option<crate::provenance::SourceObjectAssociation>,
 }

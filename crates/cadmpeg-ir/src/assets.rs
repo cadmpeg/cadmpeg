@@ -118,14 +118,19 @@ fn deserialize_uri<'de, D: serde::Deserializer<'de>>(
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct AssetWire {
+    /// Stable asset identity.
     id: AssetId,
+    /// Source display name or basename.
     #[serde(default, deserialize_with = "deserialize_asset_wire_name")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     name: Option<String>,
+    /// IANA media type when identified from the source container.
     #[serde(default, deserialize_with = "deserialize_asset_wire_media_type")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<NonBlankString>"))]
     media_type: Option<String>,
+    /// Embedded bytes or an external resource location.
     content: AssetContent,
+    /// Full-fidelity source record or container-entry identity.
     #[serde(default, deserialize_with = "deserialize_native_ref")]
     native_ref: Option<String>,
 }

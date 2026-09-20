@@ -74,9 +74,13 @@ pub struct SubdCage {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdCageWire {
+    /// Control vertices in cage order.
     vertices: Vec<SubdVertex>,
+    /// Control edges in cage order.
     edges: Vec<SubdEdge>,
+    /// Control faces in cage order.
     faces: Vec<SubdFace>,
+    /// Editor symmetry blocks in cage order.
     #[serde(default)]
     symmetries: Vec<SubdSymmetry>,
 }
@@ -268,8 +272,11 @@ pub struct SubdPlaneFrame {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdPlaneFrameWire {
+    /// A point on the plane in document length units.
     origin: Point3,
+    /// First unit in-plane axis.
     first_axis: Vector3,
+    /// Second unit in-plane axis.
     second_axis: Vector3,
 }
 
@@ -353,8 +360,11 @@ pub struct SubdRadialSymmetry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdRadialSymmetryWire {
+    /// Number of radial segments.
     segments: std::num::NonZeroU32,
+    /// Finite native radial sweep.
     sweep: f64,
+    /// Native maps with distinct selectors and distinct sources within each map.
     #[serde(default)]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
@@ -476,12 +486,17 @@ pub struct SubdSymmetry {
 #[cfg_attr(feature = "schema", schemars(rename = "SubdSymmetry"))]
 #[serde(deny_unknown_fields)]
 struct SubdSymmetryWire {
+    /// Symmetry mode and its radial controls, when present.
     kind: SubdSymmetryKind,
+    /// Geometric symmetry-plane frame.
     plane: SubdPlaneFrame,
+    /// Forward face correspondences for a topology-addressed symmetry block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     face_pairs: Vec<[u32; 2]>,
+    /// Forward edge correspondences for a topology-addressed symmetry block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edge_pairs: Vec<[u32; 2]>,
+    /// Forward vertex correspondences for a topology-addressed symmetry block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_pairs: Vec<[u32; 2]>,
 }
@@ -599,8 +614,11 @@ pub struct SubdVertex {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdVertexWire {
+    /// Vertex position.
     point: Point3,
+    /// Subdivision vertex tag.
     tag: SubdVertexTag,
+    /// Optional secondary-grip topology owned by this vertex.
     #[serde(default, deserialize_with = "deserialize_secondary_grips")]
     secondary_grips: Option<SubdVertexGripLayout>,
 }
@@ -677,7 +695,9 @@ pub struct SubdVertexGripLayout {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdVertexGripLayoutWire {
+    /// Direction of the native root edge; wedge zero is the north slot.
     direction: SubdGripDirection,
+    /// Wedges in north-anchored order.
     wedges: Vec<SubdGripWedge>,
 }
 
@@ -769,8 +789,11 @@ pub struct SubdSecondaryGrip {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdSecondaryGripWire {
+    /// Index in the source cage's `0g` grip array.
     source_index: u32,
+    /// Grip position in document units.
     point: Point3,
+    /// Positive rational grip weight.
     weight: f64,
 }
 
@@ -856,11 +879,16 @@ pub struct SubdEdge {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdEdgeWire {
+    /// Indices of the two distinct endpoint vertices.
     vertices: [u32; 2],
+    /// Sharpness at the start and end endpoints.
     sharpness: [f64; 2],
+    /// Subdivision edge tag.
     tag: SubdEdgeTag,
+    /// Parametric knot interval, when the source cage exposes one.
     #[serde(default, deserialize_with = "deserialize_knot_interval")]
     knot_interval: Option<f64>,
+    /// Sector coefficients at the two endpoints.
     sector_coefficients: [f64; 2],
 }
 
@@ -966,6 +994,7 @@ pub struct SubdFace {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdFaceWire {
+    /// Directed edge uses in boundary order.
     edges: Vec<SubdEdgeUse>,
 }
 

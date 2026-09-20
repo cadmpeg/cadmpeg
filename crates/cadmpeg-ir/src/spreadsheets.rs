@@ -28,7 +28,9 @@ pub struct SpreadsheetCell {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SpreadsheetCellWire {
+    /// One-based row and column.
     address: String,
+    /// Parameter that stores the cell expression and value.
     parameter: ParameterId,
 }
 
@@ -121,15 +123,22 @@ pub struct Spreadsheet {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SpreadsheetWire {
+    /// Globally unique sheet id.
     id: SpreadsheetId,
+    /// Feature-tree node owning this sheet.
     feature: FeatureId,
+    /// Used cells in persistence order.
     cells: Vec<SpreadsheetCell>,
+    /// Non-default column widths.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     column_widths: Vec<SpreadsheetDimensionWire>,
+    /// Non-default row heights.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     row_heights: Vec<SpreadsheetDimensionWire>,
+    /// Merged rectangular ranges.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     merged_ranges: Vec<SpreadsheetRange>,
+    /// Full-fidelity source sheet record.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -253,7 +262,9 @@ pub struct SpreadsheetRange {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SpreadsheetRangeWire {
+    /// Top-left cell.
     start: String,
+    /// Bottom-right cell.
     end: String,
 }
 

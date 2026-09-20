@@ -776,6 +776,7 @@ struct SubsetSurfaceConstructionWire {
         deserialize_with = "deserialize_subset_surface_construction_v_sense"
     )]
     v_sense: Option<bool>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1133,6 +1134,7 @@ pub struct ExactSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ExactSurfacePayloadWire {
+    /// Exact spline surface.
     spline: ExactSpline,
 }
 impl ExactSurfacePayload {
@@ -1191,7 +1193,9 @@ pub struct CompoundSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CompoundSurfacePayloadWire {
+    /// Component surfaces in construction order.
     components: Vec<CompoundComponent<SurfaceId>>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1245,18 +1249,25 @@ pub struct LoftSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LoftSurfacePayloadWire {
+    /// The two loft sections.
     sections: [LoftSection; 2],
 
+    /// Spline surface parameters.
     parameters: SplineSurfaceParameters,
 
+    /// Native closure codes of the two parameter directions.
     closures: [i64; 2],
 
+    /// Native singularity codes of the two parameter directions.
     singularities: [i64; 2],
 
+    /// Native loft mode code.
     mode: i64,
 
+    /// Native bridge tokens in source order.
     bridge: Vec<LoftBridgeToken>,
 
+    /// Cache contract: the revision-gated loft form, or the legacy solved-cache tolerance this construction states instead.
     #[serde(default)]
     cache: CacheContract<LoftRevisionForm>,
 }
@@ -1372,7 +1383,9 @@ pub struct CompoundLoftSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct CompoundLoftSurfacePayloadWire {
+    /// Compound loft construction.
     construction: Box<CompoundLoftConstruction>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1455,7 +1468,9 @@ pub struct ScaledCompoundLoftSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ScaledCompoundLoftSurfacePayloadWire {
+    /// Scaled compound loft construction.
     construction: Box<ScaledCompoundLoftConstruction>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1545,6 +1560,7 @@ pub struct LawSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct LawSurfacePayloadWire {
+    /// Law surface construction.
     construction: Box<LawSurfaceConstruction>,
 }
 impl LawSurfacePayload {
@@ -1615,7 +1631,9 @@ pub struct SkinSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SkinSurfacePayloadWire {
+    /// Skin surface construction.
     construction: Box<SkinSurfaceConstruction>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1691,7 +1709,9 @@ pub struct NetSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct NetSurfacePayloadWire {
+    /// Net surface construction.
     construction: Box<NetSurfaceConstruction>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -1758,10 +1778,13 @@ pub struct SweepSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SweepSurfacePayloadWire {
+    /// Curve swept along the spine.
     profile: CurveId,
 
+    /// Curve the profile follows.
     spine: CurveId,
 
+    /// Native sweep construction, when the source carries one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1942,6 +1965,7 @@ pub struct DeformableSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct DeformableSurfacePayloadWire {
+    /// Deformable surface construction.
     construction: Box<DeformableSurfaceConstruction>,
 }
 impl DeformableSurfacePayload {
@@ -2075,7 +2099,9 @@ pub struct G2BlendSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct G2BlendSurfacePayloadWire {
+    /// G2 blend construction.
     construction: Box<G2BlendConstruction>,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -2151,6 +2177,7 @@ pub struct VariableBlendSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct VariableBlendSurfacePayloadWire {
+    /// Variable blend construction.
     construction: Box<VariableBlendConstruction>,
 }
 impl VariableBlendSurfacePayload {
@@ -2240,6 +2267,7 @@ pub struct VertexBlendSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct VertexBlendSurfacePayloadWire {
+    /// Vertex blend construction.
     construction: Box<VertexBlendConstruction>,
 }
 impl VertexBlendSurfacePayload {
@@ -2340,8 +2368,10 @@ pub struct BlendSurfacePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct BlendSurfacePayloadWire {
+    /// Blend support sides.
     supports: [Option<BlendSupport>; 2],
 
+    /// Spine curve, when the source resolves one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2349,8 +2379,10 @@ struct BlendSurfacePayloadWire {
     )]
     spine: Option<CurveId>,
 
+    /// Blend radius law.
     radius: BlendRadiusLaw,
 
+    /// Blend cross-section form.
     cross_section: BlendCrossSection,
 
     /// Cache contract: the native rolling-ball construction, which states its

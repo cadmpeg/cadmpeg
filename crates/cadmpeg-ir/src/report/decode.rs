@@ -85,13 +85,19 @@ impl DecodeTransfer {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct DecodeReportWire {
+    /// Source format identity and its classified dialect layers.
     identity: FormatIdentity<DialectLayers>,
+    /// Typed source-transfer state.
     transfer: DecodeTransfer,
+    /// Decode coverage counts keyed by declared measure name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     coverage: BTreeMap<String, usize>,
+    /// Explicit loss notes.
     losses: Vec<LossNote>,
+    /// Free-form informational notes (e.g. container findings).
     notes: Vec<String>,
+    /// Per-source disposition ledger for decoded records and entities.
     #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     transfer_ledger: TransferLedger,
 }

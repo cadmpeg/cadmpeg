@@ -149,8 +149,11 @@ pub struct FeatureUnitPlaneFrame {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureUnitPlaneFrameWire {
+    /// Model-space origin.
     origin: Point3,
+    /// First unit direction.
     u_axis: Vector3,
+    /// Second unit direction.
     v_axis: Vector3,
 }
 
@@ -206,9 +209,13 @@ pub struct FeatureCoordinateFrame {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureCoordinateFrameWire {
+    /// Model-space origin.
     origin: Point3,
+    /// First unit axis of the frame.
     x_axis: Vector3,
+    /// Second unit axis, perpendicular to `x_axis`.
     y_axis: Vector3,
+    /// Third unit axis, completing a right-handed frame.
     z_axis: Vector3,
 }
 
@@ -370,7 +377,9 @@ pub struct FeatureLineSegment {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureLineSegmentWire {
+    /// Start point.
     start: Point3,
+    /// End point.
     end: Point3,
 }
 
@@ -413,7 +422,9 @@ pub struct FeaturePolyline {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeaturePolylineWire {
+    /// Ordered vertices.
     points: Vec<Point3>,
+    /// Whether the last vertex connects to the first.
     closed: bool,
 }
 
@@ -468,11 +479,17 @@ pub struct FeatureEquationCurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureEquationCurveWire {
+    /// Independent parameter symbol.
     parameter: String,
+    /// Model-space x expression.
     x_expression: String,
+    /// Model-space y expression.
     y_expression: String,
+    /// Model-space z expression.
     z_expression: String,
+    /// Inclusive lower parameter bound.
     start: f64,
+    /// Inclusive upper parameter bound.
     end: f64,
 }
 
@@ -561,10 +578,15 @@ pub struct FeatureCircularArc {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureCircularArcWire {
+    /// Circle center.
     center: Point3,
+    /// Circle-plane normal.
     normal: Vector3,
+    /// Circle radius.
     radius: PositiveLength,
+    /// Start of the directed angular interval, in radians.
     start_angle: f64,
+    /// End of the directed angular interval, in radians.
     end_angle: f64,
 }
 
@@ -645,12 +667,19 @@ pub struct FeatureEllipticArc {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureEllipticArcWire {
+    /// Ellipse center.
     center: Point3,
+    /// Ellipse-plane normal.
     normal: Vector3,
+    /// Major-axis direction.
     major_axis: Vector3,
+    /// Major semiaxis radius.
     major_radius: PositiveLength,
+    /// Minor semiaxis radius.
     minor_radius: PositiveLength,
+    /// Start of the directed angular interval, in radians.
     start_angle: f64,
+    /// End of the directed angular interval, in radians.
     end_angle: f64,
 }
 
@@ -4831,8 +4860,11 @@ impl SketchFeatureBinding {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "space", rename_all = "snake_case", deny_unknown_fields)]
 enum SketchFeatureBindingWire {
+    /// The feature's sketch space is unresolved.
     Unresolved {},
+    /// The source declares a planar sketch, with optional decoded geometry.
     Planar {
+        /// Resolved planar sketch identity, when available.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
@@ -5107,7 +5139,9 @@ impl TrimCellSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct TrimCellSelectionWire {
+    /// One-based ordinals of cells removed by the operation.
     removed: Vec<u64>,
+    /// Number of cells in the operation's partition.
     total: u64,
 }
 
@@ -6997,12 +7031,18 @@ pub enum CoilPlacement {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 enum CoilPlacementWire {
+    /// Complete model-space axis and radial frame.
     Explicit {
+        /// Model-space origin of the trajectory frame.
         origin: Point3,
+        /// Positive trajectory axis direction.
         axis: Vector3,
+        /// Angular-zero radial direction.
         radial: Vector3,
     },
+    /// Placement retained in one source-native construction aggregate.
     Native {
+        /// Nonblank native record or scope containing the placement semantics.
         native_ref: SelectionReference,
     },
 }
@@ -7607,7 +7647,9 @@ pub struct SketchProfileLoops {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SketchProfileLoopsWire {
+    /// The exterior-loop index.
     outer: u32,
+    /// The hole-loop indices in source order.
     #[serde(default)]
     holes: Vec<u32>,
 }

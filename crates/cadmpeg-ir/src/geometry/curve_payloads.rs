@@ -603,6 +603,7 @@ struct TwoSidedOffsetCurveConstructionWire {
     discontinuity_flag: bool,
     /// Signed offset distance for each support side, in document length units.
     offsets: [f64; 2],
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -684,6 +685,7 @@ struct VectorOffsetCurveConstructionWire {
     offset: Vector3,
     /// Integer codes attached to the two native roles.
     roles: VectorOffsetRoles,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -772,6 +774,7 @@ struct SubsetCurveConstructionWire {
     /// Whether the subset follows increasing parent parameters.
     #[serde(default = "crate::default_true")]
     sense: bool,
+    /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
     cache: Option<LegacyCache>,
 }
@@ -908,8 +911,10 @@ pub struct SpringCurvePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SpringCurvePayloadWire {
+    /// Native spring record layout.
     layout: SpringLayout,
 
+    /// Native direction code.
     direction: i64,
 }
 impl SpringCurvePayload {
@@ -978,10 +983,13 @@ pub struct ThreeSurfaceIntersectionCurvePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ThreeSurfaceIntersectionCurvePayloadWire {
+    /// Shared support surfaces, UV curves, interval, and discontinuity arrays.
     context: IntcurveSupportContext,
 
+    /// Native branch selector code.
     selector: i64,
 
+    /// Third support side of the intersection.
     third: IntcurveSupportSide,
 }
 impl ThreeSurfaceIntersectionCurvePayload {
@@ -1045,12 +1053,16 @@ pub struct ProjectionCurvePayload {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct ProjectionCurvePayloadWire {
+    /// Shared support surfaces, UV curves, interval, and discontinuity arrays.
     context: IntcurveSupportContext,
 
+    /// Native boolean following the discontinuity arrays.
     discontinuity_flag: bool,
 
+    /// Curve being projected.
     source: CurveId,
 
+    /// Native projection tail.
     tail: ProjectionTail,
 }
 impl ProjectionCurvePayload {

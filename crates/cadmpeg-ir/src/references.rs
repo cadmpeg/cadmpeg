@@ -80,8 +80,11 @@ impl ReferenceSelection {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ReferenceTargetWire {
+    /// Explicit null reference.
     Null {},
+    /// Identity within the current document.
     Local { target: String },
+    /// Identity within another document.
     External { document: String, object: String },
 }
 
