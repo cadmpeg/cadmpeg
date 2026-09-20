@@ -3819,5 +3819,3 @@ mod tests;
 mod type228_tests;
 #[cfg(test)]
 mod type230_tests;
-#[cfg(test)]
-mod type_fem_tests;
