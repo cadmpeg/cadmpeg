@@ -285,7 +285,7 @@ pub(crate) fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) 
         .iter()
         .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         pcurve,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -310,7 +310,7 @@ pub(crate) fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<
         .iter()
         .find(|record| record.head() == "pcurve")
         .expect("generated pcurve record");
-    let integers = cadmpeg_asm::sab::payload_token_offsets(
+    let integers = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         pcurve,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
