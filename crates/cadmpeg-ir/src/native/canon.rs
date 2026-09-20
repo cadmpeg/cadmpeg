@@ -38,7 +38,7 @@ impl Node {
     /// Render this value as canonical JSON text: the tests' oracle for what a
     /// record carrying this node serializes to.
     #[cfg(test)]
-    pub(super) fn render(self) -> String {
+    fn render(self) -> String {
         self.into_value().to_string()
     }
 }

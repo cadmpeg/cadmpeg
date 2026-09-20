@@ -12,7 +12,7 @@ use super::{
 
 /// One route shape a hand-written reader is allowed to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum HandReaderClass {
+enum HandReaderClass {
     /// A closed object adapter whose wire declaration refuses unknown keys.
     Wire,
     /// A scalar, byte string, fixed array, or sequence adapter.
@@ -41,12 +41,12 @@ impl HandReaderClass {
 /// unrelated `Box::<T>` followed by a later `>::deserialize`. Keeping groups
 /// also makes calls and attributes belong to the syntax item that owns them.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Node {
+enum Node {
     Atom(String),
     Group(Delimiter, Vec<Node>),
 }
 
-pub(super) fn nodes_from_stream(stream: &TokenStream) -> Vec<Node> {
+fn nodes_from_stream(stream: &TokenStream) -> Vec<Node> {
     stream
         .clone()
         .into_iter()
@@ -59,22 +59,22 @@ pub(super) fn nodes_from_stream(stream: &TokenStream) -> Vec<Node> {
         .collect()
 }
 
-pub(super) fn atom(node: &Node) -> Option<&str> {
+fn atom(node: &Node) -> Option<&str> {
     match node {
         Node::Atom(value) => Some(value),
         Node::Group(_, _) => None,
     }
 }
 
-pub(super) fn atom_opt(node: Option<&Node>) -> Option<&str> {
+fn atom_opt(node: Option<&Node>) -> Option<&str> {
     node.and_then(atom)
 }
 
-pub(super) fn is_atom(nodes: &[Node], index: usize, value: &str) -> bool {
+fn is_atom(nodes: &[Node], index: usize, value: &str) -> bool {
     nodes.get(index).and_then(atom) == Some(value)
 }
 
-pub(super) fn is_path_atom(value: &str) -> bool {
+fn is_path_atom(value: &str) -> bool {
     value == "Self"
         || value == "self"
         || value == "super"
@@ -86,7 +86,7 @@ pub(super) fn is_path_atom(value: &str) -> bool {
 }
 
 /// Render a token tree for a useful unresolved-route diagnostic.
-pub(super) fn node_text(node: &Node) -> String {
+fn node_text(node: &Node) -> String {
     match node {
         Node::Atom(value) => value.clone(),
         Node::Group(delimiter, children) => {
@@ -111,7 +111,7 @@ pub(super) fn node_text(node: &Node) -> String {
     }
 }
 
-pub(super) fn nodes_text(nodes: &[Node]) -> String {
+fn nodes_text(nodes: &[Node]) -> String {
     nodes.iter().map(node_text).collect()
 }
 
@@ -120,7 +120,7 @@ pub(super) fn nodes_text(nodes: &[Node]) -> String {
 /// `Span::line` and `Span::column` are byte positions. Slicing by complete
 /// lines was previously used here; two adjacent items on one line then shared
 /// the same source text and could contaminate one another's route.
-pub(super) fn source_span_range(source: &str, span: proc_macro2::Span) -> Option<(usize, usize)> {
+fn source_span_range(source: &str, span: proc_macro2::Span) -> Option<(usize, usize)> {
     let mut line_starts = vec![0];
     for (index, byte) in source.bytes().enumerate() {
         if byte == b'\n' {
@@ -137,7 +137,7 @@ pub(super) fn source_span_range(source: &str, span: proc_macro2::Span) -> Option
 }
 
 /// Extract the exact source text covered by a syntax item.
-pub(super) fn source_span_text(source: &str, span: proc_macro2::Span) -> String {
+fn source_span_text(source: &str, span: proc_macro2::Span) -> String {
     let (start, end) = source_span_range(source, span)
         .unwrap_or_else(|| panic!("source span is outside its parsed source: {span:?}"));
     source
@@ -147,7 +147,7 @@ pub(super) fn source_span_text(source: &str, span: proc_macro2::Span) -> String 
 }
 
 /// Tokenize a function block and return the statements inside its outer braces.
-pub(super) fn tokenize_block_text(path: &str, name: &str, body: &str) -> Vec<Node> {
+fn tokenize_block_text(path: &str, name: &str, body: &str) -> Vec<Node> {
     let token_stream = body
         .parse::<TokenStream>()
         .unwrap_or_else(|error| panic!("{path} {name} block does not tokenize: {error}"));
@@ -160,14 +160,14 @@ pub(super) fn tokenize_block_text(path: &str, name: &str, body: &str) -> Vec<Nod
 
 /// One source declaration whose serde wire shape refuses unknown fields.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct WireKey {
+struct WireKey {
     path: String,
     scope: Vec<String>,
     name: String,
 }
 
 /// One source span that emits a hand-written reader.
-pub(super) struct HandImplSource {
+struct HandImplSource {
     path: String,
     scope: Vec<String>,
     name: String,
@@ -186,7 +186,7 @@ pub(super) struct HandImplSource {
 }
 
 #[derive(Default)]
-pub(super) struct SourceIndex {
+struct SourceIndex {
     sources: Vec<HandImplSource>,
     denied: BTreeSet<WireKey>,
     imports: Vec<ImportBinding>,
@@ -197,7 +197,7 @@ pub(super) struct SourceIndex {
 /// aliases, re-exports, globs, and `self`/`super` can be resolved from the
 /// scope in which the declaration appears.
 #[derive(Debug, Clone)]
-pub(super) struct ImportBinding {
+struct ImportBinding {
     path: String,
     scope: Vec<String>,
     alias: String,
@@ -209,7 +209,7 @@ pub(super) struct ImportBinding {
 /// to distinguish a local `String`/`std`/`Box` from the standard-library name
 /// with the same spelling.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum SymbolKind {
+enum SymbolKind {
     Type,
     Module,
     Function,
@@ -217,7 +217,7 @@ pub(super) enum SymbolKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct SymbolKey {
+struct SymbolKey {
     path: String,
     scope: Vec<String>,
     name: String,
@@ -248,7 +248,7 @@ pub(super) fn multiset_difference<T: Clone + Ord>(left: &[T], right: &[T]) -> Ve
 }
 
 /// Whether one source attribute states a bare serde flag.
-pub(super) fn serde_has_flag(attrs: &[syn::Attribute], name: &str) -> bool {
+fn serde_has_flag(attrs: &[syn::Attribute], name: &str) -> bool {
     let mut stated = false;
     for attribute in attrs {
         if !attribute.path().is_ident("serde") {
@@ -267,12 +267,7 @@ pub(super) fn serde_has_flag(attrs: &[syn::Attribute], name: &str) -> bool {
     stated
 }
 
-pub(super) fn insert_wire(
-    denied: &mut BTreeSet<WireKey>,
-    path: &str,
-    scope: &[String],
-    name: String,
-) {
+fn insert_wire(denied: &mut BTreeSet<WireKey>, path: &str, scope: &[String], name: String) {
     denied.insert(WireKey {
         path: path.to_owned(),
         scope: scope.to_owned(),
@@ -280,7 +275,7 @@ pub(super) fn insert_wire(
     });
 }
 
-pub(super) fn insert_symbol(
+fn insert_symbol(
     index: &mut SourceIndex,
     path: &str,
     scope: &[String],
@@ -298,7 +293,7 @@ pub(super) fn insert_symbol(
 /// Record every binding introduced by one `use` tree. The target remains
 /// relative to the declaration's module so the resolver can follow aliases
 /// and re-exports in their own lexical context.
-pub(super) fn collect_use_tree(
+fn collect_use_tree(
     tree: &syn::UseTree,
     prefix: &mut Vec<String>,
     absolute: bool,
@@ -363,7 +358,7 @@ pub(super) fn collect_use_tree(
     }
 }
 
-pub(super) fn local_denied_types(block: &syn::Block) -> BTreeSet<String> {
+fn local_denied_types(block: &syn::Block) -> BTreeSet<String> {
     let mut denied = BTreeSet::new();
     for statement in &block.stmts {
         let syn::Stmt::Item(item) = statement else {
@@ -387,7 +382,7 @@ pub(super) fn local_denied_types(block: &syn::Block) -> BTreeSet<String> {
 }
 
 /// Whether a bracket group is exactly a serde attribute carrying the denial.
-pub(super) fn macro_serde_deny_attribute(group: &[Node]) -> bool {
+fn macro_serde_deny_attribute(group: &[Node]) -> bool {
     if !is_atom(group, 0, "serde") {
         return false;
     }
@@ -401,7 +396,7 @@ pub(super) fn macro_serde_deny_attribute(group: &[Node]) -> bool {
     })
 }
 
-pub(super) fn macro_item_name(nodes: &[Node], index: usize) -> Option<(String, usize)> {
+fn macro_item_name(nodes: &[Node], index: usize) -> Option<(String, usize)> {
     if is_atom(nodes, index, "$") {
         let name = atom(nodes.get(index + 1)?)?;
         return is_path_atom(name).then(|| (format!("${name}"), index + 2));
@@ -415,7 +410,7 @@ pub(super) fn macro_item_name(nodes: &[Node], index: usize) -> Option<(String, u
 /// The scan skips only more attributes and visibility. It cannot bind an
 /// arbitrary identifier or a later declaration merely because a token with the
 /// right spelling appears somewhere in the enclosing macro.
-pub(super) fn macro_denied_declaration(nodes: &[Node], after_attribute: usize) -> Option<String> {
+fn macro_denied_declaration(nodes: &[Node], after_attribute: usize) -> Option<String> {
     let mut index = after_attribute;
     loop {
         if is_atom(nodes, index, "#")
@@ -446,7 +441,7 @@ pub(super) fn macro_denied_declaration(nodes: &[Node], after_attribute: usize) -
 }
 
 /// Collect denied declarations from one macro token stream with module scope.
-pub(super) fn collect_macro_denied(
+fn collect_macro_denied(
     nodes: &[Node],
     path: &str,
     scope: &[String],
@@ -489,7 +484,7 @@ pub(super) fn collect_macro_denied(
 /// `deserialize: D` parameter. Keep the parser conservative: if the pattern
 /// is not a single identifier (optionally preceded by `mut`), no call can be
 /// certified as consuming the method input.
-pub(super) fn macro_parameter_bindings(nodes: &[Node]) -> BTreeSet<String> {
+fn macro_parameter_bindings(nodes: &[Node]) -> BTreeSet<String> {
     let mut bindings = BTreeSet::new();
     let Some(first) = split_node_arguments(nodes).into_iter().next() else {
         return bindings;
@@ -517,10 +512,7 @@ pub(super) fn macro_parameter_bindings(nodes: &[Node]) -> BTreeSet<String> {
 }
 
 /// Parse one macro `impl` and isolate its `Deserialize::deserialize` method.
-pub(super) fn macro_route_at(
-    nodes: &[Node],
-    start: usize,
-) -> Option<(String, Vec<Node>, BTreeSet<String>)> {
+fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>, BTreeSet<String>)> {
     if !is_atom(nodes, start, "impl") {
         return None;
     }
@@ -562,7 +554,7 @@ pub(super) fn macro_route_at(
     Some((name, body.clone(), deserializer_bindings))
 }
 
-pub(super) fn collect_macro_routes(
+fn collect_macro_routes(
     nodes: &[Node],
     path: &str,
     scope: &[String],
@@ -596,7 +588,7 @@ pub(super) fn collect_macro_routes(
 /// workspace. Requiring a simple identifier keeps the route proof tied to the
 /// actual parameter rather than to a conventional spelling found in the
 /// method body.
-pub(super) fn signature_deserializer_bindings(signature: &syn::Signature) -> BTreeSet<String> {
+fn signature_deserializer_bindings(signature: &syn::Signature) -> BTreeSet<String> {
     let Some(syn::FnArg::Typed(argument)) = signature.inputs.first() else {
         return BTreeSet::new();
     };
@@ -606,7 +598,7 @@ pub(super) fn signature_deserializer_bindings(signature: &syn::Signature) -> BTr
     BTreeSet::from([pattern.ident.to_string()])
 }
 
-pub(super) fn collect_source_items(
+fn collect_source_items(
     items: &[syn::Item],
     path: &str,
     source: &str,
@@ -785,7 +777,7 @@ pub(super) fn collect_source_items(
 
 /// Collect every implementation and scoped wire declaration in the three
 /// source crates with one syntax traversal per file.
-pub(super) fn source_module_scope(source_root: &Path, file: &Path) -> Vec<String> {
+fn source_module_scope(source_root: &Path, file: &Path) -> Vec<String> {
     let relative = file
         .strip_prefix(source_root)
         .expect("a source file sits below its crate source root");
@@ -801,7 +793,7 @@ pub(super) fn source_module_scope(source_root: &Path, file: &Path) -> Vec<String
     components
 }
 
-pub(super) fn source_index(root: &Path) -> SourceIndex {
+fn source_index(root: &Path) -> SourceIndex {
     let mut index = SourceIndex::default();
     for source_root in [
         "crates/cadmpeg-ir/src",
@@ -833,7 +825,7 @@ pub(super) fn source_index(root: &Path) -> SourceIndex {
 }
 
 /// The path immediately before an associated call's `::deserialize`.
-pub(super) fn path_tail(nodes: &[Node], end: usize) -> Option<Vec<String>> {
+fn path_tail(nodes: &[Node], end: usize) -> Option<Vec<String>> {
     let (mut start, segment) = path_segment_at_end(nodes, end)?;
     let mut segments = vec![segment];
     while start >= 2 && is_atom(nodes, start - 2, ":") && is_atom(nodes, start - 1, ":") {
@@ -845,7 +837,7 @@ pub(super) fn path_tail(nodes: &[Node], end: usize) -> Option<Vec<String>> {
     Some(segments)
 }
 
-pub(super) fn path_segment_at_end(nodes: &[Node], end: usize) -> Option<(usize, String)> {
+fn path_segment_at_end(nodes: &[Node], end: usize) -> Option<(usize, String)> {
     if end == 0 {
         return None;
     }
@@ -859,7 +851,7 @@ pub(super) fn path_segment_at_end(nodes: &[Node], end: usize) -> Option<(usize, 
     None
 }
 
-pub(super) fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize> {
+fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize> {
     let mut depth = 0usize;
     for index in (0..=close).rev() {
         let Some(value) = atom_opt(nodes.get(index)) else {
@@ -885,7 +877,7 @@ pub(super) fn matching_angle_open(nodes: &[Node], close: usize) -> Option<usize>
 /// Split a token sequence at top-level commas. Delimited groups are already
 /// represented as one node; angle brackets remain tokens and need a small
 /// depth counter for generic arguments.
-pub(super) fn split_node_arguments(nodes: &[Node]) -> Vec<Vec<Node>> {
+fn split_node_arguments(nodes: &[Node]) -> Vec<Vec<Node>> {
     let mut arguments = Vec::new();
     let mut current = Vec::new();
     let mut angle_depth = 0usize;
@@ -906,13 +898,13 @@ pub(super) fn split_node_arguments(nodes: &[Node]) -> Vec<Vec<Node>> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct PathShape {
+struct PathShape {
     segments: Vec<String>,
     absolute: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum TypeShape {
+enum TypeShape {
     Path(PathShape),
     Generic(PathShape, Vec<TypeShape>),
     KeylessAggregate,
@@ -921,7 +913,7 @@ pub(super) enum TypeShape {
 /// Parse only the type shapes needed to classify a Deserialize receiver.
 /// Unsupported syntax is deliberately left unresolved and therefore cannot
 /// certify a keyless or closed route.
-pub(super) fn type_shape(nodes: &[Node]) -> Option<TypeShape> {
+fn type_shape(nodes: &[Node]) -> Option<TypeShape> {
     if nodes.is_empty() {
         return None;
     }
@@ -961,13 +953,13 @@ pub(super) fn type_shape(nodes: &[Node]) -> Option<TypeShape> {
     Some(TypeShape::Path(path_tail_shape(nodes, nodes.len())?))
 }
 
-pub(super) fn path_tail_shape(nodes: &[Node], end: usize) -> Option<PathShape> {
+fn path_tail_shape(nodes: &[Node], end: usize) -> Option<PathShape> {
     let (start, segments) = path_tail_with_start(nodes, end)?;
     let absolute = start >= 2 && is_atom(nodes, start - 2, ":") && is_atom(nodes, start - 1, ":");
     Some(PathShape { segments, absolute })
 }
 
-pub(super) fn path_tail_with_start(nodes: &[Node], end: usize) -> Option<(usize, Vec<String>)> {
+fn path_tail_with_start(nodes: &[Node], end: usize) -> Option<(usize, Vec<String>)> {
     let (mut start, segment) = path_segment_at_end(nodes, end)?;
     let mut segments = vec![segment];
     while start >= 2 && is_atom(nodes, start - 2, ":") && is_atom(nodes, start - 1, ":") {
@@ -979,7 +971,7 @@ pub(super) fn path_tail_with_start(nodes: &[Node], end: usize) -> Option<(usize,
     Some((start, segments))
 }
 
-pub(super) fn path_before_angle(nodes: &[Node], open: usize) -> Option<PathShape> {
+fn path_before_angle(nodes: &[Node], open: usize) -> Option<PathShape> {
     let end = if open >= 2 && is_atom(nodes, open - 1, ":") && is_atom(nodes, open - 2, ":") {
         open - 2
     } else {
@@ -989,7 +981,7 @@ pub(super) fn path_before_angle(nodes: &[Node], open: usize) -> Option<PathShape
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum Receiver {
+enum Receiver {
     Path(PathShape),
     Generic {
         path: PathShape,
@@ -1000,7 +992,7 @@ pub(super) enum Receiver {
     },
 }
 
-pub(super) fn qself_type(nodes: &[Node], open: usize, close: usize) -> Option<Vec<Node>> {
+fn qself_type(nodes: &[Node], open: usize, close: usize) -> Option<Vec<Node>> {
     let interior = &nodes[open + 1..close];
     let mut angle_depth = 0usize;
     let as_index = interior.iter().position(|node| match atom(node) {
@@ -1019,7 +1011,7 @@ pub(super) fn qself_type(nodes: &[Node], open: usize, close: usize) -> Option<Ve
     (!type_nodes.is_empty()).then(|| type_nodes.to_vec())
 }
 
-pub(super) fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
+fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
     if end == 0 {
         return None;
     }
@@ -1044,14 +1036,14 @@ pub(super) fn receiver_before(nodes: &[Node], end: usize) -> Option<Receiver> {
 }
 
 #[derive(Debug)]
-pub(super) enum InputRoute {
+enum InputRoute {
     FreeForm,
     Value,
     Keyless,
     Wire(Receiver),
 }
 
-pub(super) fn type_shape_from_syn(ty: &syn::Type) -> Option<TypeShape> {
+fn type_shape_from_syn(ty: &syn::Type) -> Option<TypeShape> {
     match ty {
         syn::Type::Path(path) if path.qself.is_none() => path_shape_from_syn(&path.path),
         syn::Type::Array(_) | syn::Type::Slice(_) | syn::Type::Tuple(_) => {
@@ -1064,11 +1056,11 @@ pub(super) fn type_shape_from_syn(ty: &syn::Type) -> Option<TypeShape> {
     }
 }
 
-pub(super) fn path_shape_from_syn(path: &syn::Path) -> Option<TypeShape> {
+fn path_shape_from_syn(path: &syn::Path) -> Option<TypeShape> {
     path_shape_from_syn_segments(path.leading_colon.is_some(), &path.segments)
 }
 
-pub(super) fn path_shape_from_syn_segments(
+fn path_shape_from_syn_segments(
     absolute: bool,
     segments: &syn::punctuated::Punctuated<syn::PathSegment, syn::Token![::]>,
 ) -> Option<TypeShape> {
@@ -1102,7 +1094,7 @@ pub(super) fn path_shape_from_syn_segments(
     }
 }
 
-pub(super) fn receiver_from_expr_path(path: &syn::ExprPath) -> Option<Receiver> {
+fn receiver_from_expr_path(path: &syn::ExprPath) -> Option<Receiver> {
     if path.path.segments.last()?.ident != "deserialize"
         || !matches!(
             path.path.segments.last()?.arguments,
@@ -1125,7 +1117,7 @@ pub(super) fn receiver_from_expr_path(path: &syn::ExprPath) -> Option<Receiver> 
     }
 }
 
-pub(super) fn direct_binding(argument: &[Node], bindings: &BTreeSet<String>) -> bool {
+fn direct_binding(argument: &[Node], bindings: &BTreeSet<String>) -> bool {
     let mut start = 0;
     if is_atom(argument, start, "&") {
         start += 1;
@@ -1141,18 +1133,18 @@ pub(super) fn direct_binding(argument: &[Node], bindings: &BTreeSet<String>) -> 
     })
 }
 
-pub(super) fn nodes_atom_starts_with_lifetime(node: Option<&Node>) -> bool {
+fn nodes_atom_starts_with_lifetime(node: Option<&Node>) -> bool {
     node.and_then(atom)
         .is_some_and(|value| value.starts_with('\''))
 }
 
-pub(super) fn call_uses_deserializer(arguments: &[Node], bindings: &BTreeSet<String>) -> bool {
+fn call_uses_deserializer(arguments: &[Node], bindings: &BTreeSet<String>) -> bool {
     split_node_arguments(arguments)
         .first()
         .is_some_and(|argument| direct_binding(argument, bindings))
 }
 
-pub(super) fn expr_is_direct_binding(expr: &syn::Expr, bindings: &BTreeSet<String>) -> bool {
+fn expr_is_direct_binding(expr: &syn::Expr, bindings: &BTreeSet<String>) -> bool {
     match expr {
         syn::Expr::Path(path) => {
             path.qself.is_none()
@@ -1174,7 +1166,7 @@ pub(super) fn expr_is_direct_binding(expr: &syn::Expr, bindings: &BTreeSet<Strin
     }
 }
 
-pub(super) fn expr_single_name(expr: &syn::Expr) -> Option<String> {
+fn expr_single_name(expr: &syn::Expr) -> Option<String> {
     let syn::Expr::Path(path) = expr else {
         return None;
     };
@@ -1193,7 +1185,7 @@ pub(super) fn expr_single_name(expr: &syn::Expr) -> Option<String> {
     .flatten()
 }
 
-pub(super) fn use_tree_shadows(tree: &syn::UseTree, name: &str) -> bool {
+fn use_tree_shadows(tree: &syn::UseTree, name: &str) -> bool {
     match tree {
         syn::UseTree::Path(path) => use_tree_shadows(path.tree.as_ref(), name),
         syn::UseTree::Name(binding) => binding.ident == name,
@@ -1203,7 +1195,7 @@ pub(super) fn use_tree_shadows(tree: &syn::UseTree, name: &str) -> bool {
     }
 }
 
-pub(super) fn item_shadows_version_check(item: &syn::Item) -> bool {
+fn item_shadows_version_check(item: &syn::Item) -> bool {
     match item {
         syn::Item::Fn(function) => function.sig.ident == "check_ir_version",
         syn::Item::Mod(module) => module.ident == "check_ir_version",
@@ -1214,14 +1206,14 @@ pub(super) fn item_shadows_version_check(item: &syn::Item) -> bool {
     }
 }
 
-pub(super) fn token_mentions_binding(nodes: &[Node], bindings: &BTreeSet<String>) -> bool {
+fn token_mentions_binding(nodes: &[Node], bindings: &BTreeSet<String>) -> bool {
     nodes.iter().any(|node| match node {
         Node::Atom(value) => bindings.contains(value),
         Node::Group(_, children) => token_mentions_binding(children, bindings),
     })
 }
 
-pub(super) fn expr_check_binding(expr: &syn::Expr) -> Option<String> {
+fn expr_check_binding(expr: &syn::Expr) -> Option<String> {
     let syn::Expr::Call(call) = expr else {
         return None;
     };
@@ -1264,7 +1256,7 @@ pub(super) fn expr_check_binding(expr: &syn::Expr) -> Option<String> {
     .flatten()
 }
 
-pub(super) fn path_is_named(path: &syn::Path, name: &str) -> bool {
+fn path_is_named(path: &syn::Path, name: &str) -> bool {
     path.segments.last().is_some_and(|segment| {
         segment.ident == name && matches!(segment.arguments, syn::PathArguments::None)
     })

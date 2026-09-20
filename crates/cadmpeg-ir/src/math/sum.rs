@@ -448,7 +448,7 @@ pub(crate) fn fast_dot<const N: usize>(
 }
 
 /// Scale only after splitting the exponent at the finite power-of-two limits.
-pub(crate) fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
+pub(super) fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
     let outer = exponent.clamp(-1022, 1023);
     let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
     result.is_finite().then_some(result)

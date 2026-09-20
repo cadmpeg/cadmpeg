@@ -28,29 +28,26 @@ pub(super) struct RouteScan {
     pub(super) unsupported: Option<String>,
 }
 
-pub(super) fn unsupported(scan: &mut RouteScan, message: impl Into<String>) {
+fn unsupported(scan: &mut RouteScan, message: impl Into<String>) {
     if scan.unsupported.is_none() {
         scan.unsupported = Some(message.into());
     }
 }
 
-pub(super) fn invalidate_validated_value(environment: &mut ScanEnvironment, name: String) {
+fn invalidate_validated_value(environment: &mut ScanEnvironment, name: String) {
     if environment.validated_values.remove(&name) {
         environment.invalidated_values.insert(name);
     }
 }
 
-pub(super) fn merge_invalidated_values(
-    environment: &mut ScanEnvironment,
-    nested: &ScanEnvironment,
-) {
+fn merge_invalidated_values(environment: &mut ScanEnvironment, nested: &ScanEnvironment) {
     for name in &nested.invalidated_values {
         environment.invalidated_values.insert(name.clone());
         environment.validated_values.remove(name);
     }
 }
 
-pub(super) fn scan_isolated_expr(
+fn scan_isolated_expr(
     expression: &syn::Expr,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -72,7 +69,7 @@ pub(super) fn scan_isolated_expr(
     merge_invalidated_values(environment, &nested);
 }
 
-pub(super) fn scan_borrowed_expr(
+fn scan_borrowed_expr(
     expression: &syn::Expr,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -87,7 +84,7 @@ pub(super) fn scan_borrowed_expr(
     scan_expr(expression, route, index, environment, scan, control, false);
 }
 
-pub(super) fn pattern_bindings(pattern: &syn::Pat, found: &mut BTreeSet<String>) {
+fn pattern_bindings(pattern: &syn::Pat, found: &mut BTreeSet<String>) {
     match pattern {
         syn::Pat::Ident(pattern) => {
             found.insert(pattern.ident.to_string());
@@ -126,7 +123,7 @@ pub(super) fn pattern_bindings(pattern: &syn::Pat, found: &mut BTreeSet<String>)
     }
 }
 
-pub(super) fn call_route(
+fn call_route(
     call: &syn::ExprCall,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -157,12 +154,12 @@ pub(super) fn call_route(
     None
 }
 
-pub(super) fn method_route(method: &syn::ExprMethodCall, environment: &ScanEnvironment) -> bool {
+fn method_route(method: &syn::ExprMethodCall, environment: &ScanEnvironment) -> bool {
     method.method == "deserialize_any"
         && expr_is_direct_binding(&method.receiver, &environment.input_bindings)
 }
 
-pub(super) fn expr_path_shape(path: &syn::ExprPath) -> Option<PathShape> {
+fn expr_path_shape(path: &syn::ExprPath) -> Option<PathShape> {
     if path.qself.is_some() {
         return None;
     }
@@ -179,7 +176,7 @@ pub(super) fn expr_path_shape(path: &syn::ExprPath) -> Option<PathShape> {
     })
 }
 
-pub(super) fn resolved_helper_route(resolved: &ResolvedPath) -> Option<InputRoute> {
+fn resolved_helper_route(resolved: &ResolvedPath) -> Option<InputRoute> {
     match resolved {
         ResolvedPath::External(path)
             if path_matches(path, &["cadmpeg_core", "distinct_keys", "json_object"])
@@ -219,7 +216,7 @@ pub(super) fn path_matches(path: &[String], expected: &[&str]) -> bool {
             .all(|(actual, wanted)| actual == wanted)
 }
 
-pub(super) fn helper_route(
+fn helper_route(
     call: &syn::ExprCall,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -239,7 +236,7 @@ pub(super) fn helper_route(
     resolved_helper_route(&resolve_receiver_path(route, &shape, index))
 }
 
-pub(super) fn scan_expr(
+fn scan_expr(
     expression: &syn::Expr,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -775,7 +772,7 @@ pub(super) fn scan_block(
     *environment = nested;
 }
 
-pub(super) fn scan_isolated_block(
+fn scan_isolated_block(
     block: &syn::Block,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -789,14 +786,14 @@ pub(super) fn scan_isolated_block(
     merge_invalidated_values(environment, &nested);
 }
 
-pub(super) fn local_pattern_name(pattern: &syn::Pat) -> Option<String> {
+fn local_pattern_name(pattern: &syn::Pat) -> Option<String> {
     match pattern {
         syn::Pat::Ident(pattern) if pattern.subpat.is_none() => Some(pattern.ident.to_string()),
         _ => None,
     }
 }
 
-pub(super) fn is_value_try_call(
+fn is_value_try_call(
     expression: &syn::Expr,
     route: &HandImplSource,
     index: &SourceIndex,
@@ -814,14 +811,14 @@ pub(super) fn is_value_try_call(
     )
 }
 
-pub(super) fn path_is_named_path(expression: &syn::Expr, name: &str) -> bool {
+fn path_is_named_path(expression: &syn::Expr, name: &str) -> bool {
     let syn::Expr::Path(path) = expression else {
         return false;
     };
     path.qself.is_none() && path_is_named(&path.path, name)
 }
 
-pub(super) fn is_owned_version_check(
+fn is_owned_version_check(
     expression: &syn::Expr,
     route: &HandImplSource,
     index: &SourceIndex,

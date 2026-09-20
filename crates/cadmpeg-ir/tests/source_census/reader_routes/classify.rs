@@ -19,11 +19,7 @@ use super::{
 };
 use crate::HAND_IMPLS;
 
-pub(super) fn type_is_keyless(
-    route: &HandImplSource,
-    shape: &TypeShape,
-    index: &SourceIndex,
-) -> bool {
+fn type_is_keyless(route: &HandImplSource, shape: &TypeShape, index: &SourceIndex) -> bool {
     match shape {
         TypeShape::KeylessAggregate => true,
         TypeShape::Path(path) => {
@@ -143,7 +139,7 @@ pub(super) fn receiver_is_value(
     matches!(resolved, ResolvedPath::External(path) if external_is_value(&path))
 }
 
-pub(super) fn deserialize_receiver_at(
+fn deserialize_receiver_at(
     nodes: &[Node],
     index: usize,
     bindings: &BTreeSet<String>,
@@ -164,7 +160,7 @@ pub(super) fn deserialize_receiver_at(
     receiver_before(nodes, index - 2)
 }
 
-pub(super) fn receiver_description(receiver: &Receiver) -> String {
+fn receiver_description(receiver: &Receiver) -> String {
     fn shape_description(shape: &TypeShape) -> String {
         match shape {
             TypeShape::KeylessAggregate => "aggregate".to_owned(),
@@ -221,7 +217,7 @@ pub(super) fn same_crate(left: &str, right: &str) -> bool {
     }
 }
 
-pub(super) fn route_identity(route: &HandImplSource) -> (String, Vec<String>, String) {
+fn route_identity(route: &HandImplSource) -> (String, Vec<String>, String) {
     (route.path.clone(), route.scope.clone(), route.name.clone())
 }
 
@@ -229,7 +225,7 @@ pub(super) fn route_identity(route: &HandImplSource) -> (String, Vec<String>, St
 /// reader whose complete input route is closed. A target with a denied local
 /// declaration is not enough: its consumed reader must itself classify as a
 /// closed wire route.
-pub(super) fn receiver_is_closed(
+fn receiver_is_closed(
     route: &HandImplSource,
     receiver: &Receiver,
     index: &SourceIndex,
@@ -335,7 +331,7 @@ pub(super) fn receiver_is_closed(
         )
 }
 
-pub(super) fn is_wrapper_path(resolved: &ResolvedPath) -> bool {
+fn is_wrapper_path(resolved: &ResolvedPath) -> bool {
     let ResolvedPath::External(path) = resolved else {
         return false;
     };
@@ -351,7 +347,7 @@ pub(super) fn is_wrapper_path(resolved: &ResolvedPath) -> bool {
             || (path[0] == "std" && path[1] == "sync" && path[2] == "RwLock"))
 }
 
-pub(super) fn receiver_from_shape(shape: &TypeShape) -> Option<Receiver> {
+fn receiver_from_shape(shape: &TypeShape) -> Option<Receiver> {
     match shape {
         TypeShape::Path(path) => Some(Receiver::Path(path.clone())),
         TypeShape::Generic(path, arguments) => Some(Receiver::Generic {
@@ -362,7 +358,7 @@ pub(super) fn receiver_from_shape(shape: &TypeShape) -> Option<Receiver> {
     }
 }
 
-pub(super) fn macro_helper_route_at(
+fn macro_helper_route_at(
     nodes: &[Node],
     position: usize,
     bindings: &BTreeSet<String>,
@@ -462,7 +458,7 @@ fn collect(
     Ok(())
 }
 
-pub(super) fn macro_input_routes(
+fn macro_input_routes(
     route: &HandImplSource,
     index: &SourceIndex,
 ) -> Result<Vec<InputRoute>, String> {
@@ -487,7 +483,7 @@ pub(super) fn classify_route(
     classify_route_active(route, index, &mut active)
 }
 
-pub(super) fn classify_route_active(
+fn classify_route_active(
     route: &HandImplSource,
     index: &SourceIndex,
     active: &mut BTreeSet<(String, Vec<String>, String)>,
@@ -504,7 +500,7 @@ pub(super) fn classify_route_active(
     result
 }
 
-pub(super) fn classify_route_body(
+fn classify_route_body(
     route: &HandImplSource,
     index: &SourceIndex,
     active: &mut BTreeSet<(String, Vec<String>, String)>,
