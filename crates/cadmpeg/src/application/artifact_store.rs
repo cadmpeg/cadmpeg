@@ -390,7 +390,10 @@ mod tests {
     use cadmpeg_ir::{report::decode::DecodeReport, CadIr, SourceFidelity};
     use cadmpeg_registry::DETECTION_PREFIX_LEN;
     #[cfg(feature = "nx")]
-    use cadmpeg_registry::{identify, InputCatalog};
+    use cadmpeg_registry::{
+        resolve_and_inspect_with, InputCatalog, InspectError, Inspected, ResolveSourceError,
+        Selection,
+    };
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
@@ -572,19 +575,29 @@ mod tests {
             .map(|(codec, confidence)| (codec.id(), confidence))
             .collect::<Vec<_>>();
         let mut source = Cursor::new(bytes);
-        let library_candidates = match identify(&mut source, &InspectOptions::default()).unwrap() {
-            cadmpeg_registry::Identification::Native {
-                format, confidence, ..
-            } => vec![(format, confidence)],
-            cadmpeg_registry::Identification::Ambiguous(tie) => tie
-                .candidates()
-                .iter()
-                .map(|format| (*format, tie.confidence()))
-                .collect(),
-            cadmpeg_registry::Identification::None | cadmpeg_registry::Identification::Cadir => {
-                Vec::new()
-            }
-        };
+        let catalog = InputCatalog::with_builtins();
+        let library_candidates =
+            match resolve_and_inspect_with(&catalog, &mut source, None, &InspectOptions::default())
+            {
+                Ok(Inspected {
+                    format, selection, ..
+                })
+                | Err(InspectError::Codec {
+                    format, selection, ..
+                }) => {
+                    let Selection::Detected { confidence } = selection else {
+                        panic!("unforced inspection must use content detection");
+                    };
+                    vec![(format, confidence)]
+                }
+                Err(InspectError::Unresolved(ResolveSourceError::Ambiguous(tie))) => tie
+                    .candidates()
+                    .iter()
+                    .map(|format| (*format, tie.confidence()))
+                    .collect(),
+                Err(InspectError::Unrecognized | InspectError::Cadir) => Vec::new(),
+                Err(error) => panic!("library detection failed: {error}"),
+            };
 
         assert!(cli_candidates
             .iter()

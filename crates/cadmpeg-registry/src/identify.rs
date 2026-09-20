@@ -6,13 +6,10 @@ use std::io::SeekFrom;
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::{CodecError, ReadSeek};
-use cadmpeg_ir::codec::{Confidence, FormatId};
+use cadmpeg_ir::codec::FormatId;
 use cadmpeg_ir::ContainerSummary;
 
-use crate::{
-    AmbiguousDetection, DetectionOutcome, ForcedInput, InputCatalog, ResolveSourceError,
-    ResolvedSource, Selection,
-};
+use crate::{ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection};
 
 /// Leading byte window offered to prefix detection.
 ///
@@ -20,26 +17,6 @@ use crate::{
 /// less than the loader does could name a different codec than the loader
 /// then picks.
 pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
-
-/// Identification of one file before semantic decode.
-#[derive(Debug)]
-pub enum Identification {
-    /// No codec recognized the input.
-    None,
-    /// Neutral CADIR JSON without a native container.
-    Cadir,
-    /// One native codec and its inspection result.
-    Native {
-        /// Stable format id of the selected codec.
-        format: FormatId,
-        /// Confidence of prefix detection.
-        confidence: Confidence,
-        /// Container summary or typed inspection failure.
-        inspection: Result<Box<ContainerSummary>, CodecError>,
-    },
-    /// Native codecs tied at the strongest confidence.
-    Ambiguous(AmbiguousDetection),
-}
 
 /// A successfully inspected source: the selected codec's format, how it was
 /// selected, and its complete summary.
@@ -80,46 +57,10 @@ pub enum InspectError {
     },
 }
 
-/// Identifies a source and inspects a sole native winner under the supplied limits.
-pub fn identify(
-    source: &mut dyn ReadSeek,
-    options: &InspectOptions,
-) -> std::io::Result<Identification> {
-    let catalog = InputCatalog::with_builtins();
-    identify_with(&catalog, source, options)
-}
-
-/// [`identify`], against a caller-held catalog.
-///
-/// Building the catalog constructs every codec this build carries. A caller
-/// identifying many files holds one catalog and reuses it.
-pub fn identify_with(
-    catalog: &InputCatalog,
-    source: &mut dyn ReadSeek,
-    options: &InspectOptions,
-) -> std::io::Result<Identification> {
-    let prefix = read_prefix(source, options)?;
-    match catalog.detect(&prefix) {
-        DetectionOutcome::None if crate::catalog::is_cadir_prefix(&prefix) => {
-            Ok(Identification::Cadir)
-        }
-        DetectionOutcome::None => Ok(Identification::None),
-        DetectionOutcome::Detected { codec, confidence } => {
-            let inspection = inspect_codec(codec, source, options)?.map(Box::new);
-            Ok(Identification::Native {
-                format: codec.id(),
-                confidence,
-                inspection,
-            })
-        }
-        DetectionOutcome::Ambiguous(tie) => Ok(Identification::Ambiguous(tie)),
-    }
-}
-
 /// Resolves and inspects exactly one source against a caller-held catalog.
 ///
-/// Unlike [`identify_with`], equal-confidence ambiguity is a resolution error,
-/// and an explicit [`ForcedInput`] is accepted. Every way of not producing a
+/// Equal-confidence ambiguity is a resolution error, and an explicit
+/// [`ForcedInput`] is accepted. Every way of not producing a
 /// summary is one [`InspectError`] variant; a selected codec's failure keeps
 /// the format identity and selection it established.
 pub fn resolve_and_inspect_with(
@@ -175,13 +116,11 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_core::decode::{InspectOptions, ResourceLimits};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::codec::{Confidence, FormatId};
     #[cfg(feature = "nx")]
     use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
-    use super::{identify, resolve_and_inspect_with, Identification, InspectError};
-    use crate::{InputCatalog, Selection};
+    use super::{resolve_and_inspect_with, InspectError, Inspected};
+    use crate::InputCatalog;
 
     fn inspection() -> InspectOptions {
         InspectOptions {
@@ -189,14 +128,18 @@ mod tests {
         }
     }
 
-    fn run(bytes: &[u8], options: &InspectOptions) -> Identification {
+    fn run(bytes: &[u8], options: &InspectOptions) -> Result<Inspected, InspectError> {
+        let catalog = InputCatalog::with_builtins();
         let mut reader = Cursor::new(bytes.to_vec());
-        identify(&mut reader, options).expect("a Cursor neither fails to read nor to seek")
+        resolve_and_inspect_with(&catalog, &mut reader, None, options)
     }
 
     #[cfg(feature = "nx")]
     #[test]
     fn compound_detection_under_a_small_cap_keeps_prefix_candidates() {
+        use crate::ResolveSourceError;
+        use cadmpeg_ir::codec::FormatId;
+
         let mut bytes = nx_compound_prefix();
         let cap = bytes.len();
         bytes.resize(cap + 1024, 0x5a);
@@ -206,14 +149,16 @@ mod tests {
                 ..ResourceLimits::desktop()
             },
         };
-        let mut reader = Cursor::new(bytes);
-
-        let found = identify(&mut reader, &options).expect("the cap bounds CFB detection");
+        let found = run(&bytes, &options);
 
         assert!(match found {
-            Identification::Native { format, .. } => format == FormatId::new("nx"),
-            Identification::Ambiguous(tie) => tie.candidates().contains(&FormatId::new("nx")),
-            Identification::None | Identification::Cadir => false,
+            Ok(Inspected { format, .. }) | Err(InspectError::Codec { format, .. }) => {
+                format == FormatId::new("nx")
+            }
+            Err(InspectError::Unresolved(ResolveSourceError::Ambiguous(tie))) => {
+                tie.candidates().contains(&FormatId::new("nx"))
+            }
+            _ => false,
         });
     }
 
@@ -291,7 +236,8 @@ mod tests {
     mod declared {
         use cadmpeg_core::dialect::DialectId;
 
-        use super::{inspection, run, Identification, InputCatalog};
+        use super::{inspection, run, InputCatalog, Inspected};
+        use crate::Selection;
 
         /// One fixture and the dialect its codec classifies.
         struct Case {
@@ -380,11 +326,11 @@ mod tests {
             );
             for case in cases {
                 let found = run(case.bytes, &inspection());
-                let Identification::Native {
+                let Ok(Inspected {
                     format,
-                    confidence,
-                    inspection,
-                } = &found
+                    selection: Selection::Detected { confidence },
+                    summary,
+                }) = &found
                 else {
                     panic!("{}: no native candidate: {found:?}", case.format);
                 };
@@ -398,14 +344,13 @@ mod tests {
                 };
                 assert_eq!(*format, codec.id(), "{}: resolver winner", case.format);
                 assert_eq!(
-                    Some(*confidence),
-                    selection.confidence(),
+                    Selection::Detected {
+                        confidence: *confidence
+                    },
+                    selection,
                     "{}: resolver confidence",
                     case.format
                 );
-                let summary = inspection
-                    .as_ref()
-                    .unwrap_or_else(|_| panic!("{}: inspection did not classify", case.format));
                 assert_eq!(
                     summary
                         .dialects()
@@ -423,14 +368,17 @@ mod tests {
     /// A ZIP with no format marker is several formats at once, and the answer
     /// says so instead of picking one.
     ///
-    /// Every ZIP-based codec reports [`Confidence::Low`] for it. Candidate
-    /// detection retains the equal-confidence ambiguity, so no container is
+    /// Every ZIP-based codec reports [`cadmpeg_ir::codec::Confidence::Low`] for it.
+    /// Candidate detection retains the equal-confidence ambiguity, so no container is
     /// opened and no dialect is claimed.
     #[cfg(all(feature = "fcstd", feature = "f3d"))]
     #[test]
     fn a_markerless_zip_identifies_as_several_formats_with_no_dialect() {
+        use crate::ResolveSourceError;
+        use cadmpeg_ir::codec::Confidence;
+
         let found = run(b"PK\x03\x04 markerless", &inspection());
-        let Identification::Ambiguous(tie) = &found else {
+        let Err(InspectError::Unresolved(ResolveSourceError::Ambiguous(tie))) = &found else {
             panic!("expected ambiguity: {found:?}");
         };
 
@@ -455,6 +403,10 @@ mod tests {
     #[cfg(feature = "rhino")]
     #[test]
     fn an_exhausted_budget_keeps_the_format_and_reports_the_failure() {
+        use crate::Selection;
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::codec::{Confidence, FormatId};
+
         let bytes = include_bytes!("../../cadmpeg-codec-rhino/tests/golden/fixtures/arc.3dm");
         let starved = InspectOptions {
             limits: ResourceLimits {
@@ -467,11 +419,11 @@ mod tests {
         assert!(bytes.len() > 64);
 
         let found = run(bytes, &starved);
-        let Identification::Native {
+        let Err(InspectError::Codec {
             format,
-            confidence,
-            inspection: Err(error),
-        } = &found
+            selection: Selection::Detected { confidence },
+            error,
+        }) = &found
         else {
             panic!("expected a typed inspection failure: {found:?}");
         };
@@ -479,34 +431,9 @@ mod tests {
         assert_eq!(*confidence, Confidence::High);
         assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
 
-        let catalog = InputCatalog::with_builtins();
-        let mut source = Cursor::new(bytes);
-        let Err(InspectError::Codec {
-            format,
-            selection,
-            error,
-        }) = resolve_and_inspect_with(&catalog, &mut source, None, &starved)
-        else {
-            panic!("resolved inspection must retain the selected codec failure");
-        };
-        assert_eq!(format, FormatId::new("rhino"));
-        assert_eq!(
-            selection,
-            Selection::Detected {
-                confidence: Confidence::High
-            }
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
-
         // The same bytes under the default budget do settle the dialect, so
         // the difference above is the budget and not the fixture.
-        assert!(matches!(
-            run(bytes, &inspection()),
-            Identification::Native {
-                inspection: Ok(_),
-                ..
-            }
-        ));
+        assert!(run(bytes, &inspection()).is_ok());
     }
 
     #[test]
@@ -516,7 +443,7 @@ mod tests {
             b"\xef\xbb\xbf\t{\"ir_version\": 1}".as_slice(),
         ] {
             let found = run(bytes, &inspection());
-            assert!(matches!(found, Identification::Cadir));
+            assert!(matches!(found, Err(InspectError::Cadir)));
         }
     }
 
@@ -525,7 +452,7 @@ mod tests {
     fn an_unrecognized_prefix_names_nothing() {
         assert!(matches!(
             run(b"not a CAD file at all\n", &inspection()),
-            Identification::None
+            Err(InspectError::Unrecognized)
         ));
     }
 }

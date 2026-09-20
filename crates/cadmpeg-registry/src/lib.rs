@@ -7,12 +7,11 @@
 //! depth, and nothing above them: no conversion pipeline, no artifact store,
 //! no command layer.
 //!
-//! 1. **What is this file?** — [`identify()`] retains equally strong prefix
-//!    candidates and reconstructs a sole winner's container, so the answer
-//!    carries a dialect and not just a format. [`resolve_and_inspect_with()`]
-//!    applies the loader's exact source-selection law, including forced input.
+//! 1. **What is this file?** — [`resolve_and_inspect_with()`] applies the
+//!    loader's source selection, including forced input, and reconstructs the
+//!    selected container. Its summary carries the classified dialect.
 //! 2. **What can I save as?** — [`Format`] and [`build_encoder`] give the
-//!    synthesis catalogs (`Encoder::targets`), and [`dialects`] / [`support`]
+//!    synthesis catalogs (`Encoder::targets`), and [`dialect_table`] / [`support`]
 //!    serve the registries from tables compiled into the binary.
 //!
 //! The other two are answered elsewhere and stay there. "What will I lose?" is
@@ -46,11 +45,8 @@ pub use disposition::{
 };
 pub use encoders::build_encoder;
 pub use format::Format;
-pub use identify::{
-    identify, identify_with, resolve_and_inspect_with, Identification, InspectError, Inspected,
-    DETECTION_PREFIX_LEN,
-};
-pub use registry::{dialects, support, DialectEntry, RegistryLoadError};
+pub use identify::{resolve_and_inspect_with, InspectError, Inspected, DETECTION_PREFIX_LEN};
+pub use registry::{support, DialectEntry, RegistryLoadError};
 pub use views::{
     dialect_provenance, dialect_table, format_rows, DialectProvenance, DialectTableError,
     FormatDialects, FormatRow, UnknownFormat,

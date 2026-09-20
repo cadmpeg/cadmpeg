@@ -1288,7 +1288,7 @@ mod tests {
         assert_eq!(
             closed
                 .into_iter()
-                .map(|parameter| parameter.id.into_string())
+                .map(|parameter| cadmpeg_ir::ids::Identity::from(parameter.id).into_string())
                 .collect::<Vec<_>>(),
             ["synthetic:test:id#d"]
         );

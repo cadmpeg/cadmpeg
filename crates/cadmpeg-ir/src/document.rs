@@ -393,11 +393,6 @@ macro_rules! declare_model {
         }
 
         impl Model {
-            /// Arena field names in canonical order.
-            pub fn arena_names() -> &'static [&'static str] {
-                &[$(stringify!($field)),*]
-            }
-
             /// Returns the identity at one canonical arena slot.
             pub(crate) fn identity_at(
                 &self,
@@ -423,25 +418,6 @@ macro_rules! declare_model {
                 $(self.$field.append(&mut other.$field);)*
                 self.feature_regeneration_parents.0
                     .extend(other.feature_regeneration_parents.0);
-            }
-
-            /// Visits every typed identity reference in canonical arena order.
-            ///
-            /// Returns the first [`crate::schema::ReferenceWalkError`] an
-            /// entity raises; no arena swallows one.
-            pub fn visit_references(
-                &self,
-                visitor: &mut dyn FnMut(crate::schema::Reference),
-            ) -> Result<(), crate::schema::ReferenceWalkError> {
-                $(for entity in &self.$field {
-                    crate::schema::EntitySchema::visit_references(entity, visitor)?;
-                })*
-                for parent in self.feature_regeneration_parents.0.values() {
-                    visitor(crate::schema::Reference {
-                        target: parent.as_str().to_owned(),
-                    });
-                }
-                Ok(())
             }
 
             /// Sort each arena lexicographically by its entity identity.

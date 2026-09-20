@@ -9,7 +9,7 @@ use cadmpeg_core::text::NonBlankString;
 
 crate::ids::id_type!(
     /// Stable identity of one document asset.
-    AssetId
+    AssetId, compose
 );
 
 /// Nonempty embedded asset bytes.
@@ -78,18 +78,10 @@ pub struct Asset {
     /// Stable asset identity.
     pub id: AssetId,
     /// Source display name or basename.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_name"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<NonBlankString>,
     /// IANA media type when identified from the source container.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_media_type"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_type: Option<NonBlankString>,
     /// Embedded bytes or an external resource location.
     pub content: AssetContent,
@@ -266,8 +258,6 @@ mod tests {
 }
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_name, NonBlankString, "name");
-cadmpeg_core::named_optional_field!(deserialize_media_type, NonBlankString, "media_type");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_asset_wire_media_type, String, "media_type");

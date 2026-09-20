@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 crate::ids::id_type!(
     /// Stable identity of one neutral drawing entity.
-    DrawingId
+    DrawingId, compose
 );
 
 /// Semantic role of a drawing entity.

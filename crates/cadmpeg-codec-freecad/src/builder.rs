@@ -37,30 +37,6 @@ impl FcstdPropertyValue {
             children: Vec::new(),
         }
     }
-
-    /// Construct an empty value element.
-    pub fn empty(tag: impl Into<String>) -> Self {
-        Self {
-            tag: tag.into(),
-            attributes: BTreeMap::new(),
-            text: None,
-            children: Vec::new(),
-        }
-    }
-
-    /// Add or replace an attribute.
-    #[must_use]
-    pub fn with_attribute(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.attributes.insert(name.into(), value.into());
-        self
-    }
-
-    /// Append a nested value element for list, map, placement, and similar families.
-    #[must_use]
-    pub fn with_child(mut self, child: Self) -> Self {
-        self.children.push(child);
-        self
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,40 +94,6 @@ impl FcstdDocumentBuilder {
         Ok(self)
     }
 
-    /// Record an ordered dependency between two declared objects.
-    pub fn add_dependency(
-        &mut self,
-        object: &str,
-        dependency: &str,
-    ) -> Result<&mut Self, CodecError> {
-        if object == dependency {
-            return Err(CodecError::malformed(format_args!(
-                "FCStd object {object} cannot depend on itself"
-            )));
-        }
-        if !self
-            .objects
-            .iter()
-            .any(|candidate| candidate.name == dependency)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "missing FCStd dependency object {dependency}"
-            )));
-        }
-        let target = self
-            .objects
-            .iter_mut()
-            .find(|candidate| candidate.name == object)
-            .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd object {object}")))?;
-        if target.dependencies.iter().any(|name| name == dependency) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate FCStd dependency {object} -> {dependency}"
-            )));
-        }
-        target.dependencies.push(dependency.to_owned());
-        Ok(self)
-    }
-
     /// Add one typed property to an existing object.
     pub fn add_property(
         &mut self,
@@ -184,29 +126,6 @@ impl FcstdDocumentBuilder {
             type_name: type_name.into(),
             values,
         });
-        Ok(self)
-    }
-
-    /// Add a named logical archive entry for a file-backed property.
-    pub fn add_side_entry(
-        &mut self,
-        name: impl Into<String>,
-        bytes: impl Into<Vec<u8>>,
-    ) -> Result<&mut Self, CodecError> {
-        let name = name.into();
-        if name.is_empty()
-            || name.starts_with('/')
-            || name
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-            || name == "Document.xml"
-            || self.side_entries.iter().any(|(entry, _)| entry == &name)
-        {
-            return Err(CodecError::malformed(format_args!(
-                "invalid or duplicate source-less FCStd entry {name:?}"
-            )));
-        }
-        self.side_entries.push((name, bytes.into()));
         Ok(self)
     }
 
@@ -383,6 +302,9 @@ fn valid_identifier(value: &str, role: &str) -> Result<(), CodecError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;
