@@ -29,7 +29,7 @@ pub(in crate::solve) struct MeshCoordinateGauge {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MeshCandidateGauge<'a> {
+pub(super) struct MeshCandidateGauge<'a> {
     pub(super) edge_rows: &'a [EdgeRow],
     pub(super) edge_faces: &'a [[usize; 2]],
     pub(super) edge_geometry: &'a [MeshEdgeGeometry],
