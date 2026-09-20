@@ -1,0 +1,12 @@
+[
+  "rustc",
+  "--edition=2021",
+  "--test",
+  "$EVIDENCE_DIR/probes.rs",
+  "--extern",
+  "cadmpeg_ir=$REPO_ROOT/target/debug/deps/libcadmpeg_ir-1ac11851fee9bc28.rlib",
+  "-L",
+  "dependency=$REPO_ROOT/target/debug/deps",
+  "-o",
+  "$EVIDENCE_DIR/probes"
+]

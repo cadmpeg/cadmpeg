@@ -1,0 +1,36 @@
+
+running 15 tests
+test asm::curved_spine_becomes_line ... ASM curved spine: Some((Point3 { x: 0.0, y: 0.0, z: 0.0 }, Vector3 { x: 1.0, y: 0.0, z: 0.0 })), midpoint Point3 { x: 5e-11, y: 2e-11, z: 0.0 }
+ok
+test catia::short_witnessed_arc_becomes_full_circle ... CATIA witnessed 0.001-radian arc: Some([0.0, 6.283185307179586])
+ok
+test creo::disjoint_tiny_spheres_invent_tangent ... Creo disjoint tiny spheres: [1.5e-10, 0.0, 0.0]
+Creo disjoint tiny plane-sphere: [0.0, 0.0, 0.0]
+ok
+test creo::large_sphere_point_is_refused ... Creo exact point on radius-1e200 sphere refused
+ok
+test creo::tiny_plane_circle_returns_center ... Creo plane-circle r=1e-7: [[0.0, 0.0, -0.0]]
+ok
+test eval::parallel_derivative_is_refused ... IR parallel normalized derivative: None
+ok
+test eval::proper_rotation_produces_nonfinite_rail ... IR rail Point3 { x: 1.7976931348623155e308, y: 1.7976931348623155e308, z: inf }; vector Vector3 { x: 1.7976931348623155e308, y: 1.7976931348623155e308, z: inf }; checked transform Some(Point3 { x: 1.7976931348623155e308, y: 1.7976931348623155e308, z: 1.7976931348623157e308 })
+ok
+test fc_periodic::finite_periodic_extension_overflows ... FreeCAD periodic knots: [-inf, -1e308, -9e307, 9e307, 1e308, inf], padding 1
+ok
+test fc_range::exact_small_domain_collapses ... FreeCAD exact domain [0,1e-10]: Some([0.0, 0.0])
+ok
+test fusion::representable_rotation_is_discarded ... Fusion 1e-8-radian rotation: None
+ok
+test nx::common_weight_scale_changes_projection ... NX derivative ordinary [-0.25, 0.25, 0.75]; large None; tiny [0.0, 0.0, 0.0]; residual distances inf, 0
+ok
+test planar::unequal_circles_intersect_at_wrong_center ... IR unequal circles: [Point2 { u: 0.0, v: 0.0 }]
+ok
+test rhino::shallow_miter_tilt_is_lost ... Rhino shallow miter point Vector3 { x: 100000000.0, y: 0.0, z: 0.0 }, plane residual 1
+ok
+test sld::valid_angular_dimensions_are_refused ... SLDPRT short perpendicular dimension Err(CodecError); shallow 1e-8 angle 0
+ok
+test step::finite_mass_properties_are_lost ... STEP scale 1e90 mass properties: None
+ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
