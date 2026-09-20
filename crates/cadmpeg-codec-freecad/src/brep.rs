@@ -2032,10 +2032,10 @@ pub(crate) fn carrier_census(
                 triangulations: triangulations as u64,
             };
             for curve in curve2ds {
-                census_curve2d(curve, &mut record.curves_2d);
+                census_curve(CensusCurve::Parameter(curve), &mut record.curves_2d);
             }
             for curve in curves {
-                census_curve(curve, &mut record.curves_3d);
+                census_curve(CensusCurve::Model(curve), &mut record.curves_3d);
             }
             for surface in surfaces {
                 census_surface(surface, &mut record.surfaces, &mut record.curves_3d);
@@ -2066,48 +2066,38 @@ fn increment(counts: &mut BTreeMap<String, u64>, family: &str) {
     *counts.entry(family.into()).or_default() += 1;
 }
 
-fn census_curve2d(curve: &TextCurve2d, counts: &mut BTreeMap<String, u64>) {
-    let family = match curve {
-        TextCurve2d::Line { .. } => "line",
-        TextCurve2d::Circle { .. } => "circle",
-        TextCurve2d::Ellipse { .. } => "ellipse",
-        TextCurve2d::Parabola { .. } => "parabola",
-        TextCurve2d::Hyperbola { .. } => "hyperbola",
-        TextCurve2d::Nurbs(_) => "nurbs",
-        TextCurve2d::Trimmed { basis, .. } => {
-            increment(counts, "trimmed");
-            census_curve2d(basis, counts);
-            return;
-        }
-        TextCurve2d::Offset { basis, .. } => {
-            increment(counts, "offset");
-            census_curve2d(basis, counts);
-            return;
-        }
-    };
-    increment(counts, family);
+enum CensusCurve<'a> {
+    Model(&'a TextCurve),
+    Parameter(&'a TextCurve2d),
 }
 
-fn census_curve(curve: &TextCurve, counts: &mut BTreeMap<String, u64>) {
-    let family = match curve {
-        TextCurve::Line { .. } => "line",
-        TextCurve::Circle { .. } => "circle",
-        TextCurve::Ellipse { .. } => "ellipse",
-        TextCurve::Parabola { .. } => "parabola",
-        TextCurve::Hyperbola { .. } => "hyperbola",
-        TextCurve::Nurbs(_) => "nurbs",
-        TextCurve::Trimmed { basis, .. } => {
-            increment(counts, "trimmed");
-            census_curve(basis, counts);
-            return;
-        }
-        TextCurve::Offset { basis, .. } => {
-            increment(counts, "offset");
-            census_curve(basis, counts);
-            return;
-        }
-    };
-    increment(counts, family);
+fn census_curve(mut curve: CensusCurve<'_>, counts: &mut BTreeMap<String, u64>) {
+    use CensusCurve::{Model, Parameter};
+    loop {
+        let (family, basis) = match curve {
+            Model(TextCurve::Line { .. }) | Parameter(TextCurve2d::Line { .. }) => ("line", None),
+            Model(TextCurve::Circle { .. }) | Parameter(TextCurve2d::Circle { .. }) => {
+                ("circle", None)
+            }
+            Model(TextCurve::Ellipse { .. }) | Parameter(TextCurve2d::Ellipse { .. }) => {
+                ("ellipse", None)
+            }
+            Model(TextCurve::Parabola { .. }) | Parameter(TextCurve2d::Parabola { .. }) => {
+                ("parabola", None)
+            }
+            Model(TextCurve::Hyperbola { .. }) | Parameter(TextCurve2d::Hyperbola { .. }) => {
+                ("hyperbola", None)
+            }
+            Model(TextCurve::Nurbs(_)) | Parameter(TextCurve2d::Nurbs(_)) => ("nurbs", None),
+            Model(TextCurve::Trimmed { basis, .. }) => ("trimmed", Some(Model(basis))),
+            Parameter(TextCurve2d::Trimmed { basis, .. }) => ("trimmed", Some(Parameter(basis))),
+            Model(TextCurve::Offset { basis, .. }) => ("offset", Some(Model(basis))),
+            Parameter(TextCurve2d::Offset { basis, .. }) => ("offset", Some(Parameter(basis))),
+        };
+        increment(counts, family);
+        let Some(basis) = basis else { return };
+        curve = basis;
+    }
 }
 
 fn census_surface(
@@ -2124,12 +2114,12 @@ fn census_surface(
         TextSurface::Nurbs(_) => "nurbs",
         TextSurface::Extrusion { directrix, .. } => {
             increment(counts, "extrusion");
-            census_curve(directrix, curves);
+            census_curve(CensusCurve::Model(directrix), curves);
             return;
         }
         TextSurface::Revolution { directrix, .. } => {
             increment(counts, "revolution");
-            census_curve(directrix, curves);
+            census_curve(CensusCurve::Model(directrix), curves);
             return;
         }
         TextSurface::Trimmed { basis, .. } => {

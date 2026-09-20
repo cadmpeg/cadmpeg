@@ -17,9 +17,9 @@ use cadmpeg_ir::topology::Sense;
 
 use super::{
     attributes::{
-        edge_persistent_attribute_ref, encode_source_less_attributes, owner_color_or_body_tag_ref,
-        owner_color_or_face_tag_ref, sketch_link_attribute_ref, source_less_body_key,
-        timestamp_attribute_ref, AttributeIndex, AttributeOwnerStarts, SurfaceOwnerStarts,
+        edge_persistent_attribute_ref, encode_source_less_attributes, owner_attribute_ref,
+        sketch_link_attribute_ref, source_less_body_key, timestamp_attribute_ref, AttributeIndex,
+        AttributeOwner, AttributeOwnerStarts, SurfaceOwnerStarts,
     },
     index::NativeGenerationIndex,
     native_bytes::{
@@ -372,7 +372,13 @@ fn encode_wire_body_smbh(
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
-            owner_color_or_body_tag_ref(target, attributes, body, ordinal, attribute_start)?,
+            owner_attribute_ref(
+                target,
+                attributes,
+                AttributeOwner::Body(body),
+                ordinal,
+                attribute_start,
+            )?,
         );
         native_i64(
             &mut records,
@@ -752,7 +758,13 @@ fn encode_face_topology_smbh(
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
-            owner_color_or_body_tag_ref(target, attributes, body, body_ordinal, attribute_start)?,
+            owner_attribute_ref(
+                target,
+                attributes,
+                AttributeOwner::Body(body),
+                body_ordinal,
+                attribute_start,
+            )?,
         );
         native_i64(
             &mut records,
@@ -944,10 +956,10 @@ fn encode_face_topology_smbh(
         native_ident(&mut records, "face")?;
         native_ref(
             &mut records,
-            owner_color_or_face_tag_ref(
+            owner_attribute_ref(
                 target,
                 attributes,
-                face,
+                AttributeOwner::Face(face),
                 face_ordinal_global,
                 attribute_start,
             )?,

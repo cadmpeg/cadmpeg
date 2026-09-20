@@ -13,7 +13,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::{interval, point, vector, xform, MillimeterScale};
-use crate::wire::{scaled_coordinate, uuid, Uuid};
+use crate::wire::{comma_list, scaled_coordinate, uuid, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_LOCALIZERS: usize = 1 << 16;
@@ -410,14 +410,6 @@ pub(crate) fn decode(
     })
 }
 
-fn numbers(values: impl IntoIterator<Item = f64>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
 fn points(values: &[cadmpeg_ir::math::Point3]) -> String {
     values
         .iter()
@@ -434,7 +426,7 @@ fn curve_properties(
     properties.insert(format!("{prefix}_degree"), curve.degree().to_string());
     properties.insert(
         format!("{prefix}_knots"),
-        numbers(curve.knots().iter().copied()),
+        comma_list(curve.knots().iter().copied()),
     );
     let control_points = curve.control_points();
     properties.insert(format!("{prefix}_control_points"), points(&control_points));
@@ -442,7 +434,7 @@ fn curve_properties(
     if let Some(weights) = curve.weights() {
         properties.insert(
             format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
+            comma_list(weights.iter().copied()),
         );
     }
 }
@@ -456,11 +448,11 @@ fn surface_properties(
     properties.insert(format!("{prefix}_v_degree"), surface.v_degree().to_string());
     properties.insert(
         format!("{prefix}_u_knots"),
-        numbers(surface.u_knots().iter().copied()),
+        comma_list(surface.u_knots().iter().copied()),
     );
     properties.insert(
         format!("{prefix}_v_knots"),
-        numbers(surface.v_knots().iter().copied()),
+        comma_list(surface.v_knots().iter().copied()),
     );
     properties.insert(format!("{prefix}_u_count"), surface.u_count().to_string());
     properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
@@ -474,7 +466,7 @@ fn surface_properties(
         surface.v_periodic().to_string(),
     );
     if let Some(weights) = surface.pole_weights() {
-        properties.insert(format!("{prefix}_weights"), numbers(weights));
+        properties.insert(format!("{prefix}_weights"), comma_list(weights));
     }
 }
 
@@ -496,21 +488,21 @@ fn cage_properties(
     for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
         properties.insert(
             format!("{prefix}_{axis}_knots"),
-            numbers(knots.iter().copied()),
+            comma_list(knots.iter().copied()),
         );
     }
     properties.insert(
         format!("{prefix}_control_points"),
         cage.control_points
             .iter()
-            .map(|point| numbers(point.iter().copied()))
+            .map(|point| comma_list(point.iter().copied()))
             .collect::<Vec<_>>()
             .join(";"),
     );
     if let Some(weights) = &cage.weights {
         properties.insert(
             format!("{prefix}_weights"),
-            numbers(weights.iter().copied()),
+            comma_list(weights.iter().copied()),
         );
     }
 }
@@ -548,7 +540,7 @@ pub(crate) fn project(
         } => {
             let mut properties = BTreeMap::from([(
                 "start_transform".to_string(),
-                numbers(start_transform.iter().copied()),
+                comma_list(start_transform.iter().copied()),
             )]);
             cage_properties("end", end, &mut properties);
             ("cage", properties)
@@ -557,9 +549,9 @@ pub(crate) fn project(
     for (index, localizer) in morph.localizers.iter().enumerate() {
         let prefix = format!("localizer_{index}");
         properties.insert(format!("{prefix}_type"), localizer.kind.to_string());
-        properties.insert(format!("{prefix}_point"), numbers(localizer.point));
-        properties.insert(format!("{prefix}_vector"), numbers(localizer.vector));
-        properties.insert(format!("{prefix}_interval"), numbers(localizer.interval));
+        properties.insert(format!("{prefix}_point"), comma_list(localizer.point));
+        properties.insert(format!("{prefix}_vector"), comma_list(localizer.vector));
+        properties.insert(format!("{prefix}_interval"), comma_list(localizer.interval));
         if let Some(curve) = &localizer.curve {
             curve_properties(&format!("{prefix}_curve"), curve, &mut properties);
         }

@@ -10,7 +10,7 @@ use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
-use crate::wire::{uuid, Uuid};
+use crate::wire::{comma_list, uuid, Uuid};
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -666,20 +666,12 @@ pub(crate) fn parse_records(
     result
 }
 
-fn list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
 fn value_text(value: &Value) -> Option<String> {
     Some(match value {
         Value::None => String::new(),
-        Value::Booleans(values) => list(values),
-        Value::Integers(values) => list(values),
-        Value::Doubles(values) => list(values),
+        Value::Booleans(values) => comma_list(values),
+        Value::Integers(values) => comma_list(values),
+        Value::Doubles(values) => comma_list(values),
         Value::Colors(values) => values
             .iter()
             .map(|value| {
@@ -693,17 +685,17 @@ fn value_text(value: &Value) -> Option<String> {
             .join(";"),
         Value::Points(values) => values
             .iter()
-            .map(|value| list(value.0))
+            .map(|value| comma_list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Vectors(values) => values
             .iter()
-            .map(|value| list(value.0))
+            .map(|value| comma_list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Transforms(values) => values
             .iter()
-            .map(|value| list(value.0))
+            .map(|value| comma_list(value.0))
             .collect::<Vec<_>>()
             .join(";"),
         Value::Strings(values) => values.join("\u{1f}"),
@@ -722,7 +714,7 @@ fn value_text(value: &Value) -> Option<String> {
             .map(|value| value.class_id.to_string())
             .collect::<Vec<_>>()
             .join(","),
-        Value::Uuids(values) => list(values),
+        Value::Uuids(values) => comma_list(values),
         Value::PolyEdges(_) | Value::SubdEdgeChains(_) => return None,
         Value::Opaque { .. } => return None,
     })
@@ -734,11 +726,11 @@ fn evaluation_properties(
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}.type"), value.parameter_type.to_string());
-    properties.insert(format!("{prefix}.component"), list(value.component));
-    properties.insert(format!("{prefix}.parameters"), list(value.parameters));
+    properties.insert(format!("{prefix}.component"), comma_list(value.component));
+    properties.insert(format!("{prefix}.parameters"), comma_list(value.parameters));
     for (index, interval) in value.intervals.iter().enumerate() {
         if let Some(interval) = interval {
-            properties.insert(format!("{prefix}.interval_{index}"), list(interval));
+            properties.insert(format!("{prefix}.interval_{index}"), comma_list(interval));
         }
     }
 }
@@ -749,12 +741,12 @@ fn object_reference_properties(
     properties: &mut BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}.object_id"), value.object_id.to_string());
-    properties.insert(format!("{prefix}.component"), list(value.component));
+    properties.insert(format!("{prefix}.component"), comma_list(value.component));
     properties.insert(
         format!("{prefix}.geometry_type"),
         value.geometry_type.to_string(),
     );
-    properties.insert(format!("{prefix}.point"), list(value.point.0));
+    properties.insert(format!("{prefix}.point"), comma_list(value.point.0));
     properties.insert(format!("{prefix}.osnap_mode"), value.osnap_mode.to_string());
     evaluation_properties(
         &format!("{prefix}.evaluation"),
@@ -771,7 +763,10 @@ fn object_reference_properties(
             format!("{path}.reference_id"),
             instance.reference_id.to_string(),
         );
-        properties.insert(format!("{path}.transform"), list(instance.transform.0));
+        properties.insert(
+            format!("{path}.transform"),
+            comma_list(instance.transform.0),
+        );
         properties.insert(
             format!("{path}.definition_id"),
             instance.definition_id.to_string(),
@@ -781,7 +776,10 @@ fn object_reference_properties(
             instance.geometry_index.to_string(),
         );
         if let Some(evaluation) = &instance.evaluation {
-            properties.insert(format!("{path}.component"), list(evaluation.component));
+            properties.insert(
+                format!("{path}.component"),
+                comma_list(evaluation.component),
+            );
             evaluation_properties(
                 &format!("{path}.evaluation"),
                 &evaluation.parameter,
@@ -1195,7 +1193,7 @@ fn structured_value_properties(
                 let edge_key = format!("{key}.{edge_index}");
                 properties.insert(
                     format!("{edge_key}.parameters"),
-                    list(&edge.polyedge.parameters),
+                    comma_list(&edge.polyedge.parameters),
                 );
                 properties.insert(
                     format!("{edge_key}.evaluation_mode"),
@@ -1216,18 +1214,27 @@ fn structured_value_properties(
                         format!("{segment_key}.reversed"),
                         segment.reversed.to_string(),
                     );
-                    properties.insert(format!("{segment_key}.full_domain"), list(segment.domain));
+                    properties.insert(
+                        format!("{segment_key}.full_domain"),
+                        comma_list(segment.domain),
+                    );
                     properties.insert(
                         format!("{segment_key}.sub_domain"),
-                        list(segment.reference.sub_domain),
+                        comma_list(segment.reference.sub_domain),
                     );
                     properties.insert(
                         format!("{segment_key}.proxy_domain"),
-                        list(segment.proxy_domain),
+                        comma_list(segment.proxy_domain),
                     );
                     if let Some(domains) = &segment.reference.domains {
-                        properties.insert(format!("{segment_key}.edge_domain"), list(domains.edge));
-                        properties.insert(format!("{segment_key}.trim_domain"), list(domains.trim));
+                        properties.insert(
+                            format!("{segment_key}.edge_domain"),
+                            comma_list(domains.edge),
+                        );
+                        properties.insert(
+                            format!("{segment_key}.trim_domain"),
+                            comma_list(domains.trim),
+                        );
                     }
                 }
             }
@@ -1239,11 +1246,11 @@ fn structured_value_properties(
                 properties.insert(format!("{chain_key}.subd_id"), chain.subd_id.to_string());
                 properties.insert(
                     format!("{chain_key}.edge_ids"),
-                    list(chain.edges.iter().map(|edge| edge.id)),
+                    comma_list(chain.edges.iter().map(|edge| edge.id)),
                 );
                 properties.insert(
                     format!("{chain_key}.orientations"),
-                    list(chain.edges.iter().map(|edge| u8::from(edge.reversed))),
+                    comma_list(chain.edges.iter().map(|edge| u8::from(edge.reversed))),
                 );
             }
         }
@@ -1399,8 +1406,14 @@ pub(crate) fn project(
             "copy_on_replace".to_string(),
             record.copy_on_replace.to_string(),
         );
-        properties.insert("antecedent_objects".to_string(), list(&record.antecedents));
-        properties.insert("descendant_objects".to_string(), list(&record.descendants));
+        properties.insert(
+            "antecedent_objects".to_string(),
+            comma_list(&record.antecedents),
+        );
+        properties.insert(
+            "descendant_objects".to_string(),
+            comma_list(&record.descendants),
+        );
         let (properties, refused) =
             cadmpeg_core::text::named_entries_reporting(&native_ids[index], properties);
         let (parameters, refused_parameters) =

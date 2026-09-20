@@ -459,34 +459,50 @@ fn body_name_attribute_ref(
     native_record_index(attribute_start, source_less_color_count(target) + ordinal).map(Some)
 }
 
-pub(super) fn owner_color_or_body_tag_ref(
+/// A source-less attribute owner with a color/name/tag chain.
+#[derive(Clone, Copy)]
+pub(super) enum AttributeOwner<'a> {
+    Body(&'a Body),
+    Face(&'a Face),
+}
+
+pub(super) fn owner_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
-    body: &Body,
-    body_ordinal: usize,
+    owner: AttributeOwner<'_>,
+    ordinal: usize,
     attribute_start: i64,
 ) -> Result<i64, CodecError> {
-    if body.color.is_some() {
-        return color_attribute_ref(
-            &target.model,
-            body_ordinal,
-            ColorOwner::Body,
-            attribute_start,
-        );
+    let (has_color, color_owner) = match owner {
+        AttributeOwner::Body(body) => (body.color.is_some(), ColorOwner::Body),
+        AttributeOwner::Face(face) => (face.color.is_some(), ColorOwner::Face),
+    };
+    if has_color {
+        return color_attribute_ref(&target.model, ordinal, color_owner, attribute_start);
     }
-    if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
+    let name = match owner {
+        AttributeOwner::Body(body) => body_name_attribute_ref(target, body, attribute_start),
+        AttributeOwner::Face(face) => face_name_attribute_ref(target, face, attribute_start),
+    }?;
+    if let Some(reference) = name {
         return Ok(reference);
     }
-    if let Some(reference) = body_persistent_attribute_ref(target, index, body, attribute_start)? {
+    let persistent = match owner {
+        AttributeOwner::Body(body) => {
+            body_persistent_attribute_ref(target, index, body, attribute_start)
+        }
+        AttributeOwner::Face(face) => {
+            face_persistent_attribute_ref(target, index, face, attribute_start)
+        }
+    }?;
+    if let Some(reference) = persistent {
         return Ok(reference);
     }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
+    let entity = match owner {
+        AttributeOwner::Body(body) => AttributeTarget::Body(body.id.clone()),
+        AttributeOwner::Face(face) => AttributeTarget::Face(face.id.clone()),
+    };
+    Ok(timestamp_attribute_ref(target, index, &entity, attribute_start)?.unwrap_or(-1))
 }
 
 fn face_persistent_attribute_ref(
@@ -535,36 +551,6 @@ fn face_name_attribute_ref(
         source_less_color_count(target) + body_name_count + ordinal,
     )
     .map(Some)
-}
-
-pub(super) fn owner_color_or_face_tag_ref(
-    target: &CadIr,
-    index: &AttributeIndex<'_>,
-    face: &Face,
-    face_ordinal: usize,
-    attribute_start: i64,
-) -> Result<i64, CodecError> {
-    if face.color.is_some() {
-        return color_attribute_ref(
-            &target.model,
-            face_ordinal,
-            ColorOwner::Face,
-            attribute_start,
-        );
-    }
-    if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
-        return Ok(reference);
-    }
-    if let Some(reference) = face_persistent_attribute_ref(target, index, face, attribute_start)? {
-        return Ok(reference);
-    }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
 }
 
 pub(super) fn edge_persistent_attribute_ref(
