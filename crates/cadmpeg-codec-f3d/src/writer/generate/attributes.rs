@@ -21,6 +21,11 @@ use super::native_bytes::{
     native_subident,
 };
 
+struct IndexedTimestamp<'a> {
+    source: &'a CreationTimestamp,
+    ordinal: Option<usize>,
+}
+
 pub(super) struct AttributeIndex<'a> {
     creation_timestamps: &'a [CreationTimestamp],
     body_group_ordinals: HashMap<String, usize>,
@@ -30,17 +35,12 @@ pub(super) struct AttributeIndex<'a> {
     body_links: HashMap<&'a str, Vec<&'a PersistentDesignLink>>,
     face_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
     edge_tags: HashMap<&'a str, Vec<&'a PersistentSubentityTag>>,
-    body_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    face_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    edge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    coedge_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
-    vertex_timestamps: HashMap<&'a str, &'a CreationTimestamp>,
+    body_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    face_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    edge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
+    vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
-    body_timestamp_ordinals: HashMap<&'a str, usize>,
-    face_timestamp_ordinals: HashMap<&'a str, usize>,
-    edge_timestamp_ordinals: HashMap<&'a str, usize>,
-    coedge_timestamp_ordinals: HashMap<&'a str, usize>,
-    vertex_timestamp_ordinals: HashMap<&'a str, usize>,
     body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
     assigned_body_keys: HashMap<&'a str, u64>,
 }
@@ -121,19 +121,44 @@ impl<'a> AttributeIndex<'a> {
         for timestamp in &native.creation_timestamps {
             match &timestamp.target {
                 cadmpeg_ir::attributes::AttributeTarget::Body(id) => {
-                    body_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    body_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Face(id) => {
-                    face_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    face_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Edge(id) => {
-                    edge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    edge_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Coedge(id) => {
-                    coedge_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    coedge_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Vertex(id) => {
-                    vertex_timestamps.entry(id.as_str()).or_insert(timestamp);
+                    vertex_timestamps
+                        .entry(id.as_str())
+                        .or_insert(IndexedTimestamp {
+                            source: timestamp,
+                            ordinal: None,
+                        });
                 }
                 _ => {}
             }
@@ -144,47 +169,22 @@ impl<'a> AttributeIndex<'a> {
                 coedge_sketch_links.entry(id.as_str()).or_insert(link);
             }
         }
-        let mut body_timestamp_ordinals = HashMap::new();
-        let mut face_timestamp_ordinals = HashMap::new();
-        let mut edge_timestamp_ordinals = HashMap::new();
-        let mut coedge_timestamp_ordinals = HashMap::new();
-        let mut vertex_timestamp_ordinals = HashMap::new();
         let mut split_ordinal = 0;
         macro_rules! split_timestamp_ordinals {
-            ($items:expr, $timestamps:expr, $ordinals:expr) => {
+            ($items:expr, $timestamps:expr) => {
                 for item in $items {
-                    if $timestamps.contains_key(item.id.as_str()) {
-                        $ordinals.insert(item.id.as_str(), split_ordinal);
+                    if let Some(timestamp) = $timestamps.get_mut(item.id.as_str()) {
+                        timestamp.ordinal = Some(split_ordinal);
                         split_ordinal += 1;
                     }
                 }
             };
         }
-        split_timestamp_ordinals!(
-            &target.model.bodies,
-            body_timestamps,
-            body_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.faces,
-            face_timestamps,
-            face_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.edges,
-            edge_timestamps,
-            edge_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.coedges,
-            coedge_timestamps,
-            coedge_timestamp_ordinals
-        );
-        split_timestamp_ordinals!(
-            &target.model.vertices,
-            vertex_timestamps,
-            vertex_timestamp_ordinals
-        );
+        split_timestamp_ordinals!(&target.model.bodies, body_timestamps);
+        split_timestamp_ordinals!(&target.model.faces, face_timestamps);
+        split_timestamp_ordinals!(&target.model.edges, edge_timestamps);
+        split_timestamp_ordinals!(&target.model.coedges, coedge_timestamps);
+        split_timestamp_ordinals!(&target.model.vertices, vertex_timestamps);
         let body_group_ordinals = target
             .model
             .bodies
@@ -232,11 +232,6 @@ impl<'a> AttributeIndex<'a> {
             coedge_timestamps,
             vertex_timestamps,
             coedge_sketch_links,
-            body_timestamp_ordinals,
-            face_timestamp_ordinals,
-            edge_timestamp_ordinals,
-            coedge_timestamp_ordinals,
-            vertex_timestamp_ordinals,
             body_keys,
             assigned_body_keys,
         })
@@ -254,31 +249,28 @@ impl<'a> AttributeIndex<'a> {
         self.edge_group_ordinals.len()
     }
 
-    fn timestamp(
+    fn indexed_timestamp(
         &self,
         target: &cadmpeg_ir::attributes::AttributeTarget,
-    ) -> Option<&'a CreationTimestamp> {
+    ) -> Option<&IndexedTimestamp<'a>> {
         use cadmpeg_ir::attributes::AttributeTarget;
         match target {
-            AttributeTarget::Body(id) => self.body_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Face(id) => self.face_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Edge(id) => self.edge_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Coedge(id) => self.coedge_timestamps.get(id.as_str()).copied(),
-            AttributeTarget::Vertex(id) => self.vertex_timestamps.get(id.as_str()).copied(),
+            AttributeTarget::Body(id) => self.body_timestamps.get(id.as_str()),
+            AttributeTarget::Face(id) => self.face_timestamps.get(id.as_str()),
+            AttributeTarget::Edge(id) => self.edge_timestamps.get(id.as_str()),
+            AttributeTarget::Coedge(id) => self.coedge_timestamps.get(id.as_str()),
+            AttributeTarget::Vertex(id) => self.vertex_timestamps.get(id.as_str()),
             _ => None,
         }
     }
+    fn timestamp(&self, target: &AttributeTarget) -> Option<&'a CreationTimestamp> {
+        self.indexed_timestamp(target)
+            .map(|timestamp| timestamp.source)
+    }
 
-    fn timestamp_ordinal(&self, target: &cadmpeg_ir::attributes::AttributeTarget) -> Option<usize> {
-        use cadmpeg_ir::attributes::AttributeTarget;
-        match target {
-            AttributeTarget::Body(id) => self.body_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Face(id) => self.face_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Edge(id) => self.edge_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Coedge(id) => self.coedge_timestamp_ordinals.get(id.as_str()).copied(),
-            AttributeTarget::Vertex(id) => self.vertex_timestamp_ordinals.get(id.as_str()).copied(),
-            _ => None,
-        }
+    fn timestamp_ordinal(&self, target: &AttributeTarget) -> Option<usize> {
+        self.indexed_timestamp(target)
+            .and_then(|timestamp| timestamp.ordinal)
     }
 }
 

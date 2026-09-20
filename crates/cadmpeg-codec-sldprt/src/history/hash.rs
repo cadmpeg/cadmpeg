@@ -83,26 +83,24 @@ pub(crate) fn configuration_hash(
 pub(crate) fn configuration_parameter_value_hash(
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    let mut values = configurations
-        .iter()
-        .filter(|configuration| !configuration.parameter_values.is_empty())
-        .map(|configuration| (&configuration.id, &configuration.parameter_values))
-        .collect::<Vec<_>>();
-    values.sort_by(|left, right| left.0.cmp(right.0));
-    hash_records(&values)
+    hash_keyed_records(
+        configurations
+            .iter()
+            .filter(|configuration| !configuration.parameter_values.is_empty())
+            .map(|configuration| (&configuration.id, &configuration.parameter_values)),
+    )
 }
 
 /// Stable hash of configuration-local evaluated feature state.
 pub(crate) fn configuration_feature_state_hash(
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    let mut states = configurations
-        .iter()
-        .filter(|configuration| !configuration.feature_states.is_empty())
-        .map(|configuration| (&configuration.id, &configuration.feature_states))
-        .collect::<Vec<_>>();
-    states.sort_by(|left, right| left.0.cmp(right.0));
-    hash_records(&states)
+    hash_keyed_records(
+        configurations
+            .iter()
+            .filter(|configuration| !configuration.feature_states.is_empty())
+            .map(|configuration| (&configuration.id, &configuration.feature_states)),
+    )
 }
 
 /// Stable hash of native configuration records.
@@ -202,4 +200,12 @@ mod tests {
             hash_records(&history("Plate")).expect("the record digests"),
         );
     }
+}
+
+fn hash_keyed_records<K: Ord + Serialize, V: Serialize>(
+    records: impl Iterator<Item = (K, V)>,
+) -> Result<String, CodecError> {
+    let mut records = records.collect::<Vec<_>>();
+    records.sort_by(|left, right| left.0.cmp(&right.0));
+    hash_records(&records)
 }

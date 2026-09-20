@@ -1271,6 +1271,7 @@ impl RecordExt for RawRecord {
 /// Value accessors shared by the reader submodules.
 trait ValueExt {
     fn number(&self) -> Option<f64>;
+    fn typed_number(&self) -> Option<f64>;
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
     fn enumeration(&self) -> Option<&str>;
@@ -1279,6 +1280,12 @@ trait ValueExt {
 }
 
 impl ValueExt for Value {
+    fn typed_number(&self) -> Option<f64> {
+        match self {
+            Value::Typed(_, value) => value.typed_number(),
+            _ => self.number(),
+        }
+    }
     fn number(&self) -> Option<f64> {
         match self {
             Value::Real(value) => Some(*value),
