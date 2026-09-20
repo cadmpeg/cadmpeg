@@ -172,3 +172,15 @@ fn a_widening_edge_carries_a_signed_zero_and_a_domain_boundary_unchanged() {
     let one = Fraction::new(1.0).expect("one is a fraction");
     assert_eq!(NonNegativeReal::from(one).get(), 1.0);
 }
+
+#[test]
+fn the_document_tolerance_defaults_are_values_their_own_admission_accepts() {
+    use crate::scalar::{PositiveAngle, PositiveLength};
+
+    let linear = PositiveLength::UNIT_LINEAR_DEFAULT;
+    let angular = PositiveAngle::UNIT_ANGULAR_DEFAULT;
+    assert_eq!(linear.get(), 1.0e-6);
+    assert_eq!(angular.get(), 1.0e-10);
+    assert_eq!(PositiveLength::new(linear.get()), Some(linear));
+    assert_eq!(PositiveAngle::new(angular.get()), Some(angular));
+}
