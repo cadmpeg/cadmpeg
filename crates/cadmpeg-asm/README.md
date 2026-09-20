@@ -97,10 +97,10 @@ variant.
 ## Locate payload bytes
 
 `sab::payload_token` returns a decoded value token and its absolute byte offset
-at a record's chunk index. `sab::payload_token_offsets` returns all absolute
-offsets for a selected payload tag and reports a [`StreamError`][stream-error]
-when the record cannot be lexed. Both helpers use the same value-token indexing
-as `Record::chunk`.
+at a record's chunk index, using the same value-token indexing as `Record::chunk`.
+With the `test-support` feature, `test_support::sab::payload_token_offsets`
+locates all offsets for a selected payload tag in a test fixture and reports
+a [`StreamError`][stream-error] when the record cannot be lexed.
 
 `sab::payload_subtype_range` returns the absolute byte range inside the subtype
 at a chunk index when its following identifier matches the requested name. The

@@ -263,7 +263,7 @@ pub fn payload_token(
 /// Read one token starting at `pos`. Returns the token (or a control marker) and
 /// the offset just past it. Control tags (`0x0d`/`0x0e` name tokens, `0x11`
 /// terminator) are returned via [`Lexed`] so the framer can act on them.
-enum Lexed {
+pub(crate) enum Lexed {
     /// A payload token.
     Value(Token),
     /// `0x0d` identifier (name terminator).
@@ -274,7 +274,11 @@ enum Lexed {
     Terminator,
 }
 
-fn lex(bytes: &[u8], pos: usize, ref_width: RefWidth) -> Result<(Lexed, usize), StreamError> {
+pub(crate) fn lex(
+    bytes: &[u8],
+    pos: usize,
+    ref_width: RefWidth,
+) -> Result<(Lexed, usize), StreamError> {
     let err = |reason: &str| StreamError {
         format: StreamFormat::Binary,
         offset: pos,
@@ -388,42 +392,6 @@ fn lex(bytes: &[u8], pos: usize, ref_width: RefWidth) -> Result<(Lexed, usize), 
         }
     };
     Ok(out)
-}
-
-/// Byte offsets of payload tokens with `tag` inside one framed record.
-pub fn payload_token_offsets(
-    bytes: &[u8],
-    record: &Record,
-    ref_width: RefWidth,
-    tag: u8,
-) -> Result<Vec<usize>, StreamError> {
-    let end = record
-        .offset
-        .checked_add(record.len)
-        .ok_or_else(|| StreamError {
-            format: StreamFormat::Binary,
-            offset: record.offset,
-            reason: "record byte extent overflows".to_owned(),
-        })?;
-    let bytes = bytes.get(..end).ok_or_else(|| StreamError {
-        format: StreamFormat::Binary,
-        offset: record.offset,
-        reason: "record byte extent exceeds the available stream".to_owned(),
-    })?;
-    let mut position = record.offset;
-    let mut offsets = Vec::new();
-    while position < end {
-        let token_offset = position;
-        let (token, next) = lex(bytes, position, ref_width)?;
-        if bytes[token_offset] == tag && matches!(&token, Lexed::Value(_)) {
-            offsets.push(token_offset);
-        }
-        position = next;
-        if matches!(&token, Lexed::Terminator) {
-            break;
-        }
-    }
-    Ok(offsets)
 }
 
 /// Frame `bytes[start..limit]` into an indexed record table.
@@ -636,7 +604,10 @@ mod tests {
             let mut record = frame(&bytes, 0, bytes.len(), width).unwrap().remove(0);
             record.len = 11;
             assert!(payload_token(&bytes, &record, width, 0).is_none());
-            assert!(super::payload_token_offsets(&bytes, &record, width, 0x06).is_err());
+            assert!(
+                crate::test_support::sab::payload_token_offsets(&bytes, &record, width, 0x06)
+                    .is_err()
+            );
         }
     }
 
@@ -650,7 +621,13 @@ mod tests {
         record.offset = usize::MAX;
         record.len = 1;
         assert!(payload_token(bytes, &record, RefWidth::Eight, 0).is_none());
-        assert!(super::payload_token_offsets(bytes, &record, RefWidth::Eight, 0x06).is_err());
+        assert!(crate::test_support::sab::payload_token_offsets(
+            bytes,
+            &record,
+            RefWidth::Eight,
+            0x06
+        )
+        .is_err());
         assert!(super::payload_subtype_range(bytes, &record, 0, RefWidth::Eight, "x").is_none());
     }
 

@@ -63,7 +63,7 @@ pub(crate) fn synthetic_geometry_with_helix_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -137,7 +137,7 @@ pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -259,7 +259,7 @@ pub(crate) fn synthetic_geometry_with_stamped_law_curve_smbh(subtype: &[u8]) -> 
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -296,7 +296,7 @@ pub(crate) fn synthetic_geometry_with_vector_offset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -347,7 +347,7 @@ pub(crate) fn synthetic_geometry_with_subset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -391,7 +391,7 @@ pub(crate) fn synthetic_geometry_with_exact_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -456,7 +456,7 @@ pub(crate) fn synthetic_geometry_with_compound_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -507,7 +507,7 @@ pub(crate) fn synthetic_geometry_with_two_sided_offset_curve_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -562,7 +562,7 @@ pub(crate) fn synthetic_geometry_with_embedded_offset_supports_smbh() -> Vec<u8>
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -617,7 +617,7 @@ pub(crate) fn synthetic_geometry_with_analytic_offset_supports_smbh() -> Vec<u8>
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -875,7 +875,7 @@ pub(crate) fn synthetic_geometry_with_null_support_spring_smbh() -> Vec<u8> {
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -954,7 +954,7 @@ pub(crate) fn synthetic_geometry_with_cache_first_curve_smbh(
     )
     .unwrap();
     let edge = &records[10];
-    let offsets = cadmpeg_asm::sab::payload_token_offsets(
+    let offsets = cadmpeg_asm::test_support::sab::payload_token_offsets(
         &bytes,
         edge,
         cadmpeg_asm::kernel_header::RefWidth::Eight,
