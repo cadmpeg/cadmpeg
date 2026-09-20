@@ -8,6 +8,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
+/// Neutral material and texture projection.
+pub mod appearance;
+
 /// Paged logical-record framing.
 pub mod framing;
 

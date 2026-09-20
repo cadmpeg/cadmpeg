@@ -19,11 +19,10 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::appearance::{
-    Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
-};
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_protein::appearance::{is_physical_schema, neutral_property_name, texture_asset};
 use cadmpeg_protein::{
     CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
 };
@@ -696,6 +695,9 @@ fn appearances_from_schema_records(
             .ok_or_else(|| {
                 CodecError::Malformed("untyped material distance count overflows".into())
             })?;
+        if untyped_count != 0 {
+            continue;
+        }
         let Some(texture) = texture else { continue };
         match textures.entry(texture.asset_guid.clone()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -829,168 +831,6 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
             )
         })
         .flatten()
-}
-
-#[derive(Clone, PartialEq)]
-struct TextureAsset {
-    asset_guid: String,
-    schema: String,
-    paths: Vec<String>,
-    urn: Option<String>,
-    mapping: TextureMap2d,
-    bump: Option<BumpMap>,
-}
-
-impl TextureAsset {
-    fn into_ref(self, slot: String) -> TextureRef {
-        TextureRef {
-            asset_guid: self.asset_guid,
-            slot,
-            schema: self.schema,
-            paths: self.paths,
-            urn: self.urn,
-            mapping: self.mapping,
-            bump: self.bump,
-        }
-    }
-}
-
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureAsset>, usize) {
-    if !matches!(
-        record.schema.as_str(),
-        "UnifiedBitmapSchema" | "BumpMapSchema"
-    ) {
-        return (None, 0);
-    }
-    let paths = record
-        .properties
-        .iter()
-        .find_map(|(id, property)| {
-            (id.ends_with("_Bitmap"))
-                .then(|| property.value())
-                .flatten()
-                .and_then(|value| match value {
-                    cadmpeg_protein::property::PropertyValue::TextureUri(paths) => {
-                        Some(paths.clone())
-                    }
-                    _ => None,
-                })
-        })
-        .unwrap_or_default();
-    let urn = record.properties.iter().find_map(|(id, property)| {
-        (id.ends_with("_Bitmap_urn"))
-            .then(|| property.value())
-            .flatten()
-            .and_then(|value| match value {
-                cadmpeg_protein::property::PropertyValue::String(value) if !value.is_empty() => {
-                    Some(value.clone())
-                }
-                _ => None,
-            })
-    });
-    let mut untyped_distance_properties = 0usize;
-    let mut distance = |suffix: &str, default| match distance_property(record, suffix) {
-        Ok(Some(value)) => value,
-        Ok(None) => default,
-        Err(_) => {
-            untyped_distance_properties += 1;
-            default
-        }
-    };
-    let mapping = TextureMap2d {
-        map_channel: integer_property(record, "MapChannel").unwrap_or(1),
-        uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
-        u_offset: float_property(record, "UOffset").unwrap_or(0.0),
-        v_offset: float_property(record, "VOffset").unwrap_or(0.0),
-        u_scale: float_property(record, "UScale").unwrap_or(1.0),
-        v_scale: float_property(record, "VScale").unwrap_or(1.0),
-        rotation: float_property(record, "WAngle").unwrap_or(0.0).to_radians(),
-        repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
-        repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
-        real_world_offset_x: distance("RealWorldOffsetX", 0.0),
-        real_world_offset_y: distance("RealWorldOffsetY", 0.0),
-        real_world_scale_x: distance("RealWorldScaleX", 0.0),
-        real_world_scale_y: distance("RealWorldScaleY", 0.0),
-    };
-    let bump = (record.schema == "BumpMapSchema").then(|| BumpMap {
-        normal_map: integer_property(record, "bumpmap_Type") == Some(1),
-        depth: distance("bumpmap_Depth", 0.0),
-        normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
-    });
-    let texture = TextureAsset {
-        asset_guid: record.guid.clone(),
-        schema: record.schema.clone(),
-        paths,
-        urn,
-        mapping,
-        bump,
-    };
-    (
-        (untyped_distance_properties == 0).then_some(texture),
-        untyped_distance_properties,
-    )
-}
-
-fn property_with_suffix<'a>(
-    record: &'a cadmpeg_protein::DecodedRecord,
-    suffix: &str,
-) -> Option<&'a cadmpeg_protein::property::PropertyValue> {
-    let qualified_suffix = format!("_{suffix}");
-    record
-        .properties
-        .iter()
-        .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
-        .and_then(|(_, property)| property.value())
-}
-
-fn neutral_property_name(id: &str) -> &str {
-    match id {
-        "generic_reflectivity_at_0deg" => "reflectivity_at_0deg",
-        "generic_refraction_index" | "transparent_refraction_index" => "refraction_index",
-        _ => id,
-    }
-}
-
-fn is_physical_schema(schema: &str) -> bool {
-    schema == "PhysMatSchema" || schema.starts_with("Structural") || schema.starts_with("Thermal")
-}
-
-fn integer_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<u32> {
-    match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::property::PropertyValue::Integer(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn float_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
-    match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::property::PropertyValue::Float(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<bool> {
-    match property_with_suffix(record, suffix)? {
-        cadmpeg_protein::property::PropertyValue::Boolean(value) => Some(*value),
-        _ => None,
-    }
-}
-
-fn distance_property(
-    record: &cadmpeg_protein::DecodedRecord,
-    suffix: &str,
-) -> Result<Option<f64>, u32> {
-    let Some(cadmpeg_protein::property::PropertyValue::Distance { unit, value }) =
-        property_with_suffix(record, suffix)
-    else {
-        return Ok(None);
-    };
-    match *unit {
-        0x2016 => Ok(Some(*value * 25.4)),
-        0x200e => Ok(Some(*value)),
-        0x200d => Ok(Some(*value * 10.0)),
-        unit => Err(unit),
-    }
 }
 
 pub(crate) fn decode_design_assignments(

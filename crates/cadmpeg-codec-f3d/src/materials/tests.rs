@@ -511,45 +511,11 @@ fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
     assert_eq!(super::generic_connection_delta(&record, 0), None);
 }
 
-fn distance_record(unit: u32, value: f64) -> cadmpeg_protein::DecodedRecord {
-    cadmpeg_protein::DecodedRecord {
-        ordinal: 0,
-        logical_offset: 0,
-        schema: "TestSchema".into(),
-        guid: String::new(),
-        base: String::new(),
-        asset_lib_id: String::new(),
-        properties: std::collections::BTreeMap::from([(
-            "test_Depth".to_owned(),
-            cadmpeg_protein::property::DecodedProperty {
-                value_offset: 0,
-                content: cadmpeg_protein::property::PropertyContent::Value {
-                    value: cadmpeg_protein::property::PropertyValue::Distance { unit, value },
-                    connections: Vec::new(),
-                },
-            },
-        )]),
-    }
-}
-
 #[test]
 fn decoded_color_requires_finite_normalized_channels() {
     assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
     for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
         assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
-    }
-}
-
-/// The three length tags of the Distance quantity class each convert to
-/// the IR's millimetres. `0x200e` is millimetre, not centimetre.
-#[test]
-fn distance_tags_convert_to_millimetres() {
-    for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
-        let record = distance_record(unit, value);
-        assert_eq!(
-            super::distance_property(&record, "Depth"),
-            Ok(Some(expected))
-        );
     }
 }
 
@@ -727,14 +693,6 @@ fn conflicting_duplicate_texture_guids_reject_in_both_orders() {
 
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
-}
-
-/// A Distance whose tag names a quantity other than length has no
-/// millimetre reading and must not be silently taken as one.
-#[test]
-fn a_non_length_distance_tag_yields_no_value() {
-    let record = distance_record(0x0002_1008, 1.0);
-    assert_eq!(super::distance_property(&record, "Depth"), Err(0x0002_1008));
 }
 
 #[test]
