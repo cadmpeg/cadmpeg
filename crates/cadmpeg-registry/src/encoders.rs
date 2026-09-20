@@ -89,7 +89,7 @@ mod tests {
             assert_eq!(refusal.format(), encoder.id().as_str());
             assert_eq!(
                 ({
-                    let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+                    let wire = serde_json::to_value(refusal).expect("serialize refusal");
                     wire["refusal"]
                         .get("requested")
                         .or_else(|| wire["refusal"].get("source"))

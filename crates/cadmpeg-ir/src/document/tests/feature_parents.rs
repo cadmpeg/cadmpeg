@@ -14,14 +14,14 @@ fn predecessor_document() -> CadIr {
             id: format!("test:parent-wire:feature#{key}")
                 .try_into()
                 .unwrap(),
-            ordinal: ordinal,
+            ordinal,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: crate::features::FeatureContent::default(),
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
             ),

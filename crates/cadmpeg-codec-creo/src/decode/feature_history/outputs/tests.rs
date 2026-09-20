@@ -89,11 +89,11 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces: FaceSelection::generated(
@@ -190,11 +190,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Thicken {
                 faces: FaceSelection::generated(

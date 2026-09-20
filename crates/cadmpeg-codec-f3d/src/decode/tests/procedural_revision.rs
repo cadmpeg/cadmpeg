@@ -1105,7 +1105,10 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         .unwrap();
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
-        (|knots: &mut [f64]| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
@@ -1124,7 +1127,10 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
     .unwrap();
     edit::replace(&mut nurbs, |previous| {
         let mut knots = previous.v_knots().to_vec();
-        (|knots: &mut [f64]| knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-0.5, -0.5, 1.5, 1.5]);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
@@ -1737,7 +1743,10 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
         .unwrap();
     edit::replace(nurbs, |previous| {
         let mut knots = previous.u_knots().to_vec();
-        (|knots: &mut [f64]| knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),

@@ -74,14 +74,14 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         ir.model.features.push(Feature {
             id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
                 .expect("identity grammar"),
-            ordinal: ordinal,
+            ordinal,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: "test".into(),

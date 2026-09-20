@@ -676,7 +676,10 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
     // parameter domain supplies the exterior, and the procedural surface
     // below is where that fact lives.
     assert_eq!(
-        (&result.ir().model.faces)
+        result
+            .ir()
+            .model
+            .faces
             .iter()
             .find(|face| face.id == loop_.face)
             .map(|face| face.loop_role(&loop_.id))
@@ -1250,7 +1253,10 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     assert_eq!(
-        (&result.ir().model.faces)
+        result
+            .ir()
+            .model
+            .faces
             .iter()
             .find(|face| face.id == loop_.face)
             .map(|face| face.loop_role(&loop_.id))
@@ -1529,7 +1535,10 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     assert_eq!(
-        (&result.ir().model.faces)
+        result
+            .ir()
+            .model
+            .faces
             .iter()
             .find(|face| face.id == loop_.face)
             .map(|face| face.loop_role(&loop_.id))

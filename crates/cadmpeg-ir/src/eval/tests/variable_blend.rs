@@ -496,7 +496,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 ))),
             )
             .unwrap(),
-        )
+        );
     });
 
     let index = crate::index::ModelIndex::new(&ir);

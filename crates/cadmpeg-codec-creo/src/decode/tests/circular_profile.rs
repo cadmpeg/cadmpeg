@@ -265,13 +265,15 @@ fn connected_profile_vertices_include_open_chain_terminals() {
 
     edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Line { start, .. } = definition {
                 *start = Point2::new(0.0, 0.0);
             } else {
                 unreachable!();
             }
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .expect("valid test fixture");
@@ -282,13 +284,15 @@ fn connected_profile_vertices_include_open_chain_terminals() {
 
     edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Line { end, .. } = definition {
                 *end = Point2::new(2.0, 0.0);
             } else {
                 unreachable!();
             }
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .expect("valid test fixture");

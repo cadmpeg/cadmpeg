@@ -74,7 +74,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
                 replacement,
             )
         })
-        .unwrap()
+        .unwrap();
     };
     ir.model.edges[0].set_param_range(Some([0.5, 2.5])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())

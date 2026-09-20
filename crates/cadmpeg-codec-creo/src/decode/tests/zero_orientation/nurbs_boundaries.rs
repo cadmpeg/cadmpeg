@@ -256,7 +256,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
                 previous.normal_reversed(),
             )
         })
-        .unwrap()
+        .expect("admitted periodic fixture");
     };
     assert!(shared_extrusion_generator_curve(
         &first,

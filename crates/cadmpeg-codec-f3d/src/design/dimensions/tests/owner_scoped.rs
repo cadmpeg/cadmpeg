@@ -171,14 +171,16 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .with_endpoint_refs(entity.endpoint_refs.clone());
     edit::replace(&mut duplicate.geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             const RADIUS_PERTURBATION: f64 = 5.0e-7;
 
             let SketchGeometryDefinition::Circle { radius, .. } = definition else {
                 unreachable!("test entity is circular")
             };
             *radius = cadmpeg_ir::scalar::Length::new(radius.get() + RADIUS_PERTURBATION).unwrap();
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

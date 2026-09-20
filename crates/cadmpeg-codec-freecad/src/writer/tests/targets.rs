@@ -33,7 +33,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -63,7 +63,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         panic!("expected a target refusal, got {missing_graph}");
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"],
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"],
         serde_json::json!({"kind": "no_default", "source": {"kind": "foreign_format", "format": "step"}})
     );
     assert_eq!(refusal.format(), "fcstd");
@@ -278,7 +278,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -289,7 +289,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         Some("fcstd:schema-2")
     );
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
         "inherited_unavailable"
     );
     assert!(
@@ -333,7 +333,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -344,7 +344,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         Some("fcstd:schema-4")
     );
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
         "explicit_unavailable"
     );
     assert!(
@@ -385,7 +385,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     assert_eq!(refusal.format(), "fcstd");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -396,7 +396,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         None
     );
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
         "unrecorded_source"
     );
     assert!(
@@ -438,8 +438,7 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
             plan.report(),
             "identity/target",
         )
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("an FCStd write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");

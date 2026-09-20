@@ -268,7 +268,10 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     .is_err());
     assert!(edit::replace(&mut surface, |previous| {
         let mut knots = previous.v_knots().to_vec();
-        (|knots: &mut [f64]| knots[1] = f64::NAN)(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots[1] = f64::NAN;
+        };
         crate::geometry::nurbs::NurbsSurface::new(
             crate::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),

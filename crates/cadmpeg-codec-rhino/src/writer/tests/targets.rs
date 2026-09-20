@@ -108,7 +108,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
     assert_eq!(refusal.format(), "rhino");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -199,7 +199,7 @@ fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     assert_eq!(refusal.format(), "rhino");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -259,8 +259,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             plan.report(),
             "identity/target",
         )
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("a Rhino write always names its archive version");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");

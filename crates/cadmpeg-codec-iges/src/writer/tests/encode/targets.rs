@@ -144,7 +144,7 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
     assert_eq!(refusal.format(), "iges");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
@@ -260,8 +260,7 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
             plan.report(),
             "identity/target",
         )
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("an IGES write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();

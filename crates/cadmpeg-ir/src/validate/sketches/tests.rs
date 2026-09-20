@@ -248,12 +248,14 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
                 curve.reverse_parameterization();
-            })(&mut definition);
+            };
             definition.try_into()
         },
     )
@@ -273,7 +275,9 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     unreachable!("test result is a NURBS")
                 };
@@ -289,7 +293,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                         Ok(())
                     })
                     .unwrap();
-            })(&mut definition);
+            };
             definition.try_into()
         },
     )
@@ -411,12 +415,14 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .geometry;
     edit::replace(disconnected_geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Line { start, .. } = definition else {
                 unreachable!("second entity is a line")
             };
             *start = Point2::new(1.0 + ir.tolerances.linear.get() * 0.5, 0.0);
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

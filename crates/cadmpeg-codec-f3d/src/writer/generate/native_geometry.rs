@@ -4792,7 +4792,7 @@ mod native_interval_curve_tests {
             )
             .expect("finite interval endpoints are admitted by the construction");
             procedural.edit_definition(|definition| {
-                *definition = ProceduralSurfaceDefinition::Sweep(replacement)
+                *definition = ProceduralSurfaceDefinition::Sweep(replacement);
             });
             target
                 .model

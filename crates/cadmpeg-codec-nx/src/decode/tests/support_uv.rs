@@ -65,33 +65,32 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
-                edit::with_output(context, |previous| {
+                edit::replace(context, |previous| {
                     let mut sides = previous.sides().clone();
-                    let mut range = previous.parameter_range();
-                    let mut discontinuities = previous.discontinuities().clone();
-                    let output =
-                        (|context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2],
-                          _: &mut [f64; 2],
-                          _: &mut [Vec<f64>; 3]| {
-                            let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
-                                panic!("NURBS support lane");
-                            };
-                            let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
-                                panic!("NURBS support lane");
-                            };
-                            nurbs
-                                .edit_control_points(|point| {
-                                    point.u += 100.0;
-                                    Ok(())
-                                })
-                                .unwrap();
-                        })(&mut sides, &mut range, &mut discontinuities);
+                    let range = previous.parameter_range();
+                    let discontinuities = previous.discontinuities().clone();
+                    {
+                        let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
+                            &mut sides;
+
+                        let Some(support) = (*context_sides)[0].pcurve.as_mut() else {
+                            panic!("NURBS support lane");
+                        };
+                        let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
+                            panic!("NURBS support lane");
+                        };
+                        nurbs
+                            .edit_control_points(|point| {
+                                point.u += 100.0;
+                                Ok(())
+                            })
+                            .unwrap();
+                    };
                     cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                         sides,
                         range,
                         discontinuities,
                     )
-                    .map(|candidate| (candidate, output))
                 })
                 .unwrap();
             });

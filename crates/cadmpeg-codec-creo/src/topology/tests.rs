@@ -476,7 +476,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
     );
     assert_eq!(model.loops.len(), 4);
     assert!(model.loops.iter().all(|lp| {
-        (&model.faces)
+        model
+            .faces
             .iter()
             .find(|face| face.id == lp.face)
             .map(|face| face.loop_role(&lp.id))

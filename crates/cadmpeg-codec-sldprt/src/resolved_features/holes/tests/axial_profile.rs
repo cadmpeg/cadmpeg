@@ -85,7 +85,10 @@ fn axial_profile_resolves_counterbore_roles() {
     for entity in &mut translated_entities {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     unreachable!();
                 };
@@ -93,7 +96,7 @@ fn axial_profile_resolves_counterbore_roles() {
                 start.v -= 17.0;
                 end.u += 42.0;
                 end.v -= 17.0;
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -110,7 +113,10 @@ fn axial_profile_resolves_counterbore_roles() {
     for (ordinal, entity) in independently_translated_entities.iter_mut().enumerate() {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     unreachable!();
                 };
@@ -119,7 +125,7 @@ fn axial_profile_resolves_counterbore_roles() {
                 start.v -= offset;
                 end.u += offset;
                 end.v -= offset;
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();
@@ -217,19 +223,23 @@ fn axial_profile_resolves_counterdrill_roles() {
     for entity in &mut translated {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| match definition {
-                SketchGeometryDefinition::Point { position } => {
-                    position.u -= 11.0;
-                    position.v += 7.0;
-                }
-                SketchGeometryDefinition::Line { start, end } => {
-                    start.u -= 11.0;
-                    start.v += 7.0;
-                    end.u -= 11.0;
-                    end.v += 7.0;
-                }
-                _ => unreachable!(),
-            })(&mut definition);
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+                match definition {
+                    SketchGeometryDefinition::Point { position } => {
+                        position.u -= 11.0;
+                        position.v += 7.0;
+                    }
+                    SketchGeometryDefinition::Line { start, end } => {
+                        start.u -= 11.0;
+                        start.v += 7.0;
+                        end.u -= 11.0;
+                        end.v += 7.0;
+                    }
+                    _ => unreachable!(),
+                };
+            };
             definition.try_into()
         })
         .unwrap();
@@ -519,19 +529,23 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     for entity in &mut translated_entities {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| match definition {
-                SketchGeometryDefinition::Point { position } => {
-                    position.u += 21.0;
-                    position.v -= 33.0;
-                }
-                SketchGeometryDefinition::Line { start, end } => {
-                    start.u += 21.0;
-                    start.v -= 33.0;
-                    end.u += 21.0;
-                    end.v -= 33.0;
-                }
-                _ => unreachable!(),
-            })(&mut definition);
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+                match definition {
+                    SketchGeometryDefinition::Point { position } => {
+                        position.u += 21.0;
+                        position.v -= 33.0;
+                    }
+                    SketchGeometryDefinition::Line { start, end } => {
+                        start.u += 21.0;
+                        start.v -= 33.0;
+                        end.u += 21.0;
+                        end.v -= 33.0;
+                    }
+                    _ => unreachable!(),
+                };
+            };
             definition.try_into()
         })
         .unwrap();
@@ -607,7 +621,10 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         for entity in &mut translated_entities {
             edit::replace(&mut entity.geometry, |previous| {
                 let mut definition = previous.definition().clone();
-                (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+                {
+                    let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                        &mut definition;
+
                     let SketchGeometryDefinition::Line { start, end } = definition else {
                         unreachable!();
                     };
@@ -615,7 +632,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
                     start.v += 30.0;
                     end.u += 20.0;
                     end.v += 30.0;
-                })(&mut definition);
+                };
                 definition.try_into()
             })
             .unwrap();
@@ -633,7 +650,10 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
     for (index, entity) in independently_translated.iter_mut().enumerate() {
         edit::replace(&mut entity.geometry, |previous| {
             let mut definition = previous.definition().clone();
-            (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+            {
+                let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
+                    &mut definition;
+
                 let SketchGeometryDefinition::Line { start, end } = definition else {
                     unreachable!();
                 };
@@ -642,7 +662,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
                 start.v += offset;
                 end.u += offset;
                 end.v += offset;
-            })(&mut definition);
+            };
             definition.try_into()
         })
         .unwrap();

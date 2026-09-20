@@ -822,7 +822,9 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     let before = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
+        {
+            let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
+
             let SpatialSketchGeometryDefinition::Arc {
                 start_angle,
                 end_angle,
@@ -832,19 +834,21 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
                 panic!("arc")
             };
             *end_angle = *start_angle;
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .is_err());
     assert_eq!(geometry, before);
     edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut crate::sketches::SpatialSketchGeometryDefinition| {
+        {
+            let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
+
             let SpatialSketchGeometryDefinition::Arc { end_angle, .. } = definition else {
                 panic!("arc")
             };
             *end_angle = Angle::new(-3.0).unwrap();
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

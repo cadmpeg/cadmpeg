@@ -58,7 +58,7 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     )
     .expect("the neutral construction admits the law values");
     procedural.edit_definition(|definition| {
-        *definition = ProceduralSurfaceDefinition::Sweep(replacement)
+        *definition = ProceduralSurfaceDefinition::Sweep(replacement);
     });
     let json = serde_json::to_value(&*ir).unwrap();
     let decoded: CadIr = serde_json::from_value(json).expect("document serde admission");

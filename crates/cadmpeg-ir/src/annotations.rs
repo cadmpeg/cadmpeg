@@ -642,7 +642,7 @@ mod tests {
         empty.note("empty", &handle, 4);
         let mut same_name = AnnotationBuilder::new();
         same_name.note("same-name", &handle, 5);
-        assert_eq!((&same_name.annotations).stream_count(), 1);
+        assert_eq!(same_name.annotations.stream_count(), 1);
         for (builder, id) in [
             (second, "foreign"),
             (cloned, "cloned"),
@@ -676,7 +676,7 @@ mod tests {
             Exactness::ByteExact,
         )]);
         assert_eq!(
-            (&builder.annotations).exactness["f3d:edge#0"],
+            builder.annotations.exactness["f3d:edge#0"],
             ExactnessNote::Entity {
                 entity: Inexactness::Inferred,
                 fields: expected_fields,
@@ -684,7 +684,7 @@ mod tests {
         );
 
         builder.exactness("f3d:edge#0", Exactness::ByteExact);
-        assert!((&builder.annotations).exactness.is_empty());
+        assert!(builder.annotations.exactness.is_empty());
     }
 
     #[test]
@@ -729,8 +729,7 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
-                serde_json::to_value(&(&builder.annotations).exactness["nx:model:surface#1"])
-                    .unwrap(),
+                serde_json::to_value(&builder.annotations.exactness["nx:model:surface#1"]).unwrap(),
                 if entity_first {
                     wire.clone()
                 } else {
@@ -751,10 +750,12 @@ mod tests {
 
         builder.remove_entity("catia:e5:curve#0");
 
-        assert!(!(&builder.annotations)
+        assert!(!builder
+            .annotations
             .provenance
             .contains_key("catia:e5:curve#0"));
-        assert!(!(&builder.annotations)
+        assert!(!builder
+            .annotations
             .exactness
             .contains_key("catia:e5:curve#0"));
     }

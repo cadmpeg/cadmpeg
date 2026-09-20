@@ -551,12 +551,15 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
     let mut noncoincident_entities = spatial_entities.to_vec();
     edit::replace(&mut noncoincident_entities[2].geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SpatialSketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SpatialSketchGeometryDefinition =
+                &mut definition;
+
             let SpatialSketchGeometryDefinition::Circle { center, .. } = definition else {
                 unreachable!()
             };
             center.x = 0.1;
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

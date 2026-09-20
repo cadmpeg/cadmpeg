@@ -104,11 +104,13 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     let mut decoy = carriers[0].clone();
     edit::replace(&mut decoy.geometry, |previous| {
         let mut knots = previous.v_knots().to_vec();
-        (|knots: &mut [f64]| {
+        {
+            let knots: &mut [f64] = &mut knots;
+
             for knot in knots {
                 *knot += 10.0;
             }
-        })(&mut knots);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),

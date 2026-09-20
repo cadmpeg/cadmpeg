@@ -1309,24 +1309,28 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     let original = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
             *radius = Length::new(-1.0).unwrap();
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .is_err());
     assert_eq!(geometry, original);
     edit::replace(&mut geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut crate::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Arc { radius, .. } = definition else {
                 panic!("arc")
             };
             *radius = Length::new(2.0).unwrap();
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

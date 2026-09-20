@@ -207,7 +207,9 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     let mut skewed = result;
     edit::replace(&mut skewed.geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             let SketchGeometryDefinition::Nurbs { curve } = definition else {
                 unreachable!("test result is a NURBS")
             };
@@ -222,7 +224,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
                     Ok(())
                 })
                 .unwrap();
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();
@@ -773,11 +775,13 @@ fn counted_roles_require_matching_solved_geometry() {
     ));
     edit::replace(&mut equal_arc.geometry, |previous| {
         let mut definition = previous.definition().clone();
-        (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
+        {
+            let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
+
             if let SketchGeometryDefinition::Arc { radius, .. } = definition {
                 *radius = Length::new(2.0).unwrap();
             }
-        })(&mut definition);
+        };
         definition.try_into()
     })
     .unwrap();

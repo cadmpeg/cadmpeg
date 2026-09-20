@@ -55,7 +55,10 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
-        (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots[2..].fill(2.0);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
@@ -74,7 +77,10 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.v_knots().to_vec();
-        (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
+        {
+            let knots: &mut [f64] = &mut knots;
+            knots[2..].fill(3.0);
+        };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 previous.u_degree(),
@@ -197,7 +203,10 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();
-            (|knots: &mut [f64]| knots[2..].fill(2.0))(&mut knots);
+            {
+                let knots: &mut [f64] = &mut knots;
+                knots[2..].fill(2.0);
+            };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),
@@ -216,7 +225,10 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
         .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.v_knots().to_vec();
-            (|knots: &mut [f64]| knots[2..].fill(3.0))(&mut knots);
+            {
+                let knots: &mut [f64] = &mut knots;
+                knots[2..].fill(3.0);
+            };
             cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     previous.u_degree(),

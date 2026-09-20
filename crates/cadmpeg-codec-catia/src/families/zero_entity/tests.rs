@@ -475,7 +475,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 replacement,
             )
         })
-        .unwrap()
+        .unwrap();
     };
     let mut invalid_model_curve_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_curve

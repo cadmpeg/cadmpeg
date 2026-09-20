@@ -135,7 +135,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 previous.normal_reversed(),
             )
         })
-        .unwrap()
+        .unwrap();
     };
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
     assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
@@ -159,7 +159,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
                 previous.normal_reversed(),
             )
         })
-        .unwrap()
+        .unwrap();
     };
     assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
@@ -1027,7 +1027,7 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
                 replacement,
             )
         })
-        .unwrap()
+        .unwrap();
     };
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![

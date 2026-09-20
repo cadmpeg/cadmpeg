@@ -446,11 +446,11 @@ mod tests {
             ordinal: 1,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),

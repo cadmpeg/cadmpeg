@@ -1692,7 +1692,10 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        (&round_trip.ir().model.faces)
+        round_trip
+            .ir()
+            .model
+            .faces
             .iter()
             .find(|face| face.id == round_trip.ir().model.loops[0].face)
             .map(|face| face.loop_role(&round_trip.ir().model.loops[0].id))

@@ -385,7 +385,7 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
     assert_eq!(refusal.format(), "f3d");
     assert_eq!(
         ({
-            let wire = serde_json::to_value(&refusal).expect("serialize refusal");
+            let wire = serde_json::to_value(refusal).expect("serialize refusal");
             wire["refusal"]
                 .get("requested")
                 .or_else(|| wire["refusal"].get("source"))
