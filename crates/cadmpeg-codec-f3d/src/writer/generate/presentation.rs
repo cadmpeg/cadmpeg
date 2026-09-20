@@ -24,12 +24,12 @@ use super::{
 };
 
 /// One type-table row after generated record types have been registered.
-pub(crate) struct GeneratedDesignType {
-    pub type_guid: DesignGuidText,
-    pub base_type_guid: Option<DesignGuidText>,
-    pub version: u32,
-    pub module: String,
-    pub entity_ids: Vec<u64>,
+pub(in crate::writer::generate) struct GeneratedDesignType {
+    pub(super) type_guid: DesignGuidText,
+    pub(super) base_type_guid: Option<DesignGuidText>,
+    pub(super) version: u32,
+    pub(super) module: String,
+    pub(super) entity_ids: Vec<u64>,
 }
 
 impl TryFrom<&SegmentType> for GeneratedDesignType {
@@ -56,15 +56,15 @@ impl TryFrom<&SegmentType> for GeneratedDesignType {
 }
 
 /// One generated browser node joined to a body-map entity suffix.
-pub(crate) struct GeneratedBrowserNode {
-    pub entity_suffix: u64,
-    pub node_guid: String,
-    pub record_index: u32,
-    pub visible: bool,
+pub(super) struct GeneratedBrowserNode {
+    pub(super) entity_suffix: u64,
+    pub(super) node_guid: String,
+    pub(super) record_index: u32,
+    pub(super) visible: bool,
 }
 
 /// A nonempty ordered map from ASM body keys to Design entity suffixes.
-pub(crate) struct GeneratedBodyMapEntries(BTreeMap<u64, u64>);
+pub(super) struct GeneratedBodyMapEntries(BTreeMap<u64, u64>);
 
 impl GeneratedBodyMapEntries {
     fn new(entries: BTreeMap<u64, u64>) -> Option<Self> {
@@ -72,33 +72,33 @@ impl GeneratedBodyMapEntries {
     }
 
     /// The ordered body-map entries.
-    pub(crate) fn as_map(&self) -> &BTreeMap<u64, u64> {
+    pub(super) fn as_map(&self) -> &BTreeMap<u64, u64> {
         &self.0
     }
 }
 
 /// A generated body map and its registered identity.
-pub(crate) struct GeneratedBodyMap {
-    pub entries: GeneratedBodyMapEntries,
-    pub record_index: u32,
-    pub class_tag: crate::records::references::DesignClassTag,
+pub(in crate::writer::generate) struct GeneratedBodyMap {
+    pub(super) entries: GeneratedBodyMapEntries,
+    pub(super) record_index: u32,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
 }
 
 /// Generated browser nodes and their registered class.
-pub(crate) struct GeneratedBrowserNodes {
-    pub nodes: Vec<GeneratedBrowserNode>,
-    pub class_tag: crate::records::references::DesignClassTag,
+pub(in crate::writer::generate) struct GeneratedBrowserNodes {
+    pub(super) nodes: Vec<GeneratedBrowserNode>,
+    pub(super) class_tag: crate::records::references::DesignClassTag,
 }
 
 /// The common registry consumed by both generated Design streams.
-pub(crate) struct GeneratedDesignRegistry {
-    pub types: Vec<GeneratedDesignType>,
-    pub body_map: Option<GeneratedBodyMap>,
-    pub browser_nodes: Option<GeneratedBrowserNodes>,
+pub(super) struct GeneratedDesignRegistry {
+    pub(super) types: Vec<GeneratedDesignType>,
+    pub(super) body_map: Option<GeneratedBodyMap>,
+    pub(super) browser_nodes: Option<GeneratedBrowserNodes>,
 }
 
 impl GeneratedDesignRegistry {
-    pub(crate) fn new(
+    pub(super) fn new(
         target: &CadIr,
         bindings: DesignBindingsValidated<'_>,
         attributes: &AttributeIndex<'_>,
@@ -321,7 +321,7 @@ fn register_generated_type(
     Ok(ordinal)
 }
 
-pub(crate) fn dynamic_class_tag(
+pub(super) fn dynamic_class_tag(
     type_ordinal: usize,
 ) -> Result<crate::records::references::DesignClassTag, CodecError> {
     let tag = u32::try_from(type_ordinal)

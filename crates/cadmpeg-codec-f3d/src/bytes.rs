@@ -23,7 +23,7 @@ pub(crate) fn int_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64
 }
 
 /// Read a u32-length-prefixed byte slice and return it with the end offset.
-pub(crate) fn lp_u32_bytes_at(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
+fn lp_u32_bytes_at(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
     let length = usize::try_from(View::u32_le_at(bytes, offset)?).ok()?;
     let start = offset.checked_add(4)?;
     let end = start.checked_add(length)?;
@@ -31,7 +31,7 @@ pub(crate) fn lp_u32_bytes_at(bytes: &[u8], offset: usize) -> Option<(&[u8], usi
 }
 
 /// Take a u32-length-prefixed byte slice, advancing only on success.
-pub(crate) fn take_lp_u32_bytes<'a>(bytes: &'a [u8], position: &mut usize) -> Option<&'a [u8]> {
+fn take_lp_u32_bytes<'a>(bytes: &'a [u8], position: &mut usize) -> Option<&'a [u8]> {
     let mut view = View::over_retained(bytes);
     view.seek(*position)?;
     let length = usize::try_from(view.u32_le()?).ok()?;

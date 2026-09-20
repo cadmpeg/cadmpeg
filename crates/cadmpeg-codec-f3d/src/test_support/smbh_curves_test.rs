@@ -192,7 +192,7 @@ pub(crate) fn synthetic_geometry_with_law_curve_smbh() -> Vec<u8> {
 
 /// Append a vector-serialized `TRANS` law variable: the operator string, four
 /// `0x14` vectors, a `0x06` scale, and three bare boolean flags.
-pub(crate) fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
+fn append_transform_vec_variable(bytes: &mut Vec<u8>) {
     push_u8_string(bytes, "TRANS");
     for vector in [
         [1.0, 0.0, 0.0],

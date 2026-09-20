@@ -17,7 +17,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use super::attributes::source_less_body_key;
-pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
         let mut owners =
@@ -88,7 +88,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
     Ok(())
 }
 
-pub(crate) fn validate_source_less_topology_tolerances(
+pub(super) fn validate_source_less_topology_tolerances(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
@@ -131,7 +131,7 @@ pub(crate) fn validate_source_less_topology_tolerances(
     Ok(())
 }
 
-pub(crate) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
     if let Some(tessellation) = target.model.tessellations.first() {
         return Err(CodecError::NotImplemented(format!(
             "source-less F3D cannot serialize neutral tessellation {} losslessly",
@@ -163,7 +163,7 @@ pub(crate) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
     Ok(())
 }
 
-pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
     if native.construction_recipes.windows(2).any(|pair| {
         pair[0].record_index.map(|index| index.value)
             > pair[1].record_index.map(|index| index.value)
@@ -234,7 +234,7 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
         && design_type.module == expected.2
 }
 
-pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
         .iter()
@@ -507,7 +507,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     Ok(())
 }
 
-pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
     let mut types_by_guid = BTreeMap::new();
     let mut entity_types = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();
@@ -579,7 +579,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
 /// encoder that reads binding-validated fields (material physical tokens) cannot
 /// be reached without the check having run on the very native it will read.
 #[derive(Clone, Copy)]
-pub(crate) struct DesignBindingsValidated<'a> {
+pub(super) struct DesignBindingsValidated<'a> {
     native: &'a F3dNative,
 }
 
@@ -590,7 +590,7 @@ impl<'a> DesignBindingsValidated<'a> {
     }
 }
 
-pub(crate) fn validate_source_less_design_bindings(
+pub(super) fn validate_source_less_design_bindings(
     native: &F3dNative,
 ) -> Result<DesignBindingsValidated<'_>, CodecError> {
     let mut by_key = BTreeMap::new();
@@ -625,7 +625,7 @@ pub(crate) fn validate_source_less_design_bindings(
     Ok(DesignBindingsValidated { native })
 }
 
-pub(crate) fn validate_source_less_history_graph(
+pub(super) fn validate_source_less_history_graph(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
@@ -717,7 +717,7 @@ pub(crate) fn validate_source_less_history_graph(
     Ok(())
 }
 
-pub(crate) fn validate_source_less_design_links(
+pub(super) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
     attributes: &super::attributes::AttributeIndex<'_>,
@@ -1077,7 +1077,7 @@ pub(crate) fn validate_source_less_design_links(
     Ok(())
 }
 
-pub(crate) fn validate_source_less_body_kinds(
+pub(super) fn validate_source_less_body_kinds(
     model: &cadmpeg_ir::document::Model,
 ) -> Result<(), CodecError> {
     for body in &model.bodies {
@@ -1139,7 +1139,7 @@ pub(crate) fn validate_source_less_body_kinds(
 
 /// Resolved wire-ownership ordinals of one body.
 #[derive(Clone, Copy)]
-pub(crate) struct WireBodyOwnership {
+pub(super) struct WireBodyOwnership {
     /// Ordinal of the body's first region in `model.regions`.
     pub(super) first_region: usize,
     /// Ordinal of that region's first shell in `model.shells`.
@@ -1148,7 +1148,7 @@ pub(crate) struct WireBodyOwnership {
 
 /// Resolved wire-ownership ordinals of one region.
 #[derive(Clone, Copy)]
-pub(crate) struct WireRegionOwnership {
+pub(super) struct WireRegionOwnership {
     /// Ordinal of the owning body in `model.bodies`.
     pub(super) body: usize,
     /// Ordinal of the next region of the same body in `model.regions`.
@@ -1159,7 +1159,7 @@ pub(crate) struct WireRegionOwnership {
 
 /// Resolved wire-ownership ordinals of one shell.
 #[derive(Clone, Copy)]
-pub(crate) struct WireShellOwnership {
+pub(super) struct WireShellOwnership {
     /// Ordinal of the owning region in `model.regions`.
     pub(super) region: usize,
     /// Ordinal of the next shell of the same region in `model.shells`.
@@ -1170,7 +1170,7 @@ pub(crate) struct WireShellOwnership {
 /// `CadIr`. The private fields keep construction inside this module, so the wire
 /// encoder reads resolved ordinals instead of re-searching the model and
 /// asserting that every lookup succeeds.
-pub(crate) struct WireOwnershipValidated {
+pub(in crate::writer::generate) struct WireOwnershipValidated {
     bodies: Vec<WireBodyOwnership>,
     regions: Vec<WireRegionOwnership>,
     shells: Vec<WireShellOwnership>,
@@ -1193,7 +1193,7 @@ impl WireOwnershipValidated {
     }
 }
 
-pub(crate) fn validate_source_less_wire_ownership(
+pub(super) fn validate_source_less_wire_ownership(
     target: &CadIr,
 ) -> Result<WireOwnershipValidated, CodecError> {
     let model = &target.model;

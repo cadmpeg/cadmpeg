@@ -28,7 +28,7 @@ use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
 use std::collections::HashSet;
 
-pub(crate) fn exact_base_flange_operation(
+pub(super) fn exact_base_flange_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -82,7 +82,7 @@ const SHEET_METAL_HEADER_SHIFTS: [usize; 2] = [0, 4];
 /// two. A higher count belongs to a frame form this reader does not account for.
 const MAX_EDGE_WIDTH_DISTANCE_OWNERS: usize = 2;
 
-pub(crate) fn exact_edge_flange_operation(
+pub(super) fn exact_edge_flange_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
@@ -802,7 +802,7 @@ fn edge_flange_to_object_operation_at(
 
 // This conversion consumes the input carrier at the typed construction boundary.
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn exact_hem_operation(
+pub(super) fn exact_hem_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,

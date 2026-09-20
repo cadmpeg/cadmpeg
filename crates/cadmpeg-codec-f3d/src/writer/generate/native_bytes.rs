@@ -9,15 +9,15 @@ use crate::native::F3dNative;
 use crate::writer::generate::index::NativeGenerationIndex;
 use crate::writer::primitives::native_bool;
 
-pub(crate) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_ident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0d, value)
 }
 
-pub(crate) fn native_subident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_subident(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x0e, value)
 }
 
-pub(crate) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+pub(super) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
     native_subident(bytes, kind)?;
     native_ident(bytes, "curve")?;
     native_ref(bytes, -1);
@@ -29,7 +29,7 @@ pub(crate) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), C
     Ok(())
 }
 
-pub(crate) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
+pub(super) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> {
     native_subident(bytes, kind)?;
     native_ident(bytes, "surface")?;
     native_ref(bytes, -1);
@@ -41,11 +41,11 @@ pub(crate) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     native_text(bytes, 0x07, value)
 }
 
-pub(crate) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     let length = u16::try_from(value.len())
         .map_err(|_| CodecError::NotImplemented("F3D native text exceeds u16".into()))?;
     bytes.push(0x08);
@@ -59,7 +59,7 @@ pub(crate) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), 
 /// ref-width (8-byte in generated `BinaryFile8` streams) length prefix.
 /// The serializer stores law-formula names this way, so the width follows the
 /// text length rather than a fixed tag.
-pub(crate) fn native_length_prefixed_string(
+pub(super) fn native_length_prefixed_string(
     bytes: &mut Vec<u8>,
     value: &str,
 ) -> Result<(), CodecError> {
@@ -87,48 +87,48 @@ fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecErr
     Ok(())
 }
 
-pub(crate) fn native_ref(bytes: &mut Vec<u8>, value: i64) {
+pub(super) fn native_ref(bytes: &mut Vec<u8>, value: i64) {
     bytes.push(0x0c);
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-pub(crate) fn native_record_index(base: i64, ordinal: usize) -> Result<i64, CodecError> {
+pub(super) fn native_record_index(base: i64, ordinal: usize) -> Result<i64, CodecError> {
     let ordinal = i64::try_from(ordinal)
         .map_err(|_| CodecError::NotImplemented("F3D record ordinal exceeds i64".into()))?;
     base.checked_add(ordinal)
         .ok_or_else(|| CodecError::NotImplemented("F3D record index exceeds i64".into()))
 }
 
-pub(crate) fn native_i64(bytes: &mut Vec<u8>, value: i64) {
+pub(super) fn native_i64(bytes: &mut Vec<u8>, value: i64) {
     bytes.push(0x04);
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-pub(crate) fn native_enum(bytes: &mut Vec<u8>, value: i64) {
+pub(super) fn native_enum(bytes: &mut Vec<u8>, value: i64) {
     bytes.push(0x15);
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-pub(crate) fn native_f64(bytes: &mut Vec<u8>, value: f64) {
+pub(super) fn native_f64(bytes: &mut Vec<u8>, value: f64) {
     bytes.push(0x06);
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-pub(crate) fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
+pub(super) fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
     bytes.push(0x13);
     for value in point {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
 }
 
-pub(crate) fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
+pub(super) fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
     bytes.push(0x14);
     for value in vector {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
 }
 
-pub(crate) fn native_transform(
+pub(super) fn native_transform(
     bytes: &mut Vec<u8>,
     topology: &NativeGenerationIndex<'_>,
     body: &Body,
@@ -209,7 +209,7 @@ fn derived_transform_hints(transform: Transform) -> [bool; 3] {
     [rotation, reflection, shear]
 }
 
-pub(crate) fn native_history_tail(
+pub(super) fn native_history_tail(
     bytes: &mut Vec<u8>,
     native: &F3dNative,
 ) -> Result<(), CodecError> {

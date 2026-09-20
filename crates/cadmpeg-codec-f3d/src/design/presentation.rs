@@ -43,7 +43,7 @@ pub(crate) const BROWSER_NODE_BASE_TYPE_GUID: &str = "CB844AB6-240D-4fc9-9C9F-36
 pub(crate) const BROWSER_NODE_TYPE_VERSION: u32 = 2;
 
 /// Marker that opens a bare-owner body presentation envelope.
-pub(crate) const BODY_PRESENTATION_MATERIAL_ENVELOPE_ID: &str =
+pub(super) const BODY_PRESENTATION_MATERIAL_ENVELOPE_ID: &str =
     "D87FBE62-3B12-4CA8-9014-BAD31ABDB101";
 /// Physical-material library identifier in a body presentation envelope.
 pub(crate) const PHYSICAL_MATERIAL_LIBRARY_ID: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
@@ -56,7 +56,7 @@ pub(crate) const MODERN_APPEARANCE_LIBRARY_IDS: [&str; 2] = [
 ];
 
 /// Whether a token names a physical material rather than one of its aspects.
-pub(crate) fn is_physical_material_token(value: &str) -> bool {
+pub(super) fn is_physical_material_token(value: &str) -> bool {
     value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
 

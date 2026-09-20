@@ -42,7 +42,7 @@ impl Class397SymmetricFrame {
     }
 }
 
-pub(crate) fn exact_symmetric_extrude_prologue(
+pub(super) fn exact_symmetric_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,

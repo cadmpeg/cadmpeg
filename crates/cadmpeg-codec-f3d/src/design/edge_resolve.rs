@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 
-pub(crate) fn resolved_edge_group(
+pub(super) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -40,7 +40,7 @@ pub(crate) fn resolved_edge_group(
 /// edge, and the complete group must map to distinct edges. Conflicting exact
 /// references suppress generic reconstruction because their serialized
 /// member identity is unresolved.
-pub(crate) fn resolved_surface_patch_edge_group(
+pub(super) fn resolved_surface_patch_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -190,7 +190,7 @@ fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
 /// such edge and carries no selector or reference-context evidence. A
 /// multi-edge update therefore remains native instead of assigning every
 /// changed boundary edge to the group.
-pub(crate) fn resolved_edge_flange_group(
+pub(super) fn resolved_edge_flange_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -289,7 +289,7 @@ fn edge_flange_updated_edge_candidate(operand: &DesignEdgeOperand) -> Option<Vec
 /// Resolve an edge-treatment group with the exact transition chain available
 /// to Fillet and Chamfer operations.
 #[cfg(test)]
-pub(crate) fn resolved_edge_treatment_group(
+pub(super) fn resolved_edge_treatment_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -312,7 +312,7 @@ pub(crate) fn resolved_edge_treatment_group(
 }
 
 #[allow(clippy::too_many_arguments)] // The arguments are distinct native operand arenas and resolution context.
-pub(crate) fn resolved_edge_treatment_group_with_corners(
+pub(super) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -1036,7 +1036,7 @@ fn resolved_edge_group_with_transition_chain(
     }
 }
 
-pub(crate) fn resolved_hem_edge_group(
+pub(super) fn resolved_hem_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
@@ -1094,7 +1094,7 @@ pub(crate) fn resolved_hem_edge_group(
 /// A directly resolved operand is preferred. The transition proof is the
 /// fallback used by the compact recipe form, where the operand carries only
 /// the changed support boundaries and the selectorless edge context.
-pub(crate) fn resolved_hem_edge_slot(
+pub(super) fn resolved_hem_edge_slot(
     operand: &DesignEdgeOperand,
     previous_state_id: Option<i64>,
 ) -> Option<i64> {
@@ -1190,7 +1190,7 @@ fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
     )
 }
 
-pub(crate) fn unique_hem_transition_edge_candidate<'a>(
+fn unique_hem_transition_edge_candidate<'a>(
     changed_boundary_edges: &[i64],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
@@ -1230,7 +1230,7 @@ pub(crate) fn unique_hem_transition_edge_candidate<'a>(
     }
 }
 
-pub(crate) fn partial_historical_edge_selection<'a>(
+fn partial_historical_edge_selection<'a>(
     members: impl IntoIterator<Item = (&'a str, Option<i64>)>,
     previous_state_id: i64,
     feature_key: &cadmpeg_ir::ids::IdentityKey,
@@ -1272,7 +1272,7 @@ pub(crate) fn partial_historical_edge_selection<'a>(
     )
 }
 
-pub(crate) fn context_only_edge_group_candidates<'a>(
+fn context_only_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (Option<i64>, &'a [i64])>,
 ) -> Option<Vec<i64>> {
     let mut edges = Vec::new();
@@ -1318,7 +1318,7 @@ fn unique_edge_group_assignment(operands: &[&DesignEdgeOperand]) -> Option<Vec<i
     unique_edge_assignment_with_context(&candidate_sets)
 }
 
-pub(crate) fn changed_reference_edge_group_candidates(
+pub(super) fn changed_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
 ) -> Option<Vec<i64>> {
     let candidate_sets = operands
@@ -1341,9 +1341,7 @@ pub(crate) fn changed_reference_edge_group_candidates(
     unique_bipartite_assignment(&candidate_sets)
 }
 
-pub(crate) fn deleted_reference_edge_group_candidates(
-    operands: &[&DesignEdgeOperand],
-) -> Option<Vec<i64>> {
+fn deleted_reference_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
     let reference_candidates = operands
         .iter()
         .map(|operand| {
@@ -1364,7 +1362,7 @@ pub(crate) fn deleted_reference_edge_group_candidates(
     unique_deleted_reference_assignment(&reference_candidates, &deleted_candidates)
 }
 
-pub(crate) fn unique_deleted_reference_assignment(
+fn unique_deleted_reference_assignment(
     reference_candidates: &[Vec<i64>],
     deleted_candidates: &[Vec<i64>],
 ) -> Option<Vec<i64>> {
@@ -1389,7 +1387,7 @@ pub(crate) fn unique_deleted_reference_assignment(
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum EdgeAssignmentCandidates {
+enum EdgeAssignmentCandidates {
     Context,
     Edges(Vec<i64>),
 }
@@ -1397,7 +1395,7 @@ pub(crate) enum EdgeAssignmentCandidates {
 // `None` means the record claims an edge operand but its proofs do not admit a
 // candidate. `Context` means the recipe has no edge-assignment proof and the
 // record only contributes topology context to its neighboring operands.
-pub(crate) fn edge_group_assignment_candidates<'a>(
+fn edge_group_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<EdgeAssignmentCandidates> {
@@ -1419,7 +1417,7 @@ pub(crate) fn edge_group_assignment_candidates<'a>(
     (!candidates.is_empty()).then_some(EdgeAssignmentCandidates::Edges(candidates))
 }
 
-pub(crate) fn radius_edge_group_candidates(
+pub(super) fn radius_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     radius: f64,
 ) -> Option<Vec<i64>> {
@@ -1501,7 +1499,7 @@ fn radius_edge_identity_group_candidates(
     (!chain.is_empty()).then_some(chain)
 }
 
-pub(crate) fn unique_edge_assignment_with_context(
+fn unique_edge_assignment_with_context(
     candidate_sets: &[EdgeAssignmentCandidates],
 ) -> Option<Vec<i64>> {
     let edge_candidate_sets = candidate_sets
@@ -1514,7 +1512,7 @@ pub(crate) fn unique_edge_assignment_with_context(
     unique_bipartite_assignment(&edge_candidate_sets)
 }
 
-pub(crate) fn edge_assignment_candidates<'a>(
+fn edge_assignment_candidates<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<Vec<i64>> {
@@ -1538,7 +1536,7 @@ pub(crate) fn edge_assignment_candidates<'a>(
     }
 }
 
-pub(crate) fn unique_bipartite_assignment(candidate_sets: &[Vec<i64>]) -> Option<Vec<i64>> {
+fn unique_bipartite_assignment(candidate_sets: &[Vec<i64>]) -> Option<Vec<i64>> {
     if candidate_sets.is_empty() {
         return None;
     }
@@ -1608,10 +1606,10 @@ fn bipartite_assignment(
 /// Members of one construction operand group: `(identity, resolved edge slot,
 /// deleted boundary edge slots)`.
 #[derive(Clone)]
-pub(crate) struct EdgeGroupMember {
-    pub(crate) identity: u32,
-    pub(crate) resolved_edge: Option<i64>,
-    pub(crate) deleted_boundary_edges: Vec<i64>,
+struct EdgeGroupMember {
+    identity: u32,
+    resolved_edge: Option<i64>,
+    deleted_boundary_edges: Vec<i64>,
 }
 
 fn scope_partition_edge_group_candidates(
@@ -1660,7 +1658,7 @@ fn scope_partition_edge_group_candidates(
     partition_unique_incomplete_edge_group(target_ordinal?, &scope_groups)
 }
 
-pub(crate) fn partition_unique_incomplete_edge_group(
+fn partition_unique_incomplete_edge_group(
     target_ordinal: usize,
     groups: &[Vec<EdgeGroupMember>],
 ) -> Option<Vec<i64>> {
@@ -1726,7 +1724,7 @@ pub(crate) fn partition_unique_incomplete_edge_group(
     Some(target)
 }
 
-pub(crate) fn common_deleted_edge_group_candidates<'a>(
+fn common_deleted_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (bool, &'a [i64])>,
 ) -> Option<Vec<i64>> {
     let candidate_sets = members
@@ -1765,9 +1763,7 @@ pub(crate) fn common_deleted_edge_group_candidates<'a>(
 /// requirement excludes topology deletions that are visible only in the
 /// feature transition; the cardinality requirement excludes a member recipe
 /// that represents an edge chain rather than one selected edge.
-pub(crate) fn deleted_boundary_edge_group_candidates(
-    operands: &[&DesignEdgeOperand],
-) -> Option<Vec<i64>> {
+fn deleted_boundary_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
     if operands.is_empty() {
         return None;
     }
@@ -1817,9 +1813,7 @@ pub(crate) fn deleted_boundary_edge_group_candidates(
 /// one perfect assignment; otherwise the group remains native. This handles a
 /// legacy group whose transition records consolidate one member's deletion
 /// while retaining the member-to-edge relation in the recipe references.
-pub(crate) fn contextual_deleted_edge_group_candidates(
-    operands: &[&DesignEdgeOperand],
-) -> Option<Vec<i64>> {
+fn contextual_deleted_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
     if operands.is_empty() {
         return None;
     }
@@ -1879,7 +1873,7 @@ pub(crate) fn contextual_deleted_edge_group_candidates(
 /// contexts is admitted only when it is the sole such edge and is absent from
 /// the operand's preceding candidate boundary. This leaves deleted-edge and
 /// ambiguous reference sets native.
-pub(crate) fn result_boundary_reference_edge_group_candidates(
+fn result_boundary_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
 ) -> Option<Vec<i64>> {
     let [operand] = operands else {
@@ -1923,7 +1917,7 @@ pub(crate) fn result_boundary_reference_edge_group_candidates(
     Some(vec![*candidate])
 }
 
-pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
+fn changed_boundary_count_edge_group_candidates<'a>(
     members: impl IntoIterator<
         Item = &'a [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     >,
@@ -1942,7 +1936,7 @@ pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
     (candidates.len() == members.len()).then_some(candidates)
 }
 
-pub(crate) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
+pub(super) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
     if !operand.recipe_program.is_empty() && operand.recipe_structure.is_none() {
         return None;
     }
@@ -1998,7 +1992,7 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
     }
 }
 
-pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
+pub(super) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
     let reference_edge_slots = if operand.recipe_reference_contexts.is_empty() {
         operand
             .terminal_reference_edge_slots
@@ -2296,7 +2290,7 @@ fn selector_candidate_edges(
 }
 
 #[cfg(test)]
-pub(crate) fn project_fixed_fillet(
+fn project_fixed_fillet(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
@@ -2312,7 +2306,7 @@ pub(crate) fn project_fixed_fillet(
     )
 }
 
-pub(crate) fn project_fixed_fillet_with_corners(
+pub(super) fn project_fixed_fillet_with_corners(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],

@@ -79,32 +79,32 @@ fn normalized_token<T: Clone>(
 const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
-pub(crate) struct PatchNatives<'a> {
-    pub(crate) baseline: Option<&'a F3dNative>,
-    pub(crate) target: Option<&'a F3dNative>,
+pub(in crate::writer) struct PatchNatives<'a> {
+    pub(in crate::writer) baseline: Option<&'a F3dNative>,
+    pub(in crate::writer) target: Option<&'a F3dNative>,
 }
 
-pub(crate) struct Edit<T> {
-    pub(crate) offset: u64,
-    pub(crate) value: T,
+pub(super) struct Edit<T> {
+    pub(super) offset: u64,
+    pub(super) value: T,
 }
 
-pub(crate) struct SketchPointEdit {
-    pub(crate) offset: u64,
-    pub(crate) coordinate_offset: u32,
-    pub(crate) coordinates: cadmpeg_ir::math::Point2,
+pub(super) struct SketchPointEdit {
+    pub(super) offset: u64,
+    pub(super) coordinate_offset: u32,
+    pub(super) coordinates: cadmpeg_ir::math::Point2,
 }
 
-pub(crate) struct PersistentReferenceEdit {
-    pub(crate) offset: u64,
-    pub(crate) identity_offset: u32,
-    pub(crate) identity: u64,
+pub(super) struct PersistentReferenceEdit {
+    pub(super) offset: u64,
+    pub(super) identity_offset: u32,
+    pub(super) identity: u64,
 }
 
-pub(crate) struct BodyMemberEdit {
-    pub(crate) offset: u64,
-    pub(crate) entity_suffix: u64,
-    pub(crate) flags: u16,
+pub(super) struct BodyMemberEdit {
+    pub(super) offset: u64,
+    pub(super) entity_suffix: u64,
+    pub(super) flags: u16,
 }
 
 pub(crate) struct SketchCurveEdit {
@@ -113,7 +113,7 @@ pub(crate) struct SketchCurveEdit {
     pub(crate) geometry: SketchCurveGeometry,
 }
 
-pub(crate) fn validate_creation_timestamp_edits(
+pub(super) fn validate_creation_timestamp_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, f64>, CodecError> {
     let baseline = native
@@ -165,7 +165,7 @@ pub(crate) fn validate_creation_timestamp_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_continuity_edits(
+pub(super) fn validate_edge_continuity_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, (Sense, String)>, CodecError> {
     let baseline = native
@@ -215,7 +215,7 @@ pub(crate) fn validate_edge_continuity_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_ownership_edits(
+pub(super) fn validate_edge_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, i64>, CodecError> {
@@ -284,7 +284,7 @@ pub(crate) fn validate_edge_ownership_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_vertex_ownership_edits(
+pub(super) fn validate_vertex_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
 ) -> Result<BTreeMap<usize, (i64, EndpointSlot)>, CodecError> {
@@ -361,7 +361,7 @@ pub(crate) fn validate_vertex_ownership_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_face_sidedness_edits(
+pub(super) fn validate_face_sidedness_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>, CodecError> {
     let baseline = native
@@ -410,7 +410,7 @@ pub(crate) fn validate_face_sidedness_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_vertex_edits(
+pub(super) fn validate_tolerant_vertex_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -556,7 +556,7 @@ pub(crate) fn validate_tolerant_vertex_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_edge_edits(
+pub(super) fn validate_tolerant_edge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -625,7 +625,7 @@ pub(crate) fn validate_tolerant_edge_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_tolerant_coedge_edits(
+pub(super) fn validate_tolerant_coedge_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -696,7 +696,7 @@ pub(crate) fn validate_tolerant_coedge_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_wire_topology_edits(
+pub(super) fn validate_wire_topology_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>, CodecError> {
     let baseline_wires = native
@@ -735,7 +735,7 @@ pub(crate) fn validate_wire_topology_edits(
     Ok(edits)
 }
 
-pub(crate) enum ProceduralSurfaceEdit {
+pub(in crate::writer) enum ProceduralSurfaceEdit {
     Extrusion {
         parameter_interval: [f64; 2],
         direction: Vector3,
@@ -744,17 +744,17 @@ pub(crate) enum ProceduralSurfaceEdit {
     BlendRadii([f64; 2]),
 }
 
-pub(crate) struct NurbsSurfaceEdit {
-    pub(crate) surface: NurbsSurface,
-    pub(crate) periodic: Option<[bool; 2]>,
+pub(in crate::writer) struct NurbsSurfaceEdit {
+    pub(super) surface: NurbsSurface,
+    pub(super) periodic: Option<[bool; 2]>,
 }
 
-pub(crate) struct NurbsCurveEdit {
-    pub(crate) curve: NurbsCurve,
-    pub(crate) periodic: Option<bool>,
+pub(in crate::writer) struct NurbsCurveEdit {
+    pub(super) curve: NurbsCurve,
+    pub(super) periodic: Option<bool>,
 }
 
-pub(crate) enum PcurveEdit {
+pub(in crate::writer) enum PcurveEdit {
     Inline {
         native_geometry: PcurveNurbs,
         periodic: Option<bool>,
@@ -771,14 +771,14 @@ pub(crate) enum PcurveEdit {
 }
 
 #[derive(Clone)]
-pub(crate) struct ProceduralCurveEdit {
+pub(in crate::writer) struct ProceduralCurveEdit {
     definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     fit_tolerance: Option<f64>,
 }
 
 impl ProceduralCurveEdit {
     /// An edit that changes at least one of the definition and the fit tolerance.
-    pub(crate) fn new(
+    fn new(
         definition: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
         fit_tolerance: Option<f64>,
     ) -> Option<Self> {
@@ -789,17 +789,17 @@ impl ProceduralCurveEdit {
     }
 
     /// Replacement procedural definition, when the edit changes it.
-    pub(crate) fn definition(&self) -> Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition> {
+    pub(super) fn definition(&self) -> Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition> {
         self.definition.as_ref()
     }
 
     /// Replacement cache fit tolerance, when the edit changes it.
-    pub(crate) fn fit_tolerance(&self) -> Option<f64> {
+    pub(super) fn fit_tolerance(&self) -> Option<f64> {
         self.fit_tolerance
     }
 }
 
-pub(crate) fn validate_material_assignment_appearances(
+pub(super) fn validate_material_assignment_appearances(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -940,7 +940,7 @@ pub(crate) fn validate_material_assignment_appearances(
     Ok(appearance_edits)
 }
 
-pub(crate) fn validate_material_assignment_edits(
+pub(super) fn validate_material_assignment_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<DesignMaterialAssignment>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1044,7 +1044,7 @@ fn validate_optional_utf16_replacement(
     }
 }
 
-pub(crate) fn validate_lost_edge_edits(
+pub(super) fn validate_lost_edge_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<LostEdgeReference>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1092,7 +1092,7 @@ pub(crate) fn validate_lost_edge_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_act_appearance_bindings(
+pub(super) fn validate_act_appearance_bindings(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -1279,7 +1279,7 @@ fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&str, &str)> 
         .map(|(name, guid)| (name.as_str(), guid.value.as_str()))
 }
 
-pub(crate) fn validate_act_entity_edits(
+pub(super) fn validate_act_entity_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActEntity>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1342,7 +1342,7 @@ pub(crate) fn validate_act_entity_edits(
 
 // The tuple carries one coupled result; a separate alias would add no invariant.
 #[allow(clippy::type_complexity)]
-pub(crate) fn validate_act_guid_edits(
+pub(super) fn validate_act_guid_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1398,7 +1398,7 @@ pub(crate) fn validate_act_guid_edits(
 
 // The tuple carries one coupled result; a separate alias would add no invariant.
 #[allow(clippy::type_complexity)]
-pub(crate) fn validate_act_registry_channel_edits(
+pub(super) fn validate_act_registry_channel_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Edit<Vec<u8>>>>, CodecError> {
     let baseline = native
@@ -1452,7 +1452,7 @@ pub(crate) fn validate_act_registry_channel_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_act_root_edits(
+pub(super) fn validate_act_root_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1516,12 +1516,12 @@ pub(crate) fn validate_act_root_edits(
     Ok(edits)
 }
 
-pub(crate) struct DesignTypeEdit {
-    pub(crate) integers: Vec<(u64, Vec<u8>)>,
-    pub(crate) strings: Vec<(u64, Vec<u8>)>,
+pub(super) struct DesignTypeEdit {
+    pub(super) integers: Vec<(u64, Vec<u8>)>,
+    pub(super) strings: Vec<(u64, Vec<u8>)>,
 }
 
-pub(crate) fn validate_design_type_edits(
+pub(super) fn validate_design_type_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<DesignTypeEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1646,7 +1646,7 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
     Ok(())
 }
 
-pub(crate) fn validate_configuration_edits(
+pub(super) fn validate_configuration_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
     let baseline = native
@@ -1686,12 +1686,12 @@ pub(crate) fn validate_configuration_edits(
     Ok(edits)
 }
 
-pub(crate) struct EntityHeaderEdit {
-    pub(crate) record_reference: Option<Edit<u32>>,
-    pub(crate) references: Vec<Edit<u32>>,
+pub(super) struct EntityHeaderEdit {
+    pub(super) record_reference: Option<Edit<u32>>,
+    pub(super) references: Vec<Edit<u32>>,
 }
 
-pub(crate) fn validate_entity_header_edits(
+pub(super) fn validate_entity_header_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<EntityHeaderEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1780,7 +1780,7 @@ pub(crate) fn validate_entity_header_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_member_edits(
+pub(super) fn validate_body_member_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<BodyMemberEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -1836,7 +1836,7 @@ pub(crate) fn validate_body_member_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_visibility_edits(
+pub(super) fn validate_body_visibility_edits(
     native: PatchNatives<'_>,
     baseline: &CadIr,
     target: &CadIr,
@@ -1890,7 +1890,7 @@ pub(crate) fn validate_body_visibility_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_transform_hint_edits(
+pub(super) fn validate_transform_hint_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
     let baseline = native
@@ -1932,7 +1932,7 @@ pub(crate) fn validate_transform_hint_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_native_key_edits(
+pub(in crate::writer) fn validate_body_native_key_edits(
     native: PatchNatives<'_>,
 ) -> Result<BodyNativeKeyEdits, CodecError> {
     let baseline_native = native.baseline;
@@ -2018,17 +2018,17 @@ pub(crate) fn validate_body_native_key_edits(
 }
 
 #[derive(Default)]
-pub(crate) struct BodyNativeKeyEdits {
-    pub(crate) asm: BTreeMap<usize, i64>,
-    pub(crate) design: BTreeMap<String, BTreeSet<(u64, u64)>>,
+pub(in crate::writer) struct BodyNativeKeyEdits {
+    pub(in crate::writer) asm: BTreeMap<usize, i64>,
+    pub(in crate::writer) design: BTreeMap<String, BTreeSet<(u64, u64)>>,
 }
 
-pub(crate) struct ConstructionRecipeEdit {
-    pub(crate) record_index: Option<Edit<i32>>,
-    pub(crate) design_id: Option<Edit<Vec<u8>>>,
+pub(super) struct ConstructionRecipeEdit {
+    pub(super) record_index: Option<Edit<i32>>,
+    pub(super) design_id: Option<Edit<Vec<u8>>>,
 }
 
-pub(crate) fn validate_construction_recipe_edits(
+pub(super) fn validate_construction_recipe_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ConstructionRecipeEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2155,7 +2155,7 @@ pub(crate) fn validate_construction_recipe_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_persistent_reference_edits(
+pub(super) fn validate_persistent_reference_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<PersistentReferenceEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2216,21 +2216,21 @@ pub(crate) fn validate_persistent_reference_edits(
 /// The three history-preamble fields a patch writes back, carried as
 /// non-optional values. [`validate_history_state_edits`] only builds one after
 /// it has confirmed both `stream_size` and `history_entry_count` are present.
-pub(crate) struct PreambleEdit {
-    pub(crate) byte_offset: u64,
-    pub(crate) stream_size: i64,
-    pub(crate) history_entry_count: i64,
+pub(in crate::writer::patch) struct PreambleEdit {
+    pub(super) byte_offset: u64,
+    pub(super) stream_size: i64,
+    pub(super) history_entry_count: i64,
 }
 
 #[derive(Default)]
-pub(crate) struct HistoryEdits {
-    pub(crate) preamble: Option<PreambleEdit>,
-    pub(crate) states: Vec<AsmDeltaState>,
-    pub(crate) boards: Vec<AsmBulletinBoard>,
-    pub(crate) changes: Vec<AsmEntityChange>,
+pub(super) struct HistoryEdits {
+    pub(super) preamble: Option<PreambleEdit>,
+    pub(super) states: Vec<AsmDeltaState>,
+    pub(super) boards: Vec<AsmBulletinBoard>,
+    pub(super) changes: Vec<AsmEntityChange>,
 }
 
-pub(crate) fn validate_history_state_edits(
+pub(super) fn validate_history_state_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, HistoryEdits>, CodecError> {
     let baseline_native = native.baseline;
@@ -2382,7 +2382,7 @@ pub(crate) fn validate_history_state_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_sketch_point_edits(
+pub(super) fn validate_sketch_point_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchPointEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2441,7 +2441,7 @@ pub(crate) fn validate_sketch_point_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_sketch_curve_edits(
+pub(super) fn validate_sketch_curve_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<SketchCurveEdit>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2593,7 +2593,7 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     }
 }
 
-pub(crate) fn encode_sketch_relation_state(
+pub(in crate::writer) fn encode_sketch_relation_state(
     relation_id: &str,
     raw_bytes: &[u8],
     state: u64,
@@ -2618,7 +2618,7 @@ pub(crate) fn encode_sketch_relation_state(
 
 // The tuple carries one coupled result; a separate alias would add no invariant.
 #[allow(clippy::type_complexity)]
-pub(crate) fn validate_sketch_relation_edits(
+pub(super) fn validate_sketch_relation_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<Vec<Edit<Vec<u8>>>>>, CodecError> {
     let baseline_native = native.baseline;
@@ -2776,7 +2776,7 @@ fn collect_sketch_reference_edits(
     Ok(())
 }
 
-pub(crate) fn validate_body_transform_edits(
+pub(super) fn validate_body_transform_edits(
     baseline: &[Body],
     target: &[Body],
 ) -> Result<BTreeMap<String, Transform>, CodecError> {
@@ -2821,7 +2821,7 @@ pub(crate) fn validate_body_transform_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_body_color_edits(
+pub(super) fn validate_body_color_edits(
     baseline: &[Body],
     target: &[Body],
 ) -> Result<BTreeMap<String, Color>, CodecError> {
@@ -2866,7 +2866,7 @@ pub(crate) fn validate_body_color_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_edge_range_edits(
+pub(super) fn validate_edge_range_edits(
     baseline: &[Edge],
     target: &[Edge],
 ) -> Result<BTreeMap<String, [f64; 2]>, CodecError> {
@@ -2912,7 +2912,7 @@ pub(crate) fn validate_edge_range_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_face_sense_edits(
+pub(super) fn validate_face_sense_edits(
     native: PatchNatives<'_>,
     baseline_ir: &CadIr,
     target_ir: &CadIr,
@@ -2962,7 +2962,7 @@ pub(crate) fn validate_face_sense_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_face_color_edits(
+pub(super) fn validate_face_color_edits(
     baseline: &[Face],
     target: &[Face],
 ) -> Result<BTreeMap<String, Color>, CodecError> {
@@ -3006,7 +3006,7 @@ pub(crate) fn validate_face_color_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_coedge_sense_edits(
+pub(super) fn validate_coedge_sense_edits(
     baseline: &[Coedge],
     target: &[Coedge],
 ) -> Result<BTreeMap<String, Sense>, CodecError> {
@@ -3040,7 +3040,7 @@ pub(crate) fn validate_coedge_sense_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_curve_edits(
+pub(super) fn validate_curve_edits(
     baseline: &[Curve],
     target: &[Curve],
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
@@ -3147,7 +3147,7 @@ pub(crate) fn validate_curve_edits(
     Ok(edited)
 }
 
-pub(crate) fn validate_pcurve_edits(
+pub(super) fn validate_pcurve_edits(
     baseline_model: &Model,
     target_model: &Model,
 ) -> Result<BTreeMap<String, PcurveEdit>, CodecError> {
@@ -3258,7 +3258,7 @@ pub(crate) fn validate_pcurve_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_surface_edits(
+pub(super) fn validate_surface_edits(
     baseline: &[Surface],
     target: &[Surface],
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
@@ -3394,7 +3394,7 @@ pub(crate) fn validate_surface_edits(
     Ok(edited)
 }
 
-pub(crate) fn validate_procedural_surface_edits(
+pub(super) fn validate_procedural_surface_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, ProceduralSurfaceEdit>, CodecError> {
@@ -3509,7 +3509,7 @@ pub(crate) fn validate_procedural_surface_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_procedural_surface_fit_edits(
+pub(super) fn validate_procedural_surface_fit_edits(
     baseline: &CadIr,
     target: &CadIr,
 ) -> Result<BTreeMap<String, f64>, CodecError> {
@@ -3546,7 +3546,7 @@ pub(crate) fn validate_procedural_surface_fit_edits(
     Ok(edits)
 }
 
-pub(crate) fn validate_procedural_curve_edits(
+pub(super) fn validate_procedural_curve_edits(
     baseline: &[ProceduralCurve],
     target: &[ProceduralCurve],
 ) -> Result<BTreeMap<String, ProceduralCurveEdit>, CodecError> {

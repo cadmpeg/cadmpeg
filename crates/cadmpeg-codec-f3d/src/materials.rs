@@ -1031,7 +1031,7 @@ fn decode_face_appearance_assignments(
 
 /// Decode a synthetic test slice as one Design primary-index frame.
 #[cfg(test)]
-pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
+fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
     face_appearance_assignments_in_frame(bytes)
 }
 

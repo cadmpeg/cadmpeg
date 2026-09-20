@@ -63,7 +63,7 @@ pub(crate) fn is_one_sided_layout(
     .is_some()
 }
 
-pub(crate) fn exact_one_sided_extrude_prologue(
+pub(super) fn exact_one_sided_extrude_prologue(
     bytes: &[u8],
     start: usize,
     paired_at: usize,

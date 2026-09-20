@@ -45,7 +45,7 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
         )
 }
 
-pub(crate) fn resolved_face_group(
+pub(super) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -91,7 +91,7 @@ pub(crate) fn resolved_face_group(
 /// form admitted here has a complete structured recipe, no alternate or
 /// historical candidates, and no candidate outside the recipe's own
 /// selector. Those invariants make the active lane the selected face set.
-pub(crate) fn resolved_explicit_bounded_face_group(
+pub(super) fn resolved_explicit_bounded_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -126,7 +126,7 @@ pub(crate) fn resolved_explicit_bounded_face_group(
 
 /// Resolve a direct scope face selection when every direct operand proves the
 /// same current face set through stable input-topology slots.
-pub(crate) fn resolved_direct_face_selection(
+pub(super) fn resolved_direct_face_selection(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -180,7 +180,7 @@ pub(crate) fn resolved_direct_face_selection(
 /// in its persistent-reference lane but whose active candidate lane is not a
 /// current-face slot. The caller must still admit the operand's exact recipe
 /// form; this helper only applies the unique historical-face proof.
-pub(crate) fn resolved_historical_face_operand(
+pub(super) fn resolved_historical_face_operand(
     scope: &DesignParameterScope,
     operand: &DesignFaceOperand,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -197,7 +197,7 @@ pub(crate) fn resolved_historical_face_operand(
 /// Resolve the complete input-state body boundaries selected by a body-recipe
 /// group. Persistent-reference candidate faces identify each body; they do
 /// not define a partial target boundary.
-pub(crate) fn resolved_body_recipe_selection(
+pub(super) fn resolved_body_recipe_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
@@ -257,7 +257,7 @@ pub(crate) fn resolved_body_recipe_selection(
 /// Resolve the complete input-state body boundaries selected by an Extrude
 /// target-shape group. Persistent-reference candidate faces identify each
 /// body; they do not define a partial target boundary.
-pub(crate) fn resolved_body_recipe_shape(
+pub(super) fn resolved_body_recipe_shape(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
@@ -271,7 +271,7 @@ pub(crate) fn resolved_body_recipe_shape(
     resolved_body_recipe_selection(scope, group, operands)
 }
 
-pub(crate) fn resolved_profile_face_group(
+pub(super) fn resolved_profile_face_group(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
@@ -629,7 +629,7 @@ fn resolved_extrude_profile_active_faces(
 /// in every member, and its complete boundary must have exactly one edge per
 /// group member. Any competing common clause or incomplete topology context
 /// keeps the native group unresolved.
-pub(crate) fn resolved_loft_edge_profile_group(
+pub(super) fn resolved_loft_edge_profile_group(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
@@ -854,7 +854,7 @@ fn loft_edge_profile_face_slot(
     Some(*slot)
 }
 
-pub(crate) fn resolved_historical_face_group(
+pub(super) fn resolved_historical_face_group(
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -919,7 +919,7 @@ fn historical_face_selection_with_native(
 /// face slots. An unresolved support recipe remains a context member. Every
 /// other member must prove its preceding face slots, and at least one member
 /// must contribute a face.
-pub(crate) fn resolved_historical_split_face_target_group(
+pub(super) fn resolved_historical_split_face_target_group(
     scope: &DesignParameterScope,
     previous_state_id: Option<i64>,
     group: &DesignConstructionOperandGroup,
@@ -1796,12 +1796,12 @@ fn extrude_profile_sketch_id(
 
 /// Geometry and native records used to resolve selected-face Extrude inputs.
 pub(crate) struct ExtrudeFaceResolution<'a> {
-    pub faces: &'a [cadmpeg_ir::topology::Face],
-    pub surfaces: &'a [cadmpeg_ir::geometry::Surface],
-    pub groups: &'a [DesignConstructionOperandGroup],
-    pub operands: &'a mut [DesignFaceOperand],
-    pub linear_tolerance: f64,
-    pub angular_tolerance: f64,
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
+    pub(crate) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) operands: &'a mut [DesignFaceOperand],
+    pub(crate) linear_tolerance: f64,
+    pub(crate) angular_tolerance: f64,
 }
 
 pub(crate) fn bind_extrude_start_planes(
@@ -2081,7 +2081,7 @@ fn extrude_target_plane_candidate(
     Some(face.clone())
 }
 
-pub(crate) fn retain_face_operand_resolution(
+pub(super) fn retain_face_operand_resolution(
     group: &DesignConstructionOperandGroup,
     operands: &mut [DesignFaceOperand],
     face: &cadmpeg_ir::ids::FaceId,
@@ -2130,7 +2130,7 @@ pub(crate) fn retain_face_operand_resolution(
     true
 }
 
-pub(crate) fn face_coincident_with_sketch(
+fn face_coincident_with_sketch(
     candidate: &cadmpeg_ir::ids::FaceId,
     sketch: &cadmpeg_ir::sketches::Sketch,
     faces: &[cadmpeg_ir::topology::Face],
@@ -2175,7 +2175,7 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
     point.vector_from(origin).dot(normal).abs() / normal_length
 }
 
-pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
+pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Angle> {
     (parameter
         .unit()
         .map(|field| field.value.as_str())
@@ -2189,7 +2189,7 @@ pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
 /// of a feature-owned sketch store it in centimetres while their sketch point
 /// and curve records carry values ten times the centimetre value, so the
 /// origin scales by ten to stay commensurate with the entities.
-pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
+pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     use crate::records::sketch_placement::DesignSketchFrameForm;
     match placement.frame.form() {
         DesignSketchFrameForm::ScopeGenesisCompact
@@ -2203,7 +2203,7 @@ pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     }
 }
 
-pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
+pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
     match curve.geometry.as_ref() {
         Some(SketchCurveGeometry::Line { start, end, .. }) => {
             !(planar_point(start) && planar_point(end))
@@ -2225,7 +2225,7 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
     }
 }
 
-pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
+pub(super) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
     point.depth().is_finite().then_some(point.depth())
 }
 

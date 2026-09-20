@@ -38,7 +38,7 @@ use super::{
 use crate::writer::primitives::{native_bool, normalized_face_sense_to_native};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-pub(crate) fn encode_smbh(
+pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,

@@ -98,7 +98,7 @@ fn point_data_level(
 /// Where the record's entity is not registered there, the class cannot be named
 /// and every version whose member sequence fits the frame stays a candidate, so
 /// the frame is read only when they agree on the offset.
-pub(crate) fn exact_work_point_construction(
+pub(super) fn exact_work_point_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -115,7 +115,7 @@ pub(crate) fn exact_work_point_construction(
     )
 }
 
-pub(crate) fn exact_point_data_construction<'a>(
+pub(in crate::design::decode) fn exact_point_data_construction<'a>(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     point_record_indices: impl IntoIterator<Item = &'a u32>,

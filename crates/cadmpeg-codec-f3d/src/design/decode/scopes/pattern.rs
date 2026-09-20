@@ -25,7 +25,7 @@ const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
 
 const EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12: f64 = 1.0e-12;
 
-pub(crate) fn exact_rectangular_pattern_construction(
+pub(super) fn exact_rectangular_pattern_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -284,7 +284,7 @@ fn translation_delta(
     ]
 }
 
-pub(crate) fn exact_circular_pattern_construction_with_owners(
+pub(super) fn exact_circular_pattern_construction_with_owners(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -429,14 +429,14 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
 }
 
 /// Circular pattern axis with its carrier and selection record indices.
-pub(crate) struct CircularPatternAxisCandidate {
-    pub(crate) axis: patterns::DesignCircularPatternAxis,
-    pub(crate) axis_record_index: u32,
-    pub(crate) selection_record_index: u32,
+struct CircularPatternAxisCandidate {
+    axis: patterns::DesignCircularPatternAxis,
+    axis_record_index: u32,
+    selection_record_index: u32,
 }
 
 /// Select one circular-pattern axis, preferring the explicit solved carrier.
-pub(crate) fn select_circular_pattern_axis(
+fn select_circular_pattern_axis(
     candidates: &[CircularPatternAxisCandidate],
 ) -> Option<&CircularPatternAxisCandidate> {
     let inline = candidates

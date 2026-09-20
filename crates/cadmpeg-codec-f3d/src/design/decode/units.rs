@@ -127,7 +127,7 @@ fn collection_counts(bytes: &[u8]) -> Vec<usize> {
 /// the five stored length unit names is rejected: the search is a byte-window
 /// scan, and the closed name set is what separates the collection from a window
 /// that merely reads like one.
-pub(crate) fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
+fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
     let offsets = IndexedRecordOffsets::build(bytes);
     let payloads = |record_index: u32| {
         offsets

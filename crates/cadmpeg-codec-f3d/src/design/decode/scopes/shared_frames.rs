@@ -9,7 +9,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_indexed_header_at(
+pub(in crate::design::decode) fn exact_indexed_header_at(
     bytes: &[u8],
     start: usize,
     record_index: u32,
@@ -25,7 +25,7 @@ pub(super) fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Op
     (cursor == at.checked_add(11)?).then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
 }
 
-pub(crate) fn rigid_transform_at(
+pub(in crate::design::decode) fn rigid_transform_at(
     bytes: &[u8],
     at: usize,
 ) -> Option<crate::records::sketch_placement::SketchPlacementMatrix> {
@@ -99,11 +99,11 @@ pub(super) fn exact_fixed_scalar(
     Some(*candidate)
 }
 
-pub(crate) fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
+pub(in crate::design::decode) fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {
     (bytes.get(at) == Some(&1)).then(|| View::u32_le_at(bytes, at + 1))?
 }
 
-pub(crate) fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
+pub(in crate::design::decode) fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
         return None;
     }

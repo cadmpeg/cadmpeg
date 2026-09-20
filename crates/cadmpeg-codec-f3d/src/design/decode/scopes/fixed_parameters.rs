@@ -23,7 +23,7 @@ use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
 
-pub(crate) fn exact_fixed_extrude_parameters(
+pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -170,7 +170,7 @@ fn exact_embedded_extrude_distance(
     Some(*candidate)
 }
 
-pub(crate) fn exact_fixed_fillet_parameters(
+pub(super) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -241,7 +241,7 @@ pub(crate) fn exact_fixed_fillet_parameters(
     Some(DesignFixedFilletParameters { groups })
 }
 
-pub(crate) fn exact_fixed_chamfer_parameters(
+pub(super) fn exact_fixed_chamfer_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

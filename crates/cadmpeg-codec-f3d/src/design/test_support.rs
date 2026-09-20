@@ -70,7 +70,7 @@ pub(crate) fn parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
-pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
+pub(super) fn identity_matrix() -> [[f64; 4]; 4] {
     [
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
@@ -79,7 +79,7 @@ pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
     ]
 }
 
-pub(crate) fn design_type(
+pub(super) fn design_type(
     type_guid: &str,
     base_type_guid: Option<&str>,
     version: u32,
@@ -105,7 +105,7 @@ pub(crate) fn design_type(
     }
 }
 
-pub(crate) fn primary_record(
+pub(super) fn primary_record(
     entity_id: u64,
     bulk_offset: usize,
 ) -> crate::metastream::RecordIndexEntry {
@@ -115,12 +115,12 @@ pub(crate) fn primary_record(
     }
 }
 
-pub(crate) fn push_reference(out: &mut Vec<u8>, reference: u32) {
+pub(super) fn push_reference(out: &mut Vec<u8>, reference: u32) {
     out.push(1);
     out.extend_from_slice(&reference.to_le_bytes());
 }
 
-pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
+pub(super) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.push(1);
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&13u32.to_le_bytes());
@@ -130,7 +130,7 @@ pub(crate) fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
     out.extend_from_slice(&genesis.to_le_bytes());
 }
 
-pub(crate) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
+pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
     let mut bytes = vec![0_u8; 648];
     bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
     bytes[4..7].copy_from_slice(b"273");

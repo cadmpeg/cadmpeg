@@ -940,24 +940,25 @@ pub(crate) fn bind_sweep_result_modes(
 /// Native history and neutral topology used to resolve feature body operands.
 pub(crate) struct FeatureBodySelectionInputs<'a> {
     /// Decoded Design feature scopes.
-    pub scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     /// Counted Design construction-operand groups.
-    pub groups: &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
+    pub(crate) groups:
+        &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
     /// Whole-body recipe operands.
-    pub body_recipe_operands:
+    pub(crate) body_recipe_operands:
         &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     /// Construction recipes backing whole-body operands.
-    pub construction_recipes: &'a [crate::records::recipes::ConstructionRecipe],
+    pub(crate) construction_recipes: &'a [crate::records::recipes::ConstructionRecipe],
     /// Persistent body identities in the active solved B-rep.
-    pub persistent_design_links: &'a [crate::records::sketch_links::PersistentDesignLink],
+    pub(crate) persistent_design_links: &'a [crate::records::sketch_links::PersistentDesignLink],
     /// Independent ASM history graphs.
-    pub histories: &'a [AsmHistory],
+    pub(crate) histories: &'a [AsmHistory],
     /// Neutral top-level bodies.
-    pub bodies: &'a [cadmpeg_ir::topology::Body],
+    pub(crate) bodies: &'a [cadmpeg_ir::topology::Body],
     /// Neutral body regions.
-    pub regions: &'a [cadmpeg_ir::topology::Region],
+    pub(crate) regions: &'a [cadmpeg_ir::topology::Region],
     /// Neutral region shells.
-    pub shells: &'a [cadmpeg_ir::topology::Shell],
+    pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
 }
 
 pub(crate) fn bind_feature_body_selections(
@@ -3241,8 +3242,8 @@ pub(crate) enum HemGapLengthForm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HemGeometrySemantics {
-    pub direction: Option<cadmpeg_ir::features::SheetMetalHemDirection>,
-    pub gap_length_form: Option<HemGapLengthForm>,
+    pub(crate) direction: Option<cadmpeg_ir::features::SheetMetalHemDirection>,
+    pub(crate) gap_length_form: Option<HemGapLengthForm>,
 }
 
 /// Resolve Hem semantics from the bend carriers in the owning history
@@ -6988,7 +6989,7 @@ fn historical_identity_kind(
     HistoricalIdentityIndex::build(histories, [local_id]).identity_kind(local_id)
 }
 
-pub(crate) fn historical_selection_identity_kind(
+fn historical_selection_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
 ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
@@ -8763,9 +8764,7 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-pub(crate) fn historical_topology(
-    brep: &cadmpeg_asm::brep::AsmBrep,
-) -> Option<AsmHistoricalTopology> {
+fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistoricalTopology> {
     fn refs<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
         ids.map(stable_ref).collect()
     }

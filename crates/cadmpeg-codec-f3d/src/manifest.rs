@@ -19,7 +19,7 @@ const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
 /// recovery row.
 pub(crate) const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
-pub(crate) const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
+const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
 pub(crate) const GENERATED_DESIGN_ASSET_FOLDER: &str = "FusionAssetName[Active]";
 
 const GENERATED_DOCUMENT_GUID: &str = "00000000-0000-4000-8000-000000000001";

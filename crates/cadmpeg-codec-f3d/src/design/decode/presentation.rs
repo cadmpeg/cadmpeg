@@ -26,32 +26,32 @@ const MAX_ENVELOPE_GAP: usize = 8;
 /// One typed browser-node record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BrowserNodeRecord {
-    pub record_index: u32,
-    pub guid: String,
-    pub entity_suffix: u64,
-    pub hidden_offset: u64,
-    pub hidden: bool,
+    pub(super) record_index: u32,
+    guid: String,
+    pub(super) entity_suffix: u64,
+    pub(super) hidden_offset: u64,
+    pub(super) hidden: bool,
 }
 
 /// Material members of one body-presentation envelope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PresentationMaterial {
-    pub node_guid: String,
-    pub physical_token: String,
-    pub physical_token_offset: u64,
-    pub visual_guid: crate::records::references::DesignVisualToken,
-    pub visual_guid_offset: u64,
-    pub visual_preset: Option<crate::records::identity::Located<String>>,
+    node_guid: String,
+    pub(crate) physical_token: String,
+    pub(crate) physical_token_offset: u64,
+    pub(crate) visual_guid: crate::records::references::DesignVisualToken,
+    pub(crate) visual_guid_offset: u64,
+    pub(crate) visual_preset: Option<crate::records::identity::Located<String>>,
 }
 
 /// One body record, its exact owner header, and its browser-node join.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BodyPresentation {
-    pub byte_offset: u64,
-    pub entity_suffix: u64,
-    pub owner: BodyPresentationOwner,
-    pub browser_node: Option<BrowserNodeRecord>,
-    pub material: Option<PresentationMaterial>,
+    pub(crate) byte_offset: u64,
+    pub(crate) entity_suffix: u64,
+    pub(crate) owner: BodyPresentationOwner,
+    pub(crate) browser_node: Option<BrowserNodeRecord>,
+    pub(crate) material: Option<PresentationMaterial>,
 }
 
 /// Entity identity form stored by one body-presentation owner.
@@ -70,7 +70,7 @@ pub(crate) enum BodyPresentationOwner {
 /// Decode every browser node whose dynamic class resolves to the registered
 /// browser-node type. The record body is ten zero bytes, an LP-UTF16 GUID, the
 /// hidden flag, `01 01`, and the owning Design entity suffix.
-pub(crate) fn browser_node_records(
+pub(super) fn browser_node_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BrowserNodeRecord>, CodecError> {

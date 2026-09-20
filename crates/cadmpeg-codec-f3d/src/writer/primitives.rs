@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
 
-pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
+pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
     ir.native
         .namespace("f3d")
         .map(F3dNative::load)
@@ -15,7 +15,7 @@ pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
         .map_err(Into::into)
 }
 
-pub(crate) fn validate_configuration_projection(
+pub(super) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
@@ -67,7 +67,7 @@ pub(crate) fn validate_assembly_projection(
     Ok(())
 }
 
-pub(crate) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: bool) -> Sense {
+pub(super) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: bool) -> Sense {
     if carrier_flipped {
         match desired {
             Sense::Forward => Sense::Reversed,
@@ -78,7 +78,7 @@ pub(crate) fn normalized_face_sense_to_native(desired: Sense, carrier_flipped: b
     }
 }
 
-pub(crate) fn native_bool(value: bool) -> u8 {
+pub(super) fn native_bool(value: bool) -> u8 {
     if value {
         0x0a
     } else {
@@ -86,7 +86,7 @@ pub(crate) fn native_bool(value: bool) -> u8 {
     }
 }
 
-pub(crate) fn unique_knot_count(knots: &[f64]) -> usize {
+pub(super) fn unique_knot_count(knots: &[f64]) -> usize {
     knots
         .iter()
         .enumerate()

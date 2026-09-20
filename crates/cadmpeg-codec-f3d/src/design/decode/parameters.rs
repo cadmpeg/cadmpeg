@@ -156,7 +156,7 @@ const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: u64 = 22;
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
-pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
+pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
     parse_design_parameter(payload)?.into_record(TEST_PARAMETER_STREAM, 0)
 }
 

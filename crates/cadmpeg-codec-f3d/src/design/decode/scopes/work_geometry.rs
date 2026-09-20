@@ -23,13 +23,13 @@ use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use cadmpeg_core::decode::View;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct ScopePlacementFrame {
-    pub(crate) transform: crate::records::sketch_placement::SketchPlacementMatrix,
-    pub(crate) transform_offset: u64,
-    pub(crate) reference: Option<(u32, u64)>,
+pub(super) struct ScopePlacementFrame {
+    pub(super) transform: crate::records::sketch_placement::SketchPlacementMatrix,
+    pub(super) transform_offset: u64,
+    pub(super) reference: Option<(u32, u64)>,
 }
 
-pub(crate) fn exact_work_plane_frame(
+pub(super) fn exact_work_plane_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -212,7 +212,7 @@ pub(crate) fn exact_work_plane_frame(
     Some(*candidate)
 }
 
-pub(crate) fn exact_work_axis_construction(
+pub(super) fn exact_work_axis_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -405,7 +405,7 @@ fn exact_direct_work_axis_construction(
     })
 }
 
-pub(crate) fn exact_joint_origin_frame(
+pub(super) fn exact_joint_origin_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,

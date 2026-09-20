@@ -1172,7 +1172,7 @@ fn decode_transfers_generated_sketch_curve_link() {
 }
 
 /// The one sketch-curve link a synthetic archive carries under `form`.
-pub(super) fn decoded_sketch_link(
+fn decoded_sketch_link(
     form: SketchLinkForm<'_>,
 ) -> Option<crate::records::sketch_links::SketchCurveLink> {
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(form));
@@ -1588,7 +1588,7 @@ fn legacy_face_appearance_assignment_rejects_partial_and_malformed_envelopes() {
     assert!(crate::materials::face_appearance_assignments(&malformed).is_empty());
 }
 
-pub(super) fn legacy_face_appearance_entry(
+fn legacy_face_appearance_entry(
     face_guid: &str,
     color: [f32; 4],
     visual_guid: &str,

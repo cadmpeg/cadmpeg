@@ -22,7 +22,7 @@ pub(crate) fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
 /// parameter interval and the V parameter interval in the optional bool-gated
 /// encoding, then the U closure, V closure, U singularity, and V singularity
 /// enums. Every slot carries a distinct value so a reordering fails loudly.
-pub(crate) fn append_revision_surface_tail_head(
+pub(super) fn append_revision_surface_tail_head(
     bytes: &mut Vec<u8>,
     form: i64,
     fit_tolerance: f64,
@@ -44,7 +44,7 @@ pub(crate) fn append_revision_surface_tail_head(
 
 /// Append the six counted discontinuity arrays and the boolean closing the
 /// shared revision-gated surface tail.
-pub(crate) fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
+pub(super) fn append_revision_surface_tail_discontinuities(bytes: &mut Vec<u8>) {
     for values in [
         &[0.25][..],
         &[][..],
@@ -165,7 +165,7 @@ pub(crate) fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
     synthetic_cyl_spl_sur_with_cache_smbh(false)
 }
 
-pub(crate) fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
+fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -481,7 +481,7 @@ pub(crate) fn synthetic_taper_spl_sur_smbh(name: &str) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction: bool) {
+fn append_generated_loft_section(bytes: &mut Vec<u8>, parameter: f64, direction: bool) {
     t_long(bytes, 1);
     t_dbl(bytes, parameter);
     t_long(bytes, 1);
@@ -1485,7 +1485,7 @@ fn synthetic_law_driven_sweep_smbh_with_law_slots(
     bytes
 }
 
-pub(crate) fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
+fn append_generated_compound_loft_scale(bytes: &mut Vec<u8>) {
     t_long(bytes, 1);
     t_long(bytes, 9);
     bytes.extend_from_slice(&generated_curve_block());
@@ -1549,7 +1549,7 @@ pub(crate) fn synthetic_compound_loft_smbh() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
+pub(super) fn append_generated_float_array(bytes: &mut Vec<u8>, values: &[f64]) {
     t_long(bytes, i64::try_from(values.len()).unwrap());
     for value in values {
         t_dbl(bytes, *value);

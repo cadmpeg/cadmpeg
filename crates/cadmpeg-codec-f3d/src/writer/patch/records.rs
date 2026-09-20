@@ -20,7 +20,7 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
 const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1.0e-9;
 
-pub(crate) fn patch_material_assignments(
+pub(super) fn patch_material_assignments(
     bytes: &mut [u8],
     edits: &[DesignMaterialAssignment],
 ) -> Result<(), CodecError> {
@@ -64,7 +64,7 @@ pub(crate) fn patch_material_assignments(
     Ok(())
 }
 
-pub(crate) fn patch_lost_edge_references(
+pub(super) fn patch_lost_edge_references(
     bytes: &mut [u8],
     edits: &[LostEdgeReference],
 ) -> Result<(), CodecError> {
@@ -85,7 +85,7 @@ pub(crate) fn patch_lost_edge_references(
     Ok(())
 }
 
-pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
+pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Result<(), CodecError> {
     for entity in edits {
         let encoded_id = entity
             .entity_id()
@@ -114,14 +114,14 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(crate) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
+pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
 }
 
-pub(crate) fn patch_act_roots(
+pub(super) fn patch_act_roots(
     bytes: &mut [u8],
     edits: &[ActRootComponent],
 ) -> Result<(), CodecError> {
@@ -196,7 +196,7 @@ fn patch_bytes_at(
     Ok(())
 }
 
-pub(crate) fn patch_design_types(
+pub(super) fn patch_design_types(
     bytes: &mut [u8],
     edits: &[DesignTypeEdit],
 ) -> Result<(), CodecError> {
@@ -214,7 +214,7 @@ pub(crate) fn patch_design_types(
     Ok(())
 }
 
-pub(crate) fn patch_entity_headers(
+pub(super) fn patch_entity_headers(
     bytes: &mut [u8],
     edits: &[EntityHeaderEdit],
 ) -> Result<(), CodecError> {
@@ -249,7 +249,7 @@ fn patch_u32_at(bytes: &mut [u8], offset: u64, value: u32, field: &str) -> Resul
     Ok(())
 }
 
-pub(crate) fn patch_body_members(
+pub(super) fn patch_body_members(
     bytes: &mut [u8],
     edits: &[BodyMemberEdit],
 ) -> Result<(), CodecError> {
@@ -277,7 +277,7 @@ pub(crate) fn patch_body_members(
     Ok(())
 }
 
-pub(crate) fn patch_body_visibilities(
+pub(super) fn patch_body_visibilities(
     bytes: &mut [u8],
     edits: &[(u64, bool)],
 ) -> Result<(), CodecError> {
@@ -296,7 +296,7 @@ pub(crate) fn patch_body_visibilities(
     Ok(())
 }
 
-pub(crate) fn patch_design_body_keys(
+pub(super) fn patch_design_body_keys(
     bytes: &mut [u8],
     edits: &BTreeSet<(u64, u64)>,
 ) -> Result<(), CodecError> {
@@ -312,7 +312,7 @@ pub(crate) fn patch_design_body_keys(
     Ok(())
 }
 
-pub(crate) fn patch_body_native_keys(
+pub(super) fn patch_body_native_keys(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
 ) -> Result<(), CodecError> {
@@ -337,7 +337,7 @@ pub(crate) fn patch_body_native_keys(
     })
 }
 
-pub(crate) fn patch_transform_hints(
+pub(super) fn patch_transform_hints(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [bool; 3]>,
 ) -> Result<(), CodecError> {
@@ -365,7 +365,7 @@ pub(crate) fn patch_transform_hints(
     })
 }
 
-pub(crate) fn patch_tolerant_coedge_parameters(
+pub(super) fn patch_tolerant_coedge_parameters(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, [f64; 2]>,
 ) -> Result<(), CodecError> {
@@ -394,7 +394,7 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     })
 }
 
-pub(crate) fn patch_wire_topologies(
+pub(super) fn patch_wire_topologies(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, cadmpeg_asm::brep::records::WireSide>,
 ) -> Result<(), CodecError> {
@@ -419,7 +419,7 @@ pub(crate) fn patch_wire_topologies(
     })
 }
 
-pub(crate) fn patch_edge_ownerships(
+pub(super) fn patch_edge_ownerships(
     bytes: &mut [u8],
     edits: &BTreeMap<usize, i64>,
 ) -> Result<(), CodecError> {
@@ -445,7 +445,7 @@ pub(crate) fn patch_edge_ownerships(
     })
 }
 
-pub(crate) fn patch_construction_recipes(
+pub(super) fn patch_construction_recipes(
     bytes: &mut [u8],
     edits: &[ConstructionRecipeEdit],
 ) -> Result<(), CodecError> {
@@ -482,7 +482,7 @@ pub(crate) fn patch_construction_recipes(
     Ok(())
 }
 
-pub(crate) fn patch_persistent_references(
+pub(super) fn patch_persistent_references(
     bytes: &mut [u8],
     edits: &[PersistentReferenceEdit],
 ) -> Result<(), CodecError> {
@@ -504,7 +504,7 @@ pub(crate) fn patch_persistent_references(
     Ok(())
 }
 
-pub(crate) fn patch_history_states(
+pub(super) fn patch_history_states(
     bytes: &mut [u8],
     edits: &HistoryEdits,
 ) -> Result<(), CodecError> {
@@ -567,7 +567,7 @@ pub(crate) fn patch_history_states(
     Ok(())
 }
 
-pub(crate) fn patch_sketch_points(
+pub(super) fn patch_sketch_points(
     bytes: &mut [u8],
     edits: &[SketchPointEdit],
 ) -> Result<(), CodecError> {
@@ -747,7 +747,7 @@ fn patch_sketch_nurbs(
     Ok(())
 }
 
-pub(crate) fn patch_sketch_relations(
+pub(super) fn patch_sketch_relations(
     bytes: &mut [u8],
     edits: &[Vec<Edit<Vec<u8>>>],
 ) -> Result<(), CodecError> {

@@ -23,7 +23,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
-pub(crate) fn bind_joint_origin_frames_from_assemblies(
+pub(super) fn bind_joint_origin_frames_from_assemblies(
     bytes: &[u8],
     scopes: &mut [DesignParameterScope],
 ) {
@@ -118,7 +118,7 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
 
 /// Bind the pathless axial assembly selectors after every scope in the Design
 /// stream has decoded its own construction.
-pub(crate) fn bind_axial_assembly_operand_targets(
+pub(super) fn bind_axial_assembly_operand_targets(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scopes: &mut [DesignParameterScope],

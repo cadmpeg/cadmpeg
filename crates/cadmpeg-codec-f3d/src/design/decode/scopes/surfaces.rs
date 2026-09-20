@@ -25,7 +25,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
 use std::collections::HashSet;
 
-pub(crate) fn exact_surface_extend_operation(
+pub(super) fn exact_surface_extend_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -61,7 +61,7 @@ pub(crate) fn exact_surface_extend_operation(
     })
 }
 
-pub(crate) fn exact_surface_offset_operation(
+pub(super) fn exact_surface_offset_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -324,7 +324,7 @@ fn exact_surface_boundary_operation(
     Some(candidate.clone())
 }
 
-pub(crate) fn exact_surface_stitch_operation(
+pub(super) fn exact_surface_stitch_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
@@ -349,7 +349,7 @@ pub(crate) fn exact_surface_stitch_operation(
     })
 }
 
-pub(crate) fn exact_ruled_surface_operation(
+pub(super) fn exact_ruled_surface_operation(
     bytes: &[u8],
     start: usize,
     paired_at: usize,

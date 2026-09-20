@@ -21,7 +21,7 @@ use super::native_bytes::{
     native_subident,
 };
 
-pub(crate) struct AttributeIndex<'a> {
+pub(super) struct AttributeIndex<'a> {
     creation_timestamps: &'a [CreationTimestamp],
     body_group_ordinals: HashMap<String, usize>,
     face_group_ordinals: HashMap<String, usize>,
@@ -48,23 +48,23 @@ pub(crate) struct AttributeIndex<'a> {
 /// Record-table starts of the face and coedge sections, which only a solid
 /// body target writes.
 #[derive(Clone, Copy)]
-pub(crate) struct SurfaceOwnerStarts {
-    pub(crate) face: i64,
-    pub(crate) coedge: i64,
+pub(super) struct SurfaceOwnerStarts {
+    pub(super) face: i64,
+    pub(super) coedge: i64,
 }
 
 /// Record-table starts used to write the owner field of generated attributes.
 #[derive(Clone, Copy)]
-pub(crate) struct AttributeOwnerStarts {
-    pub(crate) body: i64,
+pub(super) struct AttributeOwnerStarts {
+    pub(super) body: i64,
     /// Present only when the target has a face/coedge section.
-    pub(crate) surface: Option<SurfaceOwnerStarts>,
-    pub(crate) edge: i64,
-    pub(crate) vertex: i64,
+    pub(super) surface: Option<SurfaceOwnerStarts>,
+    pub(super) edge: i64,
+    pub(super) vertex: i64,
 }
 
 impl<'a> AttributeIndex<'a> {
-    pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
+    pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
@@ -282,7 +282,7 @@ impl<'a> AttributeIndex<'a> {
     }
 }
 
-pub(crate) fn source_less_body_key(
+pub(super) fn source_less_body_key(
     index: &AttributeIndex<'_>,
     body: &Body,
     body_ordinal: usize,
@@ -347,7 +347,7 @@ fn persistent_links<'i, 'n>(
     }
 }
 
-pub(crate) fn persistent_subentity_tags<'i, 'n>(
+fn persistent_subentity_tags<'i, 'n>(
     index: &'i AttributeIndex<'n>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
 ) -> &'i [&'n PersistentSubentityTag] {
@@ -385,7 +385,7 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
         + index.coedge_sketch_links.len()
 }
 
-pub(crate) fn timestamp_attribute_ref(
+pub(super) fn timestamp_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
@@ -478,7 +478,7 @@ fn body_name_attribute_ref(
     native_record_index(attribute_start, source_less_color_count(target) + ordinal).map(Some)
 }
 
-pub(crate) fn owner_color_or_body_tag_ref(
+pub(super) fn owner_color_or_body_tag_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     body: &Body,
@@ -556,7 +556,7 @@ fn face_name_attribute_ref(
     .map(Some)
 }
 
-pub(crate) fn owner_color_or_face_tag_ref(
+pub(super) fn owner_color_or_face_tag_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     face: &Face,
@@ -586,7 +586,7 @@ pub(crate) fn owner_color_or_face_tag_ref(
     .unwrap_or(-1))
 }
 
-pub(crate) fn edge_persistent_attribute_ref(
+pub(super) fn edge_persistent_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     edge: &Edge,
@@ -664,7 +664,7 @@ fn coedge_sketch_attribute_ref(
     .map(Some)
 }
 
-pub(crate) fn sketch_link_attribute_ref(
+pub(super) fn sketch_link_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
     coedge: &Coedge,
@@ -888,7 +888,7 @@ fn native_sketch_link_attribute(
     )
 }
 
-pub(crate) fn encode_source_less_attributes(
+pub(super) fn encode_source_less_attributes(
     records: &mut Vec<u8>,
     target: &CadIr,
     index: &AttributeIndex<'_>,
