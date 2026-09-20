@@ -4806,7 +4806,7 @@ fn extended_nurbs_isocurve_axis_candidate(
             if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point, None)
                 .filter(|parameters| {
                     nurbs_surface_point(surface, parameters.u, parameters.v)
-                        .is_some_and(|mapped| point_distance(point, mapped) <= tolerance)
+                        .is_some_and(|mapped| Point3::distance(point, mapped) <= tolerance)
                 })
             {
                 fixed_values.push(match fixed_axis {
@@ -4936,12 +4936,6 @@ fn nurbs_curve_sample_parameters(
     (!parameters.is_empty()).then_some(parameters)
 }
 
-fn point_distance(left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3) -> f64 {
-    (left.x - right.x)
-        .hypot(left.y - right.y)
-        .hypot(left.z - right.z)
-}
-
 fn nurbs_edge_endpoint_parameters(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
@@ -4970,7 +4964,7 @@ fn nurbs_edge_endpoint_parameters(
     let project = |point| {
         let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        (point_distance(point, mapped) <= tolerance).then_some(parameters)
+        (Point3::distance(point, mapped) <= tolerance).then_some(parameters)
     };
     Some([project(first)?, project(last)?])
 }
@@ -4998,7 +4992,7 @@ fn nurbs_curve_surface_deviation(
             .or_else(|| nurbs_surface_parameter_near_point(surface, point, None))?;
         let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v)?;
         seed = Some(parameters);
-        maximum = maximum.max(point_distance(point, surface_point));
+        maximum = maximum.max(Point3::distance(point, surface_point));
     }
     maximum.is_finite().then_some(maximum)
 }
@@ -5047,7 +5041,7 @@ fn nurbs_degree_one_cache_lanes(
         )?;
         let uv = nurbs_curve_point(1, curve.knots(), &uv_control_points, None, parameter)?;
         let mapped_point = nurbs_surface_point(surface, uv.x, uv.y)?;
-        fit_tolerance = fit_tolerance.max(point_distance(model_point, mapped_point));
+        fit_tolerance = fit_tolerance.max(Point3::distance(model_point, mapped_point));
     }
     if !fit_tolerance.is_finite() {
         return None;

@@ -3,7 +3,6 @@
 
 use super::geometry_work::GeometryWorkBudget;
 use super::jpeg::jpeg_dimensions;
-use super::offset::point_distance;
 use super::pcurves::{
     attach_tolerant_edge_intersections_with_budget,
     complete_exact_boundary_intersection_pcurves_with_budget,
@@ -1321,12 +1320,12 @@ fn orient_edge_range_for_geometry_with_budget(
         .into_iter()
         .flatten()
         .fold(0.0_f64, f64::max);
-    if point_distance(at[0], start_position) <= allowance
-        && point_distance(at[1], end_position) <= allowance
+    if Point3::distance(at[0], start_position) <= allowance
+        && Point3::distance(at[1], end_position) <= allowance
     {
         Some((range, false))
-    } else if point_distance(at[1], start_position) <= allowance
-        && point_distance(at[0], end_position) <= allowance
+    } else if Point3::distance(at[1], start_position) <= allowance
+        && Point3::distance(at[0], end_position) <= allowance
     {
         Some((range, true))
     } else {

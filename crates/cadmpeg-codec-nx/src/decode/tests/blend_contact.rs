@@ -11,7 +11,7 @@ use crate::decode::blend::{
     refine_blend_surface_parameters, BlendParameterGrid,
 };
 use crate::decode::offset::{
-    continue_surface_intersection_parameters, point_distance, solve_damped_least_squares_4x4,
+    continue_surface_intersection_parameters, solve_damped_least_squares_4x4,
 };
 use crate::decode::pcurves::blend_boundary_parameter_from_support_spine;
 
@@ -1762,7 +1762,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         &geometry_budget,
     )
     .expect("budgeted evaluation handles a nested blend support");
-    assert!(point_distance(evaluated, point) <= 64.0 * f64::EPSILON);
+    assert!(Point3::distance(evaluated, point) <= 64.0 * f64::EPSILON);
     let actual = blend_surface_parameters(&ir, &outer, point, None).unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);

@@ -17,7 +17,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
     coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
-    offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
+    offset_surface_parameters_with_tolerance_with_index_and_budget,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
     surface_parameters,
 };
@@ -216,7 +216,7 @@ fn support_uv_lane_matches_surface_with_budget(
         ) else {
             return false;
         };
-        if point_distance(candidate, *point) > fit_tolerance {
+        if Point3::distance(candidate, *point) > fit_tolerance {
             return false;
         }
     }
@@ -515,7 +515,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
             0,
             geometry_budget,
         )
-        .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+        .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
     }) {
         return Some(parameters);
     }
@@ -851,7 +851,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     if sample_index + 1 == parameters.len() {
                         endpoints[1] = Some(actual);
                     }
-                    if point_distance(actual, *point) > tolerance {
+                    if Point3::distance(actual, *point) > tolerance {
                         inconsistent = true;
                         fully_validated = false;
                         break;
@@ -1345,7 +1345,7 @@ fn complete_support_uv_wave(
                         if sample_index + 1 == points.len() {
                             endpoint_values[1] = Some(actual);
                         }
-                        if point_distance(actual, *point) > effective_fit_tolerance {
+                        if Point3::distance(actual, *point) > effective_fit_tolerance {
                             reproduces = false;
                             break;
                         }

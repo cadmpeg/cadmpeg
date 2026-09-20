@@ -17,8 +17,8 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::{
     lift_periodic_parameter, offset_surface_parameters_with_tolerance_with_index_and_budget,
-    point_distance, refine_offset_surface_parameters_with_index_and_budget,
-    surface_parameter_domain_with_index, surface_parameter_periods_with_index,
+    refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
+    surface_parameter_periods_with_index,
 };
 use super::support_uv::{
     blend_spine_cache_fit_tolerance_with_index, linear_knots,
@@ -475,10 +475,10 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end))
             {
                 (Some(start), Some(end)) => {
-                    let forward = point_distance(*start, endpoints[0]) <= endpoint_tolerance
-                        && point_distance(*end, endpoints[1]) <= endpoint_tolerance;
-                    let reversed = point_distance(*start, endpoints[1]) <= endpoint_tolerance
-                        && point_distance(*end, endpoints[0]) <= endpoint_tolerance;
+                    let forward = Point3::distance(*start, endpoints[0]) <= endpoint_tolerance
+                        && Point3::distance(*end, endpoints[1]) <= endpoint_tolerance;
+                    let reversed = Point3::distance(*start, endpoints[1]) <= endpoint_tolerance
+                        && Point3::distance(*end, endpoints[0]) <= endpoint_tolerance;
                     match (forward, reversed) {
                         (true, false) => false,
                         (false, true) => true,
@@ -658,10 +658,10 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     let [Some(first), Some(second)] = points else {
         return Ok(None);
     };
-    let forward = point_distance(first, endpoints[0]) <= tolerance
-        && point_distance(second, endpoints[1]) <= tolerance;
-    let reversed = point_distance(first, endpoints[1]) <= tolerance
-        && point_distance(second, endpoints[0]) <= tolerance;
+    let forward = Point3::distance(first, endpoints[0]) <= tolerance
+        && Point3::distance(second, endpoints[1]) <= tolerance;
+    let reversed = Point3::distance(first, endpoints[1]) <= tolerance
+        && Point3::distance(second, endpoints[0]) <= tolerance;
     match (forward, reversed) {
         (true, false) => Ok(Some(pcurve.clone())),
         (false, true) => reverse_pcurve_over_range(pcurve, range),
@@ -1745,7 +1745,7 @@ fn exact_boundary_pcurve_with_index(
                 0,
                 geometry_budget,
             )?;
-            let error = point_distance(mapped, endpoint);
+            let error = Point3::distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
             }
@@ -1819,7 +1819,7 @@ fn exact_boundary_pcurve_with_index(
                 0,
                 geometry_budget,
             )?;
-            let error = point_distance(mapped, endpoint);
+            let error = Point3::distance(mapped, endpoint);
             if !error.is_finite() || error > tolerance {
                 return None;
             }
@@ -1883,7 +1883,7 @@ fn exact_boundary_pcurve_with_index(
             parameters[index].v,
             geometry_budget,
         )?;
-        let error = point_distance(point, endpoints[index]);
+        let error = Point3::distance(point, endpoints[index]);
         if !error.is_finite() || error > tolerance {
             return None;
         }
@@ -1976,7 +1976,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         else {
             return false;
         };
-        let error = point_distance(expected, actual);
+        let error = Point3::distance(expected, actual);
         error.is_finite() && error <= tolerance
     })
 }
@@ -2151,7 +2151,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
             .sqrt()
     };
-    (point_distance(curve_position, surface_jet.point) <= tolerance
+    (Point3::distance(curve_position, surface_jet.point) <= tolerance
         && vector_error(curve_tangent, surface_tangent) <= tolerance
         && vector_error(curve_acceleration, surface_acceleration) <= tolerance)
         .then_some(())?;
@@ -2213,7 +2213,7 @@ fn coincident_pcurve_pair_with_index(
         let [Some(first), Some(second)] = points else {
             return None;
         };
-        let distance = point_distance(first, second);
+        let distance = Point3::distance(first, second);
         distance.is_finite().then_some(distance)
     };
     let affine_breaks = [0usize, 1usize].map(|side| {
@@ -2366,7 +2366,7 @@ fn boundary_curve_speed_bound_with_index(
             0,
             geometry_budget,
         )?;
-        let speed = point_distance(first, second);
+        let speed = Point3::distance(first, second);
         speed.is_finite().then_some(speed)
     };
     match carrier.geometry.solved() {
@@ -2864,7 +2864,7 @@ fn transferred_pcurve_sample_with_budget(
                     geometry_budget,
                 )
             })
-            .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+            .is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
         || blend_boundary_spine_geometry_matches_with_index_and_budget(
             index,
             target_surface,
@@ -2981,7 +2981,7 @@ pub(super) fn blend_boundary_parameter_from_support_spine_with_index_and_budget(
         0,
         geometry_budget,
     )
-    .is_some_and(|candidate| point_distance(candidate, point) <= tolerance)
+    .is_some_and(|candidate| Point3::distance(candidate, point) <= tolerance)
     .then_some(parameters)
 }
 
@@ -3117,7 +3117,7 @@ fn append_transferred_pcurve_segment_with_budget(
             uv.v.to_bits() == (contact.boundary as f64).to_bits()
                 && blend_transfer_point_with_index(index, contact, uv.u, geometry_budget)
                     .is_some_and(|target_point| {
-                        point_distance(source_point, target_point) <= tolerance
+                        Point3::distance(source_point, target_point) <= tolerance
                     })
         }) || blend_boundary_spine_geometry_matches_with_index_and_budget(
             index,
@@ -3148,7 +3148,7 @@ fn append_transferred_pcurve_segment_with_budget(
                     geometry_budget,
                 )
             })
-            .is_some_and(|target_point| point_distance(source_point, target_point) <= tolerance)
+            .is_some_and(|target_point| Point3::distance(source_point, target_point) <= tolerance)
     });
     if fits {
         samples.push(last);
@@ -3494,7 +3494,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                             )
                         })
                         .is_some_and(|support_point| {
-                            point_distance(*point, support_point) <= tolerance
+                            Point3::distance(*point, support_point) <= tolerance
                         })
                     };
                     endpoint_surface_fits.insert(key, fits);
@@ -3759,10 +3759,10 @@ pub(super) fn pcurve_matches_edge_endpoint_contract(
         .into_iter()
         .flatten()
         .fold(0.0_f64, f64::max);
-    (point_distance(coincident_surface[0], edge_endpoints[0]) <= allowance
-        && point_distance(coincident_surface[1], edge_endpoints[1]) <= allowance)
-        || (point_distance(coincident_surface[0], edge_endpoints[1]) <= allowance
-            && point_distance(coincident_surface[1], edge_endpoints[0]) <= allowance)
+    (Point3::distance(coincident_surface[0], edge_endpoints[0]) <= allowance
+        && Point3::distance(coincident_surface[1], edge_endpoints[1]) <= allowance)
+        || (Point3::distance(coincident_surface[0], edge_endpoints[1]) <= allowance
+            && Point3::distance(coincident_surface[1], edge_endpoints[0]) <= allowance)
 }
 
 #[cfg(test)]

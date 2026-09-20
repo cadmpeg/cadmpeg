@@ -6,7 +6,7 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::offset::offset_surface_parameters_with_tolerance_with_index_and_budget;
 use super::offset::{
-    coarse_model_surface_parameters, parameter_derivative_step, point_distance,
+    coarse_model_surface_parameters, parameter_derivative_step,
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
@@ -412,7 +412,7 @@ fn blend_surface_parameters_inner(
                 depth + 1,
                 geometry_budget,
             )
-            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+            .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
         {
             return Some(seed);
         }
@@ -435,7 +435,7 @@ fn blend_surface_parameters_inner(
                     depth + 1,
                     geometry_budget,
                 )
-                .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+                .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
         }) {
             return Some(parameters);
         }
@@ -480,7 +480,7 @@ fn blend_surface_parameters_inner(
                 let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
                 Some((
                     Point2::new(u, v),
-                    point_distance(candidate, point),
+                    Point3::distance(candidate, point),
                     branch_distance,
                 ))
             })
@@ -521,7 +521,7 @@ fn blend_surface_parameters_inner(
                 depth + 1,
                 geometry_budget,
             ) {
-                let distance = point_distance(candidate, point);
+                let distance = Point3::distance(candidate, point);
                 if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
                     return Some(parameters);
                 }
@@ -560,7 +560,7 @@ fn blend_surface_parameters_inner(
                 depth + 1,
                 geometry_budget,
             )?;
-            let distance = point_distance(candidate, point);
+            let distance = Point3::distance(candidate, point);
             if fit_tolerance.is_none_or(|tolerance| distance <= tolerance) {
                 return Some(parameters);
             }
@@ -685,7 +685,7 @@ fn closest_blend_surface_grid_parameters(
 ) -> Option<Point2> {
     grid.iter()
         .min_by(|(_, first), (_, second)| {
-            point_distance(*first, point).total_cmp(&point_distance(*second, point))
+            Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
         })
         .map(|(parameters, _)| *parameters)
 }
@@ -759,7 +759,7 @@ fn blend_surface_parameters_from_grid_for_fit_with_section_domain_and_budget(
         0,
         geometry_budget,
     )?;
-    (point_distance(candidate, point) <= fit_tolerance).then_some(parameters)
+    (Point3::distance(candidate, point) <= fit_tolerance).then_some(parameters)
 }
 
 #[cfg(test)]
@@ -1627,7 +1627,7 @@ fn blend_boundary_parameter_with_index_and_budget(
                 depth + 1,
                 geometry_budget,
             )
-            .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+            .is_some_and(|candidate| Point3::distance(candidate, point) <= fit_tolerance)
         })
 }
 
@@ -1792,7 +1792,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
             0,
             geometry_budget,
         )?;
-        (point_distance(candidate, target.point) <= target.tolerance).then_some(uv)
+        (Point3::distance(candidate, target.point) <= target.tolerance).then_some(uv)
     };
     if let Some(uv) = certify(source_uv.u) {
         return Some(uv);
@@ -1860,7 +1860,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
             };
             let candidate =
                 blend_surface_point_from_frame((center, tangent, first, second, radius), v);
-            let distance = point_distance(candidate, point);
+            let distance = Point3::distance(candidate, point);
             if distance.is_finite() && distance <= fit_tolerance {
                 candidates.push((
                     Point2::new(parameter, v),
@@ -2002,7 +2002,7 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
                 geometry_budget,
             );
             candidate.is_some_and(|candidate| {
-                point_distance(candidate, target.point) <= target.tolerance
+                Point3::distance(candidate, target.point) <= target.tolerance
             })
         })
         .map(|parameter| Point2::new(parameter, boundary as f64))
@@ -2861,7 +2861,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             ) else {
                 continue;
             };
-            let offset_fit = point_distance(offset_point, side_point);
+            let offset_fit = Point3::distance(offset_point, side_point);
             if offset_fit > contact_fit_tolerance {
                 continue;
             }
@@ -2875,7 +2875,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             ) else {
                 continue;
             };
-            let offset_error = (point_distance(side_point, reproduced) - offset_distance).abs();
+            let offset_error = (Point3::distance(side_point, reproduced) - offset_distance).abs();
             if offset_error > contact_fit_tolerance {
                 continue;
             }
@@ -3432,7 +3432,7 @@ fn blend_surface_contact_direction_with_budget(
             blend_surface_point_from_frame(frame, 1.0),
         ])
         .min_by(|first, second| {
-            point_distance(*first, point).total_cmp(&point_distance(*second, point))
+            Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
         })?;
     Vector3::unit_nonzero(Vector3::new(
         candidate.x - point.x,
