@@ -3,7 +3,8 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::planar::line_circle_parameters;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
 use crate::vecmath::{cross, dot, normalize};
@@ -1204,17 +1205,27 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     let direction = direction.map(|value| value / sine);
     let radial_direction = cross(circle_normal, direction);
     let relative = std::array::from_fn(|index| plane.origin[index] - center[index]);
+    // `radial_direction` and `direction` are an orthonormal frame of the circle
+    // plane, and `plane_normal` projects on `radial_direction` with length
+    // `sine`, so the cut line is `radial_direction = distance` in that frame.
     let distance = dot(plane_normal, relative) / sine;
-    let radial_fraction = (distance / radius).abs();
-    if !radial_fraction.is_finite() || radial_fraction > 1.0 + EPS_NEAR_ZERO {
+    // The chord, and with it the tangency decision, belongs to the owner of the
+    // line-circle error band. Its parameter runs from the foot of the radial
+    // offset over one radius along `direction`, so a tangent states the same
+    // parameter twice and collapses below.
+    let Some(parameters) = line_circle_parameters(
+        Point2::new(distance, 0.0),
+        Point2::new(distance, radius),
+        Point2::new(0.0, 0.0),
+        radius,
+    ) else {
         return Vec::new();
-    }
-    let radial_fraction = radial_fraction.min(1.0);
-    let half_chord = radius * ((1.0 - radial_fraction).sqrt() * (1.0 + radial_fraction).sqrt());
+    };
     let nearest: [f64; 3] =
         std::array::from_fn(|index| center[index] + distance * radial_direction[index]);
     let mut points = Vec::new();
-    for signed_chord in [-half_chord, half_chord] {
+    for parameter in parameters {
+        let signed_chord = parameter * radius;
         let point = std::array::from_fn(|index| nearest[index] + signed_chord * direction[index]);
         if point.iter().all(|value| value.is_finite()) && !points.contains(&point) {
             points.push(point);
@@ -1570,5 +1581,31 @@ mod tests {
             assert_eq!(cut(radius).len(), 1);
             assert!(cut(2.0 * radius).is_empty());
         }
+    }
+
+    const TANGENT_CIRCLE_RADIUS: f64 = 4.0;
+    #[test]
+    fn a_plane_inside_the_tangency_band_states_one_point() {
+        // The offsets are exact multiples of the last bit of the radius, and the
+        // plane normal reaches the radial offset without rounding it.
+        let cut = |offset: f64| {
+            super::intersect_plane_with_circle(
+                PlaneEquation {
+                    origin: [offset, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                },
+                [0.0; 3],
+                [0.0, 0.0, 1.0],
+                TANGENT_CIRCLE_RADIUS,
+            )
+        };
+        let last_bit = f64::EPSILON * TANGENT_CIRCLE_RADIUS;
+        assert_eq!(cut(TANGENT_CIRCLE_RADIUS), vec![[4.0, 0.0, 0.0]]);
+        assert_eq!(
+            cut(TANGENT_CIRCLE_RADIUS - last_bit),
+            vec![[4.0 - last_bit, 0.0, 0.0]]
+        );
+        assert_eq!(cut(TANGENT_CIRCLE_RADIUS - 16.0 * last_bit).len(), 2);
+        assert!(cut(TANGENT_CIRCLE_RADIUS + 16.0 * last_bit).is_empty());
     }
 }
