@@ -1467,10 +1467,8 @@ ABSENT_KEY_HELPERS = {
 }
 DISTINCT_MAP_HELPERS = {
     "crate::distinct_keys::btree_map",
-    "crate::distinct_keys::hash_map",
     "crate::distinct_keys::json_object",
     "cadmpeg_core::distinct_keys::btree_map",
-    "cadmpeg_core::distinct_keys::hash_map",
     "cadmpeg_core::distinct_keys::json_object",
 }
 LOCAL_ID_HELPERS = {

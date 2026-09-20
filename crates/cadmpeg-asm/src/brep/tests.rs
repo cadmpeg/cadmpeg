@@ -1143,27 +1143,16 @@ fn a_restated_join_map_names_no_wire_key() {
 #[test]
 fn the_join_projections_read_the_key_records() {
     let face = FaceId::mint("asm:test:face#1".to_string()).expect("identity grammar");
-    let body =
-        cadmpeg_ir::ids::BodyId::mint("asm:test:body#1".to_string()).expect("identity grammar");
     let mut brep = AsmBrep::default();
     let namespace = records::identity::NativeRecordNamespace::new(crate::asm_format!("f3d"));
     brep.face_native_keys.push(records::FaceNativeKey {
-        source_namespace: namespace.clone(),
+        source_namespace: namespace,
         record_index: 1,
         face: face.clone(),
         asm_face_key: Some(7),
-    });
-    brep.body_native_keys.push(records::BodyNativeKey {
-        source_namespace: namespace,
-        record_index: 2,
-        body,
-        body_ordinal: 0,
-        source_brep: None,
-        asm_body_key: None,
     });
     assert_eq!(
         super::key_maps::face_keys(&brep.face_native_keys),
         std::collections::HashMap::from([(face, 7)])
     );
-    assert!(super::key_maps::body_keys(&brep.body_native_keys).is_empty());
 }

@@ -23,7 +23,7 @@ pub fn inflate_zlib_member<'a>(
 ) -> Result<(View<'a>, usize), CodecError> {
     let input = source.window();
     let mut decoder = Decompress::new(true);
-    let mut writer = ctx.begin_expand(source, spec)?;
+    let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     let mut source_offset = 0usize;
     loop {
@@ -73,7 +73,7 @@ pub fn inflate_deflate<'a>(
     spec: ExpandSpec,
 ) -> Result<View<'a>, CodecError> {
     let mut decoder = DeflateDecoder::new(source.window());
-    let mut writer = ctx.begin_expand(source, spec)?;
+    let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
     loop {
         let read = decoder.read(&mut chunk).map_err(|error| {

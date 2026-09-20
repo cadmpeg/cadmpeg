@@ -1096,7 +1096,6 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
     t_ref(&mut surface, -1);
     t_long(&mut surface, -1);
     t_ref(&mut surface, -1);
-    let shared_offset = surface.len();
     surface.push(0x0f);
     t_ident(&mut surface, "t_spl_subtrans_object");
     t_u16_string(&mut surface, "degree 3\nv 1 0 0 0\n");
@@ -1130,13 +1129,28 @@ pub(crate) fn synthetic_referenced_t_spl_sur_smbh() -> Vec<u8> {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_records(&records, &bytes)
-        .expect("the fixture frames every record inside the stream");
-    let index = tables
-        .index_of_offset(
-            cadmpeg_asm::kernel_header::RefWidth::Eight,
-            old_offset + shared_offset,
-        )
+    // Resolve the fixture's unique shared definition in framed token order,
+    // including nested definitions and excluding reference wrappers.
+    let definitions: Vec<&str> = records
+        .iter()
+        .flat_map(|record| record.tokens.windows(2))
+        .filter_map(|pair| match pair {
+            [cadmpeg_asm::sab::Token::SubtypeOpen,
+             cadmpeg_asm::sab::Token::Ident(name) | cadmpeg_asm::sab::Token::SubIdent(name)]
+                if name != "ref" => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        definitions
+            .iter()
+            .filter(|name| **name == "t_spl_subtrans_object")
+            .count(),
+        1
+    );
+    let index = definitions
+        .iter()
+        .position(|name| *name == "t_spl_subtrans_object")
         .expect("shared T-spline subtype index");
     bytes[old_offset + reference_value_offset..old_offset + reference_value_offset + 8]
         .copy_from_slice(&i64::try_from(index).unwrap().to_le_bytes());

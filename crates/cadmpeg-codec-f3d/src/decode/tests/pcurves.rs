@@ -679,7 +679,7 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
-    let pcurve = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+    let (pcurve, _) = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &intcurve,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -696,7 +696,7 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
     assert!(
-        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &intcurve,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
@@ -726,7 +726,7 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
     active.extend_from_slice(&source);
 
     assert!(
-        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs(
+        cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &source,
                 cadmpeg_asm::kernel_header::RefWidth::Eight

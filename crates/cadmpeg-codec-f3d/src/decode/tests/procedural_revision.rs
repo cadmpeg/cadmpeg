@@ -1722,9 +1722,8 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // The support is the unit bilinear patch scaled to millimetres, so the
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
-    let curve =
-        decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight, None)
-            .expect("form-2 isoline");
+    let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+        .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
@@ -1735,21 +1734,16 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // A pcurve that crosses the support holds neither parameter fixed, so no
     // NURBS curve reproduces it and the form is refused.
     let diagonal = generated_form_two_par_int_cur([0.0, 0.0], [1.0, 1.0]);
-    assert!(decode_par_int_cur_isoline(
-        &diagonal,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&diagonal, cadmpeg_asm::kernel_header::RefWidth::Eight)
+            .is_none()
+    );
 
     // A pcurve running only part of the support's domain would need a trim.
     let partial = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 0.5]);
-    assert!(decode_par_int_cur_isoline(
-        &partial,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-        None
-    )
-    .is_none());
+    assert!(
+        decode_par_int_cur_isoline(&partial, cadmpeg_asm::kernel_header::RefWidth::Eight).is_none()
+    );
 }
 
 #[test]
@@ -1825,28 +1819,4 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
         &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
     )
     .is_none());
-}
-
-#[test]
-fn subtype_table_walks_wide_strings_at_the_stream_ref_width() {
-    for ref_width in [
-        cadmpeg_asm::kernel_header::RefWidth::Four,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
-    ] {
-        // The last four payload bytes spell a definition opening. Only a walker
-        // that consumes the length prefix at `ref_width` steps past them.
-        let payload = [b'0', b'1', b'2', b'3', 0x0f, 0x0d, 0x01, b'x'];
-
-        let mut active = Vec::new();
-        t_ident(&mut active, "tspl");
-        active.push(0x09);
-        active.extend_from_slice(&payload.len().to_le_bytes()[..ref_width.bytes()]);
-        active.extend_from_slice(&payload);
-        let definition = active.len();
-        active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
-        active.push(0x11);
-
-        let tables = cadmpeg_asm::nurbs::subtypes::SubtypeTables::from_stream(&active);
-        assert_eq!(tables.for_width(ref_width), [definition]);
-    }
 }

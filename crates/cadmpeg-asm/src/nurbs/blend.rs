@@ -4,9 +4,8 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::core::{
-    curve_block, decode_curve_block, decode_owned_curve_cache_at,
-    decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
-    decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
+    curve_block, decode_curve_block, decode_owned_curve_cache_at, decode_owned_surface_cache_at,
+    decode_surface_block, surface_block,
 };
 use crate::nurbs::pcurve::pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
@@ -24,7 +23,7 @@ use crate::nurbs::reader::{
     marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
     take_optional_range_value, take_tagged_int, Nullable, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
+use crate::nurbs::subtypes::subtype_span;
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
@@ -143,7 +142,6 @@ pub(super) fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
@@ -154,20 +152,13 @@ pub(super) fn decode_rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let surface =
-        decode_optional_rolling_ball_surface(bytes, position, int_width, reference_context)?
-            .value();
+    let surface = decode_optional_rolling_ball_surface(bytes, position, int_width)?.value();
     let saved = *position;
     let curve = if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
         None
     } else {
         *position = saved;
-        Some(decode_rolling_ball_curve(
-            bytes,
-            position,
-            int_width,
-            reference_context,
-        )?)
+        Some(decode_rolling_ball_curve(bytes, position, int_width)?)
     };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
     let location = take_native_vec3(bytes, position, 0x13)?;
@@ -209,28 +200,24 @@ pub(super) fn decode_optional_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
     let saved = *position;
     if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
         return Some(Nullable::Null);
     }
     *position = saved;
-    decode_rolling_ball_surface(bytes, position, int_width, reference_context).map(
-        |(surface, parameter_ranges)| {
-            Nullable::Value(RollingBallSupportSurface {
-                surface,
-                parameter_ranges,
-            })
-        },
-    )
+    decode_rolling_ball_surface(bytes, position, int_width).map(|(surface, parameter_ranges)| {
+        Nullable::Value(RollingBallSupportSurface {
+            surface,
+            parameter_ranges,
+        })
+    })
 }
 
 pub(super) fn decode_rolling_ball_surface(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
     let saved = *position;
     let kind = take_native_ident(bytes, position)?;
@@ -246,11 +233,7 @@ pub(super) fn decode_rolling_ball_surface(
         }
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
-        let surface = reference_context
-            .and_then(|(active_bytes, tables)| {
-                decode_owned_surface_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
-            })
-            .or_else(|| decode_owned_surface_cache_at(scope, int_width))?;
+        let surface = decode_owned_surface_cache_at(scope, int_width)?;
         *position += scope.bytes().len();
         let ranges = decode_surface_ranges(bytes, position)?;
         return Some((
@@ -282,7 +265,6 @@ pub(super) fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-    reference_context: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<RollingBallSupportCurve<CurveGeometry>> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
@@ -300,12 +282,8 @@ pub(super) fn decode_rolling_ball_curve(
     if kind == "intcurve" {
         take_bool(bytes, position)?;
         let scope = subtype_span(bytes, *position, int_width)?;
-        let curve = reference_context
-            .and_then(|(active_bytes, tables)| {
-                decode_owned_curve_cache_resolving_refs_at(scope, active_bytes, tables, int_width)
-            })
-            .or_else(|| decode_owned_curve_cache_at(scope, int_width))
-            .or_else(|| decode_par_int_cur_isoline(scope.bytes(), int_width, reference_context))?;
+        let curve = decode_owned_curve_cache_at(scope, int_width)
+            .or_else(|| decode_par_int_cur_isoline(scope.bytes(), int_width))?;
         *position += scope.bytes().len();
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
@@ -522,7 +500,7 @@ pub(super) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]>
 
 /// Decode one rolling-ball curve slot. Token-space counterpart of
 /// [`decode_rolling_ball_curve`].
-fn rolling_ball_curve(
+pub(super) fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
 ) -> Option<RollingBallSupportCurve<CurveGeometry>> {
