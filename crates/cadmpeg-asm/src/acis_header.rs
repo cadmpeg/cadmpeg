@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(header.width.bytes(), 4);
         assert_eq!(header.metadata.save_format_version, Some(21_800));
         assert_eq!(header.metadata.entity_count, Some(2));
-        assert_eq!(header.metadata.format_revision(), Some(6));
+        assert_eq!(header.metadata.flags, Some(13));
         assert_eq!(record_stream_start(&bytes), Some(record_start));
         assert_eq!(solved_record_limit(&bytes), Some(history_start));
     }

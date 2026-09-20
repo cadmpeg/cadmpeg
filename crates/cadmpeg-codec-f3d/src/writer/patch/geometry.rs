@@ -25,9 +25,6 @@ use cadmpeg_asm::sab;
 
 const EPS_ORTHONORMAL: f64 = 1.0e-9;
 
-#[cfg(test)]
-use cadmpeg_asm::asm_header::stream_ref_width;
-
 pub(super) fn valid_edited_curve_structure(before: &NurbsCurve, after: &NurbsCurve) -> bool {
     valid_edited_nurbs_direction(
         before.knots(),
@@ -149,8 +146,14 @@ pub(in crate::writer) fn patch_framed_geometry(
     edits: &GeometryEdits,
     header_scale: f64,
 ) -> Result<(), CodecError> {
-    let asm_edits =
-        AsmEditSet::from_framed(records.to_vec(), stream_ref_width(bytes), header_scale);
+    let asm_edits = AsmEditSet::from_framed(
+        records.to_vec(),
+        cadmpeg_asm::asm_header::parse(bytes)
+            .map_or(cadmpeg_asm::kernel_header::RefWidth::Eight, |header| {
+                header.width
+            }),
+        header_scale,
+    );
     patch_asm_geometry(bytes, &asm_edits, edits)
 }
 

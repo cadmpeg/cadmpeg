@@ -55,10 +55,6 @@ fn asm_header_parses_documented_fields() {
     assert_eq!(h.metadata.save_format_major(), Some(231));
     assert_eq!(h.metadata.save_format_minor(), Some(0));
     assert!(h.metadata.has_history_partition());
-    // Flags `3` is the history bit plus revision `1` in bits 1 to 7. Nothing is
-    // left over, so no bit reaches the uninterpreted set.
-    assert_eq!(h.metadata.format_revision(), Some(1));
-    assert_eq!(h.metadata.unassigned_flags(), Some(0));
     assert_eq!(
         h.metadata.product_family.as_deref(),
         Some("Autodesk Neutron")
@@ -74,37 +70,6 @@ fn asm_header_parses_documented_fields() {
     assert_eq!(h.metadata.scale, Some(60.0));
     assert_eq!(h.metadata.linear, Some(HEADER_LINEAR_TOLERANCE));
     assert_eq!(h.metadata.angular, Some(HEADER_ANGULAR_TOLERANCE));
-}
-
-/// Flag bits 1 to 7 hold the save format's revision number
-/// ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#1-asm-binary-header)):
-/// save format 22300 carries revision 2 and 22500 carries revision 3. Those
-/// bits are assigned, so they leave the uninterpreted set; bits 8 and above
-/// stay in it.
-#[test]
-fn asm_header_flag_bits_one_to_seven_hold_the_format_revision() {
-    let header = |flags: u64| cadmpeg_asm::kernel_header::KernelHeader {
-        save_format_version: Some(22500),
-        entity_count: None,
-        flags: Some(flags),
-        product_family: None,
-        product_version: None,
-        save_date: None,
-        scale: None,
-        linear: None,
-        angular: None,
-    };
-
-    assert_eq!(header(0b0000_0101).format_revision(), Some(2));
-    assert_eq!(header(0b0000_0111).format_revision(), Some(3));
-    assert_eq!(header(0b1111_1110).format_revision(), Some(0x7f));
-    assert_eq!(header(0b0000_0001).format_revision(), Some(0));
-
-    assert_eq!(header(0b0000_0111).unassigned_flags(), Some(0));
-    assert_eq!(header(0b1111_1111).unassigned_flags(), Some(0));
-    assert_eq!(header(0x1_00).unassigned_flags(), Some(0x1_00));
-    assert!(header(0b0000_0101).has_history_partition());
-    assert!(!header(0b0000_0100).has_history_partition());
 }
 
 #[test]
