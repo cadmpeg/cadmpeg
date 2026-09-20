@@ -3,6 +3,3 @@
 /// Checked A8 knot lanes.
 mod knot_lane;
 pub(crate) mod records;
-
-#[cfg(test)]
-mod tests;

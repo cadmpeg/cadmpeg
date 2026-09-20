@@ -545,7 +545,7 @@ impl B2UseMetadata {
 /// Byte-level metadata from a class-`0x5e` consolidated record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]
-pub(in crate::families::b2) struct B2EdgeMetadata {
+struct B2EdgeMetadata {
     /// Record byte offset.
     pos: usize,
     /// Complete payload bytes.
@@ -633,7 +633,7 @@ pub(in crate::families) fn b2_use_metadata_from_records(
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
+fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
     b_family_frames(data, 0x5e)
         .into_iter()
         .map(|frame| {
@@ -787,7 +787,7 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
+fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
     b2_reference_lists_from_records(data, &records)
 }
@@ -823,7 +823,7 @@ pub(crate) fn b2_reference_lists_from_records(
 /// reference lane and leaves a nonempty class-specific tail.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
+fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
     let records = consolidated_records(data);
     b2_counted_owners_from_records(data, &records)
 }
@@ -865,7 +865,7 @@ pub(crate) fn b2_counted_owners_from_records(
 /// tail consume the complete frame.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
+fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     let records = consolidated_records(data);
     b2_owner_packets_from_records(data, &records)
 }
@@ -1335,7 +1335,7 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 /// returned.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
+fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
     b2_counted_61_from_records(data, &records)
 }
@@ -1373,7 +1373,7 @@ pub(crate) fn b2_counted_61_from_records(
 /// monotone member-list boundary without searching for delimiter bytes.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
+fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
     b2_long_61_from_records(data, &records)
 }
@@ -1438,7 +1438,7 @@ pub(crate) fn b2_long_61_from_records(
 /// opaque until a source-closed field relation is established.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
+fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
     b2_class5b5c_records_from_records(data, &records)
 }
@@ -1468,7 +1468,7 @@ pub(crate) fn b2_class5b5c_records_from_records(
 /// Decode structurally complete class-`0x5f` nodes.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
+fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
     let records = consolidated_records(data);
     b2_face_nodes_5f_from_records(data, &records)
 }
@@ -1513,7 +1513,7 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records(
 /// target.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
+fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
     b2_adjacent_face_owners_from_records(data, &records)
 }
@@ -1554,7 +1554,7 @@ pub(crate) fn b2_adjacent_face_owners_from_records(
 /// final identity is the checked successor of the node target.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
+fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
     b2_adjacent_face_counted_owners_from_records(data, &records)
 }
@@ -1593,7 +1593,7 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
 /// Decode width-coded `b2/b3/b4 03 18` parameter-space records.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
+fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     let records = consolidated_records(data);
     b2_parameter_points_from_records(data, &records)
 }
@@ -1888,7 +1888,7 @@ pub(crate) struct B2Circle {
 #[cfg(test)]
 impl B2Circle {
     /// Whether the interval spans one complete circumference.
-    pub(super) fn full_circle(&self) -> bool {
+    fn full_circle(&self) -> bool {
         circle_range_is_full_turn(self.radius.get(), self.range.get())
     }
 }
@@ -1928,7 +1928,7 @@ pub(in crate::families) struct B2SpatialCircle {
 /// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
+fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
     let records = consolidated_records(data);
     b2_spatial_circles_from_records(data, &records)
 }
@@ -1987,7 +1987,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 /// knot limits occur twice and the second pair must reproduce the first pair.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
+fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
     let records = consolidated_records(data);
     b2_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
@@ -2270,7 +2270,7 @@ pub(crate) struct B2Torus {
 /// Constant `b2 03 65` separator preceding a typed group opener.
 #[derive(Debug, Clone)]
 #[cfg(test)]
-pub(in crate::families::b2) struct B2GroupSeparator {
+struct B2GroupSeparator {
     /// Consolidated-frame header token.
     pub(super) token: u32,
 }
@@ -2300,7 +2300,7 @@ pub(crate) struct B2EmbeddedCylinder {
 /// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
+fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
     let records = consolidated_records(data);
     b2_embedded_cylinders_from_records(data, &records)
 }
@@ -2434,7 +2434,7 @@ fn b2_construction_offset_supports_from_records(
 /// Decode `b2 03 29` analytic cone charts.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
+fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     let records = consolidated_records(data);
     b2_cones_from_records(data, &records)
 }
@@ -2511,7 +2511,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
+fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let records = consolidated_records(data);
     b2_revolutions_from_records(data, &records)
 }
@@ -2608,7 +2608,7 @@ pub(crate) fn b2_revolutions_from_records(
 /// unique stored parameter interval when no identity target is present.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
+fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
     let records = consolidated_records(data);
     b2_resolved_revolutions_from_records(data, &records)
 }
@@ -2661,7 +2661,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
 /// Decode exact B-family metric line profiles.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
+fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
     let records = consolidated_records(data);
     b2_line_profiles_from_records(data, &records)
 }
@@ -2693,7 +2693,7 @@ pub(crate) fn b2_line_profiles_from_records(
 /// Decode `b2 03 2b` doubly periodic torus charts.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
+fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
     let records = consolidated_records(data);
     b2_tori_from_records(data, &records)
 }
@@ -2768,7 +2768,7 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
 /// Decode `b2 03 2a` radius-scaled sphere charts.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
+fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
     let records = consolidated_records(data);
     b2_spheres_from_records(data, &records)
 }
@@ -2835,7 +2835,7 @@ pub(crate) fn b2_spheres_from_records(
 /// Decode constant `b2 03 65` group separators.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
+fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
     b_family_frames(data, 0x65)
         .into_iter()
         .filter(|frame| {
@@ -2850,7 +2850,7 @@ pub(super) fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
 /// Decode `b2 03 60` typed group openers.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_groups(data: &[u8]) -> Vec<B2Group> {
+fn b2_groups(data: &[u8]) -> Vec<B2Group> {
     let records = consolidated_records(data);
     b2_groups_from_records(data, &records)
 }
@@ -3064,7 +3064,7 @@ pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
 /// Decode `b2 03 19` arc-length circle supports.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
+fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
     let records = consolidated_records(data);
     b2_circles_from_records(data, &records)
 }
@@ -3138,7 +3138,7 @@ pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> 
 /// Decode structurally repeated `b2 03 23` edge-range packets.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
+fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
     let records = consolidated_records(data);
     b2_edge_parameters_from_records(data, &records)
 }
@@ -3178,7 +3178,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
 /// Decode `b2 03 31` offset-surface constructors.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
+fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
     let records = consolidated_records(data);
     b2_offset_supports_from_records(data, &records)
 }
@@ -3273,7 +3273,10 @@ pub(in crate::families) fn offset_support_carriers(
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.
 #[must_use]
 #[cfg(test)]
-pub(super) fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
+fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
     crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
 }
+
+#[cfg(test)]
+mod tests;

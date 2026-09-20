@@ -39,7 +39,7 @@ pub(crate) struct FreeformSurface {
 
 /// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PoleStorage {
+enum PoleStorage {
     /// Pole and weight grid occupy the payload after the mode byte.
     Inline,
     /// The fixed 141-byte surface tail begins immediately after the mode byte.
@@ -408,17 +408,17 @@ pub(in crate::families) struct A8SurfaceHeader {
     /// Whether the record selects rational weights.
     rational: bool,
     /// Whether poles occupy the payload or an external grid.
-    pub(super) pole_storage: PoleStorage,
+    pole_storage: PoleStorage,
 }
 
 impl A8SurfaceHeader {
     /// U pole count derived from degree and knot multiplicities.
-    pub(super) fn u_count(&self) -> Option<u32> {
+    fn u_count(&self) -> Option<u32> {
         self.u_knots.pole_count(self.u_degree)
     }
 
     /// V pole count derived from degree and knot multiplicities.
-    pub(super) fn v_count(&self) -> Option<u32> {
+    fn v_count(&self) -> Option<u32> {
         self.v_knots.pole_count(self.v_degree)
     }
 }
@@ -456,7 +456,7 @@ impl A8Pcurve {
     }
 
     #[cfg(test)]
-    pub(super) fn points(&self) -> Vec<[f64; 2]> {
+    fn points(&self) -> Vec<[f64; 2]> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
@@ -482,7 +482,7 @@ impl A8Pcurve {
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
 #[cfg(test)]
-pub(super) fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
+fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
     crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::A)
 }
@@ -503,7 +503,7 @@ pub(in crate::families) struct RollingBallSite {
 #[cfg(test)]
 impl RollingBallSite {
     /// Radius from the centre to the first limit.
-    pub(super) fn radius(&self) -> f64 {
+    fn radius(&self) -> f64 {
         distance(self.center, self.limit1)
     }
 }
@@ -535,7 +535,7 @@ pub(in crate::families) struct A5FreeformCurve {
 impl A5FreeformCurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub(super) fn knots(&self) -> Vec<f64> {
+    fn knots(&self) -> Vec<f64> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 }
@@ -659,7 +659,7 @@ pub(in crate::families) struct A5NurbsCurve {
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[must_use]
 #[cfg(test)]
-pub(super) fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
+fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
     let records = consolidated_records(data);
     a5_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
@@ -759,7 +759,7 @@ fn parse_a5_nurbs_curve(
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
 #[cfg(test)]
-pub(super) fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
+fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
     let records = consolidated_records(data);
     a5_guide_curves_from_records(data, &records)
 }
@@ -851,7 +851,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
 
 /// One knot of a common-form degree-5 rolling-ball jet.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct A8FreeformJet {
+struct A8FreeformJet {
     /// Distinct knot.
     knot: f64,
     /// Multiplicity of this distinct knot.
@@ -872,7 +872,7 @@ pub(in crate::families) struct A8FreeformCurve {
     /// Inline persistent object identifier.
     pub(in crate::families) object_id: u32,
     /// Knot-aligned jet samples.
-    pub(super) sites: Vec<A8FreeformJet>,
+    sites: Vec<A8FreeformJet>,
 }
 
 impl A8FreeformCurve {
@@ -1029,7 +1029,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[must_use]
 #[cfg(test)]
-pub(super) fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
+fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
     let records = consolidated_records(data);
     a5_freeform_curves_from_records(data, &records)
 }
@@ -1148,7 +1148,7 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
 /// Decode framed `a8 <flag> 20` UV jet records.
 #[must_use]
 #[cfg(test)]
-pub(super) fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
+fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     object_stream_frames(data)
         .into_iter()
         .filter(|frame| frame.class == 0x20 && data.get(frame.pos) == Some(&0xa8))
@@ -1312,7 +1312,7 @@ pub(in crate::families) fn resolved_a8_surfaces(
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
 #[must_use]
-pub(super) fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
+fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
     a8_frames(data, 0x34)
         .into_iter()
         .filter_map(|frame| {
@@ -1352,7 +1352,7 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
 /// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
 /// frame; its pcurve support reference must equal the surface object id.
 #[must_use]
-pub(super) fn a8_surface_from_external_grid(
+fn a8_surface_from_external_grid(
     data: &[u8],
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -1854,7 +1854,7 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
-pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
+fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let multiplicities = match degree {
         1 | 3 if distinct.len() >= 2 => {
             let mut values = vec![degree + 1];
@@ -1874,7 +1874,7 @@ pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)>
     Some((expand_knots(distinct, &multiplicities)?, count))
 }
 
-pub(super) fn a5_weights(
+fn a5_weights(
     bytes: &[u8],
     at: &mut usize,
     rows: usize,
@@ -1922,3 +1922,6 @@ pub(super) fn a5_weights(
         .all(|weight| weight.is_finite() && *weight != 0.0)
         .then_some(weights)
 }
+
+#[cfg(test)]
+mod tests;

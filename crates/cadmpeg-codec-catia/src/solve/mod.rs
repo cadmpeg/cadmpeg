@@ -10,6 +10,3 @@ pub(crate) mod mesh_gauge;
 pub(crate) mod mesh_quotient;
 pub(crate) mod missing_edge;
 pub(crate) mod union_find;
-
-#[cfg(test)]
-mod tests;

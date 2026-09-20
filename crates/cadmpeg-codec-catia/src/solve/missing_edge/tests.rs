@@ -330,3 +330,5 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
     });
     assert_eq!(solved, Some(vec![[0, 1]]));
 }
+
+mod ports_and_coverage;
