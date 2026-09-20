@@ -66,3 +66,22 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
     let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, f64::MAX)).unwrap();
     assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_none());
 }
+
+#[test]
+fn small_shears_are_not_similarities() {
+    use cadmpeg_ir::math::{Transform, Transform2};
+    for a in [1e-10, 1., 1e200] {
+        let shear = Transform::affine([
+            [a, 0.5 * a, 0., 0.],
+            [0., 0.75_f64.sqrt() * a, 0., 0.],
+            [0., 0., a, 0.],
+        ])
+        .unwrap();
+        let shear2 = Transform2::affine([[a, 0.5 * a, 0.], [0., 0.75_f64.sqrt() * a, 0.]]).unwrap();
+        assert!(!super::similarity_transform(&shear));
+        assert!(!super::similarity_transform_2d(&shear2));
+        let uniform =
+            Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
+        assert!(super::similarity_transform(&uniform));
+    }
+}

@@ -104,14 +104,16 @@ fn similarity_transform(transform: &Transform) -> bool {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10 * scale.max(1.0);
-    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        && columns
-            .iter()
-            .all(|column| (column.norm() - scale).abs() <= tolerance)
-        && columns[0].dot(columns[1]).abs() <= tolerance * scale
-        && columns[0].dot(columns[2]).abs() <= tolerance * scale
-        && columns[1].dot(columns[2]).abs() <= tolerance * scale
+    if !scale.is_finite() || scale <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12 {
+        return false;
+    }
+    let columns = columns.map(|v| Vector3::new(v.x / scale, v.y / scale, v.z / scale));
+    columns
+        .iter()
+        .all(|v| (v.norm() - 1.0).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10)
+        && columns[0].dot(columns[1]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
+        && columns[0].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
+        && columns[1].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.
@@ -137,10 +139,14 @@ fn similarity_transform_2d(transform: &Transform2) -> bool {
     let first = Point2::new(transform.rows()[0][0], transform.rows()[1][0]);
     let second = Point2::new(transform.rows()[0][1], transform.rows()[1][1]);
     let scale = first.u.hypot(first.v);
-    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10 * scale.max(1.0);
-    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12
-        && (second.u.hypot(second.v) - scale).abs() <= tolerance
-        && (first.u * second.u + first.v * second.v).abs() <= tolerance * scale
+    if !scale.is_finite() || scale <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12 {
+        return false;
+    }
+    let first = Point2::new(first.u / scale, first.v / scale);
+    let second = Point2::new(second.u / scale, second.v / scale);
+    (second.u.hypot(second.v) - 1.0).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10
+        && (first.u * second.u + first.v * second.v).abs()
+            <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10
 }
 
 fn axis2_placement_2d(e: &mut Emitter, location: Point2, x_axis: Point2) -> Option<Ref> {
