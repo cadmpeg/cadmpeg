@@ -69,20 +69,20 @@ impl StateStatus<&str, &[u8]> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OperationStateStatus<'a> {
+pub(in crate::om) struct OperationStateStatus<'a> {
     offset: usize,
     body: StateStatus<&'a str, &'a [u8]>,
 }
 
 impl<'a> OperationStateStatus<'a> {
     #[cfg(test)]
-    pub(crate) fn offset(self) -> usize {
+    fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end_offset(self) -> usize {
+    pub(super) fn end_offset(self) -> usize {
         self.offset + self.body.byte_len()
     }
-    pub(crate) fn body(self) -> StateStatus<&'a str, &'a [u8]> {
+    pub(super) fn body(self) -> StateStatus<&'a str, &'a [u8]> {
         self.body
     }
 }

@@ -76,7 +76,7 @@ impl ShiftedBinary32 {
         Ok(scalar)
     }
 
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let raw = <[u8; 4]>::try_from(bytes).ok()?;
         matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf).then_some(Self(raw))
     }
@@ -85,7 +85,7 @@ impl ShiftedBinary32 {
         self.0
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 4] {
+    pub(super) fn as_bytes(&self) -> &[u8; 4] {
         &self.0
     }
 
@@ -153,7 +153,7 @@ pub(crate) enum PayloadScalarAtom {
 }
 
 impl PayloadScalarAtom {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first()? {
             0 => Some(Self::Zero),
             0x40..=0x5f | 0xc0..=0xdf => ShiftedBinary32::read(bytes.get(..4)?).map(Self::Binary32),

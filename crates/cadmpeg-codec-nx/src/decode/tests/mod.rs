@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::DecodeOptions;
 
-pub(crate) fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
+fn options_in(mode: DecodeMode, container_only: bool) -> DecodeOptions {
     DecodeOptions {
         container_only,
         policy: cadmpeg_core::decode::DecodePolicy {

@@ -197,7 +197,7 @@ fn offset_store_control_counts(container: &Container) -> (usize, usize) {
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
 #[derive(Debug, Default)]
-pub(crate) struct Counts {
+struct Counts {
     points: usize,
     planes: usize,
     cylinders: usize,

@@ -104,7 +104,7 @@ pub(crate) struct MapEntries {
     rest: Vec<(u32, MapKind)>,
 }
 impl MapEntries {
-    pub(crate) fn last_kind(&self) -> u16 {
+    pub(super) fn last_kind(&self) -> u16 {
         self.rest.last().unwrap_or(&self.first).1.code()
     }
 }

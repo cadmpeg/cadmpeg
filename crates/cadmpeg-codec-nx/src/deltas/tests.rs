@@ -28,7 +28,7 @@ use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_
 use crate::test_support::test_streams::topology_partition_stream;
 use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
-pub(crate) fn deltas_body_revision(node_id: u32) -> Vec<u8> {
+fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     let mut revision = Vec::with_capacity(32);
     revision.extend_from_slice(&12u16.to_be_bytes());
     revision.extend_from_slice(&3u16.to_be_bytes());
@@ -40,7 +40,7 @@ pub(crate) fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     revision
 }
 
-pub(crate) fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
+fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
     let mut point = status_framed_deltas_point_stream();
     point[2..4].copy_from_slice(&xmt.to_be_bytes());
     point[20..28].copy_from_slice(&x.to_be_bytes());

@@ -9,106 +9,106 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub(super) struct CommonFrameWire {
     /// Globally unique common-frame identity.
-    pub id: String,
+    id: String,
     /// Owning bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Zero-based frame order within the operation payload.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Three compact prefix indices.
-    pub indices: [u32; 3],
+    indices: [u32; 3],
     /// Exact compact-index tokens in order.
-    pub raw_indices: [Vec<u8>; 3],
+    raw_indices: [Vec<u8>; 3],
     /// Fixed marker selecting the index layout.
-    pub marker: [u8; 3],
+    marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
     ///
     /// The first three bytes remain an untyped operation-state prefix. The
     /// admitted field mappings begin at byte three; callers must not treat the
     /// prefix, or any other state byte, as feature suppression without the
     /// separate serialized owner and typed-value joins.
-    pub state: [u8; 8],
+    state: [u8; 8],
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_legacy_inactive_modules"
     )]
-    pub legacy_inactive_modules: Option<bool>,
+    legacy_inactive_modules: Option<bool>,
     /// Whether the operation modifies Parasolid data, when the stored field is boolean.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_modifies_parasolid_data"
     )]
-    pub modifies_parasolid_data: Option<bool>,
+    modifies_parasolid_data: Option<bool>,
     /// Exact two-byte `m_splitTrackingData` representation.
     #[serde(default)]
-    pub split_tracking_data: [u8; 2],
+    split_tracking_data: [u8; 2],
     /// Serialized operation group count.
     #[serde(default)]
-    pub group_count: u8,
+    group_count: u8,
     /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
+    local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: Vec<u8>,
     /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
+    object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
+    raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    data_block: Option<String>,
     /// Exact serialized frame byte length.
-    pub byte_len: u64,
+    byte_len: u64,
     /// Absolute offset of the first compact index token.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute offsets of the compact prefix-index tokens.
-    pub index_source_offsets: [u64; 3],
+    index_source_offsets: [u64; 3],
     /// Absolute offset of the first state byte.
-    pub state_source_offset: u64,
+    state_source_offset: u64,
     /// Absolute offset of the first local-ordinal token.
-    pub local_ordinal_source_offset: u64,
+    local_ordinal_source_offset: u64,
     /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    object_index_source_offset: u64,
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
 #[derive(Serialize, Deserialize)]
 pub(super) struct TerminalFrameWire {
     /// Globally unique frame identity.
-    pub id: String,
+    id: String,
     /// Owning bounded operation record.
-    pub operation_record: String,
+    operation_record: String,
     /// Exact common frame when it occurs immediately before this suffix.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_immediate_common_frame"
     )]
-    pub immediate_common_frame: Option<String>,
+    immediate_common_frame: Option<String>,
     /// Duplicated frame-local ordinal.
-    pub local_ordinal: u32,
+    local_ordinal: u32,
     /// Exact canonical token repeated for the local ordinal.
-    pub raw_local_ordinal: Vec<u8>,
+    raw_local_ordinal: Vec<u8>,
     /// Nullable object reference following the duplicated ordinal.
-    pub object_index: Option<u32>,
+    object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
-    pub raw_object_index: Vec<u8>,
+    raw_object_index: Vec<u8>,
     /// Unique target in the native offset-store data-block arena, when found.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_data_block"
     )]
-    pub data_block: Option<String>,
+    data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute offset of the object-reference token.
-    pub object_index_source_offset: u64,
+    object_index_source_offset: u64,
 }
 
 impl From<FeatureOperationCommonFrame> for CommonFrameWire {

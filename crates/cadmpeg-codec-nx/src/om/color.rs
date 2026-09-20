@@ -27,7 +27,7 @@ impl PaletteIndex {
         bytes[..width].to_vec()
     }
 
-    pub(crate) fn definition_token(self) -> ([u8; 2], usize) {
+    pub(super) fn definition_token(self) -> ([u8; 2], usize) {
         if self.0 < 128 {
             ([self.0, 0], 1)
         } else {
@@ -51,7 +51,7 @@ impl PaletteIndex {
         }
     }
 
-    pub(crate) fn read_display(raw: &[u8]) -> Option<Self> {
+    pub(super) fn read_display(raw: &[u8]) -> Option<Self> {
         match raw {
             [value @ 1..=127] | [0x80, value @ 128..=216] => Some(Self(*value)),
             _ => None,

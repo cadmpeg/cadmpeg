@@ -75,28 +75,28 @@
 //! crate-internal and reached only through the decode entry point.
 
 mod canonical_uuid;
-pub(crate) mod container;
-pub(crate) mod decode;
-pub(crate) mod deltas;
+mod container;
+mod decode;
+mod deltas;
 mod dialect;
-pub(crate) mod evaluation;
+mod evaluation;
 mod framing;
-pub(crate) mod geometry;
-pub(crate) mod intersection;
+mod geometry;
+mod intersection;
 mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.
-pub(crate) mod layout;
+mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
-pub(crate) mod loss;
-pub(crate) mod native;
-pub(crate) mod nurbs;
-pub(crate) mod om;
-pub(crate) mod om_tokens;
-pub(crate) mod parasolid;
+mod loss;
+mod native;
+mod nurbs;
+mod om;
+mod om_tokens;
+mod parasolid;
 mod payload_text;
 mod printable_string;
-pub(crate) mod topology;
+mod topology;
 mod vec3_at;
 
 #[doc(hidden)]
@@ -344,4 +344,4 @@ mod golden_tests;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
-pub(crate) mod test_support;
+mod test_support;

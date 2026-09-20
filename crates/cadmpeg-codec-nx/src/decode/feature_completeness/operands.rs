@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 /// Non-zero hole-axis direction acceptance.
 const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
 
-pub(crate) fn hole_feature_is_incomplete(
+pub(in crate::decode) fn hole_feature_is_incomplete(
     profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
     placements: Option<&[cadmpeg_ir::features::holes::HolePlacement]>,
@@ -65,7 +65,7 @@ pub(crate) fn hole_feature_is_incomplete(
         || extent.is_none_or(termination_is_incomplete)
 }
 
-pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bool {
+fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bool {
     let treatment_diameter_is_incomplete = |diameter: cadmpeg_ir::scalar::PositiveLength| {
         bore_diameter.is_none_or(|bore| diameter.get() <= bore.get())
     };
@@ -88,7 +88,7 @@ pub(crate) fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Len
     }
 }
 
-pub(crate) fn extrude_extent_is_incomplete(
+pub(in crate::decode) fn extrude_extent_is_incomplete(
     extent: &ExtrudeExtent,
     dependencies: &[FeatureId],
 ) -> bool {
@@ -106,7 +106,7 @@ pub(crate) fn extrude_extent_is_incomplete(
     }
 }
 
-pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
+pub(in crate::decode) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     match start {
         ExtrudeStart::Unresolved {} => true,
         ExtrudeStart::FromFace { face, offset } => {
@@ -118,7 +118,7 @@ pub(crate) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     }
 }
 
-pub(crate) fn revolve_feature_is_incomplete(
+pub(in crate::decode) fn revolve_feature_is_incomplete(
     construction: &RevolveConstruction,
     op: BooleanOp,
     dependencies: &[FeatureId],
@@ -154,7 +154,7 @@ pub(crate) fn revolve_feature_is_incomplete(
         || matches!(op, BooleanOp::Unresolved)
 }
 
-pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool {
+pub(in crate::decode) fn termination_is_incomplete(termination: &LinearTermination) -> bool {
     match termination {
         LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, offset } => {
@@ -184,7 +184,7 @@ pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool
     }
 }
 
-pub(crate) fn termination_dependency_is_incomplete(
+pub(in crate::decode) fn termination_dependency_is_incomplete(
     termination: &LinearTermination,
     dependencies: &[FeatureId],
 ) -> bool {
@@ -238,7 +238,10 @@ fn angular_termination_dependency_is_incomplete(
     )
 }
 
-pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: BooleanOp) -> bool {
+pub(in crate::decode) fn rib_feature_is_incomplete(
+    construction: &RibConstruction,
+    op: BooleanOp,
+) -> bool {
     construction
         .profile
         .as_ref()
@@ -250,7 +253,7 @@ pub(crate) fn rib_feature_is_incomplete(construction: &RibConstruction, op: Bool
         || matches!(op, BooleanOp::Unresolved)
 }
 
-pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
+pub(in crate::decode) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     match mode {
         SweepMode::Unresolved {} => true,
         SweepMode::Solid {
@@ -261,7 +264,7 @@ pub(crate) fn sweep_mode_is_incomplete(mode: SweepMode) -> bool {
     }
 }
 
-pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
+pub(in crate::decode) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) -> bool {
     match orientation {
         SweepOrientation::Auxiliary { path, .. } => path_ref_is_incomplete(path),
         SweepOrientation::GuideSurface { faces } => face_selection_is_incomplete(faces),
@@ -272,7 +275,9 @@ pub(crate) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
     }
 }
 
-pub(crate) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::CompositeStages>(
+pub(in crate::decode) fn pattern_is_incomplete<
+    C: cadmpeg_ir::features::patterns::CompositeStages,
+>(
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
@@ -396,7 +401,7 @@ pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {
     }
 }
 
-pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
+pub(in crate::decode) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     match selection {
         FaceSelection::Unresolved
         | FaceSelection::Generated { .. }
@@ -409,7 +414,7 @@ pub(crate) fn face_selection_is_incomplete(selection: &FaceSelection) -> bool {
     }
 }
 
-pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
+pub(in crate::decode) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
     match selection {
         EdgeSelection::Unresolved
         | EdgeSelection::Generated { .. }
@@ -423,7 +428,7 @@ pub(crate) fn edge_selection_is_incomplete(selection: &EdgeSelection) -> bool {
     }
 }
 
-pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
+pub(in crate::decode) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     match profile {
         ProfileRef::SpatialSketchSelection { .. } => true,
         ProfileRef::SpatialSketchProfiles { .. } => false,
@@ -431,7 +436,7 @@ pub(crate) fn profile_ref_is_incomplete(profile: &ProfileRef) -> bool {
     }
 }
 
-pub(crate) fn planar_profile_ref_is_incomplete(profile: &PlanarProfileRef) -> bool {
+pub(in crate::decode) fn planar_profile_ref_is_incomplete(profile: &PlanarProfileRef) -> bool {
     match profile {
         PlanarProfileRef::Unresolved(_)
         | PlanarProfileRef::Native(_)
@@ -450,7 +455,7 @@ pub(crate) fn planar_profile_ref_is_incomplete(profile: &PlanarProfileRef) -> bo
     }
 }
 
-pub(crate) fn profile_dependency_is_incomplete(
+pub(in crate::decode) fn profile_dependency_is_incomplete(
     profile: &ProfileRef,
     dependencies: &[FeatureId],
 ) -> bool {
@@ -462,7 +467,7 @@ pub(crate) fn profile_dependency_is_incomplete(
     }
 }
 
-pub(crate) fn planar_profile_dependency_is_incomplete(
+pub(in crate::decode) fn planar_profile_dependency_is_incomplete(
     profile: &PlanarProfileRef,
     dependencies: &[FeatureId],
 ) -> bool {
@@ -475,7 +480,7 @@ pub(crate) fn planar_profile_dependency_is_incomplete(
     }
 }
 
-pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
+pub(in crate::decode) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
     match section {
         LoftSection::Profile(profile) => profile_ref_is_incomplete(profile),
         LoftSection::Point(LoftPointSection::Native(_)) => true,
@@ -484,11 +489,11 @@ pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
     }
 }
 
-pub(crate) fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
+fn selection_ids_are_incomplete<T: Ord>(ids: &[T]) -> bool {
     ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
 }
 
-pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
+pub(in crate::decode) fn path_ref_is_incomplete(path: &PathRef) -> bool {
     match path {
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
             true

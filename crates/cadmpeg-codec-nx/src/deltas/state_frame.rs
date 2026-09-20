@@ -20,10 +20,10 @@ pub(crate) struct ReferenceStateFrame {
 pub(crate) struct StateFrames(Vec<ReferenceStateFrame>);
 
 impl StateFrames {
-    pub(crate) fn new(first: ReferenceStateFrame) -> Self {
+    pub(super) fn new(first: ReferenceStateFrame) -> Self {
         Self(vec![first])
     }
-    pub(crate) fn push(&mut self, frame: ReferenceStateFrame) {
+    pub(super) fn push(&mut self, frame: ReferenceStateFrame) {
         self.0.push(frame);
     }
     #[cfg(test)]

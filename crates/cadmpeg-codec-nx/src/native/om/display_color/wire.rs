@@ -172,11 +172,11 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct RmDisplayColorAssignmentWire {
     /// Globally unique assignment identity.
-    pub id: String,
+    id: String,
     /// Zero-based source order.
-    pub ordinal: u32,
+    ordinal: u32,
     /// Complete self-framed row carrying the color token.
-    pub encoding: RmDisplayColorAssignmentEncoding,
+    encoding: RmDisplayColorAssignmentEncoding,
     /// Member addressed by the row target index when it resolves in the
     /// `RMFastLoad` object-ID table.
     #[serde(
@@ -184,19 +184,19 @@ pub(super) struct RmDisplayColorAssignmentWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_target_object_id"
     )]
-    pub target_object_id: Option<String>,
+    target_object_id: Option<String>,
     /// One-based part palette index.
-    pub color_index: u16,
+    color_index: u16,
     /// Target in `part_color_definitions`.
-    pub color_definition: String,
+    color_definition: String,
     /// Exact color-index token.
-    pub raw_color_index: Vec<u8>,
+    raw_color_index: Vec<u8>,
     /// Owning directory entry.
-    pub source_entry: String,
+    source_entry: String,
     /// Absolute color-token offset.
-    pub source_offset: u64,
+    source_offset: u64,
     /// Absolute row-opener offset.
-    pub row_source_offset: u64,
+    row_source_offset: u64,
 }
 
 impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {

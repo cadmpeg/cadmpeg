@@ -40,7 +40,7 @@ pub(crate) struct AuditTrailRow {
 }
 
 impl AuditTrailRow {
-    pub(crate) fn new(base: usize, at: usize, record: AuditRecord) -> Option<Self> {
+    pub(super) fn new(base: usize, at: usize, record: AuditRecord) -> Option<Self> {
         base.checked_add(at.checked_add(record.byte_len())?)?;
         Some(Self { record, base, at })
     }
@@ -52,10 +52,10 @@ impl AuditTrailRow {
         self.base + self.at
     }
     #[cfg(test)]
-    pub(crate) fn end_offset(self) -> usize {
+    pub(super) fn end_offset(self) -> usize {
         self.base + self.local_end()
     }
-    pub(crate) fn local_end(self) -> usize {
+    pub(super) fn local_end(self) -> usize {
         self.at + self.record.byte_len()
     }
 }

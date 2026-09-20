@@ -19,7 +19,7 @@ impl<O: Copy> JournalRow<O> {
     pub(crate) fn offset(self) -> O {
         self.offset
     }
-    pub(crate) fn timestamp(self) -> u32 {
+    pub(super) fn timestamp(self) -> u32 {
         self.timestamp
     }
     pub(crate) fn value(self) -> StateTaggedValue {
@@ -31,13 +31,13 @@ impl<O: Copy> JournalRow<O> {
     pub(crate) fn ordinal(self) -> StateIndexToken {
         self.ordinal
     }
-    pub(crate) fn byte_len(self) -> usize {
+    pub(super) fn byte_len(self) -> usize {
         6 + self.value.raw().len() + self.schema.raw().len() + self.ordinal.raw().len()
     }
 }
 
 impl JournalRow<usize> {
-    pub(crate) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], at: usize, end: usize, base: usize) -> Option<Self> {
         let tail = bytes.get(at..end)?;
         if tail.first() != Some(&0xe0) {
             return None;
@@ -63,7 +63,7 @@ impl JournalRow<usize> {
         })
     }
 
-    pub(crate) fn into_absolute(self, base: u64) -> Option<JournalRow> {
+    pub(super) fn into_absolute(self, base: u64) -> Option<JournalRow> {
         JournalRow::new(
             base.checked_add(u64::try_from(self.offset).ok()?)?,
             self.timestamp,
@@ -96,7 +96,7 @@ impl JournalRow {
         Ok(row)
     }
 
-    pub(crate) fn end_offset(self) -> u64 {
+    pub(super) fn end_offset(self) -> u64 {
         self.offset + self.byte_len() as u64
     }
 }

@@ -163,7 +163,7 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
     file
 }
 
-pub(crate) fn cfb_directory_entry(
+fn cfb_directory_entry(
     directory: &mut [u8],
     index: usize,
     name: &str,
@@ -186,7 +186,7 @@ pub(crate) fn cfb_directory_entry(
     entry[120..128].copy_from_slice(&size.to_le_bytes());
 }
 
-pub(crate) fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
+fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
     let start = (sector + 1) * 512;
     &mut file[start..start + 512]
 }

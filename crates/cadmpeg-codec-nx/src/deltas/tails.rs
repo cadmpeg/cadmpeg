@@ -37,7 +37,7 @@ pub(crate) struct TerminalNullReferences {
     form: NullTailForm,
 }
 impl TerminalNullReferences {
-    pub(crate) fn at_end(stream: &[u8]) -> Option<Self> {
+    pub(super) fn at_end(stream: &[u8]) -> Option<Self> {
         [NullTailForm::Four, NullTailForm::Two]
             .into_iter()
             .find_map(|form| {
@@ -50,7 +50,7 @@ impl TerminalNullReferences {
     pub(crate) fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end(self) -> usize {
+    pub(super) fn end(self) -> usize {
         self.offset + self.form.raw().len()
     }
     pub(crate) fn form(self) -> NullTailForm {
@@ -121,7 +121,7 @@ pub(crate) struct TermUseNumericTail {
     values: NumericTailValues,
 }
 impl TermUseNumericTail {
-    pub(crate) fn read(
+    pub(super) fn read(
         stream: &[u8],
         offset: usize,
         term_use_xmt: u32,
@@ -144,10 +144,10 @@ impl TermUseNumericTail {
     pub(crate) fn offset(&self) -> usize {
         self.offset
     }
-    pub(crate) fn end(&self) -> usize {
+    pub(super) fn end(&self) -> usize {
         self.offset + self.values().byte_len()
     }
-    pub(crate) fn values(&self) -> &NumericTailValues {
+    pub(super) fn values(&self) -> &NumericTailValues {
         &self.values
     }
     pub(crate) fn into_values(self) -> NumericTailValues {

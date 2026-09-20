@@ -62,7 +62,7 @@ impl<T, O> IndexRow<T, O> {
     fn indices_start(&self) -> u8 {
         INDEX_PREFIX.len() as u8 + width(self.first_index) + INDEX_MIDDLE.len() as u8 + 1
     }
-    pub(crate) fn byte_len(&self) -> u8 {
+    fn byte_len(&self) -> u8 {
         self.indices_start()
             + self
                 .indices
@@ -138,7 +138,7 @@ impl<T, O> LinkedRow<T, O> {
             + width(self.target_index.atom)
             + TARGET_MIDDLE.len() as u8
     }
-    pub(crate) fn byte_len(&self) -> u8 {
+    fn byte_len(&self) -> u8 {
         self.indices_start()
             + self
                 .indices
@@ -241,7 +241,7 @@ impl<T, O> TargetRow<T, O> {
     fn indices_start(&self) -> u8 {
         TARGET_PREFIX.len() as u8 + width(self.target_index.atom) + TARGET_MIDDLE.len() as u8
     }
-    pub(crate) fn byte_len(&self) -> u8 {
+    fn byte_len(&self) -> u8 {
         self.indices_start()
             + self
                 .indices

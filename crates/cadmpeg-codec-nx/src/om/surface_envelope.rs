@@ -58,10 +58,10 @@ impl SurfaceFeaturePayloadReferenceField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ThruCurvePayloadReferenceField {
-    pub discriminator: NonZeroU8,
-    pub controls: ThruCurveControls,
-    pub trailing_control: NonZeroU8,
-    pub trailing_value: [u8; 2],
+    pub(crate) discriminator: NonZeroU8,
+    pub(crate) controls: ThruCurveControls,
+    pub(crate) trailing_control: NonZeroU8,
+    pub(crate) trailing_value: [u8; 2],
     origin: u64,
     tokens: [PayloadIndexToken; 9],
 }
@@ -70,7 +70,7 @@ impl ThruCurvePayloadReferenceField {
     pub(crate) fn origin(&self) -> u64 {
         self.origin
     }
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         23 + self
             .tokens
             .iter()

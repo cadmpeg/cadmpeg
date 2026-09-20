@@ -72,7 +72,7 @@ pub(crate) fn attach_test_body_surface(
     });
 }
 
-pub(crate) fn be_f64(v: f64) -> [u8; 8] {
+fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 

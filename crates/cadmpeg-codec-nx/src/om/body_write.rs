@@ -9,7 +9,7 @@ use std::ops::Add;
 pub(crate) struct BodyWriteIndex(StateIndexToken);
 
 impl BodyWriteIndex {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let token = StateIndexToken::read_at(bytes, 0)?;
         let canonical = matches!(
             (token.value(), token.raw()),
@@ -101,7 +101,7 @@ impl<O: Copy + Add<Output = O> + From<u8>> BodyWriteFrame<O> {
     pub(crate) fn body_image_offset(&self) -> O {
         self.offset + O::from(8 + self.group_node.raw().len() as u8)
     }
-    pub(crate) fn end_offset(&self) -> O {
+    pub(super) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())
     }
 }

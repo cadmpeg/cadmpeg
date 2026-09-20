@@ -22,7 +22,7 @@ impl TryFrom<u8> for SupportUvPacking {
     }
 }
 impl SupportUvPacking {
-    pub(crate) fn marker(self) -> u8 {
+    fn marker(self) -> u8 {
         match self {
             Self::Form2 => 2,
             Self::Form3 => 3,
@@ -60,7 +60,7 @@ impl SupportUvValues {
     pub(crate) fn marker(&self) -> u8 {
         self.packing.marker()
     }
-    pub(crate) fn packing(&self) -> SupportUvPacking {
+    pub(super) fn packing(&self) -> SupportUvPacking {
         self.packing
     }
     pub(crate) fn values(&self) -> &[f64] {
@@ -70,7 +70,7 @@ impl SupportUvValues {
         self.values
     }
 
-    pub(crate) fn support_uv(&self, sample_count: usize) -> SupportUv {
+    pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
         let first = self
             .values()
             .chunks_exact(self.packing.width())

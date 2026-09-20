@@ -136,7 +136,7 @@ impl RosterIndex {
 
 /// One ordered component use referencing a reusable fast-load prototype.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FastLoadComponentOccurrence {
+pub(super) struct FastLoadComponentOccurrence {
     /// Globally unique occurrence identity.
     pub(super) id: String,
     /// Zero-based position in the serialized occurrence table.
@@ -165,7 +165,7 @@ impl FastLoadComponentOccurrence {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct FastLoadComponentOccurrenceWire {
+pub(in crate::native) struct FastLoadComponentOccurrenceWire {
     id: String,
     ordinal: u32,
     occurrence_lane_form: OccurrenceLaneForm,

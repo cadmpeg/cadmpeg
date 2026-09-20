@@ -212,7 +212,7 @@ impl SourceChartData {
         }
     }
 
-    pub(crate) fn into_samples(
+    pub(super) fn into_samples(
         self,
         preamble: ChartPreamble,
     ) -> Option<(ChartSamples, super::SupportUv)> {

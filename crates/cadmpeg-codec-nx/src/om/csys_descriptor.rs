@@ -41,7 +41,7 @@ pub(crate) struct CsysDescriptor {
 }
 
 impl CsysDescriptor {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let mut candidate = None;
         let mut at = 0;
         while at < bytes.len() {

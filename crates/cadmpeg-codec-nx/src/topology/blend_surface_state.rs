@@ -104,7 +104,7 @@ pub(crate) struct BlendSurfaceState {
 }
 
 impl BlendSurfaceState {
-    pub(crate) fn from_metres(
+    pub(super) fn from_metres(
         supports: [u32; 2],
         spine: u32,
         offsets: [f64; 2],

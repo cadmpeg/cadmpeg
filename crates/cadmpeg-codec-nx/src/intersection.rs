@@ -360,7 +360,7 @@ pub(crate) fn scan_with_graph(
 
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
 #[cfg(test)]
-pub(crate) fn scan_with_auxiliary_replacements(
+fn scan_with_auxiliary_replacements(
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],

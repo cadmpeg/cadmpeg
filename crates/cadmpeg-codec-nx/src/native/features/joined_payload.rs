@@ -42,7 +42,7 @@ impl JoinedPayload {
         &self.bytes
     }
 
-    pub(super) fn source_spans(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
+    fn source_spans(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
         let mut at = 0;
         self.sources.iter().map(move |span| {
             let start = at;

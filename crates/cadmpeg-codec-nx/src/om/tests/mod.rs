@@ -14,7 +14,7 @@ fn unique_candidate_stops_after_second_hit() {
     assert_eq!(yielded, 2);
 }
 
-pub(crate) fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
+pub(super) fn message_bytes(text: &[u8], value: &[u8], count_or_severity: [u8; 2]) -> Vec<u8> {
     let declared_length = u8::try_from(text.len() + 2).expect("short synthesized message");
     let mut bytes = vec![0x03, declared_length];
     bytes.extend_from_slice(text);

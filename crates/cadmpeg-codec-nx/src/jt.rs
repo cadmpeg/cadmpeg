@@ -104,7 +104,7 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
 
 /// One of the six sextants of the Deering normal encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Sextant {
+enum Sextant {
     Zero,
     One,
     Two,
@@ -114,7 +114,7 @@ pub(crate) enum Sextant {
 }
 
 impl Sextant {
-    pub(crate) fn from_index(index: i32) -> Option<Self> {
+    fn from_index(index: i32) -> Option<Self> {
         match index {
             0 => Some(Self::Zero),
             1 => Some(Self::One),
@@ -144,10 +144,10 @@ impl Sextant {
 
 /// One of the eight octants of the Deering normal encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Octant(u32);
+struct Octant(u32);
 
 impl Octant {
-    pub(crate) fn new(octant: i32) -> Option<Self> {
+    fn new(octant: i32) -> Option<Self> {
         u32::try_from(octant)
             .ok()
             .filter(|value| *value < 8)
@@ -157,23 +157,23 @@ impl Octant {
 
 /// The bit width of a Deering angle code, between one and thirteen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct NormalBits(u8);
+struct NormalBits(u8);
 
 impl NormalBits {
-    pub(crate) fn new(bits: u8) -> Option<Self> {
+    fn new(bits: u8) -> Option<Self> {
         (1..=13).contains(&bits).then_some(Self(bits))
     }
 }
 
 /// A Deering angle code with the shift that widens it to a thirteen-bit index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct NormalCode {
+struct NormalCode {
     value: u32,
     shift: u8,
 }
 
 impl NormalCode {
-    pub(crate) fn new(code: i32, bits: NormalBits) -> Option<Self> {
+    fn new(code: i32, bits: NormalBits) -> Option<Self> {
         let value = u32::try_from(code)
             .ok()
             .filter(|value| *value < (1_u32 << bits.0))?;
@@ -188,7 +188,7 @@ impl NormalCode {
     }
 }
 
-pub(crate) fn deering_normal(
+fn deering_normal(
     sextant: Sextant,
     octant: Octant,
     theta: NormalCode,
@@ -516,7 +516,7 @@ pub(crate) fn decode_vertex_flags(
     Some((flags, 4usize.checked_add(byte_len)?))
 }
 
-pub(crate) fn dequantize_uniform(code: u32, range: [f32; 2], bits: u8) -> Option<f32> {
+fn dequantize_uniform(code: u32, range: [f32; 2], bits: u8) -> Option<f32> {
     if bits == 0
         || bits > 32
         || !range[0].is_finite()

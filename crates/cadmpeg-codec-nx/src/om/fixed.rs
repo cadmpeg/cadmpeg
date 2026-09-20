@@ -5,7 +5,7 @@
 pub(crate) struct Q155([u8; 7]);
 
 impl Q155 {
-    pub(crate) fn from_raw(raw: [u8; 7]) -> Self {
+    pub(super) fn from_raw(raw: [u8; 7]) -> Self {
         Self(raw)
     }
 
@@ -101,7 +101,7 @@ pub(crate) mod pair_wire {
 pub(crate) struct Q155LaneFrame;
 
 impl Q155LaneFrame {
-    pub(crate) const DISCRIMINATOR: [u8; 18] = [
+    pub(super) const DISCRIMINATOR: [u8; 18] = [
         0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
         0x00, 0x01, 0x00,
     ];

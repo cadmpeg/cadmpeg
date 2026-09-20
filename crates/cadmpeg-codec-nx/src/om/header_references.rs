@@ -59,7 +59,7 @@ const FIXED_HEADER_LEN: usize = 5 + 8 + 2;
 pub(crate) struct HeaderReferences(pub(crate) [Option<FeatureReferenceToken>; 4]);
 
 impl HeaderReferences {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
         let mut at = 0;
         let mut tokens = [None; 4];
         for token in &mut tokens {

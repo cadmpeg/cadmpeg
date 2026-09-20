@@ -20,7 +20,7 @@ pub(crate) const DELTAS_PREAMBLE: &[u8] =
 
 /// Append `count` deltas topology references, each the placeholder index `1`
 /// followed by a set status byte, matching the deltas record framing.
-pub(crate) fn push_reference_run(record: &mut Vec<u8>, count: usize) {
+fn push_reference_run(record: &mut Vec<u8>, count: usize) {
     for _ in 0..count {
         record.extend_from_slice(&1u16.to_be_bytes());
         record.push(1);
@@ -189,7 +189,7 @@ pub(crate) fn deltas_fin_partition_stream() -> Vec<u8> {
 /// Build a deltas analytic-surface partition record: the shared transmit
 /// preamble, a `type`/`xmt`/`node_id` header, a five-reference run, the `+`
 /// status marker, and the shape's big-endian `f64` payload values.
-pub(crate) fn deltas_analytic_partition_stream(
+fn deltas_analytic_partition_stream(
     type_code: u16,
     xmt: u16,
     node_id: u32,
@@ -236,17 +236,14 @@ pub(crate) fn deltas_offset_surface_partition_stream() -> Vec<u8> {
     stream
 }
 
-pub(crate) fn status_frame_compact_references(
-    mut record: Vec<u8>,
-    reference_offsets: &[usize],
-) -> Vec<u8> {
+fn status_frame_compact_references(mut record: Vec<u8>, reference_offsets: &[usize]) -> Vec<u8> {
     for &offset in reference_offsets.iter().rev() {
         record.insert(offset + 2, 1);
     }
     record
 }
 
-pub(crate) fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
+fn deltas_stream_with_record(record: Vec<u8>) -> Vec<u8> {
     let mut stream = DELTAS_PREAMBLE.to_vec();
     stream.extend(record);
     stream
@@ -313,7 +310,7 @@ pub(crate) fn deltas_surface_curve_partition_stream() -> Vec<u8> {
 }
 
 /// Point the single partition face record at geometry reference `reference`.
-pub(crate) fn link_partition_face(stream: &mut [u8], reference: u16) {
+pub(super) fn link_partition_face(stream: &mut [u8], reference: u16) {
     let face = stream
         .windows(4)
         .position(|window| window == [0, 14, 0, 4])
@@ -323,7 +320,7 @@ pub(crate) fn link_partition_face(stream: &mut [u8], reference: u16) {
 
 /// Point both the edge and fin topology records at geometry reference
 /// `reference`.
-pub(crate) fn link_partition_edge_and_fin(stream: &mut [u8], reference: u16) {
+fn link_partition_edge_and_fin(stream: &mut [u8], reference: u16) {
     for (kind, xmt, field) in [(16u8, 8u8, 24usize), (17, 7, 18)] {
         let record = stream
             .windows(4)

@@ -14,7 +14,7 @@ impl SketchScaledAtom {
         Self(raw)
     }
 
-    pub(crate) fn raw(self) -> [u8; 7] {
+    fn raw(self) -> [u8; 7] {
         self.0
     }
 
@@ -26,7 +26,7 @@ impl SketchScaledAtom {
         f64::from_be_bytes(encoded) * SKETCH_FIXED_ATOM_SCALE
     }
 
-    pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
+    fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
         let scalar = Self(raw);
         if scalar.value().to_bits() != value.to_bits() {
             return Err("values must match scaled shifted-binary64 raw_values");
@@ -38,8 +38,8 @@ impl SketchScaledAtom {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "MixedWire", into = "MixedWire")]
 pub(crate) struct SketchMixedScalars {
-    pub(crate) fixed: SketchScaledAtom,
-    pub(crate) binary32: ShiftedBinary32,
+    pub(super) fixed: SketchScaledAtom,
+    pub(super) binary32: ShiftedBinary32,
 }
 
 #[derive(Serialize, Deserialize)]

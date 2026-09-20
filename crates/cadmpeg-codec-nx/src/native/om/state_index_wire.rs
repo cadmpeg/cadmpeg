@@ -136,7 +136,7 @@ impl TryFrom<OmOperationStateCounterWire> for OmOperationStateCounter {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct OmOperationStateSlotWire {
+struct OmOperationStateSlotWire {
     ordinal: u32,
     object_index: Option<u32>,
     raw_object_index: Vec<u8>,

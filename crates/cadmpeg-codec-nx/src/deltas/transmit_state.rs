@@ -12,7 +12,7 @@ pub(crate) struct TransmitState {
 }
 
 impl TransmitState {
-    pub(crate) fn new(
+    pub(super) fn new(
         description: String,
         schema: String,
         references: [u32; 2],

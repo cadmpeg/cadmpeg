@@ -86,13 +86,13 @@ impl<'de, T: CountedValue + Deserialize<'de>> Deserialize<'de> for CountedValues
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct CountedLane<'a, T> {
+pub(super) struct CountedLane<'a, T> {
     bytes: &'a [u8],
     value: PhantomData<T>,
 }
 
 impl<'a, T: CountedValue> CountedLane<'a, T> {
-    pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
+    pub(super) fn new(bytes: &'a [u8]) -> Option<Self> {
         if bytes.is_empty() || !bytes.len().is_multiple_of(T::WIDTH) {
             return None;
         }
@@ -105,7 +105,7 @@ impl<'a, T: CountedValue> CountedLane<'a, T> {
         })
     }
 
-    pub(crate) fn materialize(self) -> Option<CountedValues<T>> {
+    pub(super) fn materialize(self) -> Option<CountedValues<T>> {
         self.bytes
             .chunks_exact(T::WIDTH)
             .map(T::read)

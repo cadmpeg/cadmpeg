@@ -44,7 +44,7 @@ impl SingleForm {
         }
     }
 
-    pub(crate) fn header(self) -> (u8, u8) {
+    fn header(self) -> (u8, u8) {
         match self {
             Self::Tag1b => (2, 0x1b),
             Self::Tag23 => (2, 0x23),
@@ -95,7 +95,7 @@ impl DoubleForm {
         }
     }
 
-    pub(crate) fn count(self) -> u8 {
+    fn count(self) -> u8 {
         match self {
             Self::CountTwo => 2,
             Self::CountThree => 3,
@@ -107,11 +107,11 @@ impl DoubleForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DatumPlanePayloadHeader {
     /// Payload control byte.
-    pub control: u8,
+    pub(crate) control: u8,
     /// Declared construction count.
-    pub declared_count: u8,
+    pub(crate) declared_count: u8,
     /// Tag selecting the following construction branch.
-    pub branch_tag: u8,
+    pub(crate) branch_tag: u8,
 }
 
 /// Exact construction references without redundant source positions.

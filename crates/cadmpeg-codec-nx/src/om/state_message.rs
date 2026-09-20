@@ -32,7 +32,7 @@ pub(crate) struct StateMessage<S> {
 }
 
 impl<S: AsRef<str>> StateMessage<S> {
-    pub(crate) fn byte_len(&self) -> usize {
+    pub(super) fn byte_len(&self) -> usize {
         usize::from(self.text.declared_length()) + 7 + self.value.raw().len()
     }
     pub(crate) fn severity(&self) -> Option<StateMessageSeverity> {
@@ -102,7 +102,7 @@ pub(crate) struct OperationStateMessage<'a> {
 }
 
 impl<'a> OperationStateMessage<'a> {
-    pub(crate) fn read(bytes: &'a [u8], at: usize, base: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &'a [u8], at: usize, base: usize) -> Option<Self> {
         if bytes.get(at) != Some(&0x03) {
             return None;
         }
@@ -133,7 +133,7 @@ impl<'a> OperationStateMessage<'a> {
     pub(crate) fn offset(self) -> usize {
         self.offset
     }
-    pub(crate) fn end_offset(self) -> usize {
+    pub(super) fn end_offset(self) -> usize {
         self.offset + self.body.byte_len()
     }
     pub(crate) fn body(self) -> StateMessage<&'a str> {

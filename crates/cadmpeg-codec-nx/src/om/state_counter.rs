@@ -29,13 +29,13 @@ impl<O: Copy> StateCounter<O> {
     pub(crate) fn modified(self) -> u8 {
         self.modified
     }
-    pub(crate) fn byte_len(self) -> usize {
+    fn byte_len(self) -> usize {
         5 + self.object.raw().len()
     }
 }
 
 impl StateCounter<usize> {
-    pub(crate) fn read(bytes: &[u8], at: usize, base: usize) -> Option<Self> {
+    fn read(bytes: &[u8], at: usize, base: usize) -> Option<Self> {
         let tail = bytes.get(at..)?;
         if tail.first() != Some(&0x05) {
             return None;
@@ -104,7 +104,7 @@ pub(crate) struct StateCounterMap {
 }
 
 impl StateCounterMap {
-    pub(crate) fn offset(&self) -> usize {
+    pub(super) fn offset(&self) -> usize {
         self.first[0].offset()
     }
 
@@ -118,7 +118,7 @@ impl StateCounterMap {
     /// state, state, 4e` rows whose remaining bounded tail is small enough to be
     /// an area footer. This end anchor prevents a syntactically valid short lane in
     /// an operation payload from becoming a state map.
-    pub(crate) fn read(bytes: &[u8], base_offset: usize) -> Option<Self> {
+    pub(super) fn read(bytes: &[u8], base_offset: usize) -> Option<Self> {
         const MAX_COUNTER_TAIL_BYTES: usize = 64;
         let mut best: Option<(usize, usize, usize)> = None;
         let mut run_start = 0;

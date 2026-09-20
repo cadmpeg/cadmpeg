@@ -39,9 +39,9 @@ pub(crate) enum ThruCurveGroupTerminator {
 }
 
 impl ThruCurveGroupTerminator {
-    pub(crate) const ALL: [Self; 2] = [Self::Separated, Self::Adjacent];
+    pub(super) const ALL: [Self; 2] = [Self::Separated, Self::Adjacent];
 
-    pub(crate) const fn bytes(self) -> &'static [u8] {
+    pub(super) const fn bytes(self) -> &'static [u8] {
         match self {
             Self::Separated => &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1],
             Self::Adjacent => &[0, 0, 0, 0, 0, 0, 0xff, 0xff, 1],

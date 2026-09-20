@@ -43,7 +43,7 @@ impl OmOperationStateStatus {
         self.source_offset + self.body.byte_len() as u64
     }
     #[cfg(test)]
-    pub(crate) fn body(&self) -> &StateStatus<String, Vec<u8>> {
+    pub(super) fn body(&self) -> &StateStatus<String, Vec<u8>> {
         &self.body
     }
 }
