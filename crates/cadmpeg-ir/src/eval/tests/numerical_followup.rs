@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: Apache-2.0
+use super::super::*;
+use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+
+#[test]
+fn numerical_followup_surface_projection_is_independent_of_scale() {
+    for scale in [1.0, 1e-5, 1e-100, 1e100] {
+        let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
+        let surface = NurbsSurface::from_lanes(
+            axis.clone(),
+            axis,
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0., 0., 0.), Point3::new(0., scale, 0.)],
+                    vec![Point3::new(scale, 0., 0.), Point3::new(scale, scale, 0.)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap();
+        let target = Point3::new(0.3 * scale, 0.4 * scale, 0.);
+        let uv = nurbs_surface_parameter_near_point(&surface, target, Some(Point2::new(0., 0.)))
+            .unwrap();
+        assert!((uv.u - 0.3).abs() <= 8.0 * f64::EPSILON);
+        assert!((uv.v - 0.4).abs() <= 8.0 * f64::EPSILON);
+    }
+}
+
+#[test]
+fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+        None,
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        nurbs_curve_parameter_near_point(&curve, Point3::new(0., 1e-200, 0.), 0., 0.),
+        None
+    );
+}
+
+#[test]
+fn numerical_followup_rational_search_retains_common_weight_scaling() {
+    let poles = vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)];
+    let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
+    for w in [1.0, 1e-200, 1e200, 1e308] {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            poles.clone(),
+            Some(vec![w, w]),
+            false,
+        )
+        .unwrap();
+        assert_eq!(nurbs_curve_speed_bound(&curve), Some(1.0));
+        assert_eq!(
+            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.),
+            Some(0.0)
+        );
+        assert_eq!(
+            nurbs_pcurve_contains_point(
+                1,
+                &[0., 0., 1., 1.],
+                &points,
+                Some(&[w, w]),
+                Point2::new(0.5, 0.),
+                0.
+            ),
+            Some(true)
+        );
+    }
+}
+
+#[test]
+fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![-1e308, -1e308, -9e307, -9e307],
+        vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+        None,
+        true,
+    )
+    .unwrap();
+    let mapped = map_nurbs_curve_parameter(&curve, 1e308).unwrap();
+    assert!((-1e308..-9e307).contains(&mapped));
+    assert_eq!(map_nurbs_curve_parameter(&curve, -9e307), Some(-1e308));
+}
+
+#[test]
+fn numerical_followup_sweep_quotient_retains_finite_derivatives() {
+    for denominator in [1e200, 1e-200] {
+        let expression = LawExpression::Algebraic {
+            operator: "DIV".into(),
+            operands: vec![
+                LawExpression::Text {
+                    value: cadmpeg_core::text::NonBlankString::new("X").unwrap(),
+                },
+                LawExpression::Double { value: denominator },
+            ],
+        };
+        let value = scalar_sweep_law_differential(&expression, 1.).unwrap();
+        assert_eq!(value.value, 1. / denominator);
+        assert_eq!(value.derivative, 1. / denominator);
+    }
+}
+
+#[test]
+fn numerical_followup_hyperbolic_laws_preserve_values_and_chain_derivatives() {
+    let tanh = scalar_unary_sweep_law_differential(
+        "TANH",
+        ScalarSweepDifferential {
+            value: 20.,
+            derivative: 1e20,
+        },
+    )
+    .unwrap();
+    let expected = 1e20 / 20.0_f64.cosh().powi(2);
+    assert!((tanh.derivative / expected - 1.).abs() <= 8. * f64::EPSILON);
+    for operator in ["ARCSINH", "ARCCOSH"] {
+        let result = scalar_unary_sweep_law_differential(
+            operator,
+            ScalarSweepDifferential {
+                value: 1e200,
+                derivative: 1e200,
+            },
+        )
+        .unwrap();
+        assert!((result.derivative - 1.).abs() <= 4. * f64::EPSILON);
+    }
+    let coth = scalar_unary_sweep_law_differential(
+        "ARCOTH",
+        ScalarSweepDifferential {
+            value: 1e20,
+            derivative: 1.,
+        },
+    )
+    .unwrap();
+    assert!((coth.value / 1e-20 - 1.).abs() <= 4. * f64::EPSILON);
+    let tail = scalar_unary_sweep_law_differential(
+        "TANH",
+        ScalarSweepDifferential {
+            value: 400.,
+            derivative: 1e300,
+        },
+    )
+    .unwrap();
+    assert!(tail.derivative > 0.0 && tail.derivative.is_finite());
+}

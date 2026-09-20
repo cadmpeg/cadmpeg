@@ -16,6 +16,8 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
+use crate::geometry::nurbs::bounds::speed_bound;
 use crate::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -24,7 +26,8 @@ use crate::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     SweepSurfaceLayout,
 };
-use crate::math::sum::scaled_ratio_products;
+use crate::math::solve::least_squares_step;
+use crate::math::sum::{scaled_ratio_products, ExactSignedSum};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
@@ -208,12 +211,6 @@ impl Ord for SurfacePatchQueueEntry {
     }
 }
 
-#[derive(Clone)]
-struct HomogeneousBezierSpan {
-    domain: [f64; 2],
-    controls: Vec<[f64; 4]>,
-}
-
 struct HomogeneousBezierSplit {
     left: Vec<[f64; 4]>,
     point: [f64; 4],
@@ -227,94 +224,6 @@ impl HomogeneousBezierSplit {
         self.right_reversed.reverse();
         (self.left, self.right_reversed)
     }
-}
-
-fn insert_homogeneous_knot(
-    degree: usize,
-    knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; 4]>,
-    knot: f64,
-) -> Option<()> {
-    let count = controls.len();
-    let span = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])?;
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
-    if multiplicity >= degree {
-        return Some(());
-    }
-    let mut inserted = alloc_filled(
-        count.checked_add(1)?,
-        [0.0; 4],
-        "IR homogeneous knot insertion",
-    )
-    .ok()?;
-    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
-    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
-    for index in span - degree + 1..=span - multiplicity {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return None;
-        }
-        let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
-            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
-        });
-    }
-    knots.insert(span + 1, knot);
-    *controls = inserted;
-    Some(())
-}
-
-fn homogeneous_bezier_spans(
-    degree: usize,
-    knots: &[f64],
-    mut controls: Vec<[f64; 4]>,
-) -> Option<Vec<HomogeneousBezierSpan>> {
-    if degree == 0 {
-        let mut spans = Vec::new();
-        for (index, window) in knots.windows(2).enumerate() {
-            if window[0] < window[1] {
-                spans.push(HomogeneousBezierSpan {
-                    domain: [window[0], window[1]],
-                    controls: vec![*controls.get(index)?],
-                });
-            }
-        }
-        return (!spans.is_empty()).then_some(spans);
-    }
-
-    let mut knots = knots.to_vec();
-    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
-    let mut internal = knots[degree + 1..controls.len()]
-        .iter()
-        .copied()
-        .filter(|knot| domain[0] < *knot && *knot < domain[1])
-        .collect::<Vec<_>>();
-    internal.sort_by(f64::total_cmp);
-    internal.dedup();
-    for knot in internal {
-        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            insert_homogeneous_knot(degree, &mut knots, &mut controls, knot)?;
-        }
-    }
-    let mut boundaries = knots[degree..=controls.len()].to_vec();
-    boundaries.sort_by(f64::total_cmp);
-    boundaries.dedup();
-    let spans = boundaries
-        .windows(2)
-        .enumerate()
-        .filter_map(|(index, domain)| {
-            (domain[0] < domain[1]).then(|| {
-                let start = index.checked_mul(degree)?;
-                Some(HomogeneousBezierSpan {
-                    domain: [domain[0], domain[1]],
-                    controls: controls.get(start..=start + degree)?.to_vec(),
-                })
-            })?
-        })
-        .collect::<Vec<_>>();
-    (!spans.is_empty()).then_some(spans)
 }
 
 fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezierSurfacePatch>> {
@@ -364,29 +273,10 @@ fn rational_surface_patches_with_budget(
         }
         None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
-    let homogeneous_controls = surface
-        .poles()
-        .into_iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * control.x,
-                weight * control.y,
-                weight * control.z,
-                weight,
-            ]
-        })
-        .collect::<Vec<_>>();
-    if homogeneous_controls
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return None;
-    }
+    let homogeneous_controls = positive_controls(&surface.poles(), &weights)?;
     let u_spans_by_v = (0..v_count)
         .map(|v| {
-            homogeneous_bezier_spans(
+            homogeneous_spans(
                 u_degree,
                 surface.u_knots(),
                 (0..u_count)
@@ -410,7 +300,7 @@ fn rational_surface_patches_with_budget(
         }
         let v_spans_by_u = (0..=u_degree)
             .map(|u_control| {
-                homogeneous_bezier_spans(
+                homogeneous_spans(
                     v_degree,
                     surface.v_knots(),
                     (0..v_count)
@@ -853,11 +743,7 @@ fn refine_nurbs_surface_parameters(
     v_domain: [f64; 2],
     budget: &WorkBudget<'_>,
 ) -> Option<Point2> {
-    let squared_distance = |position: Point3| {
-        (position.x - point.x).powi(2)
-            + (position.y - point.y).powi(2)
-            + (position.z - point.z).powi(2)
-    };
+    let distance = |position: Point3| position.distance(point);
     parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
     parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     for _ in 0..32 {
@@ -869,23 +755,11 @@ fn refine_nurbs_surface_parameters(
         );
         let partials =
             budgeted_nurbs_surface_partials(surface, parameters.u, parameters.v, budget)?;
-        let (du, dv) = (partials.du, partials.dv);
-        let du_squared = du.dot(du);
-        let mixed = du.dot(dv);
-        let dv_squared = dv.dot(dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite()
-            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
-        {
+        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
-        }
-        let du_residual = du.dot(residual);
-        let dv_residual = dv.dot(residual);
-        let step = Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
-        let current_distance = squared_distance(position);
+        };
+        let step = Point2::new(step_u, step_v);
+        let current_distance = distance(position);
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..16 {
@@ -895,7 +769,7 @@ fn refine_nurbs_surface_parameters(
             );
             let candidate_position =
                 budgeted_nurbs_surface_point(surface, candidate.u, candidate.v, budget)?;
-            if squared_distance(candidate_position) <= current_distance {
+            if distance(candidate_position) <= current_distance {
                 accepted = Some(candidate);
                 break;
             }
@@ -1333,11 +1207,11 @@ pub fn nurbs_surface_parameter_near_point(
             best?.0
         }
     };
-    let squared_distance = |left: Point3| left.distance(point).powi(2);
+    let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
         let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
-        let current_distance = squared_distance(partials.point);
-        if current_distance <= f64::EPSILON {
+        let current_distance = distance(partials.point);
+        if current_distance == 0.0 {
             return Some(parameters);
         }
         let residual = Vector3::new(
@@ -1345,19 +1219,10 @@ pub fn nurbs_surface_parameter_near_point(
             partials.point.y - point.y,
             partials.point.z - point.z,
         );
-        let du_squared = partials.du.dot(partials.du);
-        let mixed = partials.du.dot(partials.dv);
-        let dv_squared = partials.dv.dot(partials.dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
-        }
-        let du_residual = partials.du.dot(residual);
-        let dv_residual = partials.dv.dot(residual);
-        let step = Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
+        };
+        let step = Point2::new(step_u, step_v);
         let mut scale = 1.0;
         let mut accepted = false;
         for _ in 0..MAX_LINE_SEARCH_STEPS {
@@ -1366,7 +1231,7 @@ pub fn nurbs_surface_parameter_near_point(
                 (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
             );
             let candidate_point = nurbs_surface_point(surface, candidate.u, candidate.v)?;
-            if squared_distance(candidate_point) < current_distance {
+            if distance(candidate_point) < current_distance {
                 parameters = candidate;
                 accepted = true;
                 break;
@@ -1646,12 +1511,7 @@ pub fn nurbs_curve_parameter_near_point(
             Some(weights.as_ref()),
             parameter,
         )?;
-        Some(
-            ((position.x - point.x).powi(2)
-                + (position.y - point.y).powi(2)
-                + (position.z - point.z).powi(2))
-            .sqrt(),
-        )
+        Some(position.distance(point))
     };
     let seed = seed.clamp(domain[0], domain[1]);
     let boundaries = &curve.knots()[degree..=count];
@@ -1782,43 +1642,18 @@ fn nurbs_curve_speed_bound_about(
     weights: &[f64],
     origin: Point3,
 ) -> Option<f64> {
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let count = curve.control_points().len();
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
-    let radius = |control: &Point3| {
-        ((control.x - origin.x).powi(2)
-            + (control.y - origin.y).powi(2)
-            + (control.z - origin.z).powi(2))
-        .sqrt()
-    };
-    let maximum_weighted_radius = curve
+    let points = curve
         .control_points()
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| weight * radius(control))
-        .fold(0.0_f64, f64::max);
-    let mut maximum_numerator_speed = 0.0_f64;
-    let mut maximum_weight_speed = 0.0_f64;
-    for index in 0..count - 1 {
-        let denominator = curve.knots()[index + degree + 1] - curve.knots()[index + 1];
-        if denominator == 0.0 {
-            continue;
-        }
-        let factor = f64::from(curve.degree()) / denominator;
-        let first = curve.control_points()[index];
-        let second = curve.control_points()[index + 1];
-        let numerator_delta = Vector3::new(
-            weights[index + 1] * (second.x - origin.x) - weights[index] * (first.x - origin.x),
-            weights[index + 1] * (second.y - origin.y) - weights[index] * (first.y - origin.y),
-            weights[index + 1] * (second.z - origin.z) - weights[index] * (first.z - origin.z),
-        );
-        maximum_numerator_speed = maximum_numerator_speed.max(factor * numerator_delta.norm());
-        maximum_weight_speed =
-            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
-    }
-    let speed_bound = maximum_numerator_speed / minimum_weight
-        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
-    speed_bound.is_finite().then_some(speed_bound)
+        .into_iter()
+        .map(<[f64; 3]>::from)
+        .collect::<Vec<_>>();
+    speed_bound(
+        curve.degree(),
+        curve.knots(),
+        &points,
+        weights,
+        origin.into(),
+    )
 }
 
 fn interval_distance_to_parameter(interval: [f64; 2], parameter: f64) -> f64 {
@@ -1959,12 +1794,21 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f
     if !parameter.is_finite() {
         return None;
     }
-    if curve.periodic() {
-        let period = upper - lower;
-        Some(lower + (parameter - lower).rem_euclid(period))
-    } else {
-        (lower..=upper).contains(&parameter).then_some(parameter)
+    if !curve.periodic() && !(lower..=upper).contains(&parameter) {
+        return None;
     }
+    let mapped = periodic_parameter(
+        curve.knots(),
+        usize::try_from(curve.degree()).ok()?,
+        curve.pole_count(),
+        curve.periodic(),
+        parameter,
+    )?;
+    Some(if curve.periodic() && mapped == upper {
+        lower
+    } else {
+        mapped
+    })
 }
 
 /// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles.
@@ -2238,34 +2082,11 @@ pub fn nurbs_pcurve_contains_point(
         return None;
     }
 
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
-    let maximum_weighted_radius = control_points
+    let points = control_points
         .iter()
-        .zip(weights)
-        .map(|(control, weight)| weight * (control.u - point.u).hypot(control.v - point.v))
-        .fold(0.0_f64, f64::max);
-    let mut maximum_numerator_speed = 0.0_f64;
-    let mut maximum_weight_speed = 0.0_f64;
-    for index in 0..count - 1 {
-        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
-        if denominator == 0.0 {
-            continue;
-        }
-        let factor = f64::from(degree) / denominator;
-        let first_u = weights[index] * (control_points[index].u - point.u);
-        let first_v = weights[index] * (control_points[index].v - point.v);
-        let second_u = weights[index + 1] * (control_points[index + 1].u - point.u);
-        let second_v = weights[index + 1] * (control_points[index + 1].v - point.v);
-        maximum_numerator_speed =
-            maximum_numerator_speed.max(factor * (second_u - first_u).hypot(second_v - first_v));
-        maximum_weight_speed =
-            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
-    }
-    let speed_bound = maximum_numerator_speed / minimum_weight
-        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
-    if !speed_bound.is_finite() {
-        return None;
-    }
+        .map(|p| [p.u, p.v])
+        .collect::<Vec<_>>();
+    let speed_bound = speed_bound(degree, knots, &points, weights, [point.u, point.v])?;
 
     let domain = [knots[degree_usize], knots[count]];
     if domain[0] > domain[1] {
@@ -5086,12 +4907,16 @@ fn scalar_sweep_law_differential(
                     left.derivative * right.value + left.value * right.derivative,
                 ),
                 "DIV" if right.value != 0.0 => {
-                    let denominator = right.value * right.value;
-                    finite_sweep_differential(
-                        left.value / right.value,
-                        (left.derivative * right.value - left.value * right.derivative)
-                            / denominator,
-                    )
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_product(left.derivative, right.value);
+                    numerator.add_product(-left.value, right.derivative);
+                    let mut denominator = ExactSignedSum::default();
+                    denominator.add_product(right.value, right.value);
+                    let derivative = match numerator.finish() {
+                        Some(value) => value.quotient(denominator.finish()?)?,
+                        None => 0.0,
+                    };
+                    finite_sweep_differential(left.value / right.value, derivative)
                 }
                 _ => None,
             }
@@ -5110,6 +4935,46 @@ fn scalar_unary_sweep_law_differential(
     operand: ScalarSweepDifferential,
 ) -> Option<ScalarSweepDifferential> {
     let x = operand.value;
+    match operator {
+        "TANH" => {
+            let exponential = (-x.abs()).exp();
+            let mut numerator = ExactSignedSum::default();
+            numerator.add_factors([4.0, exponential, exponential, operand.derivative]);
+            let denominator =
+                crate::math::sum::scaled_finite((1.0 + exponential * exponential).powi(2))?;
+            let derivative = match numerator.finish() {
+                Some(value) => value.quotient(denominator)?,
+                None => 0.0,
+            };
+            return finite_sweep_differential(x.tanh(), derivative);
+        }
+        "ARCSINH" => {
+            return finite_sweep_differential(x.asinh(), operand.derivative / x.hypot(1.0))
+        }
+        "ARCCOSH" => {
+            if x <= 1.0 {
+                return None;
+            }
+            let denominator = if x < 2.0 {
+                ((x - 1.0) * (x + 1.0)).sqrt()
+            } else {
+                x * (1.0 - (1.0 / x).powi(2)).sqrt()
+            };
+            return finite_sweep_differential(x.acosh(), operand.derivative / denominator);
+        }
+        "ARCOTH" => {
+            if x.abs() <= 1.0 {
+                return None;
+            }
+            let inverse = 1.0 / x;
+            let denominator = ((x - 1.0) / x) * ((x + 1.0) / x);
+            let derivative =
+                crate::math::multiply_divide(operand.derivative / x, -inverse, denominator)?;
+            return finite_sweep_differential(inverse.atanh(), derivative);
+        }
+        _ => {}
+    }
+
     let derivative = match operator {
         "SIN" => x.cos(),
         "COS" => -x.sin(),
@@ -5131,7 +4996,6 @@ fn scalar_unary_sweep_law_differential(
         }
         "COSH" => x.sinh(),
         "SINH" => x.cosh(),
-        "TANH" => 1.0 - x.tanh() * x.tanh(),
         "COTH" => {
             let sinh = x.sinh();
             (sinh != 0.0).then_some(-1.0 / (sinh * sinh))?
@@ -5162,13 +5026,7 @@ fn scalar_unary_sweep_law_differential(
             let denominator = (x * x - 1.0).sqrt();
             (x.abs() > 1.0 && denominator > 0.0).then_some(-1.0 / (x.abs() * denominator))?
         }
-        "ARCCOSH" => {
-            let denominator = (x * x - 1.0).sqrt();
-            (x > 1.0 && denominator > 0.0).then_some(1.0 / denominator)?
-        }
-        "ARCSINH" => 1.0 / (1.0 + x * x).sqrt(),
         "ARCTANH" => (x.abs() < 1.0).then_some(1.0 / (1.0 - x * x))?,
-        "ARCOTH" => (x.abs() > 1.0).then_some(1.0 / (1.0 - x * x))?,
         "ARCSECH" => {
             let denominator = (1.0 - x * x).sqrt();
             (x > 0.0 && x < 1.0 && denominator > 0.0).then_some(-1.0 / (x * denominator))?
@@ -5199,7 +5057,6 @@ fn scalar_unary_sweep_law_differential(
             "CSC" => 1.0 / x.sin(),
             "COSH" => x.cosh(),
             "SINH" => x.sinh(),
-            "TANH" => x.tanh(),
             "COTH" => 1.0 / x.tanh(),
             "SECH" => 1.0 / x.cosh(),
             "CSCH" => 1.0 / x.sinh(),
@@ -5209,10 +5066,7 @@ fn scalar_unary_sweep_law_differential(
             "ARCOT" => std::f64::consts::FRAC_PI_2 - x.atan(),
             "ARCSEC" => (1.0 / x).acos(),
             "ARCCSC" => (1.0 / x).asin(),
-            "ARCCOSH" => x.acosh(),
-            "ARCSINH" => x.asinh(),
             "ARCTANH" => x.atanh(),
-            "ARCOTH" => 0.5 * ((x + 1.0) / (x - 1.0)).ln(),
             "ARCSECH" => (1.0 / x).acosh(),
             "ARCCSCH" => (1.0 / x).asinh(),
             "ABS" => x.abs(),

@@ -1698,3 +1698,45 @@ fn numerical_audit_similarity_orientation_survives_uniform_scale() {
     .unwrap();
     assert_eq!(super::similarity_orientation(skew), None);
 }
+
+#[test]
+fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
+    let knots = vec![0., 0., 0., 1., 1., 1., 2., 2., 2.];
+    let first = (0..6)
+        .map(|i| Point3::new(f64::from(i), 0., 0.))
+        .collect::<Vec<_>>();
+    let mut second = first.clone();
+    second[5].y = 4.;
+    let a = NurbsCurve::from_lanes(2, knots.clone(), first, None, false).unwrap();
+    let b = NurbsCurve::from_lanes(2, knots, second, None, false).unwrap();
+    assert_eq!(
+        homogeneous_curve_boundary_matches(&a, &b, [0., 2.], 0.),
+        Some(false)
+    );
+    for weight in [1., 1e-200, 1e200] {
+        let a = NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+            Some(vec![weight; 2]),
+            false,
+        )
+        .unwrap();
+        let b = NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(0., 2., 0.), Point3::new(1., 2., 0.)],
+            Some(vec![weight; 2]),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            homogeneous_curve_boundary_matches(&a, &b, [0., 1.], 0.001),
+            Some(false)
+        );
+        assert_eq!(
+            homogeneous_curve_boundary_matches(&a, &a, [0., 1.], 0.),
+            Some(true)
+        );
+    }
+}

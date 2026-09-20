@@ -51,7 +51,6 @@ mod tests {
     use super::Vector3;
     #[test]
     fn numerical_audit_least_squares_checks_rank_independent_of_column_scale() {
-        use cadmpeg_ir::math::Vector3;
         let tiny = Vector3::new(1.0e-200, 0.0, 0.0);
         let huge = Vector3::new(0.0, 1.0e200, 0.0);
         assert_eq!(

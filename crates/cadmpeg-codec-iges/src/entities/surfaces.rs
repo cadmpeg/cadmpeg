@@ -12,6 +12,9 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::nurbs::bezier::{
+    boundaries_within_resolution, homogeneous_spans, positive_controls, HomogeneousBezierSpan,
+};
 use cadmpeg_ir::geometry::{
     derive_reference_direction,
     nurbs::{
@@ -390,49 +393,6 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
         .map(|curve| &curve.geometry)
 }
 
-#[derive(Clone)]
-struct HomogeneousBezierSpan {
-    domain: [f64; 2],
-    controls: Vec<[f64; 4]>,
-}
-
-fn insert_homogeneous_curve_knot(
-    degree: usize,
-    knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; 4]>,
-    knot: f64,
-) -> Option<()> {
-    let count = controls.len();
-    let span = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])?;
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
-    if multiplicity >= degree {
-        return Some(());
-    }
-    let mut inserted = alloc_filled(
-        count.checked_add(1)?,
-        [0.0; 4],
-        "iges surface knot insertion",
-    )
-    .ok()?;
-    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
-    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
-    for index in span - degree + 1..=span - multiplicity {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return None;
-        }
-        let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
-            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
-        });
-    }
-    knots.insert(span + 1, knot);
-    *controls = inserted;
-    Some(())
-}
-
 fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let count = curve.control_points().len();
@@ -453,60 +413,8 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
     {
         return None;
     }
-    let mut controls = curve
-        .control_points()
-        .iter()
-        .zip(weights)
-        .map(|(point, weight)| [weight * point.x, weight * point.y, weight * point.z, weight])
-        .collect::<Vec<_>>();
-    if controls.iter().flatten().any(|value| !value.is_finite()) {
-        return None;
-    }
-
-    if degree == 0 {
-        let mut spans = Vec::new();
-        for (index, window) in curve.knots().windows(2).enumerate() {
-            if window[0] < window[1] {
-                spans.push(HomogeneousBezierSpan {
-                    domain: [window[0], window[1]],
-                    controls: vec![*controls.get(index)?],
-                });
-            }
-        }
-        return (!spans.is_empty()).then_some(spans);
-    }
-
-    let mut knots = curve.knots().to_vec();
-    let domain = [*knots.get(degree)?, *knots.get(count)?];
-    let mut internal = knots[degree + 1..count]
-        .iter()
-        .copied()
-        .filter(|knot| domain[0] < *knot && *knot < domain[1])
-        .collect::<Vec<_>>();
-    internal.sort_by(f64::total_cmp);
-    internal.dedup();
-    for knot in internal {
-        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            insert_homogeneous_curve_knot(degree, &mut knots, &mut controls, knot)?;
-        }
-    }
-    let mut boundaries = knots[degree..=controls.len()].to_vec();
-    boundaries.sort_by(f64::total_cmp);
-    boundaries.dedup();
-    let spans = boundaries
-        .windows(2)
-        .enumerate()
-        .filter_map(|(index, domain)| {
-            (domain[0] < domain[1]).then(|| {
-                let start = index.checked_mul(degree)?;
-                Some(HomogeneousBezierSpan {
-                    domain: [domain[0], domain[1]],
-                    controls: controls.get(start..=start + degree)?.to_vec(),
-                })
-            })?
-        })
-        .collect::<Vec<_>>();
-    (!spans.is_empty()).then_some(spans)
+    let controls = positive_controls(&curve.control_points(), &weights)?;
+    homogeneous_spans(degree, curve.knots(), controls)
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -933,14 +841,6 @@ fn homogeneous_curve_boundary_matches(
     {
         return None;
     }
-    let degree = usize::try_from(first.degree()).ok()?;
-    let product_degree = degree.checked_mul(2)?;
-    let binomial = |n: usize, k: usize| {
-        let k = k.min(n - k);
-        (1..=k).fold(1.0, |value, factor| {
-            value * (n - k + factor) as f64 / factor as f64
-        })
-    };
     for (first_span, second_span) in first_spans.iter().zip(second_spans) {
         if first_span.domain[1] <= range[0] || first_span.domain[0] >= range[1] {
             continue;
@@ -948,42 +848,8 @@ fn homogeneous_curve_boundary_matches(
         if first_span.domain != second_span.domain {
             return None;
         }
-        let first_weight = first_span
-            .controls
-            .iter()
-            .map(|control| control[3])
-            .fold(f64::INFINITY, f64::min);
-        let second_weight = second_span
-            .controls
-            .iter()
-            .map(|control| control[3])
-            .fold(f64::INFINITY, f64::min);
-        let threshold = resolution * first_weight * second_weight / 3.0_f64.sqrt();
-        if !threshold.is_finite() {
-            return None;
-        }
-        for product_index in 0..=product_degree {
-            let mut cross = [0.0; 3];
-            let lower = product_index.saturating_sub(degree);
-            let upper = product_index.min(degree);
-            for first_index in lower..=upper {
-                let second_index = product_index - first_index;
-                let coefficient = binomial(degree, first_index) * binomial(degree, second_index)
-                    / binomial(product_degree, product_index);
-                for (axis, component) in cross.iter_mut().enumerate() {
-                    *component += coefficient
-                        * (first_span.controls[first_index][axis]
-                            * second_span.controls[second_index][3]
-                            - second_span.controls[second_index][axis]
-                                * first_span.controls[first_index][3]);
-                }
-            }
-            if cross
-                .into_iter()
-                .any(|component| !component.is_finite() || component.abs() > threshold)
-            {
-                return Some(false);
-            }
+        if !boundaries_within_resolution(&first_span.controls, &second_span.controls, resolution)? {
+            return Some(false);
         }
     }
     Some(true)
