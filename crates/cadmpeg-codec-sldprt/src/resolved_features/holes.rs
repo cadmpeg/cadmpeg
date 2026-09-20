@@ -2734,8 +2734,6 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
         && left_allow_multi_profile_faces == right_allow_multi_profile_faces
 }
 
-/// Outside i64 grid range, adjacent finite coordinates are farther apart than
-/// one grid cell. Preserve their bits instead of saturating distinct cells.
 fn hole_axis_key(placement: &HolePlacement) -> Option<[GridCoordinate; 6]> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
