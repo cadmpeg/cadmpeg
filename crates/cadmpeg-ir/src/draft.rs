@@ -16,7 +16,6 @@ use crate::index::identity_hash;
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
 use crate::provenance::Exactness;
-use crate::report::{decode::TransferLedger, loss::LossNote};
 use crate::schema::{EntityKind, EntitySchema};
 use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{
@@ -199,12 +198,10 @@ pub struct ModelDraft<A = ()> {
     accounting: A,
 }
 
-/// Exactness, loss notes and transfer entries that must accompany a draft commit.
+/// Exactness annotations that must accompany a draft commit.
 #[derive(Debug, Default)]
 pub struct DraftAccounting {
     exactness: BTreeMap<String, Exactness>,
-    notes: Vec<LossNote>,
-    ledger: TransferLedger,
 }
 
 impl Default for ModelDraft {
@@ -412,24 +409,17 @@ impl ModelDraft<DraftAccounting> {
             .retain(|identity, _| keep(identity));
     }
 
-    /// Validates and atomically extends a document, annotations, notes, and ledger.
+    /// Validates and atomically extends a document and its exactness annotations.
     pub fn commit(
         mut self,
         base: &mut CadIr,
         annotations: &mut Annotations,
-        notes: &mut Vec<LossNote>,
-        ledger: &mut TransferLedger,
     ) -> Result<(), DraftError> {
         self.validate_against(base)?;
         let Self {
             model,
             identity_index: _,
-            accounting:
-                DraftAccounting {
-                    exactness,
-                    notes: staged_notes,
-                    ledger: staged_ledger,
-                },
+            accounting: DraftAccounting { exactness },
         } = self;
         base.model.append(model);
         let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
@@ -437,8 +427,6 @@ impl ModelDraft<DraftAccounting> {
             annotation_builder.exactness(identity, exactness);
         }
         *annotations = annotation_builder.build();
-        notes.extend(staged_notes);
-        ledger.entries.extend(staged_ledger.entries);
         Ok(())
     }
 }
@@ -589,7 +577,6 @@ mod tests {
     use crate::ids::PointId;
     use crate::math::Point3;
     use crate::native::NativeRecord;
-    use crate::report::decode::TransferLedger;
     use crate::topology::{Point, Vertex};
 
     fn point(id: &str) -> Point {
@@ -716,17 +703,13 @@ mod tests {
             .insert(point("test:model:point#1"))
             .expect("insert point into empty draft");
         let mut annotations = Annotations::default();
-        let mut notes = Vec::new();
-        let mut ledger = TransferLedger::default();
 
         assert!(matches!(
-            draft.commit(&mut ir, &mut annotations, &mut notes, &mut ledger),
+            draft.commit(&mut ir, &mut annotations),
             Err(DraftError::IdentityCollision(_))
         ));
         assert_eq!(ir.model.points.len(), 1);
         assert!(annotations.exactness().is_empty());
-        assert!(notes.is_empty());
-        assert!(ledger.is_empty());
     }
 
     #[test]

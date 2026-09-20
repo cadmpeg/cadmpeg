@@ -5,22 +5,10 @@ use crate::document::CadIr;
 use crate::draft::tests::point;
 use crate::draft::tests::point_draft;
 use crate::draft::DraftError;
-use crate::report::decode::TransferLedger;
-
 use crate::provenance::Exactness;
-use crate::report::{decode::TransferOutcome, loss::LossNote};
-
-fn loss_note() -> LossNote {
-    serde_json::from_value(serde_json::json!({
-        "code": {"scope": "shared", "kind": "pcurve_omitted"},
-        "severity": "warning",
-        "message": "test:source:record#omitted has no transferred pcurve"
-    }))
-    .expect("admitted loss fixture")
-}
 
 #[test]
-fn adding_accounting_preserves_entities_and_commits_every_accounting_channel() {
+fn adding_accounting_preserves_entities_and_commits_exactness() {
     let identity = "test:model:point#accounted";
     let mut draft = point_draft(identity).with_accounting();
     assert_eq!(draft.model().points, vec![point(identity)]);
@@ -29,31 +17,15 @@ fn adding_accounting_preserves_entities_and_commits_every_accounting_channel() {
         Err(DraftError::IdentityCollision(identity.into()))
     );
     draft.exactness(identity, Exactness::Derived);
-    let note = loss_note();
-    draft.accounting.notes.push(note.clone());
-    draft.accounting.ledger.record(
-        "test:source:record#point",
-        TransferOutcome::Emitted {
-            target: identity.into(),
-        },
-    );
-    let staged_ledger = draft.accounting.ledger.clone();
-
     let mut base = CadIr::empty();
     let mut annotations = Annotations::default();
-    let mut notes = Vec::new();
-    let mut ledger = TransferLedger::default();
-    draft
-        .commit(&mut base, &mut annotations, &mut notes, &mut ledger)
-        .unwrap();
+    draft.commit(&mut base, &mut annotations).unwrap();
 
     assert_eq!(base.model.points, vec![point(identity)]);
     assert_eq!(
         annotations.exactness()[identity].entity(),
         Exactness::Derived
     );
-    assert_eq!(notes, vec![note]);
-    assert_eq!(ledger, staged_ledger);
 }
 
 #[test]
@@ -64,31 +36,13 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
     let mut builder = crate::annotations::AnnotationBuilder::new();
     builder.exactness(existing, Exactness::Inferred);
     let mut annotations = builder.build();
-    let mut notes = vec![loss_note()];
-    let mut ledger = TransferLedger::default();
-    ledger.record(
-        "test:source:record#existing",
-        TransferOutcome::Emitted {
-            target: existing.into(),
-        },
-    );
-    let before = (
-        base.clone(),
-        annotations.clone(),
-        notes.clone(),
-        ledger.clone(),
-    );
+    let before = (base.clone(), annotations.clone());
 
     let mut draft = point_draft(existing).with_accounting();
     draft.exactness(existing, Exactness::Derived);
-    draft.accounting.notes.push(loss_note());
-    draft.accounting.ledger.record(
-        "test:source:record#rejected",
-        TransferOutcome::Omitted { note: None },
-    );
     assert_eq!(
-        draft.commit(&mut base, &mut annotations, &mut notes, &mut ledger),
+        draft.commit(&mut base, &mut annotations),
         Err(DraftError::IdentityCollision(existing.into()))
     );
-    assert_eq!((base, annotations, notes, ledger), before);
+    assert_eq!((base, annotations), before);
 }
