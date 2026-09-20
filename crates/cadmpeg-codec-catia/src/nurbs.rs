@@ -2,12 +2,11 @@
 //!
 //! Family-agnostic geometry math consumed across decode families and the
 //! decode/transfer paths: knot expansion and pole counting, degree-5 jet to
-//! B-spline conversion, tensor-product NURBS isocurve extraction, circular
+//! B-spline conversion, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError, NurbsSurface},
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
 };

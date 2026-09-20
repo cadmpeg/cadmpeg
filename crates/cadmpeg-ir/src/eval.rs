@@ -17,7 +17,7 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsPoles3, NurbsSurface, SurfaceParameterAxis},
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs},
     sampled::PolylineCurve,
     CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
