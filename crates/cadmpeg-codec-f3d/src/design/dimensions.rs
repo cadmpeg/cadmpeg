@@ -3345,12 +3345,10 @@ fn spatial_point_distance_matches(
     else {
         return false;
     };
-    let measured = ((second.x - first.x).powi(2)
-        + (second.y - first.y).powi(2)
-        + (second.z - first.z).powi(2))
-    .sqrt();
+    let measured = first.distance(*second);
     let scale = 1.0 + measured.max(expected.abs());
     expected.is_finite()
+        && measured.is_finite()
         && (measured - expected.abs()).abs()
             <= EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9 * scale
 }
@@ -3365,6 +3363,7 @@ fn spatial_parallel_line_distance_matches(
     };
     let scale = 1.0 + measured.max(expected.abs());
     expected.is_finite()
+        && measured.is_finite()
         && (measured - expected.abs()).abs()
             <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
 }
@@ -5349,39 +5348,41 @@ pub(super) fn point_lies_on_sketch_geometry(
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let close = |left: f64, right: f64| {
-        (left - right).abs()
-            <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + left.abs().max(right.abs()))
+        left.is_finite()
+            && right.is_finite()
+            && (left - right).abs()
+                <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                    * (1.0 + left.abs().max(right.abs()))
     };
     match geometry.definition() {
         SketchGeometryDefinition::Point { position } => sketch_points_close(point, *position),
         SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
-            let length_squared = direction.u.mul_add(direction.u, direction.v * direction.v);
-            if length_squared <= 1.0e-18 {
+            let length = direction.u.hypot(direction.v);
+            if !length.is_finite() || length <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 {
                 return false;
             }
+            let unit = Point2::new(direction.u / length, direction.v / length);
             let relative = Point2::new(point.u - start.u, point.v - start.v);
-            let parameter =
-                relative.u.mul_add(direction.u, relative.v * direction.v) / length_squared;
-            let cross = relative.u.mul_add(direction.v, -relative.v * direction.u);
+            let parameter = relative.u.mul_add(unit.u, relative.v * unit.v) / length;
+            let perpendicular = relative.u.mul_add(unit.v, -relative.v * unit.u);
             (-EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                 ..=1.0 + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9)
                 .contains(&parameter)
-                && cross.abs()
-                    <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
-                        * (1.0 + length_squared.sqrt())
+                && perpendicular.is_finite()
+                && perpendicular.abs() <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
         }
         SketchGeometryDefinition::ReferenceLine { origin, direction } => {
             let length = direction.u.hypot(direction.v);
-            if length <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 {
+            if !length.is_finite() || length <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 {
                 return false;
             }
             let relative = Point2::new(point.u - origin.u, point.v - origin.v);
-            relative
+            let perpendicular = relative
                 .u
-                .mul_add(direction.v, -relative.v * direction.u)
-                .abs()
-                <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + length)
+                .mul_add(direction.v / length, -relative.v * (direction.u / length));
+            perpendicular.is_finite()
+                && perpendicular.abs() <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
         }
         SketchGeometryDefinition::Circle { center, radius } => {
             close((point.u - center.u).hypot(point.v - center.v), radius.get())

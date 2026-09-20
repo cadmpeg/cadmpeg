@@ -315,3 +315,29 @@ fn every_pcurve_carrier_refuses_an_unknown_key_on_the_document_route() {
         assert!(error.contains("zz_bogus"), "{kind}: {error}");
     }
 }
+
+#[test]
+fn parabola_coordinate_scaling_preserves_parameterization() {
+    use crate::geometry::pcurve::ParabolaPcurve;
+    let original = PcurveGeometry::Parabola(
+        ParabolaPcurve::try_new(
+            Point2::new(1.0, -2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    for scales in [[3.0, 3.0], [2.0, 5.0]] {
+        let mut scaled = original.clone();
+        scaled.try_scale_coordinates(scales).unwrap();
+        for t in [-2.0, 0.0, 1.0, 3.0] {
+            let before = crate::eval::pcurve_uv(&original, t).unwrap();
+            let after = crate::eval::pcurve_uv(&scaled, t).unwrap();
+            assert_eq!(
+                after,
+                Point2::new(before.u * scales[0], before.v * scales[1])
+            );
+        }
+    }
+}

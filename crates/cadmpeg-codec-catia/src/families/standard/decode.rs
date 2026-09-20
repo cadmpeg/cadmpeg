@@ -7588,8 +7588,8 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
             let axis = cylinder_surface.axis();
             let radius = cylinder_surface.radius();
             let axial = point.vector_from(*origin).dot(*axis);
-            let radial = point.distance_squared(*origin) - axial * axial;
-            (radial.max(0.0).sqrt() - radius).abs()
+            let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
+            (radial - radius).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
@@ -7597,15 +7597,13 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
             let radius = cone_surface.radius();
             let half_angle = cone_surface.half_angle();
             let axial = point.vector_from(*origin).dot(*axis);
-            let radial = (point.distance_squared(*origin) - axial * axial)
-                .max(0.0)
-                .sqrt();
+            let radial = (point.vector_from(*origin) - axis.scale(axial)).norm();
             (radial - (radius + axial * half_angle.tan()).abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center();
             let radius = sphere_surface.radius();
-            (point.distance_squared(*center).sqrt() - radius.abs()).abs()
+            (point.distance(*center) - radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
@@ -7613,10 +7611,8 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
             let major_radius = torus_surface.major_radius();
             let minor_radius = torus_surface.minor_radius();
             let axial = point.vector_from(*center).dot(*axis);
-            let radial = (point.distance_squared(*center) - axial * axial)
-                .max(0.0)
-                .sqrt();
-            (((radial - major_radius).powi(2) + axial * axial).sqrt() - minor_radius.abs()).abs()
+            let radial = (point.vector_from(*center) - axis.scale(axial)).norm();
+            ((radial - major_radius).hypot(axial) - minor_radius.abs()).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
             return point_on_nurbs_surface(point, surface);
@@ -9539,10 +9535,7 @@ fn circle_axis_from_carrier(
             let distance = offset.x.hypot(offset.y).hypot(offset.z);
             (distance.is_finite()
                 && distance != 0.0
-                && close_squared(
-                    distance * distance + circle_radius * circle_radius,
-                    sphere_radius * sphere_radius,
-                ))
+                && close_squared_lengths(distance.hypot(circle_radius), sphere_radius))
             .then(|| offset.scale(1.0 / distance))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -9560,10 +9553,7 @@ fn circle_axis_from_carrier(
             {
                 unit_vector((*axis).cross(radial))
             } else if close_length(radial_distance, 0.0)
-                && close_squared(
-                    (circle_radius - major_radius).powi(2) + axial * axial,
-                    minor_radius * minor_radius,
-                )
+                && close_squared_lengths((circle_radius - major_radius).hypot(axial), minor_radius)
             {
                 Some(*axis)
             } else {
@@ -9581,11 +9571,21 @@ fn circle_axis_from_carrier(
 }
 
 fn close_length(left: f64, right: f64) -> bool {
-    (left - right).abs() <= 1e-5 * (1.0 + left.abs().max(right.abs()))
+    left.is_finite()
+        && right.is_finite()
+        && (left - right).abs() <= 1e-5 * (1.0 + left.abs().max(right.abs()))
 }
 
-fn close_squared(left: f64, right: f64) -> bool {
-    (left - right).abs() <= 2e-5 * (1.0 + left.abs().max(right.abs()))
+// Preserve the squared-residual tolerance without forming unbounded squares.
+fn close_squared_lengths(left: f64, right: f64) -> bool {
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
+    let scale = left.abs().max(right.abs()).max(1.0);
+    let left = left / scale;
+    let right = right / scale;
+    (left - right).abs() * (left + right).abs()
+        <= 2e-5 * ((1.0 / scale).powi(2) + left.abs().max(right.abs()).powi(2))
 }
 
 fn attach_standard_lines(

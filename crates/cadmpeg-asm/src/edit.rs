@@ -937,9 +937,30 @@ impl AsmEditSet {
                 transform.rows()[2][2],
             ],
             [
-                transform.rows()[0][3] / (header_scale * LEN_TO_MM),
-                transform.rows()[1][3] / (header_scale * LEN_TO_MM),
-                transform.rows()[2][3] / (header_scale * LEN_TO_MM),
+                cadmpeg_ir::math::multiply_divide(
+                    transform.rows()[0][3],
+                    1.0 / LEN_TO_MM,
+                    header_scale,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("native transform translation is non-finite")
+                })?,
+                cadmpeg_ir::math::multiply_divide(
+                    transform.rows()[1][3],
+                    1.0 / LEN_TO_MM,
+                    header_scale,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("native transform translation is non-finite")
+                })?,
+                cadmpeg_ir::math::multiply_divide(
+                    transform.rows()[2][3],
+                    1.0 / LEN_TO_MM,
+                    header_scale,
+                )
+                .ok_or_else(|| {
+                    CodecError::malformed("native transform translation is non-finite")
+                })?,
             ],
         ];
         for (index, vector) in vectors.into_iter().enumerate() {
@@ -2316,6 +2337,35 @@ mod tests {
             ));
             assert_eq!(bytes, original);
         }
+    }
+
+    #[test]
+    fn transform_patch_preserves_translation_at_large_header_scale() {
+        let mut bytes = vec![0x0d, 9];
+        bytes.extend_from_slice(b"transform");
+        for _ in 0..4 {
+            bytes.push(0x14);
+            bytes.extend_from_slice(&[0; 24]);
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.push(0x11);
+        let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+        let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1e308);
+        let transform = cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 1e308],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        edits
+            .patch_transform(&mut bytes, &records[0], transform)
+            .unwrap();
+        let offset = edits
+            .required_payload_field(&bytes, &records[0], 3, 0x14)
+            .unwrap();
+        let native = cadmpeg_core::decode::View::f64_le_at(&bytes, offset + 1).unwrap();
+        assert!((native - 0.1).abs() <= f64::EPSILON);
     }
 
     #[test]

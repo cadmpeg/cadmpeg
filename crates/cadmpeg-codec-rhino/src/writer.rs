@@ -1331,11 +1331,14 @@ fn validate_nurbs_trim(
                 .filter(|value| *value > domain[0] && *value < domain[1])
                 .map(|value| {
                     if sense == Sense::Forward {
-                        value
+                        Ok(value)
                     } else {
-                        domain[0] + domain[1] - value
+                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1]).ok_or_else(
+                            || CodecError::malformed("reversed edge knot is non-finite"),
+                        )
                     }
-                }),
+                })
+                .collect::<Result<Vec<_>, CodecError>>()?,
         );
     }
     if let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry {

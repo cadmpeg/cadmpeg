@@ -1949,3 +1949,27 @@ fn a_second_side_draft_is_read_only_by_the_extent_that_carries_one() {
         .to_string();
     assert!(error.contains("TaperAngle2"), "{error}");
 }
+
+#[test]
+fn implicit_extrusion_length_preserves_a_large_finite_direction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Profile"/><Object type="Part::Extrusion" name="Extrusion"/></Objects>
+<ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object>
+<Object name="Extrusion"><Properties Count="4">
+<Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
+<Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1e200"/></Property>
+<Property name="LengthFwd" type="App::PropertyDistance"><Float value="0"/></Property>
+<Property name="LengthRev" type="App::PropertyDistance"><Float value="0"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(matches!(extrusion_definition(&result),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
+                termination: LinearTermination::Blind { length }, .. } }, ..
+        }) if length.get() == 1e200));
+}

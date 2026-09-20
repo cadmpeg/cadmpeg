@@ -3851,10 +3851,7 @@ fn extrusion_shape(
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
         let raw_direction = vector_property(properties, "Dir");
-        let direction_magnitude = raw_direction.map(|direction| {
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt()
-        });
+        let direction_magnitude = raw_direction.map(|direction| direction.norm());
         let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
         let (mut direction, direction_source) = match direction_mode {
             0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom {}),
