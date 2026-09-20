@@ -5776,31 +5776,19 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
     // not empty. A centered shift outside that interval is not an error: the
     // nearest admitted shift is then the one that leaves the most significand.
     let shift = (-(minimum + maximum) / 2).clamp(lower, upper);
-    // `2.0_f64.powi(e)` is normal only for `e` in `[-1022, 1023]`. The split
-    // states the exponent as one factor inside that band plus a remainder, so
-    // an exponent outside the band is the case the split exists for and not an
-    // error: the remainder scales the value first, then the band factor
-    // completes the scale. Range loss leaves a non-finite product, which the
-    // finiteness test below states.
-    let scale = |value: f64, exponent: i32| {
-        let first = exponent.clamp(-1022, 1023);
-        (value * 2.0_f64.powi(exponent - first)) * 2.0_f64.powi(first)
-    };
+    let scale = cadmpeg_ir::math::scale_power_of_two;
     let coefficients = [
         scale(1.0 / (a * a), shift + exponents[0]),
         scale(1.0 / (b * b), shift + exponents[1]),
         scale(-1.0, shift),
     ];
-    if coefficients
+    let admitted = coefficients
         .iter()
-        .all(|value| value.is_finite() && *value != 0.0)
-    {
-        Ok(coefficients)
-    } else {
-        Err(CodecError::malformed(
-            "IGES conic coefficient range is not representable",
-        ))
-    }
+        .map(|value| value.filter(|value| *value != 0.0))
+        .collect::<Option<Vec<_>>>()
+        .and_then(|values| <[f64; 3]>::try_from(values).ok());
+    admitted
+        .ok_or_else(|| CodecError::malformed("IGES conic coefficient range is not representable"))
 }
 
 fn curve_entity(
