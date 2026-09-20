@@ -1,5 +1,0 @@
-[
-  "$EVIDENCE_DIR/probes",
-  "--nocapture",
-  "--test-threads=1"
-]
