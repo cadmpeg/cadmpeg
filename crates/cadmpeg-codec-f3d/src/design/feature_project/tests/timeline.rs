@@ -1071,3 +1071,26 @@ fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
         }
     }
 }
+
+const SMALL_MATRIX_ROTATION: f64 = 1.0e-8;
+#[test]
+fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
+    for angle in [
+        SMALL_MATRIX_ROTATION,
+        -SMALL_MATRIX_ROTATION,
+        std::f64::consts::PI,
+    ] {
+        let (sine, cosine) = angle.sin_cos();
+        let matrix = [
+            [cosine, -sine, 0.0, 0.0],
+            [sine, cosine, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let rotation = crate::design::feature_project::matrix_axis_angle(&matrix).unwrap();
+        assert!((rotation.angle.get() - angle.abs()).abs() <= 8.0 * f64::EPSILON * angle.abs());
+        if angle.abs() < 1.0 {
+            assert_eq!(rotation.direction.get().z.signum(), angle.signum());
+        }
+    }
+}

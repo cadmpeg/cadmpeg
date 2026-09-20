@@ -5238,14 +5238,10 @@ fn unit_domain_sweep_formula(name: &str) -> bool {
     bounds.next().is_none() && lower.is_finite() && upper.is_finite() && lower < upper
 }
 
-fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
+fn sweep_rail_transform(formula: &LawFormula) -> Option<Transform> {
     match formula {
         LawFormula::Null {} => {
-            return Some([
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            ]);
+            return Some(Transform::identity());
         }
         LawFormula::Named { name, variables } if variables.is_empty() => {
             let name = name
@@ -5253,11 +5249,7 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
                 .chars()
                 .filter(|character| !character.is_whitespace())
                 .collect::<String>();
-            return unit_domain_sweep_formula(&name).then_some([
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-            ]);
+            return unit_domain_sweep_formula(&name).then_some(Transform::identity());
         }
         LawFormula::Named { .. } => {}
     }
@@ -5292,25 +5284,7 @@ fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
         [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
         [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
     ])?;
-    transform
-        .is_proper_rigid()
-        .then_some([vectors[0], vectors[1], vectors[2]])
-}
-
-fn linear_sweep_rail_point(basis: [Vector3; 3], point: Point3) -> Point3 {
-    Point3::new(
-        point.x * basis[0].x + point.y * basis[1].x + point.z * basis[2].x,
-        point.x * basis[0].y + point.y * basis[1].y + point.z * basis[2].y,
-        point.x * basis[0].z + point.y * basis[1].z + point.z * basis[2].z,
-    )
-}
-
-fn linear_sweep_rail_vector(basis: [Vector3; 3], vector: Vector3) -> Vector3 {
-    Vector3::new(
-        vector.x * basis[0].x + vector.y * basis[1].x + vector.z * basis[2].x,
-        vector.x * basis[0].y + vector.y * basis[1].y + vector.z * basis[2].y,
-        vector.x * basis[0].z + vector.y * basis[1].z + vector.z * basis[2].z,
-    )
+    transform.is_proper_rigid().then_some(transform)
 }
 
 fn straight_sweep_path_origin(
@@ -5344,17 +5318,41 @@ fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> b
 }
 
 fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(Vector3, Vector3)> {
-    let length = vector.norm();
-    if !length.is_finite() || length <= f64::EPSILON {
+    use crate::math::sum::ExactSignedSum;
+
+    let unit = vector.unit()?;
+    if !derivative.is_finite() {
         return None;
     }
-    let unit = scale_vector(vector, 1.0 / length);
-    let normal_component = unit.dot(derivative);
-    let unit_derivative = scale_vector(
-        vector_sum(&[(1.0, derivative), (-normal_component, unit)]),
-        1.0 / length,
-    );
-    (unit_derivative.is_finite()).then_some((unit, unit_derivative))
+    let components = [vector.x, vector.y, vector.z];
+    let derivatives = [derivative.x, derivative.y, derivative.z];
+    let scale = components
+        .iter()
+        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
+    let length = (vector.x / scale)
+        .hypot(vector.y / scale)
+        .hypot(vector.z / scale);
+    let mut denominator = ExactSignedSum::default();
+    denominator.add_factors([scale, scale, scale, length * length * length]);
+    let denominator = denominator.finish()?;
+    // (|v|² d - v(v·d)) / |v|³. Exact products keep parallel derivatives
+    // zero and postpone range checks until the normalized result is formed.
+    let component = |index: usize| {
+        let mut numerator = ExactSignedSum::default();
+        for other in 0..3 {
+            if other != index {
+                numerator.add_factors([components[other], components[other], derivatives[index]]);
+                numerator.add_factors([-components[index], components[other], derivatives[other]]);
+            }
+        }
+        numerator
+            .finish()
+            .map_or(Some(0.0), |value| value.quotient(denominator))
+    };
+    Some((
+        unit,
+        Vector3::new(component(0)?, component(1)?, component(2)?),
+    ))
 }
 
 fn sweep_profile_reversed(
@@ -5438,7 +5436,7 @@ fn cacheless_law_sweep_differentials(
     else {
         return None;
     };
-    let rail_basis = sweep_rail_basis(formula)?;
+    let rail_transform = sweep_rail_transform(formula)?;
     let scale = sweep_scale(second_law)?;
     if *path_mode != 1
         || *formula_mode != 0
@@ -5454,9 +5452,9 @@ fn cacheless_law_sweep_differentials(
     let profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
     let frame_point = profile_frame.map_or(*origin, |(point, _)| point);
     let mut profile = scale_sweep_profile(profile, frame_point, scale)?;
-    profile.point = linear_sweep_rail_point(rail_basis, profile.point);
-    profile.tangent = linear_sweep_rail_vector(rail_basis, profile.tangent);
-    profile.acceleration = linear_sweep_rail_vector(rail_basis, profile.acceleration);
+    profile.point = rail_transform.apply_point(profile.point)?;
+    profile.tangent = rail_transform.apply_vector(profile.tangent)?;
+    profile.acceleration = rail_transform.apply_vector(profile.acceleration)?;
     let law = scalar_sweep_law_differential(first_law, v)?;
     Some((profile, spine, law, path_origin))
 }

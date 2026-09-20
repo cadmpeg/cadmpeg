@@ -811,18 +811,19 @@ fn validate_solved_dimension(
                     constraint.id.as_str()
                 ))
             })?;
-            let first = [first_end.u - first_start.u, first_end.v - first_start.v];
-            let second = [second_end.u - second_start.u, second_end.v - second_start.v];
-            let denominator = vector2_length(first) * vector2_length(second);
-            if denominator <= SKETCH_POINT_TOLERANCE {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+            super::relation_records::line_line_angle(
+                [[first_start.u, first_start.v], [first_end.u, first_end.v]],
+                [
+                    [second_start.u, second_start.v],
+                    [second_end.u, second_end.v],
+                ],
+            )
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT angular dimension {} has a degenerate line",
                     constraint.id.as_str()
-                )));
-            }
-            ((first[0] * second[0] + first[1] * second[1]) / denominator)
-                .clamp(-1.0, 1.0)
-                .acos()
+                ))
+            })?
         }
         DimensionDefinition::Radius { entity } | DimensionDefinition::Diameter { entity } => {
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
@@ -1951,6 +1952,68 @@ mod source_less_lane_tests {
             .expect_err("expected error")
             .to_string()
             .contains("repeats one locus"));
+    }
+
+    const SMALL_VALID_ANGLE: f64 = 1.0e-8;
+    const SHORT_ANGULAR_LINE: f64 = 1.0e-5;
+    #[test]
+    fn numerical_seventh_source_less_angles_admit_short_and_shallow_lines() {
+        for (length, angle) in [
+            (SHORT_ANGULAR_LINE, std::f64::consts::FRAC_PI_2),
+            (1.0, SMALL_VALID_ANGLE),
+        ] {
+            let sketch = generated_sketch();
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            let line = |x, y| {
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(x, y),
+                })
+                .unwrap()
+            };
+            let first = generated_entity("synthetic:test:id#first", line(length, 0.0));
+            let second = generated_entity(
+                "synthetic:test:id#second",
+                line(length * angle.cos(), length * angle.sin()),
+            );
+            let first_id = first.id().clone();
+            let second_id = second.id().clone();
+            ir.model.sketch_entities = vec![first, second];
+            let constraint = SketchConstraint {
+                id: SketchConstraintId::mint("synthetic:test:id#angle").unwrap(),
+                sketch: sketch.id,
+                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    SketchConstraintDefinitionInput::Angle {
+                        first: first_id.clone(),
+                        second: second_id.clone(),
+                        parameter: cadmpeg_ir::features::ParameterId::mint(
+                            "synthetic:test:id#angle-value",
+                        )
+                        .unwrap(),
+                    },
+                )
+                .unwrap(),
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: None,
+            };
+            let dimension = super::DimensionDefinition::Angle {
+                first: &first_id,
+                second: &second_id,
+            };
+            super::validate_solved_dimension(&ir, &constraint, &dimension, angle).unwrap();
+            assert!(
+                super::validate_solved_dimension(&ir, &constraint, &dimension, angle + 0.1)
+                    .is_err()
+            );
+        }
     }
 }
 

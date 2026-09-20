@@ -1637,11 +1637,18 @@ fn normalize_pcurve_parameter_range(
         .into_iter()
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let tolerance = scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY;
+    // Snap neighborhoods must not overlap, even on a small or translated domain.
+    let tolerance =
+        (scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY).min((0.25 * domain[1] - 0.25 * domain[0]).abs());
     for value in &mut range {
-        if (*value - domain[0]).abs() <= tolerance {
+        if domain.contains(value) {
+            continue;
+        }
+        let lower_distance = (*value - domain[0]).abs();
+        let upper_distance = (*value - domain[1]).abs();
+        if lower_distance < upper_distance && lower_distance <= tolerance {
             *value = domain[0];
-        } else if (*value - domain[1]).abs() <= tolerance {
+        } else if upper_distance < lower_distance && upper_distance <= tolerance {
             *value = domain[1];
         }
     }

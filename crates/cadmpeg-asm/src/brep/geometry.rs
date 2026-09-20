@@ -794,12 +794,16 @@ fn linear_nurbs_spine(
         return None;
     }
     let axis = point_vector(origin, farthest).unit()?;
-    let tolerance = EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10 * extent.max(1.0);
-    if curve
-        .control_points()
-        .iter()
-        .any(|point| axis.cross(point_vector(origin, *point)).norm() > tolerance)
-    {
+    // This admits an analytic replacement, not a model-length approximation.
+    if curve.control_points().iter().any(|point| {
+        let relative = point_vector(origin, *point);
+        let relative = Vector3::new(
+            relative.x / extent,
+            relative.y / extent,
+            relative.z / extent,
+        );
+        axis.cross(relative).norm() > EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10
+    }) {
         return None;
     }
     Some((origin, axis))
@@ -1205,6 +1209,33 @@ mod sense_tests {
                 len: 0,
             };
             assert_eq!(record_reversed(&record), expected);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
+    #[test]
+    fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
+        for scale in [1.0, SMALL_CURVED_SPINE_EXTENT, 1.0e100] {
+            let spine = |height| {
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(0.5 * scale, height * scale, 0.0),
+                        Point3::new(scale, 0.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .unwrap()
+            };
+            assert!(super::linear_nurbs_spine(&spine(0.4)).is_none());
+            assert!(super::linear_nurbs_spine(&spine(0.0)).is_some());
         }
     }
 }

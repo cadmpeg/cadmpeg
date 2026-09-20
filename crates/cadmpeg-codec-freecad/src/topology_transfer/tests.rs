@@ -1494,3 +1494,30 @@ fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
         );
     }
 }
+
+const SMALL_PCURVE_DOMAIN: f64 = 1.0e-10;
+#[test]
+fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
+    use cadmpeg_ir::math::Point2;
+    for domain in [[0.0, SMALL_PCURVE_DOMAIN], [1.0e8, 1.0e8 + 0.01]] {
+        let nurbs = PcurveNurbs::new(
+            1,
+            vec![domain[0], domain[0], domain[1], domain[1]],
+            PcurveNurbsPoles::from_lanes(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], None)
+                .unwrap(),
+            false,
+        )
+        .unwrap();
+        let geometry = PcurveGeometry::Nurbs { nurbs };
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some(domain)),
+            Some(domain)
+        );
+        let reversed = [domain[1], domain[0]];
+        assert_eq!(
+            normalize_pcurve_parameter_range(&geometry, Some(reversed)),
+            Some(reversed)
+        );
+    }
+}

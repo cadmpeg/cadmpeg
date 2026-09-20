@@ -51,9 +51,10 @@ pub(in crate::decode) fn point_on_carrier(point: [f64; 3], carrier: CarrierEquat
             };
             let relative = std::array::from_fn(|index| point[index] - cylinder.origin[index]);
             let axial = dot(relative, axis);
-            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
-            (dot(radial, radial).sqrt() - cylinder.radius).abs()
-                <= EPS_ON_CARRIER * cylinder.radius.max(1.0)
+            let radial: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            (radial[0].hypot(radial[1]).hypot(radial[2]) - cylinder.radius).abs()
+                <= EPS_ON_CARRIER * cylinder.radius
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
@@ -70,13 +71,13 @@ pub(in crate::decode) fn point_on_carrier(point: [f64; 3], carrier: CarrierEquat
             let radius = cone.radius() + axial * cone.half_angle().tan();
             let radial_x = dot(relative, x_axis);
             let radial_y = dot(relative, y_axis) / cone.ratio();
-            (radial_x.hypot(radial_y) - radius.abs()).abs()
-                <= EPS_ON_CARRIER * radius.abs().max(1.0)
+            (radial_x.hypot(radial_y) - radius.abs()).abs() <= EPS_ON_CARRIER * radius.abs()
         }
         CarrierEquation::Sphere(sphere) => {
-            let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
-            (dot(relative, relative).sqrt() - sphere.radius).abs()
-                <= EPS_ON_CARRIER * sphere.radius.max(1.0)
+            let relative: [f64; 3] =
+                std::array::from_fn(|index| point[index] - sphere.center[index]);
+            (relative[0].hypot(relative[1]).hypot(relative[2]) - sphere.radius).abs()
+                <= EPS_ON_CARRIER * sphere.radius
         }
         CarrierEquation::Torus(torus) => {
             let Some(axis) = normalize(torus.axis) else {
@@ -84,33 +85,42 @@ pub(in crate::decode) fn point_on_carrier(point: [f64; 3], carrier: CarrierEquat
             };
             let relative = std::array::from_fn(|index| point[index] - torus.center[index]);
             let axial = dot(relative, axis);
-            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
-            let tube_distance = (dot(radial, radial).sqrt() - torus.major_radius).hypot(axial);
+            let radial: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            let tube_distance =
+                (radial[0].hypot(radial[1]).hypot(radial[2]) - torus.major_radius).hypot(axial);
             (tube_distance - torus.minor_radius).abs()
-                <= EPS_ON_CARRIER * torus.minor_radius.max(torus.major_radius).max(1.0)
+                <= EPS_ON_CARRIER * torus.minor_radius.max(torus.major_radius)
         }
     }
 }
 
 fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Option<[f64; 3]> {
     let delta: [f64; 3] = std::array::from_fn(|index| second.center[index] - first.center[index]);
-    let distance = dot(delta, delta).sqrt();
-    if distance <= EPS_NEAR_ZERO || first.radius <= 0.0 || second.radius <= 0.0 {
+    let distance = delta[0].hypot(delta[1]).hypot(delta[2]);
+    if !distance.is_finite() || distance == 0.0 || first.radius <= 0.0 || second.radius <= 0.0 {
         return None;
     }
-    let external = first.radius + second.radius;
-    let internal = (first.radius - second.radius).abs();
-    let scale = external.max(distance).max(1.0);
-    if (distance - external).abs() > EPS_AGREE * scale
-        && (distance - internal).abs() > EPS_AGREE * scale
-    {
+    let scale = first.radius.max(second.radius).max(distance);
+    let first_radius = first.radius / scale;
+    let second_radius = second.radius / scale;
+    let separation = distance / scale;
+    let external = first_radius + second_radius;
+    let internal = (first_radius - second_radius).abs();
+    let external_tangent = (separation - external).abs() <= EPS_AGREE * external.max(separation);
+    let internal_tangent = (separation - internal).abs() <= EPS_AGREE * internal.max(separation);
+    if !external_tangent && !internal_tangent {
         return None;
     }
-    let axial = (distance * distance + first.radius * first.radius - second.radius * second.radius)
-        / (2.0 * distance);
-    Some(std::array::from_fn(|index| {
-        first.center[index] + axial * delta[index] / distance
-    }))
+    let signed_radius = if !external_tangent && second.radius > first.radius {
+        -first.radius
+    } else {
+        first.radius
+    };
+    let point = std::array::from_fn(|index| {
+        first.center[index] + signed_radius * (delta[index] / distance)
+    });
+    point.iter().all(|value| value.is_finite()).then_some(point)
 }
 
 fn tangent_plane_sphere_point(plane: PlaneEquation, sphere: SphereEquation) -> Option<[f64; 3]> {
@@ -119,8 +129,11 @@ fn tangent_plane_sphere_point(plane: PlaneEquation, sphere: SphereEquation) -> O
         normal,
         std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
     );
-    let scale = sphere.radius.max(1.0);
-    if sphere.radius <= 0.0 || (signed_distance.abs() - sphere.radius).abs() > EPS_AGREE * scale {
+    let scale = sphere.radius;
+    if !signed_distance.is_finite()
+        || sphere.radius <= 0.0
+        || (signed_distance.abs() - sphere.radius).abs() > EPS_AGREE * scale
+    {
         return None;
     }
     Some(std::array::from_fn(|index| {

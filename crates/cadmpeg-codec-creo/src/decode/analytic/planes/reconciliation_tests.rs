@@ -1256,3 +1256,37 @@ fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
     );
     assert!(unique_round_edge_origin_candidate(&[positive, negative], &[]).is_none());
 }
+
+const SMALL_TANGENT_SPHERE_RADIUS: f64 = 1.0e-10;
+#[test]
+fn numerical_seventh_sphere_tangency_and_membership_preserve_scale() {
+    use super::{point_on_carrier, tangent_plane_sphere_point, tangent_sphere_point};
+    use crate::decode::analytic::equations::{CarrierEquation, SphereEquation};
+    for radius in [SMALL_TANGENT_SPHERE_RADIUS, 1.0, 1.0e200] {
+        let sphere = |x| SphereEquation {
+            center: [x, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius,
+        };
+        assert!(point_on_carrier(
+            [radius, 0.0, 0.0],
+            CarrierEquation::Sphere(sphere(0.0))
+        ));
+        assert!(!point_on_carrier(
+            [1.5 * radius, 0.0, 0.0],
+            CarrierEquation::Sphere(sphere(0.0))
+        ));
+        assert!(tangent_sphere_point(sphere(0.0), sphere(3.0 * radius)).is_none());
+        let tangent = tangent_sphere_point(sphere(0.0), sphere(2.0 * radius)).unwrap();
+        assert!((tangent[0] / radius - 1.0).abs() <= 8.0 * f64::EPSILON);
+        let plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        assert!(tangent_plane_sphere_point(plane, sphere(3.0 * radius)).is_none());
+        assert_eq!(
+            tangent_plane_sphere_point(plane, sphere(radius)),
+            Some([0.0; 3])
+        );
+    }
+}
