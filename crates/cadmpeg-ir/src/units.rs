@@ -138,6 +138,13 @@ crate::units::named_field!(deserialize_linear, PositiveLength, "linear");
 
 crate::units::named_field!(deserialize_angular, PositiveAngle, "angular");
 
+const EPS_DOCUMENT_LINEAR_MM: f64 = 1.0e-6;
+const EPS_DOCUMENT_ANGULAR_RADIANS: f64 = 1.0e-10;
+const DEFAULT_LINEAR_TOLERANCE: PositiveLength = PositiveLength::new(EPS_DOCUMENT_LINEAR_MM)
+    .expect("the default linear tolerance is positive and finite");
+const DEFAULT_ANGULAR_TOLERANCE: PositiveAngle = PositiveAngle::new(EPS_DOCUMENT_ANGULAR_RADIANS)
+    .expect("the default angular tolerance is positive and finite");
+
 /// Document-wide linear and angular tolerances.
 ///
 /// The field types carry the units. A linear tolerance cannot be stored in
@@ -181,8 +188,8 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: PositiveLength::UNIT_LINEAR_DEFAULT,
-            angular: PositiveAngle::UNIT_ANGULAR_DEFAULT,
+            linear: DEFAULT_LINEAR_TOLERANCE,
+            angular: DEFAULT_ANGULAR_TOLERANCE,
         }
     }
 }
