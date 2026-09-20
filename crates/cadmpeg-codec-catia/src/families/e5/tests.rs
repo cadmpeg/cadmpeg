@@ -26,10 +26,10 @@ fn e5_circle_parser_reads_framed_carrier() {
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
-            let radius = circle_curve.radius();
-            assert_eq!(*center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
+            let radius = circle_curve.radius().get();
+            assert_eq!(center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
             assert_eq!(radius, 2.5);
         }

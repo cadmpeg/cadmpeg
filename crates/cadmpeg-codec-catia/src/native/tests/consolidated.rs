@@ -667,11 +667,11 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert!(
         matches!(directrix.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
-                    let center = circle_curve.center();
+                    let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-                    (circle_curve.radius() == 3.0)
-                        && (*center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
+                    (circle_curve.radius().get() == 3.0)
+                        && (center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
                             && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
                             && *ref_direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
                 })

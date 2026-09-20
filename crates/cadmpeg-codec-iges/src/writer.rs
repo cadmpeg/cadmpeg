@@ -3168,12 +3168,12 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
-                *center,
+                center,
                 *axis,
                 *ref_direction,
                 radius,
@@ -5810,16 +5810,11 @@ fn curve_entity(
             })
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
-            if !radius.is_finite() || radius <= 0.0 {
-                return Err(CodecError::Malformed(
-                    "IGES circle radius must be positive and finite".into(),
-                ));
-            }
             let y_axis = axis.cross(reference);
             validate_arc_sweep(range)?;
             let start_xy = [radius * range[0].cos(), radius * range[0].sin()];
@@ -5841,7 +5836,7 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(*center, reference, y_axis, axis)?),
+                transform: Some(placement(center, reference, y_axis, axis)?),
             })
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
@@ -6220,10 +6215,10 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = *circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = *circle_curve.axis();
             let ref_direction = *circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     point(center)?,

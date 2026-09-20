@@ -3071,14 +3071,9 @@ pub(super) fn validate_curve_edits(
             Some(SolvedCurveGeometry::Circle(circle_curve))
                 if { matches!(before, Some(SolvedCurveGeometry::Circle(_))) } =>
             {
-                let center = circle_curve.center();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = circle_curve.radius();
-                center.is_finite()
-                    && orthonormal_pair(*axis, *ref_direction)
-                    && radius.is_finite()
-                    && radius > 0.0
+                orthonormal_pair(*axis, *ref_direction)
             }
             Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if { matches!(before, Some(SolvedCurveGeometry::Ellipse(_))) } =>

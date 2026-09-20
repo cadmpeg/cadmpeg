@@ -42,8 +42,8 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(
         matches!(select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]), Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)), "coaxial_cones_circle"))
                 if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
                     (center.z - 4.0).abs() < EPS_COAXIAL_CIRCLE && (radius - 6.0).abs() < EPS_COAXIAL_CIRCLE
                 })
     );
@@ -74,8 +74,8 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         .iter()
         .any(|(geometry, _)| matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
-                    let center = circle_curve.center();
-                    let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+                    let radius = circle_curve.radius().get();
                     (center.z - 4.0 / 3.0).abs() < EPS_FILLET_CIRCLE && (radius - 10.0 / 3.0).abs() < EPS_FILLET_CIRCLE
                 })));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());

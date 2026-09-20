@@ -8924,7 +8924,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                         (origin, direction)
                     }
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                        let center = *circle_curve.center();
+                        let center = circle_curve.center().get();
                         let axis = *circle_curve.axis();
                         (center, axis)
                     }

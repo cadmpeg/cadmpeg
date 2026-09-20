@@ -529,7 +529,7 @@ fn compact_carrier_shapes_decode() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) => {
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             assert_eq!(radius, 3.0);
         }
         other => panic!("expected circle, got {other:?}"),

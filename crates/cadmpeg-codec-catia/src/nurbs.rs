@@ -272,10 +272,10 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             if !center.is_finite()
                 || ![
                     axis.x,
@@ -287,7 +287,6 @@ pub(crate) fn reverse_curve_geometry(
                 ]
                 .into_iter()
                 .all(f64::is_finite)
-                || !radius.is_finite()
             {
                 return None;
             }
@@ -301,7 +300,7 @@ pub(crate) fn reverse_curve_geometry(
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        *center,
+                        center,
                         (*axis).scale(-1.0),
                         ref_direction,
                         radius,

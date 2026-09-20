@@ -256,8 +256,8 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
         .iter()
         .find_map(|curve| match curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = *circle_curve.center();
-                let radius = circle_curve.radius();
+                let center = circle_curve.center().get();
+                let radius = circle_curve.radius().get();
                 Some((center, radius))
             }
             _ => None,

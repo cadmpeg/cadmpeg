@@ -1387,12 +1387,12 @@ fn bounded_nurbs_for_id(
             ))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let Some(mut nurbs) =
-                circular_arc_nurbs(*center, *axis, *ref_direction, radius, interval)?
+                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
             else {
                 return Ok(None);
             };

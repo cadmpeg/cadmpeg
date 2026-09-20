@@ -411,13 +411,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         else {
             unreachable!()
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let ref_direction = circle_curve.ref_direction();
-        let radius = circle_curve.radius();
+        let radius = circle_curve.radius().get();
 
         let axis = Vector3::new(0.0, -1.0, 0.0);
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            *center,
+            center,
             axis,
             *ref_direction,
             radius,
@@ -464,13 +464,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         else {
             unreachable!()
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
 
         let radius = 3.1;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            *center,
+            center,
             *axis,
             *ref_direction,
             radius,
@@ -522,19 +522,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     else {
         unreachable!()
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     let mut radius = radius;
     radius += 0.1;
-    *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-        *center,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
+    *circle_curve =
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
+            .unwrap();
     assert!(hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty());
     let mut coincident_boundaries = ir.clone();
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
@@ -542,11 +538,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     else {
         unreachable!()
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius();
-    let mut center = *center;
+    let radius = circle_curve.radius().get();
+    let mut center = center;
     center.y = 0.0;
     *circle_curve =
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
@@ -661,13 +657,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         else {
             unreachable!()
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
 
         let radius = 3.0;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            *center,
+            center,
             *axis,
             *ref_direction,
             radius,
@@ -886,19 +882,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     else {
         unreachable!()
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     let mut radius = radius;
     radius += 0.1;
-    *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-        *center,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
+    *circle_curve =
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
+            .unwrap();
     assert!(simple_hole_chamfers(&unequal_chamfers, &templates, &outputs).is_empty());
 
     let mut mismatched = ir;

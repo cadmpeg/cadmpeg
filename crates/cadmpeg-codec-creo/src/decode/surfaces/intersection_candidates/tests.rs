@@ -81,7 +81,10 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = curve else {
                 panic!("expected circle")
             };
-            assert!((circle.center().z.abs() / scale - 3.0_f64.sqrt()).abs() < 64.0 * f64::EPSILON);
+            assert!(
+                (circle.center().get().z.abs() / scale - 3.0_f64.sqrt()).abs()
+                    < 64.0 * f64::EPSILON
+            );
         }
         let circles =
             super::coaxial_cone_sphere_circle_candidates(cone(scale), sphere(2.0 * scale));
@@ -91,7 +94,7 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
                 panic!("expected circle")
             };
             assert!(
-                (circle.radius().hypot(circle.center().z) / scale - 2.0).abs()
+                (circle.radius().get().hypot(circle.center().get().z) / scale - 2.0).abs()
                     < 64.0 * f64::EPSILON
             );
         }
@@ -102,7 +105,9 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
                 panic!("expected circle")
             };
             assert!(
-                ((circle.radius() / scale - 3.0).hypot(circle.center().z / scale) - 1.0).abs()
+                ((circle.radius().get() / scale - 3.0).hypot(circle.center().get().z / scale)
+                    - 1.0)
+                    .abs()
                     < 64.0 * f64::EPSILON
             );
         }

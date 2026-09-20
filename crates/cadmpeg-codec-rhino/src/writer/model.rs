@@ -140,13 +140,13 @@ impl<'a> WritableObjectCurve<'a> {
     pub(super) fn payload(&self) -> ([u8; 16], Vec<u8>) {
         match self.geometry {
             ObjectCurveGeometry::Circle(circle) => {
-                let center = circle.center();
+                let center = circle.center().get();
                 let axis = circle.axis();
                 let ref_direction = circle.ref_direction();
-                let radius = circle.radius();
+                let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(*center, *axis, *ref_direction, radius),
+                    super::circle_payload(center, *axis, *ref_direction, radius),
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {

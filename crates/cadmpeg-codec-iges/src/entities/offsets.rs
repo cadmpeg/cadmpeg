@@ -56,13 +56,13 @@ fn placed_offset_source(
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    transform.apply_point(*center)?,
+                    transform.apply_point(center)?,
                     unit_vector(transform.apply_vector(*axis)?)?.scale(orientation),
                     unit_vector(transform.apply_vector(*ref_direction)?)?,
                     radius,
@@ -446,10 +446,10 @@ pub(super) fn project(
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
-                        let center = circle_curve.center();
+                        let center = circle_curve.center().get();
                         let axis = circle_curve.axis();
                         let ref_direction = circle_curve.ref_direction();
-                        let radius = circle_curve.radius();
+                        let radius = circle_curve.radius().get();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
@@ -460,7 +460,7 @@ pub(super) fn project(
                         }
                         let Some(payload) = admit(
                             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                                *center,
+                                center,
                                 *axis,
                                 *ref_direction,
                                 offset_radius,

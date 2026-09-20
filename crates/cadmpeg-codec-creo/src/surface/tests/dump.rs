@@ -1383,10 +1383,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             if {
                 matches!(
                     (
-                        circle_curve.center(),
+                        circle_curve.center().get(),
                         circle_curve.axis(),
                         circle_curve.ref_direction(),
-                        &circle_curve.radius(),
+                        &circle_curve.radius().get(),
                     ),
                     (
                         cadmpeg_ir::math::Point3 {
@@ -1402,15 +1402,15 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && circle_curve.radius() == 1.0
+                ) && circle_curve.radius().get() == 1.0
             } =>
         {
             matches!(
                 (
-                    circle_curve.center(),
+                    circle_curve.center().get(),
                     circle_curve.axis(),
                     circle_curve.ref_direction(),
-                    &circle_curve.radius(),
+                    &circle_curve.radius().get(),
                 ),
                 (
                     cadmpeg_ir::math::Point3 {
@@ -1449,10 +1449,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             matches!(
                 (
-                    circle_curve.center(),
+                    circle_curve.center().get(),
                     circle_curve.axis(),
                     circle_curve.ref_direction(),
-                    &circle_curve.radius(),
+                    &circle_curve.radius().get(),
                 ),
                 (
                     _,
@@ -1515,10 +1515,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             )) if {
                 matches!(
                     (
-                        circle_curve.center(),
+                        circle_curve.center().get(),
                         circle_curve.axis(),
                         circle_curve.ref_direction(),
-                        &circle_curve.radius(),
+                        &circle_curve.radius().get(),
                     ),
                     (
                         _,
@@ -1530,15 +1530,15 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                         _,
                         _,
                     )
-                ) && circle_curve.radius() == 1.0
+                ) && circle_curve.radius().get() == 1.0
             } =>
             {
                 matches!(
                     (
-                        circle_curve.center(),
+                        circle_curve.center().get(),
                         circle_curve.axis(),
                         circle_curve.ref_direction(),
-                        &circle_curve.radius(),
+                        &circle_curve.radius().get(),
                     ),
                     (
                         _,

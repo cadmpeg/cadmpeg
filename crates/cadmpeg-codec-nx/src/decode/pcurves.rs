@@ -2046,7 +2046,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     let curve_carrier = index.curves(curve.as_str())?;
     let curve_speed = match curve_carrier.geometry.solved()? {
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             radius.abs()
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {

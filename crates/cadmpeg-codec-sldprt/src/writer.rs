@@ -3553,10 +3553,10 @@ pub(super) fn curve_values(
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             let reference = *ref_direction;
             (
                 0x1f,

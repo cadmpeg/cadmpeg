@@ -424,11 +424,11 @@ fn validate_zero_entity_model_curve(
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))),
         ) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-            finite_point(center)
+            let radius = circle_curve.radius().get();
+            finite_point(&center)
                 && finite_vector(axis)
                 && finite_vector(ref_direction)
                 && radius.is_finite()

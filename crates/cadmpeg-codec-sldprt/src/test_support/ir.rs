@@ -26,11 +26,11 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let center = circle_curve.center();
+                let center = circle_curve.center().get();
                 let axis = circle_curve.axis();
                 let ref_direction = circle_curve.ref_direction();
-                let radius = circle_curve.radius();
-                let mut center = *center;
+                let radius = circle_curve.radius().get();
+                let mut center = center;
                 center.x += dx;
                 *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,

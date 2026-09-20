@@ -7409,17 +7409,10 @@ fn circular_loop_geometry(
         else {
             return None;
         };
-        let center = circle_curve.center();
+        let center = circle_curve.center().get();
         let axis = circle_curve.axis();
-        let radius = circle_curve.radius();
+        let radius = circle_curve.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
-        if ![center.x, center.y, center.z, radius]
-            .into_iter()
-            .all(f64::is_finite)
-            || radius <= 0.0
-        {
-            return None;
-        }
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
             if (radius - previous_radius).abs() > linear_tolerance
                 || (1.0 - dot_vector(axis, previous_axis).abs()) > angular_tolerance
@@ -7434,7 +7427,7 @@ fn circular_loop_geometry(
                 return None;
             }
         }
-        witness = Some((*center, axis, radius));
+        witness = Some((center, axis, radius));
     }
     witness
 }
@@ -8098,14 +8091,8 @@ fn simple_hole_chamfers(
                 .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
                 .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
                 .filter_map(|curve_id| match curves.get(curve_id)? {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-                        if {
-                            let radius = circle_curve.radius();
-                            radius.is_finite() && radius > 0.0
-                        } =>
-                    {
-                        let radius = circle_curve.radius();
-                        Some(radius)
+                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+                        Some(circle_curve.radius().get())
                     }
                     _ => None,
                 })

@@ -1052,10 +1052,10 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(origin) && direction_valid(direction)
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction)
+            point_valid(center) && normal_valid(*axis) && direction_valid(*ref_direction)
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center();

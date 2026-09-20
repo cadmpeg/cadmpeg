@@ -37,17 +37,12 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
     let (center, conic_axis, conic_x, conic_radii) = match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
-            if {
-                let radius = circle_curve.radius();
-                radius.is_finite() && radius > 0.0
-            } =>
-        {
-            let center = circle_curve.center();
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-            (*center, *axis, *ref_direction, [radius, radius])
+            let radius = circle_curve.radius().get();
+            (center, *axis, *ref_direction, [radius, radius])
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
             if {
@@ -271,11 +266,10 @@ pub(in crate::decode) fn meridian_circle_pcurve(
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
-    let circle_center = circle_curve.center();
+    let circle_center = circle_curve.center().get();
     let circle_axis = circle_curve.axis();
     let circle_x = circle_curve.ref_direction();
-    let circle_radius = circle_curve.radius();
-    (circle_radius.is_finite() && circle_radius > 0.0).then_some(())?;
+    let circle_radius = circle_curve.radius().get();
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
     (dot(surface_axis, surface_x).abs() <= EPS_ORTHO).then_some(())?;
@@ -293,7 +287,7 @@ pub(in crate::decode) fn meridian_circle_pcurve(
         .unwrap_or(0.0)
         .abs()
         .max(meridian_radius.abs())
-        .max(circle_radius.abs())
+        .max(circle_radius)
         .max(1.0);
     ((circle_radius - meridian_radius).abs() <= EPS_AGREE * scale).then_some(())?;
     let radial = if let Some(major_radius) = major_radius {

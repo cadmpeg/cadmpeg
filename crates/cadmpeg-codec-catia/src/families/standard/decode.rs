@@ -583,7 +583,7 @@ mod consolidated_revolution_binding_tests {
             .iter()
             .all(|surface| surface.geometry == geometry));
         assert!(
-            matches!(ir.model.curves[0].geometry.solved_cache(), Some(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius() == 3.0 })
+            matches!(ir.model.curves[0].geometry.solved_cache(), Some(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 3.0 })
         );
         assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 0.5]));
     }
@@ -7358,7 +7358,7 @@ fn standard_pcurve_geometry(
                 matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                                 if {
                                     let axis = circle_curve.axis();
-                let curve_radius = circle_curve.radius();
+                let curve_radius = circle_curve.radius().get();
                                     axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
                                         && (curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
                                 })
@@ -8042,12 +8042,12 @@ fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point
 fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
     let (center, first, second, first_radius, second_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
+            let radius = circle_curve.radius().get();
             (
-                *center,
+                center,
                 *ref_direction,
                 axis.cross(*ref_direction),
                 radius,

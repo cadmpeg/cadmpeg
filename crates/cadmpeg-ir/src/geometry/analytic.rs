@@ -833,7 +833,7 @@ impl TryFrom<LineCurveWire> for LineCurve {
 #[serde(try_from = "CircleCurveWire", into = "CircleCurveWire")]
 pub struct CircleCurve {
     center: FinitePoint3,
-    radius: PositiveReal,
+    radius: PositiveLength,
     frame: OrthonormalFrame3,
 }
 
@@ -857,6 +857,44 @@ impl CircleCurve {
         self.frame.reverse_axis();
     }
 
+    /// Build a circle from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// A circle widens on an admitted radius and keeps the rest of its parts:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::CircleCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    /// use cadmpeg_ir::scalar::PositiveLength;
+    ///
+    /// let circle = CircleCurve::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite center and positive radius");
+    /// let wider = CircleCurve::new(
+    ///     circle.center(),
+    ///     circle.frame(),
+    ///     PositiveLength::new(4.0).expect("positive finite"),
+    /// );
+    /// assert_eq!(wider.radius().get(), 4.0);
+    /// assert_eq!(wider.center(), circle.center());
+    /// ```
+    #[must_use]
+    pub const fn new(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radius: PositiveLength,
+    ) -> Self {
+        Self {
+            center,
+            radius,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,
@@ -868,18 +906,20 @@ impl CircleCurve {
             .ok_or("CircleCurve.axis/ref_direction must form an orthonormal frame")?;
         let center = FinitePoint3::new(center).ok_or("CircleCurve.center must be finite")?;
         let radius =
-            PositiveReal::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
-        Ok(Self {
-            center,
-            radius,
-            frame,
-        })
+            PositiveLength::new(radius).ok_or("CircleCurve.radius must be positive and finite")?;
+        Ok(Self::new(center, frame, radius))
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> FinitePoint3 {
+        self.center
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -896,18 +936,18 @@ impl CircleCurve {
 
     /// Return the radius.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> PositiveLength {
+        self.radius
     }
 }
 
 impl From<CircleCurve> for CircleCurveWire {
     fn from(value: CircleCurve) -> Self {
         Self {
-            center: *value.center(),
+            center: value.center().get(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
-            radius: value.radius(),
+            radius: value.radius().get(),
         }
     }
 }

@@ -1167,7 +1167,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         }) if {
             let axis = circle_curve.axis();
     let ref_direction = circle_curve.ref_direction();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
             *axis == Vector3::new(0.0, 0.0, 1.0)
                 && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 2.0

@@ -148,11 +148,11 @@ pub(super) fn profile_nurbs(
     let (center, axis, major, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-            (*center, *axis, *ref_direction, radius, radius)
+            let radius = circle_curve.radius().get();
+            (center, *axis, *ref_direction, radius, radius)
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center();

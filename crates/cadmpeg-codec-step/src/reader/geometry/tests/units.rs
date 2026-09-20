@@ -330,8 +330,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
-                    let center = circle_curve.center();
-        let radius = circle_curve.radius();
+                    let center = circle_curve.center().get();
+        let radius = circle_curve.radius().get();
                     center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
                 })
     ));

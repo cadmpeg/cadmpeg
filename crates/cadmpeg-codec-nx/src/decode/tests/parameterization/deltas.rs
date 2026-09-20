@@ -400,11 +400,11 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
-                    let center = circle_curve.center();
+                    let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let ref_direction = circle_curve.ref_direction();
-        let radius = circle_curve.radius();
-                    *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+        let radius = circle_curve.radius().get();
+                    center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
                         && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
                         && radius == 25.0

@@ -450,11 +450,11 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
-            let center = circle_curve.center();
+            let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius();
-            let pl = placement(e, *center, *axis, *ref_direction);
+            let radius = circle_curve.radius().get();
+            let pl = placement(e, center, *axis, *ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", real(radius)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {

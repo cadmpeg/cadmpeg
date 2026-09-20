@@ -214,9 +214,9 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     else {
         panic!("sphere-plane spline did not derive a circle");
     };
-    let center = circle_curve.center();
+    let center = circle_curve.center().get();
     let axis = circle_curve.axis();
-    let radius = circle_curve.radius();
+    let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!((radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
