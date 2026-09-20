@@ -1434,7 +1434,7 @@ pub(crate) fn loop_history_entries(
     result
 }
 
-pub(super) fn loop_history_roster(
+fn loop_history_roster(
     body: &[u8],
     mut cursor: usize,
     count: usize,
@@ -1511,7 +1511,7 @@ pub(super) fn loop_history_roster(
     Some(entries)
 }
 
-pub(in crate::feature) struct ParsedLoopHistoryEntry {
+struct ParsedLoopHistoryEntry {
     pub(super) loop_id: u32,
     field_bytes: [Vec<u8>; 4],
     pub(super) boundary: FeatureLoopHistoryBoundary,
@@ -1572,3 +1572,6 @@ pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionEx
     result.sort_by_key(|record| record.offset);
     result
 }
+
+#[cfg(test)]
+mod tests;

@@ -349,7 +349,7 @@ pub(in crate::decode) fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEq
     })
 }
 
-pub(in crate::decode) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
+pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
     let planes = candidates
         .iter()
         .copied()
@@ -409,22 +409,20 @@ pub(in crate::decode) fn reconciled_model_plane(
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::decode) struct PlaneCandidate {
+struct PlaneCandidate {
     pub(in crate::decode) equation: PlaneEquation,
     pub(in crate::decode) chart: Option<PlaneChart>,
     pub(in crate::decode) offset: usize,
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::decode) struct PlaneChart {
+struct PlaneChart {
     pub(in crate::decode) origin: [f64; 3],
     pub(in crate::decode) normal: [f64; 3],
     pub(in crate::decode) u_axis: [f64; 3],
 }
 
-pub(in crate::decode) fn agreed_plane_surface(
-    candidates: &[PlaneCandidate],
-) -> Option<(PlaneEquation, [f64; 3], usize)> {
+fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation, [f64; 3], usize)> {
     agreed_plane(
         &candidates
             .iter()
@@ -586,7 +584,7 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     (candidates.len() > 1).then_some(candidates)
 }
 
-pub(in crate::decode) fn stored_parameter_normal_candidates(
+fn stored_parameter_normal_candidates(
     frame: &crate::surface::PlaneLocalSystem,
 ) -> Option<Vec<PlaneCandidate>> {
     stored_parameter_normal_candidates_with_origin_branches(frame, false)
@@ -1017,7 +1015,7 @@ fn plane_candidate_is_fc05_tangent(
         <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
 }
 
-pub(in crate::decode) fn plane_candidate_pcurve_lies_on_carrier(
+fn plane_candidate_pcurve_lies_on_carrier(
     candidate: PlaneCandidate,
     endpoints: [[f64; 2]; 2],
     carrier: CarrierEquation,
@@ -1309,7 +1307,7 @@ fn round_edge_endpoint_plane_score(
         .count()
 }
 
-pub(in crate::decode) fn unique_round_edge_origin_candidate(
+fn unique_round_edge_origin_candidate(
     candidates: &[PlaneCandidate],
     envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
 ) -> Option<PlaneCandidate> {
@@ -1403,9 +1401,7 @@ fn select_round_edge_origin_branches(
     }
 }
 
-pub(in crate::decode) fn plane_candidates(
-    scan: &ContainerScan,
-) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
     let matrix_frame_ids = scan
         .planes
         .local_systems
@@ -1565,7 +1561,7 @@ pub(in crate::decode) fn plane_candidates(
         .collect()
 }
 
-pub(in crate::decode) fn frame_bound_outline_plane_candidate(
+fn frame_bound_outline_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     outline: &crate::surface::OutlinePlane,
 ) -> Option<PlaneCandidate> {
@@ -1595,7 +1591,7 @@ pub(in crate::decode) fn frame_bound_outline_plane_candidate(
     })
 }
 
-pub(in crate::decode) fn envelope_reconciled_plane_candidate(
+fn envelope_reconciled_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     equation: PlaneEquation,
 ) -> Option<PlaneCandidate> {
@@ -1659,9 +1655,7 @@ pub(in crate::decode) fn envelope_reconciled_plane_candidate(
     })
 }
 
-pub(in crate::decode) fn held_coordinate_plane(
-    envelope: &crate::surface::PlaneEnvelopeRecord,
-) -> Option<PlaneEquation> {
+fn held_coordinate_plane(envelope: &crate::surface::PlaneEnvelopeRecord) -> Option<PlaneEquation> {
     let corners = plane_envelope_corners(&envelope.envelope)?;
     let held = envelope
         .corner_coordinate_equal
@@ -1712,7 +1706,7 @@ pub(in crate::decode) fn placed_plane_surfaces(
         .collect()
 }
 
-pub(in crate::decode) fn topology_bound_plane(
+pub(super) fn topology_bound_plane(
     points: impl IntoIterator<Item = [f64; 3]>,
 ) -> Option<PlaneEquation> {
     let mut points = points.into_iter().collect::<Vec<_>>();
@@ -1760,7 +1754,7 @@ pub(in crate::decode) fn topology_bound_plane(
         .then_some(PlaneEquation { origin, normal })
 }
 
-pub(in crate::decode) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
     let (origin, normal) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center();
@@ -1794,12 +1788,12 @@ pub(in crate::decode) fn analytic_curve_plane(geometry: &CurveGeometry) -> Optio
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(in crate::decode) struct BoundaryLine {
+pub(in crate::decode::analytic) struct BoundaryLine {
     pub(in crate::decode) origin: [f64; 3],
     pub(in crate::decode) direction: [f64; 3],
 }
 
-pub(in crate::decode) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
+pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
     let (origin, direction) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin();
@@ -1855,9 +1849,7 @@ pub(in crate::decode) fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Optio
         .then_some(())
 }
 
-pub(in crate::decode) fn topology_bound_line_plane(
-    lines: &[BoundaryLine],
-) -> Option<PlaneEquation> {
+fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
     let mut candidate = None;
     'pairs: for first in 0..lines.len() {
         for second in first + 1..lines.len() {
@@ -1886,7 +1878,7 @@ pub(in crate::decode) fn topology_bound_line_plane(
         .then_some(canonical)
 }
 
-pub(in crate::decode) fn agreed_topology_bound_plane(
+pub(super) fn agreed_topology_bound_plane(
     points: impl IntoIterator<Item = [f64; 3]>,
     curve_planes: impl IntoIterator<Item = PlaneEquation>,
     lines: impl IntoIterator<Item = BoundaryLine>,
@@ -1908,3 +1900,6 @@ pub(in crate::decode) fn agreed_topology_bound_plane(
     });
     (points_agree && lines_agree).then_some(plane)
 }
+
+#[cfg(test)]
+mod reconciliation_tests;

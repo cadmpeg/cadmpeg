@@ -79,7 +79,7 @@ fn prototype_spline_nurbs(
     )
 }
 
-pub(in super::super) fn prototype_local_frame(
+fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
     let crate::surface::SurfaceNamedValue::ScalarArray(array) = &record.field("local_sys")?.value
@@ -123,7 +123,7 @@ pub(in super::super) fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
-pub(in super::super) fn first_instance_surface_row(
+fn first_instance_surface_row(
     rows: &[crate::surface::SurfaceRow],
     frame_start: usize,
     frame_end: usize,

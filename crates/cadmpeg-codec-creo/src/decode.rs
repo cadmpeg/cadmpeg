@@ -41,24 +41,6 @@ use crate::decode::build::report::build_report;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod plane_reconciliation_tests;
-
-#[cfg(test)]
-mod topological_vertex_tests;
-
-#[cfg(test)]
-mod native_edge_parameter_tests;
-
-#[cfg(test)]
-mod native_pcurve_tests;
-
-#[cfg(test)]
-mod prototype_local_frame_tests;
-
-#[cfg(test)]
-mod prototype_association_tests;
-
 /// Decode a `.prt` stream into an IR document and decode body; the sealed
 /// wrapper stamps the report identity from `ir.source`.
 ///

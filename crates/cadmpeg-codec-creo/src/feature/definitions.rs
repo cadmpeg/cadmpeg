@@ -614,7 +614,7 @@ pub(crate) struct FeatureTrimBucket {
 
 impl FeatureTrimBucket {
     /// Whether every declared entry has one complete stored body.
-    pub(super) fn is_complete(&self) -> bool {
+    fn is_complete(&self) -> bool {
         self.decoded_entry_count == Some(self.declared_entry_count)
     }
 }
@@ -1478,7 +1478,7 @@ fn unresolved_variable_guess_end(payload: &[u8], offset: usize, end: usize) -> O
     suffixes.next().is_none().then_some(suffix)
 }
 
-pub(super) fn decode_variable_scalar(
+fn decode_variable_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -1570,7 +1570,7 @@ pub(super) fn decode_variable_scalar(
         })
 }
 
-pub(super) fn decode_section_coordinate_scalar(
+fn decode_section_coordinate_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -1628,7 +1628,7 @@ fn decode_variable_guess(
     decoded
 }
 
-pub(super) fn variable_table(
+fn variable_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -1746,7 +1746,7 @@ pub(super) fn variable_table(
     })
 }
 
-pub(super) fn positional_variable_table(
+fn positional_variable_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -2110,7 +2110,7 @@ pub(crate) fn placement_instructions(
     placement_instruction_rows(&definition.body, definition.offset)
 }
 
-pub(super) fn placement_instruction_rows(
+fn placement_instruction_rows(
     payload: &[u8],
     definition_offset: usize,
 ) -> Vec<FeaturePlacementInstruction> {
@@ -2172,11 +2172,7 @@ pub(super) fn placement_instruction_rows(
     rows
 }
 
-pub(super) fn segment_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<FeatureSegmentTable> {
+fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
     let table = find_bytes(payload, b"segtab_ptr\0", start, end)?;
     let mut cursor = table + b"segtab_ptr\0".len();
     while payload
@@ -2188,7 +2184,7 @@ pub(super) fn segment_table(
     segment_table_body(payload, table, cursor, end, PrototypeRow::Present)
 }
 
-pub(super) fn positional_segment_table(
+fn positional_segment_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -2204,14 +2200,14 @@ pub(super) fn positional_segment_table(
 
 /// Whether a segment table's declared count includes an elided prototype row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum PrototypeRow {
+enum PrototypeRow {
     /// The first declared row is elided from the body.
     Elided,
     /// Every declared row is present in the body.
     Present,
 }
 
-pub(super) fn segment_table_body(
+fn segment_table_body(
     payload: &[u8],
     table: usize,
     mut cursor: usize,
@@ -2589,20 +2585,20 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct TrimTableClasses {
+struct TrimTableClasses {
     pub(super) table: u32,
     pub(super) bucket: u32,
     pub(super) entry: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct TrimTableHeader {
+struct TrimTableHeader {
     pub(super) declared_count: u32,
     pub(super) classes: TrimTableClasses,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TrimEntryKind {
+enum TrimEntryKind {
     Entity,
     Vertex,
 }
@@ -2615,7 +2611,7 @@ struct TrimBucketStart {
     body_start: usize,
 }
 
-pub(super) fn trim_buckets(
+fn trim_buckets(
     payload: &[u8],
     table: usize,
     end: usize,
@@ -2811,11 +2807,7 @@ fn complete_trim_entity_entry(payload: &[u8], offset: usize, end: usize) -> bool
     cursor < end && payload.get(cursor) == Some(&0)
 }
 
-pub(super) fn trim_vertex_entry(
-    payload: &[u8],
-    offset: usize,
-    end: usize,
-) -> Option<(Vec<u32>, u32, usize)> {
+fn trim_vertex_entry(payload: &[u8], offset: usize, end: usize) -> Option<(Vec<u32>, u32, usize)> {
     let mut cursor = offset;
     if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
         let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -2946,7 +2938,7 @@ fn named_trim_vertex_prototype_complete(
     })
 }
 
-pub(super) fn trim_table_header(
+fn trim_table_header(
     payload: &[u8],
     label: &[u8],
     start: usize,
@@ -3025,7 +3017,7 @@ fn positional_table_region(
     Some((table, declared_count, rows_start, region_end))
 }
 
-pub(super) fn positional_trim_entity_table(
+fn positional_trim_entity_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3229,7 +3221,7 @@ fn trim_vertex_table(
     })
 }
 
-pub(super) fn positional_trim_vertex_table(
+fn positional_trim_vertex_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3576,7 +3568,7 @@ fn trim_circle_circle_intersection(
         .then_some(coordinate)
 }
 
-pub(super) fn entity_intersection(
+fn entity_intersection(
     entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
@@ -3667,7 +3659,7 @@ pub(super) fn entity_intersection(
         .then_some(first)
 }
 
-pub(super) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
+fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
     let table = find_bytes(payload, b"order_table\0", start, end)?;
     let mut cursor = table + b"order_table\0".len();
     (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
@@ -3756,7 +3748,7 @@ pub(super) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<Fe
     })
 }
 
-pub(super) fn positional_order_table(
+fn positional_order_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -3957,11 +3949,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     })
 }
 
-pub(super) fn positional_section_3d(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<FeatureSection3d> {
+fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
     let (section, name_end) = payload[start..end]
         .windows(4)
         .enumerate()
@@ -4286,7 +4274,7 @@ fn labeled_dimension(
     })
 }
 
-pub(super) fn positional_dimension(
+fn positional_dimension(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4327,7 +4315,7 @@ pub(super) fn positional_dimension(
     })
 }
 
-pub(super) fn dimension_table(
+fn dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4393,7 +4381,7 @@ pub(super) fn dimension_table(
     })
 }
 
-pub(super) fn positional_dimension_table(
+fn positional_dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4448,7 +4436,7 @@ pub(super) fn positional_dimension_table(
     })
 }
 
-pub(super) fn self_described_positional_dimension_table(
+fn self_described_positional_dimension_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -4491,7 +4479,7 @@ pub(super) fn self_described_positional_dimension_table(
     Some(candidate.clone())
 }
 
-pub(super) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
+fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
         return Vec::new();
     };
@@ -4679,7 +4667,7 @@ fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> 
         .map(|(class, _)| class)
 }
 
-pub(super) fn named_solver_table_header(
+fn named_solver_table_header(
     payload: &[u8],
     label: &[u8],
     start: usize,
@@ -4774,7 +4762,7 @@ fn consume_positional_separator(
     .then_some(cursor + length)
 }
 
-pub(super) fn positional_feature_skamps(
+fn positional_feature_skamps(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5045,7 +5033,7 @@ fn positional_skamp_following_table_header(
     (after_row_class <= end).then_some(())
 }
 
-pub(super) fn feature_relation_triples(
+fn feature_relation_triples(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5111,7 +5099,7 @@ pub(super) fn feature_relation_triples(
     rows
 }
 
-pub(super) fn positional_relation_triples(
+fn positional_relation_triples(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5205,11 +5193,7 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
     chunks.next().is_none().then_some(result)
 }
 
-pub(super) fn relation_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<FeatureRelationTable> {
+fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
     let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
     let mut cursor = table + b"relat_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
@@ -5357,7 +5341,7 @@ fn positional_relation_rows(
     rows
 }
 
-pub(super) fn positional_relation_table(
+fn positional_relation_table(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5407,7 +5391,7 @@ pub(super) fn positional_relation_table(
     })
 }
 
-pub(super) fn saved_section_scalar(
+fn saved_section_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -5677,7 +5661,7 @@ fn saved_line_block(
     entities
 }
 
-pub(super) fn saved_line_entities(
+fn saved_line_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5744,7 +5728,7 @@ fn saved_entity_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     named_compact_int(payload, b"\xe0\x01id\0", start, end)
 }
 
-pub(super) fn saved_arc_scalar(
+fn saved_arc_scalar(
     payload: &[u8],
     offset: usize,
     end: usize,
@@ -5808,7 +5792,7 @@ pub(super) fn saved_arc_scalar(
     decoded
 }
 
-pub(super) fn saved_positional_generated_entities(
+fn saved_positional_generated_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -5999,7 +5983,7 @@ fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
         .unwrap_or(row_end)
 }
 
-pub(super) fn saved_circular_entities(
+fn saved_circular_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6076,7 +6060,7 @@ pub(super) fn saved_circular_entities(
     entities
 }
 
-pub(super) fn saved_conic_entities(
+fn saved_conic_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6164,7 +6148,7 @@ fn admitted_interpolation_point_count(declared: u32, remaining: usize) -> Option
     (declared.checked_mul(3)? <= remaining).then_some(declared)
 }
 
-pub(super) fn saved_spline_entities(
+fn saved_spline_entities(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6279,7 +6263,7 @@ pub(super) fn saved_spline_entities(
     entities
 }
 
-pub(super) fn saved_spline_parameter(
+fn saved_spline_parameter(
     payload: &[u8],
     offset: usize,
     cache: &scalar::ScalarCache,
@@ -6318,7 +6302,7 @@ pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     }
 }
 
-pub(super) fn saved_section(
+fn saved_section(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6349,7 +6333,7 @@ pub(super) fn saved_section(
     })
 }
 
-pub(super) fn positional_saved_section(
+fn positional_saved_section(
     payload: &[u8],
     start: usize,
     end: usize,
@@ -6406,7 +6390,7 @@ pub(crate) fn definition_revolution_extents(
     result
 }
 
-pub(super) fn definitions_in_ranges(
+fn definitions_in_ranges(
     payload: &[u8],
     starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
 ) -> Vec<FeatureDefinition> {
@@ -7214,6 +7198,15 @@ pub(crate) fn bind_section_owners(
 
 #[cfg(test)]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+mod owners_tests;
+
+#[cfg(test)]
+mod saved_tests;
+
+#[cfg(test)]
+mod tables_tests;
 
 #[cfg(test)]
 mod tests {

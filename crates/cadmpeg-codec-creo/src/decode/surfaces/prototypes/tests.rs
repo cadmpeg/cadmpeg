@@ -1,3 +1,6 @@
+mod association;
+mod local_frame;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};

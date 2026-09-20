@@ -1037,7 +1037,7 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
-pub(in crate::decode) fn linear_pcurve_carrier(
+fn linear_pcurve_carrier(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
 ) -> Option<CurveGeometry> {
@@ -1466,7 +1466,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
 
 type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
 
-pub(in crate::decode) fn directed_pcurve_points(
+pub(super) fn directed_pcurve_points(
     directions: [u8; 2],
     points: [[f64; 3]; 2],
 ) -> Option<[[f64; 3]; 2]> {
@@ -1500,7 +1500,7 @@ pub(in crate::decode) fn solve_pcurve_vertex_domains(
 /// other pcurve constraints by the caller, but an inferred analytic
 /// intersection or carrier curve must not erase it merely because that
 /// inferred geometry is inconsistent.
-pub(in crate::decode) fn solve_pcurve_vertex_domains_with_authoritative_points(
+pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
@@ -1629,7 +1629,7 @@ pub(in crate::decode) fn solve_pcurve_vertex_domains_with_authoritative_points(
         .collect()
 }
 
-pub(in crate::decode) fn native_pcurve_midpoint(
+pub(super) fn native_pcurve_midpoint(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     edge_points: [[f64; 3]; 2],
@@ -1689,7 +1689,7 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     selected
 }
 
-pub(in crate::decode) fn oriented_native_pcurve_endpoints(
+fn oriented_native_pcurve_endpoints(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     traversal: [[f64; 3]; 2],
@@ -1924,6 +1924,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod native_tests;
 
 #[cfg(test)]
 mod tests {

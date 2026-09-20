@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::super::definitions::test_support::with_points;
 use crate::feature::definitions::decode_variable_scalar;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
@@ -25,6 +24,7 @@ use crate::feature::definitions::positional_trim_vertex_table;
 use crate::feature::definitions::positional_variable_table;
 use crate::feature::definitions::relation_table;
 use crate::feature::definitions::self_described_positional_dimension_table;
+use crate::feature::definitions::test_support::with_points;
 use crate::feature::definitions::trim_buckets;
 use crate::feature::definitions::trim_table_header;
 use crate::feature::definitions::trim_vertex_entry;
