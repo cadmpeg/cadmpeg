@@ -274,7 +274,7 @@ pub(super) fn compact_profile_component_plane_frame(
         .or_else(|| compact_component_plane_frame(payload.get(context_start..profile_end)?))
 }
 
-pub(super) fn principal_sketch_frame(
+pub(crate) fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
 ) -> (Point3, Vector3, Vector3) {
     use cadmpeg_ir::features::PrincipalPlane;

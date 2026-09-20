@@ -470,6 +470,15 @@ pub(super) fn relation_instances(
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod relation_records_tests {
+    #[test]
+    fn numerical_audit_line_angles_are_finite_for_large_directions() {
+        let x = [[0.0, 0.0], [1.0e200, 0.0]];
+        let y = [[0.0, 0.0], [0.0, 1.0e200]];
+        assert_eq!(super::line_line_angle(x, x), Some(0.0));
+        assert_eq!(super::line_line_angle(x, y), Some(std::f64::consts::FRAC_PI_2));
+        assert_eq!(super::dynamic_line_line_angle(x, x), Some(0.0));
+    }
+
     use super::{
         circle_dimension_handle_driver, feature_intervals, is_solver_point_operand,
         relation_declaration_candidates, relation_instances, relation_signature,
@@ -2240,20 +2249,15 @@ fn line_line_distance(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64
     )
 }
 
-fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
-    let first_direction = line_direction(first);
-    let second_direction = line_direction(second);
-    let first_length = first_direction[0].hypot(first_direction[1]);
-    let second_length = second_direction[0].hypot(second_direction[1]);
-    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {
+    let first = line_direction(first);
+    let second = line_direction(second);
+    let first = cadmpeg_ir::math::Vector3::new(first[0], first[1], 0.0);
+    let second = cadmpeg_ir::math::Vector3::new(second[0], second[1], 0.0);
+    if first.norm() <= SKETCH_POINT_TOLERANCE || second.norm() <= SKETCH_POINT_TOLERANCE {
         return None;
     }
-    Some(
-        ((first_direction[0] * second_direction[0] + first_direction[1] * second_direction[1])
-            / (first_length * second_length))
-            .clamp(-1.0, 1.0)
-            .acos(),
-    )
+    Some(first.unit_nonzero()?.dot(second.unit_nonzero()?).clamp(-1.0, 1.0).acos())
 }
 
 pub(super) fn dynamic_line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Option<f64> {

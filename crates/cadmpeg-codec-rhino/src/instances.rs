@@ -10,7 +10,7 @@ use cadmpeg_ir::transform::Transform;
 use serde::{ser::SerializeStruct, Serialize};
 
 use crate::chunks::{
-    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
+    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges,
     ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{OpaqueRecord, Record};
@@ -315,24 +315,6 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     value
 }
 
-fn checksum_warning(
-    data: &[u8],
-    chunk: &crate::chunks::Chunk,
-    label: &str,
-    warnings: &mut Diagnostics,
-) -> Result<(), FramingError> {
-    if matches!(
-        verify_checksum(data, chunk)?,
-        ChecksumStatus::Mismatch { .. }
-    ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{label} CRC mismatch at offset {}", chunk.header_start),
-        );
-    }
-    Ok(())
-}
-
 fn checksum_warning_excluding(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
@@ -400,7 +382,7 @@ fn anonymous_versioned<'a>(
         ));
     }
     if verify_container_crc {
-        checksum_warning(data, &chunk, label, warnings)?;
+        crate::chunks::warn_checksum(data, &chunk, label, warnings)?;
     }
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (payload.i32()?, payload.i32()?);
@@ -469,7 +451,7 @@ fn model_component(
             "missing model-component attributes",
         ));
     }
-    checksum_warning(data, &chunk, "model-component attributes", warnings)?;
+    crate::chunks::warn_checksum(data, &chunk, "model-component attributes", warnings)?;
     let mut payload = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let major = payload.i32()?;
     let minor = payload.i32()?;
@@ -579,7 +561,7 @@ pub(crate) fn file_reference<'a>(
                 "missing SHA-1 chunk",
             ));
         }
-        checksum_warning(data, &digest, "SHA-1 hash", warnings)?;
+        crate::chunks::warn_checksum(data, &digest, "SHA-1 hash", warnings)?;
         let mut bytes = BoundedReader::new(data, digest.body().start, digest.body().end)?;
         let digest_major = bytes.i32()?;
         let digest_minor = bytes.i32()?;

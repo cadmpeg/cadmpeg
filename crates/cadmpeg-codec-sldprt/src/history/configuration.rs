@@ -934,30 +934,6 @@ fn complete_configuration_face_selection(selection: &FaceSelection) -> bool {
     }
 }
 
-fn configuration_principal_plane_frame(
-    plane: cadmpeg_ir::features::PrincipalPlane,
-) -> ConfigurationPlaneFrame {
-    use cadmpeg_ir::features::PrincipalPlane;
-
-    match plane {
-        PrincipalPlane::Front => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ),
-        PrincipalPlane::Top => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        ),
-        PrincipalPlane::Right => (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ),
-    }
-}
-
 fn configuration_plane_frame_matches(
     left: ConfigurationPlaneFrame,
     right: ConfigurationPlaneFrame,
@@ -995,7 +971,7 @@ fn configuration_feature_plane_frame(
     };
     let frame = match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-            Some(configuration_principal_plane_frame(*plane))
+            Some(crate::resolved_features::compact_reference_planes::principal_sketch_frame(*plane))
         }
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => valid_plane_frame(
             frame.normal(),

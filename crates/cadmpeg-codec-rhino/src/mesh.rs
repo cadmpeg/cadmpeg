@@ -1083,7 +1083,7 @@ fn read_ngons(
         archive,
         false,
     )?;
-    push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh ngon")?;
+    crate::chunks::warn_checksum(reader.backing_bytes(), &chunk, "mesh ngon", warnings)?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -1125,7 +1125,7 @@ fn read_mapping_tag(
         archive,
         false,
     )?;
-    push_chunk_checksum_warning(reader.backing_bytes(), &chunk, warnings, "mesh mapping tag")?;
+    crate::chunks::warn_checksum(reader.backing_bytes(), &chunk, "mesh mapping tag", warnings)?;
     let mut child =
         BoundedReader::new(reader.backing_bytes(), chunk.body().start, chunk.body().end)?;
     let major = child.i32()?;
@@ -1435,24 +1435,6 @@ fn consume_optional_chunk(
     let bytes = reader.backing_bytes();
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
     reader.skip(chunk.next_offset() - reader.position())?;
-    Ok(())
-}
-
-fn push_chunk_checksum_warning(
-    bytes: &[u8],
-    chunk: &crate::chunks::Chunk,
-    warnings: &mut Diagnostics,
-    label: &str,
-) -> Result<(), GeometryError> {
-    if matches!(
-        verify_checksum(bytes, chunk)?,
-        ChecksumStatus::Mismatch { .. }
-    ) {
-        warnings.push_coded(
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{label} CRC mismatch at offset {}", chunk.header_start),
-        );
-    }
     Ok(())
 }
 

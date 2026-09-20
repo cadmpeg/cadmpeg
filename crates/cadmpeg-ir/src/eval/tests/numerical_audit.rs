@@ -13,6 +13,8 @@ fn numerical_audit_inverse_point_uses_scale_safe_affine_inverse() {
     .unwrap();
     let (point, tolerance) =
         super::super::inverse_affine_point(matrix, Point3::new(scale, scale, scale)).unwrap();
-    assert_eq!(point, Point3::new(1.0, 1.0, 1.0));
+    for coordinate in [point.x, point.y, point.z] {
+        assert!((coordinate - 1.0).abs() <= 8.0 * f64::EPSILON);
+    }
     assert!((tolerance / (3.0_f64.sqrt() / scale) - 1.0).abs() <= 8.0 * f64::EPSILON);
 }

@@ -642,6 +642,25 @@ pub(crate) fn crc16(seed: u16, bytes: &[u8]) -> u16 {
     crc
 }
 
+/// Checks a chunk and records an integrity diagnostic for a checksum mismatch.
+pub(crate) fn warn_checksum(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    label: &str,
+    warnings: &mut crate::loss::Diagnostics,
+) -> Result<(), FramingError> {
+    if matches!(
+        verify_checksum(data, chunk)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        warnings.push_coded(
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format!("{label} CRC mismatch at offset {}", chunk.header_start),
+        );
+    }
+    Ok(())
+}
+
 /// Verifies a parsed chunk's checksum without changing its recoverable boundary.
 pub(crate) fn verify_checksum(bytes: &[u8], chunk: &Chunk) -> Result<ChecksumStatus, FramingError> {
     let body = chunk.body();
