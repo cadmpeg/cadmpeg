@@ -2802,10 +2802,6 @@ pub(crate) fn scan_bytes<'a>(
     })
 }
 
-/// The container scan of an in-tree fixture that states its own extents.
-///
-/// Only tests use it. A refusal is a defect in the fixture, so it fails the
-/// test rather than returning a shortened scan.
 fn collect_cross_section_records<T>(
     sections: &[ScannedSection<'_>],
     decode: impl Fn(&[u8]) -> Vec<T>,
@@ -2829,6 +2825,10 @@ fn collect_cross_section_records<T>(
     records
 }
 
+/// The container scan of an in-tree fixture that states its own extents.
+///
+/// Only tests use it. A refusal is a defect in the fixture, so it fails the
+/// test rather than returning a shortened scan.
 #[cfg(test)]
 pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     match scan_bytes(data) {

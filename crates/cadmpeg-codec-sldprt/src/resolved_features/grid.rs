@@ -3,6 +3,8 @@
 
 use cadmpeg_ir::math::Point2;
 
+/// Outside i64 grid range, adjacent finite coordinates are farther apart than
+/// one grid cell. Preserve their bits instead of saturating distinct cells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum GridCoordinate {
     BelowRange(u64),
