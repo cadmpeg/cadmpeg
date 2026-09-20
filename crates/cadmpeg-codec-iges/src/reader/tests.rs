@@ -299,9 +299,9 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
 /// Phase 5 freeze: shared builders must match the IGES rejection gate.
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
-    let accepted = cadmpeg_ir::validate::admissibility_freeze::accepted_empty();
+    let accepted = cadmpeg_test_support::admissibility::accepted_empty();
     assert!(crate::reader::reject_invalid_semantic_ir(&accepted).is_ok());
-    let rejected = cadmpeg_ir::validate::admissibility_freeze::rejected_missing_point("iges:model")
+    let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("iges:model")
         .expect("fixture identities are valid");
     let error = crate::reader::reject_invalid_semantic_ir(&rejected).unwrap_err();
     assert!(error.to_string().contains("referential_integrity"));
