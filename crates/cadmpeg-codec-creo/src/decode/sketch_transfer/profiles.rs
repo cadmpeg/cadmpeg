@@ -149,7 +149,7 @@ pub(in super::super) fn resolved_profile_chains(
     profiles
 }
 
-pub(in super::super) fn resolved_segment_profile_chains(
+fn resolved_segment_profile_chains(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
@@ -302,7 +302,7 @@ pub(in super::super) enum SectionEntityIncidenceFamily {
     Circular,
 }
 
-pub(in super::super) fn section_skamp_has_proven_point_locus(
+fn section_skamp_has_proven_point_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> bool {
@@ -377,7 +377,7 @@ pub(in super::super) fn section_skamp_has_proven_point_locus(
     )
 }
 
-pub(in super::super) fn section_incidence_curve_family_evidence(
+fn section_incidence_curve_family_evidence(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> BTreeSet<SectionEntityIncidenceFamily> {

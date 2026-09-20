@@ -77,7 +77,7 @@ use std::collections::BTreeSet;
 
 const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-12;
 
-pub(in super::super) fn thicken_feature_definition(
+pub(super) fn thicken_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -139,7 +139,7 @@ pub(in super::super) fn thicken_feature_definition(
     })
 }
 
-pub(in super::super) fn linear_extrusion_extent_and_direction(
+pub(super) fn linear_extrusion_extent_and_direction(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,

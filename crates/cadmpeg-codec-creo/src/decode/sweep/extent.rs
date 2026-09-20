@@ -343,7 +343,7 @@ pub(in super::super) fn bounded_cylinder_span(
     })
 }
 
-pub(in super::super) fn nurbs_translation_candidate(
+fn nurbs_translation_candidate(
     nurbs: &NurbsSurface,
     along_v: bool,
 ) -> Option<ExtrusionCarrierSpan> {
@@ -612,7 +612,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
     )
 }
 
-pub(in super::super) fn rectilinear_family_extent(
+fn rectilinear_family_extent(
     family: &RectilinearPlaneFamily,
     start_reversed: bool,
     station_tolerance: f64,
@@ -868,7 +868,7 @@ pub(in super::super) fn directed_blind_extrusion_span(
     })
 }
 
-pub(in super::super) fn feature_id_for_section_transform(
+fn feature_id_for_section_transform(
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<u32> {
@@ -883,7 +883,7 @@ pub(in super::super) fn feature_id_for_section_transform(
     }
 }
 
-pub(in super::super) fn derived_blind_extrusion_span(
+fn derived_blind_extrusion_span(
     transform: &crate::placement::FeatureSectionTransform,
     extent: &ExtrudeExtent,
     direction: [f64; 3],

@@ -114,7 +114,7 @@ impl Layout {
     ///
     /// Total by construction: [`Layout`] is closed and this match is
     /// exhaustive, so `detect`'s whole domain classifies.
-    pub(crate) const fn id(&self) -> DialectId {
+    const fn id(&self) -> DialectId {
         match self {
             Self::Nd => CREO_ND,
             Self::Depdb => CREO_DEPDB,

@@ -451,10 +451,10 @@ pub(in super::super) fn revolved_nurbs_surface(
 }
 
 pub(in super::super) struct RevolvedSectionCircle {
-    pub center: Point3,
-    pub axis: Vector3,
-    pub ref_direction: Vector3,
-    pub radius: f64,
+    center: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
 }
 
 impl TryFrom<RevolvedSectionCircle> for CurveGeometry {

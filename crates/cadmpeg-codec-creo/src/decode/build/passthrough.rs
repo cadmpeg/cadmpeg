@@ -22,7 +22,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 /// naming the section, its declared end, and the buffer length. The declared
 /// extent is the record, so a shortened region would retain bytes the source
 /// never stated.
-pub(in super::super) fn preserve_passthrough_sections(
+pub(super) fn preserve_passthrough_sections(
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
@@ -106,10 +106,7 @@ pub(in super::super) fn preserve_passthrough_sections(
     Ok(unknowns)
 }
 
-pub(in super::super) fn legacy_source_stream<'a>(
-    scan: &'a ContainerScan<'_>,
-    offset: usize,
-) -> &'a str {
+fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
     scan.framing
         .sections
         .iter()
@@ -117,7 +114,7 @@ pub(in super::super) fn legacy_source_stream<'a>(
         .map_or("legacy_ascii", |section| section.name())
 }
 
-pub(in super::super) fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
+fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -140,7 +137,7 @@ where
     })
 }
 
-pub(in super::super) fn emit_legacy_arenas(
+pub(super) fn emit_legacy_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

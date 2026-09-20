@@ -91,7 +91,7 @@ impl FaceAdmissionRejection {
         Self::LoopOrdering,
     ];
 
-    pub(in super::super) const fn key(self) -> &'static str {
+    const fn key(self) -> &'static str {
         match self {
             Self::MissingSurfaceCarrier => "missing_surface_carrier",
             Self::MissingOrientation => "missing_orientation",
@@ -104,7 +104,7 @@ impl FaceAdmissionRejection {
         }
     }
 
-    pub(in super::super) const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
+    const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
             Self::MissingSurfaceCarrier => {
                 crate::coverage::BREP_REJECTED_FACE_MISSING_SURFACE_CARRIER_COUNT
@@ -152,8 +152,8 @@ pub(in super::super) struct FaceAdmissionDetail {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in super::super) struct FaceAdmissionDiagnostic {
-    pub(in super::super) reason: FaceAdmissionRejection,
-    pub(in super::super) detail: FaceAdmissionDetail,
+    reason: FaceAdmissionRejection,
+    detail: FaceAdmissionDetail,
 }
 
 impl FaceAdmissionDetail {
@@ -209,7 +209,7 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
     pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
-    pub(in super::super) legacy_nonvisible_face_reference_count: usize,
+    legacy_nonvisible_face_reference_count: usize,
     pub(in super::super) body_count_mismatch: bool,
     pub(in super::super) legacy_body_ownership_ambiguous: bool,
     pub(in super::super) empty_component_count: usize,

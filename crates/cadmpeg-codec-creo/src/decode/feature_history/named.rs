@@ -179,7 +179,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     named_feature_definition(scan, ir, feature_id, &reference_name)
 }
 
-pub(in super::super) fn extrude_feature_definition_with_profile(
+pub(super) fn extrude_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -232,7 +232,7 @@ pub(in super::super) fn extrude_feature_definition_with_profile(
     })
 }
 
-pub(in super::super) fn revolve_feature_definition_with_profile(
+fn revolve_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -290,7 +290,7 @@ pub(in super::super) fn revolve_feature_definition_with_profile(
     })
 }
 
-pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
+pub(super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     ExtrudeExtent::OneSided {
         side: ExtrudeSide {
             termination: LinearTermination::Unresolved {},
@@ -299,7 +299,7 @@ pub(in super::super) fn unresolved_extrude_extent() -> ExtrudeExtent {
     }
 }
 
-pub(in super::super) fn surface_intersect_feature_definition(
+fn surface_intersect_feature_definition(
     scan: &ContainerScan,
     feature_id: u32,
     kind: &str,

@@ -14,7 +14,7 @@ pub(crate) fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
     iter.next().is_none().then_some(first)
 }
 
-pub(crate) fn unique_owned_feature_definition(
+pub(super) fn unique_owned_feature_definition(
     definitions: &[crate::feature::definitions::FeatureDefinition],
     feature_id: u32,
 ) -> Option<&crate::feature::definitions::FeatureDefinition> {
@@ -25,7 +25,7 @@ pub(crate) fn unique_owned_feature_definition(
     )
 }
 
-pub(crate) fn unique_feature_section_transform(
+pub(super) fn unique_feature_section_transform(
     transforms: &[crate::placement::FeatureSectionTransform],
     definition_id: u32,
     section_offset: usize,
@@ -43,7 +43,7 @@ pub(crate) fn unique_feature_section_transform(
     Some(transform)
 }
 
-pub(crate) fn unique_feature_definition_for_transform<'a>(
+pub(super) fn unique_feature_definition_for_transform<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<&'a crate::feature::definitions::FeatureDefinition> {
@@ -56,7 +56,7 @@ pub(crate) fn unique_feature_definition_for_transform<'a>(
     }))
 }
 
-pub(crate) fn unique_feature_profile_definition<'a>(
+pub(super) fn unique_feature_profile_definition<'a>(
     definitions: &'a [crate::feature::definitions::FeatureDefinition],
     transforms: &[crate::placement::FeatureSectionTransform],
     feature_id: u32,
@@ -72,7 +72,7 @@ pub(crate) fn unique_feature_profile_definition<'a>(
     }
 }
 
-pub(crate) fn unique_feature_profile_ref(
+pub(super) fn unique_feature_profile_ref(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
@@ -85,7 +85,7 @@ pub(crate) fn unique_feature_profile_ref(
     .map(|definition| section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition)))
 }
 
-pub(crate) fn unique_feature_datum_plane(
+pub(super) fn unique_feature_datum_plane(
     datums: &[crate::datum::DatumPlaneRecord],
     feature_id: u32,
 ) -> Option<&crate::datum::DatumPlaneRecord> {

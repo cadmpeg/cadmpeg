@@ -97,7 +97,7 @@ pub(in super::super) fn ambiguous_section_segment_external_ids(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(in super::super) enum SavedSectionEntityKind {
+enum SavedSectionEntityKind {
     Line,
     Arc,
     Circle,
@@ -107,7 +107,7 @@ pub(in super::super) enum SavedSectionEntityKind {
 }
 
 impl SavedSectionEntityKind {
-    pub(in super::super) const fn name(self) -> &'static str {
+    const fn name(self) -> &'static str {
         match self {
             Self::Line => "line",
             Self::Arc => "arc",
@@ -119,7 +119,7 @@ impl SavedSectionEntityKind {
     }
 }
 
-pub(in super::super) fn saved_section_entity_identity(
+fn saved_section_entity_identity(
     entity: &crate::feature::definitions::FeatureSavedEntity,
 ) -> (Option<u32>, usize, SavedSectionEntityKind) {
     match entity {
@@ -232,7 +232,7 @@ pub(in super::super) fn unique_saved_section_internal_ids(
         .collect()
 }
 
-pub(in super::super) fn saved_section_entity_is_elided_prototype(
+fn saved_section_entity_is_elided_prototype(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity: &crate::feature::definitions::FeatureSavedEntity,
 ) -> bool {
@@ -318,7 +318,7 @@ pub(in super::super) fn section_segment_identity_suffix(
     }
 }
 
-pub(in super::super) fn opaque_section_segment_identity_suffix(
+pub(super) fn opaque_section_segment_identity_suffix(
     unique_external_ids: &BTreeSet<u32>,
     segment: &crate::feature::definitions::FeatureOpaqueSegment,
 ) -> String {

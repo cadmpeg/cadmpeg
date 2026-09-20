@@ -191,7 +191,7 @@ pub(crate) enum RelatedState {
 
 impl RelatedState {
     #[cfg(test)]
-    pub(crate) fn from_byte(byte: u8) -> Option<Self> {
+    fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0 => Some(Self::Zero),
             1 => Some(Self::One),

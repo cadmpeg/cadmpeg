@@ -24,7 +24,7 @@ use super::ir::{
 /// definition and by whether its operands resolved, then writes one
 /// `transferred_*` entry per counted kind. Reads the built model; emits no
 /// entities and no annotations.
-pub(in super::super) fn collect_feature_coverage(
+pub(super) fn collect_feature_coverage(
     scan: &ContainerScan,
     ir: &CadIr,
     geometry_generator_feature_count: usize,
@@ -851,7 +851,7 @@ pub(in super::super) fn collect_feature_coverage(
 }
 
 #[derive(Default)]
-pub(in super::super) struct TorusParameterCoverage {
+pub(in crate::decode::build) struct TorusParameterCoverage {
     pub(super) radius_overrides: usize,
     pub(super) replayed_minor_radii: usize,
     pub(super) outline_extents: usize,
@@ -859,7 +859,7 @@ pub(in super::super) struct TorusParameterCoverage {
     pub(super) split_coordinate_envelopes: usize,
 }
 
-pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
+pub(super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusParameterCoverage {
     let rows = scan.surfaces.parameters.iter().filter_map(|record| {
         crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
             .map(|row| (record, row))
@@ -888,13 +888,13 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
 }
 
 #[derive(Default)]
-pub(in super::super) struct LegacyNumericCoverage {
+pub(super) struct LegacyNumericCoverage {
     pub(super) scalars: usize,
     pub(super) arrays: usize,
     pub(super) elements: usize,
 }
 
-pub(in super::super) fn legacy_numeric_coverage<K, T>(
+pub(super) fn legacy_numeric_coverage<K, T>(
     records: &[crate::legacy::ValueRecord<K>],
 ) -> LegacyNumericCoverage
 where

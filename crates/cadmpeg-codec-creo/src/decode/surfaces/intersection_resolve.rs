@@ -27,7 +27,7 @@ const EPS_ON_CURVE: f64 = 1.0e-7;
 const EPS_AXIS_COMPONENT: f64 = 1.0e-10;
 const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 
-pub(in super::super) fn multi_component_intersection_candidates(
+pub(super) fn multi_component_intersection_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
 ) -> Vec<(CurveGeometry, &'static str)> {
@@ -47,7 +47,7 @@ pub(in super::super) fn multi_component_intersection_candidates(
     candidates
 }
 
-pub(in super::super) fn carrier_intersection_components(
+fn carrier_intersection_components(
     first: CarrierEquation,
     second: CarrierEquation,
 ) -> Vec<(CurveGeometry, &'static str)> {

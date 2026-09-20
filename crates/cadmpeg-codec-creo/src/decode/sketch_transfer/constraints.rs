@@ -66,7 +66,7 @@ pub(in super::super) fn section_segment_verhor_definition(
     }
 }
 
-pub(in super::super) fn native_section_segment_verhor_definition(
+pub(super) fn native_section_segment_verhor_definition(
     sketch: &SketchId,
     entity: SketchEntityId,
     external_id: u32,
@@ -292,7 +292,7 @@ pub(in super::super) fn joined_relation_incidence(
     joined_relation_incidence_link(definition, relation_id).map(|(_, incidence)| incidence)
 }
 
-pub(in super::super) fn joined_relation_incidence_link(
+fn joined_relation_incidence_link(
     definition: &crate::feature::definitions::FeatureDefinition,
     relation_id: u32,
 ) -> Option<(
@@ -433,7 +433,7 @@ pub(in super::super) fn joined_relation_incidence_entities(
         .collect()
 }
 
-pub(in super::super) fn relation_incidence_loci(
+fn relation_incidence_loci(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation_id: u32,
@@ -448,7 +448,7 @@ pub(in super::super) fn relation_incidence_loci(
     ])
 }
 
-pub(in super::super) fn section_angular_entities(
+fn section_angular_entities(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     segments: &[&crate::feature::definitions::FeatureSegment],
@@ -485,7 +485,7 @@ pub(in super::super) fn section_angular_entities(
     ])
 }
 
-pub(in super::super) fn native_section_segment_radius_definition(
+fn native_section_segment_radius_definition(
     sketch: &SketchId,
     entity: SketchEntityId,
     external_id: u32,
@@ -1128,7 +1128,7 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
     .collect()
 }
 
-pub(in super::super) fn section_equation_function_sixteen_angle_difference_constraints(
+pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
@@ -1170,7 +1170,7 @@ pub(in super::super) fn section_equation_function_sixteen_angle_difference_const
         .collect()
 }
 
-pub(in super::super) fn section_equation_function_five_scalar_equality_constraints(
+pub(super) fn section_equation_function_five_scalar_equality_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
@@ -1679,7 +1679,7 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
         .collect()
 }
 
-pub(in super::super) fn circular_dimension_constraint(
+fn circular_dimension_constraint(
     entity: SketchEntityId,
     parameter: ParameterId,
     dimension_type: u32,
@@ -1691,7 +1691,7 @@ pub(in super::super) fn circular_dimension_constraint(
     }
 }
 
-pub(in super::super) fn native_section_dimension_constraint_definition(
+fn native_section_dimension_constraint_definition(
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     relation: &crate::feature::definitions::FeatureRelation,
@@ -1814,7 +1814,7 @@ pub(in super::super) fn native_section_dimension_constraint_definition(
     })
 }
 
-pub(in super::super) fn reconcile_section_dimension_constraint(
+pub(super) fn reconcile_section_dimension_constraint(
     constraint_definition: &mut SketchConstraintDefinitionInput,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,

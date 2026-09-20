@@ -56,7 +56,7 @@ pub(in super::super) fn filled_surface_feature_definition(
     })
 }
 
-pub(in super::super) fn class_100_operand_producers(
+fn class_100_operand_producers(
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
 ) -> Option<Vec<(u32, u32)>> {
@@ -135,7 +135,7 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
     })
 }
 
-pub(in super::super) fn knit_operand_entity_ids(
+fn knit_operand_entity_ids(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<(Vec<u32>, &'static str)> {
@@ -202,7 +202,7 @@ pub(in super::super) fn knit_operand_surface_ids(
     (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
 }
 
-pub(in super::super) fn knit_surface_feature_definition(
+pub(super) fn knit_surface_feature_definition(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> IrFeatureDefinition {
@@ -460,7 +460,7 @@ pub(in super::super) fn feature_result_surface_ids(
     (!surface_ids.is_empty()).then_some(surface_ids)
 }
 
-pub(in super::super) fn feature_result_surface_ids_by_feature(
+pub(super) fn feature_result_surface_ids_by_feature(
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> BTreeMap<u32, Vec<u32>> {

@@ -162,7 +162,7 @@ pub(in super::super) struct TransferredNurbsBoundaryCurves {
 }
 
 #[derive(Clone, Copy)]
-pub(in super::super) enum NurbsBoundaryKind {
+enum NurbsBoundaryKind {
     ExtrusionPlane,
     ExtrusionPlaneSectionGenerator,
     SharedExtrusionGenerator,

@@ -40,7 +40,7 @@ use super::super::surfaces::brep::BrepTransferDiagnostics;
 ///
 /// Reference lines, circles, conics, and ellipse carriers, each annotated
 /// against the `MdlRefInfo` stream at the record offset.
-pub(in super::super) fn emit_reference_arenas(
+pub(super) fn emit_reference_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -97,7 +97,7 @@ pub(in super::super) fn emit_reference_arenas(
 /// Each arena is built from the scan and stored under its native key in the
 /// order the source streams are read; that order fixes the annotation stream
 /// numbering, so the emissions must not be reordered.
-pub(in super::super) fn emit_geometry_arenas(
+pub(super) fn emit_geometry_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

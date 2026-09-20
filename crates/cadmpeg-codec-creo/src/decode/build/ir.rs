@@ -65,7 +65,7 @@ pub(in super::super) fn build_container_ir(
     })
 }
 
-pub(in super::super) fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
+pub(super) fn face_selection_has_unresolved_operands(selection: &FaceSelection) -> bool {
     matches!(
         selection,
         FaceSelection::Unresolved
@@ -74,14 +74,14 @@ pub(in super::super) fn face_selection_has_unresolved_operands(selection: &FaceS
     )
 }
 
-pub(in super::super) fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
+pub(super) fn body_selection_has_unresolved_operands(selection: &BodySelection) -> bool {
     matches!(
         selection,
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_)
     )
 }
 
-pub(in super::super) fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
+fn edge_selection_has_unresolved_operands(selection: &EdgeSelection) -> bool {
     matches!(
         selection,
         EdgeSelection::Unresolved
@@ -90,23 +90,21 @@ pub(in super::super) fn edge_selection_has_unresolved_operands(selection: &EdgeS
     )
 }
 
-pub(in super::super) fn path_has_unresolved_operands(path: &PathRef) -> bool {
+fn path_has_unresolved_operands(path: &PathRef) -> bool {
     matches!(
         path,
         PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. }
     )
 }
 
-pub(in super::super) fn surface_boundary_has_unresolved_operands(
-    boundary: &SurfaceBoundary,
-) -> bool {
+pub(super) fn surface_boundary_has_unresolved_operands(boundary: &SurfaceBoundary) -> bool {
     match boundary {
         SurfaceBoundary::Edges(edges) => edge_selection_has_unresolved_operands(edges),
         SurfaceBoundary::Path(path) => path_has_unresolved_operands(path),
     }
 }
 
-pub(in super::super) fn pattern_kind_has_unresolved_operands<
+pub(super) fn pattern_kind_has_unresolved_operands<
     C: cadmpeg_ir::features::patterns::CompositeStages,
 >(
     pattern: &PatternKind<C>,
@@ -135,9 +133,7 @@ pub(in super::super) fn pattern_kind_has_unresolved_operands<
     }
 }
 
-pub(in super::super) fn linear_termination_has_unresolved_operands(
-    termination: &LinearTermination,
-) -> bool {
+pub(super) fn linear_termination_has_unresolved_operands(termination: &LinearTermination) -> bool {
     match termination {
         LinearTermination::Unresolved {} => true,
         LinearTermination::ToFace { face, .. }
@@ -159,7 +155,7 @@ pub(in super::super) fn linear_termination_has_unresolved_operands(
     }
 }
 
-pub(in super::super) fn angular_termination_has_unresolved_operands(
+pub(super) fn angular_termination_has_unresolved_operands(
     termination: &AngularTermination,
 ) -> bool {
     match termination {

@@ -157,7 +157,7 @@ pub(in super::super) fn feature_result_edge_ids(
     Some(feature_rows.into_iter().map(|row| row.id).collect())
 }
 
-pub(in super::super) fn feature_result_edge_ids_by_feature(
+fn feature_result_edge_ids_by_feature(
     rows: &[crate::curve::CurveTopologyRow],
 ) -> BTreeMap<u32, Vec<u32>> {
     rows.iter()

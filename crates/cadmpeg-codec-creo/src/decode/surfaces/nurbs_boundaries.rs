@@ -20,17 +20,17 @@ const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-12;
 
 #[derive(Clone)]
-pub(in super::super) struct NurbsSurfaceBoundary {
-    pub(super) curve: NurbsCurve,
-    pub(super) control_indices: Vec<usize>,
-    pub(super) transverse_periodic: bool,
+struct NurbsSurfaceBoundary {
+    curve: NurbsCurve,
+    control_indices: Vec<usize>,
+    transverse_periodic: bool,
 }
 
 /// The four boundary curves of one NURBS surface carrier.
 ///
 /// `surface_id` is the `VisibGeom` surface row that stated the surface. Every
 /// refusal names that row, so N refused rows stay N named records.
-pub(in super::super) fn nurbs_surface_boundaries(
+fn nurbs_surface_boundaries(
     nurbs: &NurbsSurface,
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
@@ -107,9 +107,7 @@ pub(in super::super) fn nurbs_surface_boundaries(
     boundaries.try_into().ok()
 }
 
-pub(in super::super) fn point_tolerance<'a>(
-    points: impl Iterator<Item = &'a Point3>,
-) -> Option<f64> {
+fn point_tolerance<'a>(points: impl Iterator<Item = &'a Point3>) -> Option<f64> {
     let points = points.collect::<Vec<_>>();
     let anchor = **points.first()?;
     let extent = points
@@ -182,18 +180,18 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     )))
 }
 
-pub(in super::super) fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
+fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
     (left - right).abs() <= tolerance
 }
 
-pub(in super::super) fn normalized_knot_vector(knots: &[f64]) -> Option<Vec<f64>> {
+fn normalized_knot_vector(knots: &[f64]) -> Option<Vec<f64>> {
     let (&minimum, &maximum) = knots.first().zip(knots.last())?;
     let span = maximum - minimum;
     (span.is_finite() && span > 0.0)
         .then(|| knots.iter().map(|knot| (knot - minimum) / span).collect())
 }
 
-pub(in super::super) fn nurbs_curves_match(
+fn nurbs_curves_match(
     left: &NurbsCurve,
     right: &NurbsCurve,
     reversed: bool,
@@ -273,7 +271,7 @@ pub(in super::super) fn nurbs_curves_match(
     }
 }
 
-pub(in super::super) fn generator_separates_control_nets(
+fn generator_separates_control_nets(
     first: &NurbsSurface,
     first_boundary: &NurbsSurfaceBoundary,
     second: &NurbsSurface,

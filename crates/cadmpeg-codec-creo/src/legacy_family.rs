@@ -22,13 +22,13 @@ const VALUE_STRING: &str = "value(s_val)";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTable {
     /// Direct owning model object identity.
-    pub(crate) root_parent_id: String,
+    root_parent_id: String,
     /// Direct owning model object name.
-    pub(crate) root_parent_name: String,
+    root_parent_name: String,
     /// Source offset of the root object row.
     pub(crate) offset: usize,
     /// Optional root generic-name field.
-    pub(crate) generic_name: Option<legacy::StringValue>,
+    generic_name: Option<legacy::StringValue>,
     /// Ordered table-column descriptors.
     pub(crate) items: Vec<FamilyTableItem>,
     /// Ordered instance rows.
@@ -39,47 +39,47 @@ pub(crate) struct FamilyTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableItem {
     /// Source offset of the item object row.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Stored item identifier.
-    pub(crate) item_id: i32,
+    item_id: i32,
     /// Stored item type code.
-    pub(crate) type_code: i32,
+    type_code: i32,
     /// Stored visibility flag.
-    pub(crate) invisible: i32,
+    invisible: i32,
     /// Stored item name, including null or non-UTF-8 forms.
-    pub(crate) name: legacy::StringValue,
+    name: legacy::StringValue,
 }
 
 /// One ordered family-table instance row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableInstance {
     /// Source offset of the instance object row.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Stored instance name. This field is required to be non-empty UTF-8.
-    pub(crate) name: String,
+    name: String,
     /// Stored instance attributes bitfield.
-    pub(crate) attributes: i32,
+    attributes: i32,
     /// Direct model object referenced by the instance row.
-    pub(crate) model_object_id: String,
+    model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
-    pub(crate) values: Vec<FamilyTableValue>,
+    values: Vec<FamilyTableValue>,
 }
 
 /// One typed family-table cell.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FamilyTableValue {
+struct FamilyTableValue {
     /// Legacy value-row object identity.
-    pub(crate) source_object_id: String,
+    source_object_id: String,
     /// Source offset of the typed value field.
-    pub(crate) offset: usize,
+    offset: usize,
     /// Typed value payload.
-    pub(crate) value: FamilyTableValuePayload,
+    value: FamilyTableValuePayload,
 }
 
 /// Typed payload forms admitted by the legacy family-table row grammar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-pub(crate) enum FamilyTableValuePayload {
+enum FamilyTableValuePayload {
     /// `type=50` with one `value(d_val)` real field.
     Real {
         /// Exact source real value.
@@ -98,7 +98,7 @@ pub(crate) enum FamilyTableValuePayload {
 }
 
 impl FamilyTableValuePayload {
-    pub(crate) fn type_code(&self) -> i32 {
+    fn type_code(&self) -> i32 {
         match self {
             Self::Real { .. } => 50,
             Self::String { .. } => 51,
