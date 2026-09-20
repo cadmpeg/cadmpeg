@@ -1,0 +1,722 @@
+[
+  {
+    "id": "IR2-01",
+    "crate": "cadmpeg-ir",
+    "priority": 1,
+    "kind": "Numerical",
+    "title": "Bezier patch decomposition changes valid splines",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "homogeneous_bezier_spans",
+        "line": 269,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      },
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "rational_surface_patches_with_budget",
+        "line": 325,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "For degree 2, knots [-1,-1,0,1,2,2] and poles (0,0), (1,1), (2,0), the decomposed midpoint has y=0.5; the spline has y=0.75. With knots [0,0,0,1,1,1,2,2,2] and x poles 0..5, the second span evaluates to x=3 instead of 4.",
+    "impact": "Surface inversion and bounds consume patches that no longer represent the source surface. Endpoint clamping is missing; interval_index*degree also selects the wrong controls after full-multiplicity internal knots. The probe establishes patch corruption, not a complete codec conversion failure.",
+    "fix": "Extract spans by their actual knot/control indices, including active endpoint insertion. Share the corrected algorithm with IGES; its copy has the same defects.",
+    "tests": "ir_spans::unclamped; ir_spans::discontinuous",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-02",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Surface Newton solver stops on a regular small plane",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nurbs_surface_parameter_near_point",
+        "line": 1280,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "A 1e-5 by 1e-5 bilinear plane, target (0.3e-5,0.4e-5,0), and seed (0,0) return (0,0), although one Newton step gives (0.3,0.4). The determinant is 1e-20 and is rejected against absolute machine epsilon.",
+    "impact": "SolidWorks projection callers forward-check the candidate and can discard valid geometry. The API documents a candidate, so this is failed convergence, not a falsely claimed nearest-point certificate. Its separate absolute squared-distance stopping gate also prevents scale-independent accuracy.",
+    "fix": "Scale the least-squares columns and use a relative rank test. Use a residual/parameter convergence contract that does not impose an undocumented absolute model-space floor.",
+    "tests": "ir_surface::small_plane",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-03",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Rational search speed bounds depend on common weight scale",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nurbs_curve_speed_bound_about",
+        "line": 1780,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      },
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nurbs_curve_parameter_near_point",
+        "line": 1622,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      },
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nurbs_pcurve_contains_point",
+        "line": 2203,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "The same unit line has speed bound Some(1) with weights [1,1], but None with [1e-200,1e-200]. minimum_weight.powi(2) underflows, producing 0/0. The pcurve containment path repeats this formula.",
+    "impact": "A geometrically unchanged curve loses parameter-witness and containment support before search starts. This is outside the point/tangent evaluators fixed in the previous audit.",
+    "fix": "Normalize common weight scale or evaluate the bound through scale-safe ratios/products; retain a conservative upper bound.",
+    "tests": "ir_speed::common_weights",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-04",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Periodic parameter facade still returns Some(NaN)",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "map_nurbs_curve_parameter",
+        "line": 1957,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "A periodic curve with domain [-1e308,-9e307] and finite parameter 1e308 returns Some(NaN): parameter-lower overflows before rem_euclid.",
+    "impact": "Tangent, second-derivative, and model differential paths call this facade. The earlier periodic_parameter fix did not reach this separate implementation.",
+    "fix": "Use the existing scale-safe periodic mapping implementation, and require a finite in-domain result.",
+    "tests": "ir_phase::finite_phase",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-05",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Curve witness accepts a point outside zero tolerance",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nurbs_curve_parameter_near_point",
+        "line": 1622,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      },
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "nearest_boundary_witness",
+        "line": 1914,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "For a unit X-axis line and point (0,1e-200,0), tolerance 0 returns the endpoint witness 0. The current squared-distance closure underflows to zero; the actual distance is 1e-200.",
+    "impact": "The documented forward-residual guarantee is false for very small separations. This is an extreme-scale boundary case, not evidence of a problem at ordinary positive CAD tolerances.",
+    "fix": "Use the shared scale-safe point distance in the boundary and interval residual checks.",
+    "tests": "ir_witness::false_zero_residual; ir_surface::cached_public_curve_residual",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-06",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Sweep-law quotient differentiation overflows avoidable intermediates",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "scalar_sweep_law_differential",
+        "line": 5027,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "At X=1, X/1e200 has derivative 0 instead of 1e-200. X/1e-200 returns None although its value and derivative, 1e200, are finite. The quotient rule squares the denominator.",
+    "impact": "Valid law-driven sweep derivatives become zero or unavailable. The affected function feeds sweep surface differential evaluation.",
+    "fix": "Evaluate the quotient derivative using scale-safe ratios/products instead of an unscaled squared denominator.",
+    "tests": "ir_laws::quotient",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-07",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Hyperbolic sweep laws lose finite values and derivatives",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/eval.rs",
+        "function": "scalar_unary_sweep_law_differential",
+        "line": 5108,
+        "sha256": "2814d095d805fa54c3c5ddfa2133c22eda12eba6defbf1ffc0bd8d460fca47ee"
+      }
+    ],
+    "proof": "TANH at value 20 and incoming derivative 1e20 returns derivative 0; the stable result is about 1699.341702. ARCSINH at value/derivative 1e200 returns derivative 0 instead of approximately 1. ARCOTH(1e20) returns value 0 instead of approximately 1e-20.",
+    "impact": "Cancellation in 1-tanh(x)^2 and (x+1)/(x-1), plus overflowing x*x, damages law values and chain-rule derivatives. These are one family in the same dispatch function.",
+    "fix": "Use stable hyperbolic identities, hypot-based denominators, and log1p/atanh formulations with their domain checks.",
+    "tests": "ir_laws::hyperbolic",
+    "confidence": "High"
+  },
+  {
+    "id": "IR2-08",
+    "crate": "cadmpeg-ir",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Helix circular-frame admission still uses an unsafe norm",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-ir/src/geometry.rs",
+        "function": "impl HelixPathConstruction",
+        "line": 1933,
+        "sha256": "4dcb9535cb68b121318e62d77e6737df17138de60d2ac35e4554f5b57891e4d7"
+      }
+    ],
+    "proof": "The current admission expressions accept orthogonal equal-radius vectors at radius 1, but reject them at finite radii 1e200 and 1e-200. Squared lengths overflow or underflow before the radius comparison.",
+    "impact": "Finite circular helix constructions are refused even though the shared Vector3 norm now handles these scales. This is an extreme-scale admission defect.",
+    "fix": "Use the shared norm for both radii and preserve the existing acceptance tolerance.",
+    "tests": "ir_helix::finite_circular_frame",
+    "confidence": "High"
+  },
+  {
+    "id": "IGES2-01",
+    "crate": "cadmpeg-codec-iges",
+    "priority": 1,
+    "kind": "Numerical",
+    "title": "Wrong Bezier spans can certify unequal surface boundaries",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-iges/src/entities/surfaces.rs",
+        "function": "homogeneous_bezier_spans",
+        "line": 436,
+        "sha256": "93087e3d639821f6d6e0aa119d6cc05ed9b6e6dcc6c6f406460207c0caa280c1"
+      },
+      {
+        "path": "crates/cadmpeg-codec-iges/src/entities/surfaces.rs",
+        "function": "homogeneous_curve_boundary_matches",
+        "line": 914,
+        "sha256": "93087e3d639821f6d6e0aa119d6cc05ed9b6e6dcc6c6f406460207c0caa280c1"
+      },
+      {
+        "path": "crates/cadmpeg-codec-iges/src/entities/surfaces.rs",
+        "function": "surface_boundary_is_closed",
+        "line": 992,
+        "sha256": "93087e3d639821f6d6e0aa119d6cc05ed9b6e6dcc6c6f406460207c0caa280c1"
+      }
+    ],
+    "proof": "The same unclamped and discontinuous examples as IR2-01 produce wrong spans. Two degree-2 curves with full internal multiplicity that differ only at their final control point are reported equal at resolution 0; their separation at t=1.5 is 1.",
+    "impact": "The Type 128 closed-surface flag check can accept inconsistent boundaries. The same decomposition also feeds aligned rails for ruled surfaces. This duplicate algorithm has already drifted from the corrected Rhino implementation.",
+    "fix": "Use one corrected shared Bezier extraction algorithm; test both active endpoint clipping and degree+1 interior multiplicity.",
+    "tests": "iges_spans::unclamped; iges_spans::discontinuous; iges_closure::omitted_control",
+    "confidence": "High"
+  },
+  {
+    "id": "IGES2-02",
+    "crate": "cadmpeg-codec-iges",
+    "priority": 1,
+    "kind": "Numerical",
+    "title": "Boundary equality underflows after multiplying homogeneous weights",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-iges/src/entities/surfaces.rs",
+        "function": "homogeneous_curve_boundary_matches",
+        "line": 914,
+        "sha256": "93087e3d639821f6d6e0aa119d6cc05ed9b6e6dcc6c6f406460207c0caa280c1"
+      }
+    ],
+    "proof": "Two parallel unit lines separated by 2, both weighted [1e-200,1e-200], compare equal at resolution 1e-6. Both cross-products and the threshold underflow to zero.",
+    "impact": "Closure admission can accept genuinely open boundaries with ordinary coordinates. Normalizing the common weight scale must not change the answer.",
+    "fix": "Scale the homogeneous operands before cross-products and compare a scale-safe residual against the resolution.",
+    "tests": "iges_closure::small_weights",
+    "confidence": "High"
+  },
+  {
+    "id": "F3D2-01",
+    "crate": "cadmpeg-codec-f3d",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Second line\u2013arc intersection implementation retains the false-tangent bug",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/geometry.rs",
+        "function": "line_arc_intersects",
+        "line": 2315,
+        "sha256": "46709ddced55b7d6ac57b096a5fb8078b7d9f0b586672b6bcf32cc448f9928f8"
+      },
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/geometry.rs",
+        "function": "line_arc_intersection_points",
+        "line": 672,
+        "sha256": "46709ddced55b7d6ac57b096a5fb8078b7d9f0b586672b6bcf32cc448f9928f8"
+      }
+    ],
+    "proof": "A line from (-1e-4,2e-4) to (1e-4,2e-4) and circle of radius 1e-4 at the origin are disjoint. The boolean routine returns true while the corrected point-producing routine returns no intersections.",
+    "impact": "Profile independence and containment decisions can reject valid disjoint loops. The .max(1.0) discriminant error floor remains in the boolean copy.",
+    "fix": "Route the boolean decision through the corrected intersection owner and remove the duplicate quadratic solver.",
+    "tests": "f3d::copies_disagree",
+    "confidence": "High"
+  },
+  {
+    "id": "F3D2-02",
+    "crate": "cadmpeg-codec-f3d",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Profile NURBS speed bounds fail under common weight scaling",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/geometry.rs",
+        "function": "nurbs_speed_bound",
+        "line": 1862,
+        "sha256": "46709ddced55b7d6ac57b096a5fb8078b7d9f0b586672b6bcf32cc448f9928f8"
+      }
+    ],
+    "proof": "The same unit pcurve has bound Some(1) with weights [1,1] and None with [1e-200,1e-200]. The unscaled squared minimum weight produces 0/0.",
+    "impact": "Certified profile-tube and separation paths refuse an unchanged valid profile. This is another local copy of the rational-bound problem.",
+    "fix": "Share a scale-safe bound implementation with the IR where the mathematical contracts agree.",
+    "tests": "f3d_speed::weights",
+    "confidence": "High"
+  },
+  {
+    "id": "F3D2-03",
+    "crate": "cadmpeg-codec-f3d",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Canvas and decal scope collection repeat the same algorithm",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/decode/canvas.rs",
+        "function": "decode_canvas_images",
+        "line": 28,
+        "sha256": "e90ad2ed107af414e9e39370021f7e06ae71d35e6e3dd3062cacd512d06d16a1"
+      },
+      {
+        "path": "crates/cadmpeg-codec-f3d/src/design/decode/decal.rs",
+        "function": "decode_decal_images",
+        "line": 33,
+        "sha256": "e67c75b8c0586e4977b2a11eb7c9b74b44a12138b6001e83529ef7b280255b73"
+      }
+    ],
+    "proof": "Both traverse design bulkstreams, match native stream identities, filter a scope kind, parse matching scopes, and sort/deduplicate image IDs. Their kind, parser, and output record differ.",
+    "impact": "Stream matching and ordering rules have two maintenance owners. No current behavior error was demonstrated.",
+    "fix": "Factor the shared stream/scope traversal; keep each image parser and record type distinct. Avoid a new public trait solely for this pair.",
+    "tests": "",
+    "confidence": "High duplication; medium refactor benefit"
+  },
+  {
+    "id": "FREECAD2-01",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Similarity admission accepts a 60-degree sheared frame",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/topology_transfer.rs",
+        "function": "uniform_scale",
+        "line": 1821,
+        "sha256": "e80725bf3efcf040b74134ae9f4f8bf7bbbe2ed2c0c220dce3a01c305181898e"
+      }
+    ],
+    "proof": "Columns (1e-6,0,0), (0.5e-6,sqrt(0.75)*1e-6,0), and (0,0,1e-6) pass as a similarity. The first two columns are 60 degrees apart. The dot-product threshold has units of length rather than squared length and floors scale at 1.",
+    "impact": "ensure_similarity and deflection scaling can accept a transform that changes angles and cannot be represented by one uniform scale.",
+    "fix": "Test orthogonality on normalized columns and compare column lengths with a dimensionally consistent tolerance.",
+    "tests": "freecad::small_shear",
+    "confidence": "High"
+  },
+  {
+    "id": "FREECAD2-02",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Normal transformation silently returns an unnormalized vector",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/topology_transfer.rs",
+        "function": "transform_normalized_vector",
+        "line": 1919,
+        "sha256": "e80725bf3efcf040b74134ae9f4f8bf7bbbe2ed2c0c220dce3a01c305181898e"
+      }
+    ],
+    "proof": "Uniform transform scales 1e200 and 1e-200 return normal lengths 1e200 and 1e-200 instead of 1. The manual norm overflows/underflows, then the fallback returns the transformed vector unchanged.",
+    "impact": "Placed triangulation normals violate normalization expectations. Extreme finite scale is required for this witness.",
+    "fix": "Normalize using the shared scale-safe vector operation; do not treat failed normalization as a successful unit vector.",
+    "tests": "freecad::transformed_normal",
+    "confidence": "High"
+  },
+  {
+    "id": "FREECAD2-03",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Three TechDraw list validators duplicate structure admission",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/gui.rs",
+        "function": "validate_gui_geom_format_list",
+        "line": 2053,
+        "sha256": "0ac6290700057aecc7e090f548b35cc33bfcd749eee65daf8c08dfb442bf3cb4"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/gui.rs",
+        "function": "validate_gui_cosmetic_edge_list",
+        "line": 2229,
+        "sha256": "0ac6290700057aecc7e090f548b35cc33bfcd749eee65daf8c08dfb442bf3cb4"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/gui.rs",
+        "function": "validate_gui_center_line_list",
+        "line": 2278,
+        "sha256": "0ac6290700057aecc7e090f548b35cc33bfcd749eee65daf8c08dfb442bf3cb4"
+      }
+    ],
+    "proof": "The three functions repeat single-root admission, list-tag checks, count parsing, element counting, child tag/type checks, and record dispatch. The literal names and record validator differ.",
+    "impact": "A structural validation fix requires three parallel edits. Record-specific validation must remain separate.",
+    "fix": "Use one private typed-list traversal with explicit list/record names and a record-validation callback.",
+    "tests": "",
+    "confidence": "High"
+  },
+  {
+    "id": "FREECAD2-04",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Edge and vertex appearance transfer repeat style and binding construction",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/gui.rs",
+        "function": "transfer_edge_appearance",
+        "line": 909,
+        "sha256": "0ac6290700057aecc7e090f548b35cc33bfcd749eee65daf8c08dfb442bf3cb4"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/gui.rs",
+        "function": "transfer_vertex_appearance",
+        "line": 976,
+        "sha256": "0ac6290700057aecc7e090f548b35cc33bfcd749eee65daf8c08dfb442bf3cb4"
+      }
+    ],
+    "proof": "The two functions repeat payload-prefix selection, provider identity handling, packed RGBA conversion, nonnegative size filtering, appearance construction, and binding creation.",
+    "impact": "Provider/style behavior can drift between edge and vertex presentation. Target type, style property, and labels are legitimate differences.",
+    "fix": "Share style/binding construction around explicit appearance targets and metadata; preserve the domain-specific target selection.",
+    "tests": "",
+    "confidence": "High duplication; medium refactor benefit"
+  },
+  {
+    "id": "FREECAD2-05",
+    "crate": "cadmpeg-codec-freecad",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Text B-rep table readers repeat their envelope parser",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/brep.rs",
+        "function": "parse_curve2ds",
+        "line": 3707,
+        "sha256": "53fb9f61040069e47786d6040509cd2b6b75dd10f482aa83b5058e6e7cd36d34"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/brep.rs",
+        "function": "parse_curves",
+        "line": 4963,
+        "sha256": "53fb9f61040069e47786d6040509cd2b6b75dd10f482aa83b5058e6e7cd36d34"
+      },
+      {
+        "path": "crates/cadmpeg-codec-freecad/src/brep.rs",
+        "function": "parse_surfaces",
+        "line": 4535,
+        "sha256": "53fb9f61040069e47786d6040509cd2b6b75dd10f482aa83b5058e6e7cd36d34"
+      }
+    ],
+    "proof": "All three find start/end table tokens, take the declared count, bound minimum token consumption, parse indexed rows, and reject trailing tokens. Only section labels and row parsers differ.",
+    "impact": "The same framing, allocation, and trailing-data rules are maintained three times.",
+    "fix": "Share the table envelope reader and pass the owned row parser; keep curve and surface grammar code separate.",
+    "tests": "",
+    "confidence": "High"
+  },
+  {
+    "id": "CREO2-01",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Both quadratic solvers change roots when all coefficients are scaled",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/analytic/equations.rs",
+        "function": "quadratic_real_roots",
+        "line": 516,
+        "sha256": "bfa2babd01edaba374a3b7dfdd21c929abd30cecdc6b60935146b6466ae4650f"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/decode/sketch/equations_coordinate.rs",
+        "function": "quadratic_roots",
+        "line": 990,
+        "sha256": "bf009f33bc5a01453d59f85a7c6e1d8c7cc4ff3a9f50fc365ef5a08a9d24939d"
+      }
+    ],
+    "proof": "x^2-1 returns [-1,1]. Multiplying every coefficient by 1e-10 yields [-0] in both solvers; multiplying by 1e-20 yields no roots. Absolute floors control degree and discriminant classification.",
+    "impact": "Analytic intersection and sketch equation candidates are lost or fabricated by a representation-only scaling. Later geometric checks may reject false candidates, but cannot recover omitted roots.",
+    "fix": "Normalize coefficient magnitude first, use a scale-relative discriminant bound and stable quadratic roots, and retain each caller's admission checks.",
+    "tests": "creo::coefficient_scale",
+    "confidence": "High"
+  },
+  {
+    "id": "CREO2-02",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Circle\u2013circle intersection fabricates a unique tangent point",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/feature/definitions.rs",
+        "function": "trim_circle_circle_intersection",
+        "line": 3535,
+        "sha256": "5ccccd0434ea888fcc8aaca3a67be996fc21063278420895baf791bbcc44d6ad"
+      }
+    ],
+    "proof": "Two circles of radius 1e-6 with centers (0,0) and (1e-6,0) have two intersections. The function returns the single point (0.5e-6,0), which lies on neither circle.",
+    "impact": "The scale.max(1) height tolerance turns a genuinely ambiguous trim intersection into a purported unique coordinate.",
+    "fix": "Normalize the geometry and distinguish two crossings from a tangent with a relative error bound; forward-check any returned point against both circles.",
+    "tests": "creo::two_circle_intersections",
+    "confidence": "High"
+  },
+  {
+    "id": "CREO2-03",
+    "crate": "cadmpeg-codec-creo",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Legacy curve and surface array lookup duplicate the same ownership checks",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-creo/src/legacy_geometry.rs",
+        "function": "curve_array_elements",
+        "line": 202,
+        "sha256": "44bcf99414148b8a5fb8d0318a6a44091a309c2ed3c8a54294217e8d8ab09316"
+      },
+      {
+        "path": "crates/cadmpeg-codec-creo/src/legacy_geometry.rs",
+        "function": "surface_array_elements",
+        "line": 377,
+        "sha256": "44bcf99414148b8a5fb8d0318a6a44091a309c2ed3c8a54294217e8d8ab09316"
+      }
+    ],
+    "proof": "The signatures and lookup/uniqueness/parent/completeness logic are identical. Only the array name, crv_array versus srf_array, differs.",
+    "impact": "The exact same source ownership invariant has two implementations.",
+    "fix": "Replace the pair with one array lookup parameterized by the array name; update callers directly.",
+    "tests": "",
+    "confidence": "High"
+  },
+  {
+    "id": "NX2-01",
+    "crate": "cadmpeg-codec-nx",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "JT transform parsing rejects finite orthogonal scales through f32 norm overflow",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-nx/src/native/display_jt.rs",
+        "function": "parse_jt9_geometric_transform_body",
+        "line": 2005,
+        "sha256": "30a29d005c60972c685415309e4be0e297d31c88973d637a5f6beb6080721add"
+      }
+    ],
+    "proof": "Byte fixtures differing only in uniform diagonal scale accept 1 but reject 1e20 and 1e-30. Squaring finite f32 rows produces infinity or zero.",
+    "impact": "Valid finite transform carriers become unavailable to the JT presentation path. This is an extreme-scale parser limitation.",
+    "fix": "Promote the norm/rank arithmetic or scale the rows before computing lengths and orthogonality.",
+    "tests": "nx::f32_scale",
+    "confidence": "High"
+  },
+  {
+    "id": "NX2-02",
+    "crate": "cadmpeg-codec-nx",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Linked and target index row projection duplicate source resolution",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-nx/src/native/om/column_row.rs",
+        "function": "data_block_linked_index_rows",
+        "line": 125,
+        "sha256": "0d12a48c357a6bbb5ea6f3752bc10fbfc0b86a92a86d58576d3fa289ee6d0a56"
+      },
+      {
+        "path": "crates/cadmpeg-codec-nx/src/native/om/column_row.rs",
+        "function": "data_block_target_index_rows",
+        "line": 173,
+        "sha256": "0d12a48c357a6bbb5ea6f3752bc10fbfc0b86a92a86d58576d3fa289ee6d0a56"
+      }
+    ],
+    "proof": "Both traverse indexed sections, derive storage/base offsets, locate the opening block, absolutize the frame, resolve control-index references, assign row ordinals, and collect records. Scanner and output wrapper differ.",
+    "impact": "Offset/provenance and reference admission changes must be mirrored across both paths.",
+    "fix": "Share the section/frame projection flow with explicit row construction; retain distinct row scanners and wire types.",
+    "tests": "",
+    "confidence": "High duplication; medium refactor benefit"
+  },
+  {
+    "id": "NX2-03",
+    "crate": "cadmpeg-codec-nx",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Class and field registry collection duplicate merge policy",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-nx/src/native/om.rs",
+        "function": "class_definitions",
+        "line": 2924,
+        "sha256": "36a012904c3a6e3c91a4fda9aee4207691faa4bbb7f7b2fbf9349fb9e9f73112"
+      },
+      {
+        "path": "crates/cadmpeg-codec-nx/src/native/om.rs",
+        "function": "field_definitions",
+        "line": 2988,
+        "sha256": "36a012904c3a6e3c91a4fda9aee4207691faa4bbb7f7b2fbf9349fb9e9f73112"
+      }
+    ],
+    "proof": "Both independently merge framed and indexed definitions into a BTreeMap keyed by entry/offset, prefer framed records, and construct the same ordinal/provenance/tail fields.",
+    "impact": "Source precedence, identity, and registry-tail handling have duplicate owners.",
+    "fix": "Share the registry collection and precedence operation. Keep class/field record types and labels explicit.",
+    "tests": "",
+    "confidence": "High duplication; medium refactor benefit"
+  },
+  {
+    "id": "RHINO2-01",
+    "crate": "cadmpeg-codec-rhino",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Legacy B-rep vertex averaging can create infinity from finite endpoints",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/brep.rs",
+        "function": "vertex.point_sum[0] +=",
+        "line": 1323,
+        "sha256": "cc35ed5da2867d3b19b6cc734614bf209ce480534650c09c2a49fe216aa0fc96"
+      },
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/brep.rs",
+        "function": "accumulated.vertex.point = Point3",
+        "line": 1366,
+        "sha256": "cc35ed5da2867d3b19b6cc734614bf209ce480534650c09c2a49fe216aa0fc96"
+      }
+    ],
+    "proof": "The current accumulator and final mean expressions turn two identical endpoints (1e308,0,0) into (infinity,0,0). Their exact mean is the same finite endpoint.",
+    "impact": "Legacy topology assembly creates a nonfinite point before transfer. The source arithmetic is reproduced; a complete legacy archive fixture was not constructed.",
+    "fix": "Use scale-safe averaging or scaled sums, including mixed-sign inputs; retain source tolerances and finite admission.",
+    "tests": "rhino_mean::finite_endpoint_average",
+    "confidence": "High"
+  },
+  {
+    "id": "RHINO2-02",
+    "crate": "cadmpeg-codec-rhino",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Optional localizer curve and surface readers duplicate child framing",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/morph.rs",
+        "function": "optional_curve",
+        "line": 189,
+        "sha256": "be520a85b2f5ceeed5c4dfa812ae77874883122a0e164d8db5236a556040c06a"
+      },
+      {
+        "path": "crates/cadmpeg-codec-rhino/src/morph.rs",
+        "function": "optional_surface",
+        "line": 217,
+        "sha256": "be520a85b2f5ceeed5c4dfa812ae77874883122a0e164d8db5236a556040c06a"
+      }
+    ],
+    "proof": "Both read an anonymous child, apply the same version gate, read a presence boolean, parse the payload, skip trailing child bytes, and advance the parent. Labels and the payload parser differ.",
+    "impact": "Child-boundary and version handling have two copies. The NURBS payload parsers themselves are distinct.",
+    "fix": "Use one private optional-child reader taking the owned payload parser and diagnostic label.",
+    "tests": "",
+    "confidence": "High duplication; medium refactor benefit"
+  },
+  {
+    "id": "SLDPRT2-01",
+    "crate": "cadmpeg-codec-sldprt",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Arc tessellation reports zero sagitta for a nonzero chord error",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-sldprt/src/tessellation.rs",
+        "function": "planar_arc_segments",
+        "line": 1664,
+        "sha256": "459b5848af65ecece0e97d1d4234cd73ca30af9e9cc98a2fd0606b1b1a1fd40d"
+      }
+    ],
+    "proof": "For span 1e-5, radius 1e12, and requested tolerance 1e-9, the cap is 4096 segments. Reported error is 0, while 2*r*sin(span/(4*n))^2 gives 7.4505805969e-7.",
+    "impact": "Downstream error accounting underestimates the actual approximation error. The witness is a very large-radius, short-angle arc; no ordinary-radius corpus frequency is claimed.",
+    "fix": "Compute sagitta through the stable sine-squared identity, use a stable inverse for segment selection, and propagate the actual error when the cap is reached.",
+    "tests": "sld::sagitta",
+    "confidence": "High"
+  },
+  {
+    "id": "SLDPRT2-02",
+    "crate": "cadmpeg-codec-sldprt",
+    "priority": 3,
+    "kind": "Duplicate / forwarding layer",
+    "title": "Seeded surface projection wrapper adds no contract",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-sldprt/src/brep/graph.rs",
+        "function": "nurbs_seeded_surface_projection",
+        "line": 4978,
+        "sha256": "50269592915b64745056e8e4b8158f80979a78f138b4b203f6668c50a73c7ffc"
+      }
+    ],
+    "proof": "The wrapper forwards all three arguments unchanged to nurbs_surface_parameter_near_point and returns its result unchanged. Caller residual checks remain outside it.",
+    "impact": "The extra name hides the true numerical owner and adds an unnecessary maintenance step.",
+    "fix": "Remove the wrapper and have its callers use the owning IR function directly.",
+    "tests": "",
+    "confidence": "High"
+  },
+  {
+    "id": "ASM2-01",
+    "crate": "cadmpeg-asm",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Ellipse and support-cone reconstruction retain manual unsafe lengths",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-asm/src/nurbs/proc_surface.rs",
+        "function": "ellipse_to_nurbs",
+        "line": 1623,
+        "sha256": "15d6a1dfc95d8a2c8fe6e42f628b52e072fd0021262664797164cbd68256b6c2"
+      },
+      {
+        "path": "crates/cadmpeg-asm/src/nurbs/proc_curve.rs",
+        "function": "let radius = (major[0] * major[0]",
+        "line": 2880,
+        "sha256": "c668f21fecefed9b96191053110d70ad09e2109a2b15f71741509a3696c46830"
+      }
+    ],
+    "proof": "ellipse_to_nurbs accepts a unit major radius but rejects 1e200 and 1e-200 with unit normal and ratio 0.5, although all output coordinates can remain finite. The text and binary support-cone branches repeat the same squared-major-length calculation.",
+    "impact": "The earlier normalized-direction repair did not fix these independent radius computations. Valid extreme-scale ellipse/cone geometry can be dropped. The ellipse is probed; cone branches are confirmed by source inspection.",
+    "fix": "Use scale-safe lengths for major/minor vectors, preserving the native-to-mm conversion and existing geometry admission.",
+    "tests": "asm::radii_scale",
+    "confidence": "High"
+  },
+  {
+    "id": "STEP2-01",
+    "crate": "cadmpeg-codec-step",
+    "priority": 2,
+    "kind": "Numerical",
+    "title": "Mesh volume and centroid depend on translation",
+    "sources": [
+      {
+        "path": "crates/cadmpeg-codec-step/src/reader/validation.rs",
+        "function": "mesh_properties",
+        "line": 330,
+        "sha256": "4303af72bb8039a539aa0b7fcac1d51d8c25df30b4d09818f82b9ddd4b13ff07"
+      }
+    ],
+    "proof": "A closed tetrahedron with vertices (0,0,0),(2,0,0),(0,1,0),(0,0,1) has volume 1/3 and centroid (0.5,0.25,0.25). At translation (1e6,1e6,1e6), the routine switches to an area centroid with relative x=0.5833333333. At translation 1e9 it reports volume about 666666666.7.",
+    "impact": "STEP validation-property comparisons can report false mismatches for the same solid moved in model space. The origin-based triple products cancel; the absolute-coordinate volume epsilon also changes centroid selection.",
+    "fix": "Compute moments relative to a local reference point and restore the translation afterward; base degeneracy thresholds on local extent, with stable accumulation.",
+    "tests": "step::translation",
+    "confidence": "High"
+  }
+]

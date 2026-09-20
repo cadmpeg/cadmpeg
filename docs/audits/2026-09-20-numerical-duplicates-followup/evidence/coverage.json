@@ -1,0 +1,23 @@
+{
+  "cadmpeg": 390,
+  "cadmpeg-asm": 610,
+  "cadmpeg-codec-catia": 2017,
+  "cadmpeg-codec-creo": 2334,
+  "cadmpeg-codec-f3d": 3212,
+  "cadmpeg-codec-freecad": 883,
+  "cadmpeg-codec-iges": 1121,
+  "cadmpeg-codec-inventor": 539,
+  "cadmpeg-codec-nx": 3040,
+  "cadmpeg-codec-rhino": 1056,
+  "cadmpeg-codec-sat": 31,
+  "cadmpeg-codec-sldprt": 2322,
+  "cadmpeg-codec-step": 792,
+  "cadmpeg-container": 97,
+  "cadmpeg-core": 306,
+  "cadmpeg-fuzz": 203,
+  "cadmpeg-ir": 2958,
+  "cadmpeg-parasolid": 23,
+  "cadmpeg-protein": 37,
+  "cadmpeg-registry": 67,
+  "cadmpeg-test-support": 58
+}

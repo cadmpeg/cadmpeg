@@ -1,0 +1,71 @@
+
+running 25 tests
+test asm::radii_scale ... ASM finite ellipse radius=1e0 accepted=true
+ASM finite ellipse radius=1e200 accepted=false
+ASM finite ellipse radius=1e-200 accepted=false
+ok
+test creo::coefficient_scale ... Creo 1e0*(x*x-1): analytic=[-1.0, 1.0], sketch=[-1.0, 1.0], expected=[-1,1]
+Creo 1e-10*(x*x-1): analytic=[-0.0], sketch=[-0.0], expected=[-1,1]
+Creo 1e-20*(x*x-1): analytic=[], sketch=[], expected=[-1,1]
+ok
+test creo::two_circle_intersections ... Creo two intersections: returned unique point=Some([5e-7, 0.0]); true points=(0.5e-6,+/-sqrt(3)*0.5e-6)
+ok
+test f3d::copies_disagree ... F3D disjoint line/circle: bool=true point_count=0
+ok
+test f3d_speed::weights ... F3D identical pcurve weights=1e0, speed bound=Some(1.0)
+F3D identical pcurve weights=1e-200, speed bound=None
+ok
+test freecad::small_shear ... FreeCAD angle-60-degree columns accepted as similarity: Ok(1e-6)
+ok
+test freecad::transformed_normal ... FreeCAD scale=1e200 transformed normal length=1e200 expected=1
+FreeCAD scale=1e-200 transformed normal length=1e-200 expected=1
+ok
+test iges_closure::omitted_control ... IGES discontinuous boundary equality=Some(true); actual difference at t=1.5 is 1
+ok
+test iges_closure::small_weights ... IGES offset parallel boundaries equality=Some(true); true separation=2 tolerance=1e-6
+ok
+test iges_spans::discontinuous ... IGES discontinuous decomposed_x=3 expected_x=4
+ok
+test iges_spans::unclamped ... IGES unclamped decomposed_y=0.5 expected_y=0.75
+ok
+test ir_helix::finite_circular_frame ... IR circular helix radius=1e0 accepted=true
+IR circular helix radius=1e200 accepted=false
+IR circular helix radius=1e-200 accepted=false
+ok
+test ir_laws::hyperbolic ... IR TANH(20) chain derivative=0 expected=1699.3417021166356
+IR ARCOTH(1e20) value=0 expected~1e-20
+IR ARCSINH large chain derivative=0 expected~1
+ok
+test ir_laws::quotient ... IR DIV denominator=1e200 got=Some(ScalarSweepDifferential { value: 1e-200, derivative: 0.0 }) expected_derivative=1e-200
+IR DIV denominator=1e-200 got=None expected_derivative=1e200
+ok
+test ir_phase::finite_phase ... IR public periodic map finite parameter yields NaN
+ok
+test ir_spans::discontinuous ... IR discontinuous: decomposed_x=3 actual_x=4
+ok
+test ir_spans::unclamped ... IR unclamped: decomposed_y=0.5 actual_y=0.75
+ok
+test ir_speed::common_weights ... IR speed weight=1e0 bound=Some(1.0)
+IR speed weight=1e-200 bound=None
+ok
+test ir_surface::cached_public_curve_residual ... IR cached public API: zero-tolerance witness for point off line=Some(0.0)
+ok
+test ir_surface::small_plane ... IR small plane UV=(0,0) expected=(0.3,0.4)
+ok
+test ir_witness::false_zero_residual ... IR current boundary witness with off-curve distance=1e-200 and tolerance=0: Found(0.0)
+ok
+test nx::f32_scale ... NX JT finite scale=1e0 accepted=true
+NX JT finite scale=1e20 accepted=false
+NX JT finite scale=1e-30 accepted=false
+ok
+test rhino_mean::finite_endpoint_average ... Rhino two identical finite endpoints: mean=Point3([inf, 0.0, 0.0]) expected=[1e308,0,0]
+ok
+test sld::sagitta ... SLD arc segments=4096 claimed_error=0e0 stable_error=7.450580596923829e-7 tolerance=1e-9
+ok
+test step::translation ... STEP tetra translation=0: volume=0.3333333333333333 (expected 1/3); relative centroid=(0.5,0.25,0.25) expected=(0.5,0.25,0.25)
+STEP tetra translation=1000000: volume=0.33333333337213844 (expected 1/3); relative centroid=(0.5833333332557231,0.25,0.25) expected=(0.5,0.25,0.25)
+STEP tetra translation=1000000000: volume=666666666.6666666 (expected 1/3); relative centroid=(0.5833332538604736,0.25,0.25) expected=(0.5,0.25,0.25)
+ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

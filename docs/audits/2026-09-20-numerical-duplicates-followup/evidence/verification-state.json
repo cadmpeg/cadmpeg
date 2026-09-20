@@ -1,0 +1,17 @@
+{
+  "head": "9e4fce42c2ad8e89de43e9cb5ea28d758ad567f9",
+  "branch": "feat/finish-illegal-states",
+  "probe_source_drift": [],
+  "cached_dependencies": [
+    {
+      "crate": "cadmpeg_ir",
+      "path": "target/debug/deps/libcadmpeg_ir-1d96036679349f3a.rlib",
+      "sha256": "840627a86ae5191c23765c648a9add2e9ebb00369488da95649b56fdefaab205"
+    },
+    {
+      "crate": "cadmpeg_core",
+      "path": "target/debug/deps/libcadmpeg_core-94e08f8101f72968.rlib",
+      "sha256": "2bbc4865164fca64eed80bbe065ef7eebf0e86884c5e36cecd0d68082df25b98"
+    }
+  ]
+}
