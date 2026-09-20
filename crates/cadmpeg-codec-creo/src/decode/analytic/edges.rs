@@ -459,10 +459,10 @@ pub(super) fn planar_conic_equation(geometry: &CurveGeometry) -> Option<PlanarCo
 fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicFrame> {
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             (
                 [vertex.x, vertex.y, vertex.z],
                 [axis.x, axis.y, axis.z],

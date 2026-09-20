@@ -472,7 +472,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
     assert!(
         matches!(carrier_intersection_curve(cone_parabola_plane, cone), Some((CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)), "plane_cone_parabola"))
         if {
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             focal_distance > 0.0
         })
     );

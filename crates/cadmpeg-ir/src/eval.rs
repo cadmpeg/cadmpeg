@@ -2651,7 +2651,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             Some(vector_sum(&[
                 (
                     product_quotient([2.0, focal_distance, t], [])?,
@@ -2732,7 +2732,7 @@ fn curve_second_derivative_inner(
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             Some(vector_sum(&[(
                 product_quotient([2.0, focal_distance], [])?,
                 *major_direction,
@@ -3936,14 +3936,11 @@ fn direct_curve_parameter_near_point(
             canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
-            if focal_distance == 0.0 {
-                return None;
-            }
-            let (_, transverse, _) = components(*vertex, *axis, *major_direction);
+            let focal_distance = parabola_curve.focal_distance().get();
+            let (_, transverse, _) = components(vertex, *axis, *major_direction);
             crate::math::multiply_divide(transverse, 0.5, focal_distance)?
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
@@ -4093,12 +4090,12 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             ))
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let vertex = parabola_curve.vertex();
+            let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance();
+            let focal_distance = parabola_curve.focal_distance().get();
             Some(offset(
-                *vertex,
+                vertex,
                 &[
                     (
                         product_quotient([focal_distance, t, t], [])?,

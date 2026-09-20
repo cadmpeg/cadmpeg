@@ -1145,7 +1145,7 @@ impl TryFrom<EllipseCurveWire> for EllipseCurve {
 #[serde(try_from = "ParabolaCurveWire", into = "ParabolaCurveWire")]
 pub struct ParabolaCurve {
     vertex: FinitePoint3,
-    focal_distance: PositiveReal,
+    focal_distance: PositiveLength,
     frame: OrthonormalFrame3,
 }
 
@@ -1164,6 +1164,42 @@ struct ParabolaCurveWire {
 }
 
 impl ParabolaCurve {
+    /// Build a parabola from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// A parabola rebuilds from its own parts:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::ParabolaCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    ///
+    /// let parabola = ParabolaCurve::try_new(
+    ///     Point3::new(1.0, 2.0, 3.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     2.0,
+    /// )
+    /// .expect("orthonormal frame, finite vertex and positive focal distance");
+    /// let moved = ParabolaCurve::new(
+    ///     parabola.vertex(),
+    ///     parabola.frame(),
+    ///     parabola.focal_distance(),
+    /// );
+    /// assert_eq!(moved, parabola);
+    /// ```
+    #[must_use]
+    pub const fn new(
+        vertex: FinitePoint3,
+        frame: OrthonormalFrame3,
+        focal_distance: PositiveLength,
+    ) -> Self {
+        Self {
+            vertex,
+            focal_distance,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         vertex: Point3,
@@ -1174,19 +1210,21 @@ impl ParabolaCurve {
         let frame = OrthonormalFrame3::new(axis, major_direction)
             .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")?;
         let vertex = FinitePoint3::new(vertex).ok_or("ParabolaCurve.vertex must be finite")?;
-        let focal_distance = PositiveReal::new(focal_distance)
+        let focal_distance = PositiveLength::new(focal_distance)
             .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
-        Ok(Self {
-            vertex,
-            focal_distance,
-            frame,
-        })
+        Ok(Self::new(vertex, frame, focal_distance))
     }
 
     /// Return the vertex.
     #[must_use]
-    pub const fn vertex(&self) -> &Point3 {
-        self.vertex.as_raw()
+    pub const fn vertex(&self) -> FinitePoint3 {
+        self.vertex
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -1203,18 +1241,18 @@ impl ParabolaCurve {
 
     /// Return the focal distance.
     #[must_use]
-    pub const fn focal_distance(&self) -> f64 {
-        self.focal_distance.get()
+    pub const fn focal_distance(&self) -> PositiveLength {
+        self.focal_distance
     }
 }
 
 impl From<ParabolaCurve> for ParabolaCurveWire {
     fn from(value: ParabolaCurve) -> Self {
         Self {
-            vertex: *value.vertex(),
+            vertex: value.vertex().get(),
             axis: *value.axis(),
             major_direction: *value.major_direction(),
-            focal_distance: value.focal_distance(),
+            focal_distance: value.focal_distance().get(),
         }
     }
 }

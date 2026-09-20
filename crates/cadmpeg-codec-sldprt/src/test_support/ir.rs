@@ -73,19 +73,16 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 .unwrap();
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-                let vertex = parabola_curve.vertex();
-                let axis = parabola_curve.axis();
-                let major_direction = parabola_curve.major_direction();
+                let frame = parabola_curve.frame();
                 let focal_distance = parabola_curve.focal_distance();
-                let mut vertex = *vertex;
+                let mut vertex = parabola_curve.vertex().get();
                 vertex.x += dx;
-                *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+                let vertex = cadmpeg_ir::features::FinitePoint3::new(vertex).unwrap();
+                *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
                     vertex,
-                    *axis,
-                    *major_direction,
+                    frame,
                     focal_distance,
-                )
-                .unwrap();
+                );
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
                 let point = degenerate_curve.point();
