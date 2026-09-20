@@ -1,0 +1,4 @@
+{
+  "head": "d32aea9d0a8da47174119ffd98a4358b38554c9a",
+  "status": " M crates/cadmpeg-codec-catia/src/solve/mesh_gauge.rs\n M crates/cadmpeg-codec-iges/src/writer.rs\n M crates/cadmpeg-codec-step/src/reader/geometry/tests/analytic.rs\n M crates/cadmpeg-ir/src/eval.rs\n M crates/cadmpeg-ir/src/features.rs\n M crates/cadmpeg-ir/src/geometry/sampled.rs\n M crates/cadmpeg-ir/src/topology.rs\n?? rust_out\n"
+}
