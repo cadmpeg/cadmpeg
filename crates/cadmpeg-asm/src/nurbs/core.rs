@@ -463,18 +463,9 @@ pub fn final_curve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<Cu
 /// witness. It therefore withholds when more than one `(width, marker)`
 /// candidate decodes.
 pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
-    let mut decoded = None;
-    for int_width in INT_WIDTHS {
-        for position in marker_positions(record_bytes) {
-            if let Some(candidate) = decode_surface_block(record_bytes, position, int_width) {
-                if decoded.is_some() {
-                    return None;
-                }
-                decoded = Some(candidate.surface);
-            }
-        }
-    }
-    decoded
+    decode_unique_cache(record_bytes, |bytes, position, width| {
+        decode_surface_block(bytes, position, width).map(|candidate| candidate.surface)
+    })
 }
 
 /// Decode the surface cache a subtype scope itself owns: the first surface
@@ -517,18 +508,9 @@ pub(super) fn decode_owned_surface_cache_resolving_refs_at(
 /// This generic entry point has no stream-width or owning-scope witness. It
 /// therefore withholds when more than one `(width, marker)` candidate decodes.
 pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
-    let mut decoded = None;
-    for int_width in INT_WIDTHS {
-        for position in marker_positions(record_bytes) {
-            if let Some(candidate) = decode_curve_block(record_bytes, position, int_width) {
-                if decoded.is_some() {
-                    return None;
-                }
-                decoded = Some(candidate.curve);
-            }
-        }
-    }
-    decoded
+    decode_unique_cache(record_bytes, |bytes, position, width| {
+        decode_curve_block(bytes, position, width).map(|candidate| candidate.curve)
+    })
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block
@@ -560,4 +542,23 @@ pub(super) fn decode_owned_curve_cache_resolving_refs_at(
         decode_owned_curve_cache_at,
         int_width,
     )
+}
+
+fn decode_unique_cache<T>(
+    record_bytes: &[u8],
+    decode: impl Fn(&[u8], usize, RefWidth) -> Option<T>,
+) -> Option<T> {
+    let positions = marker_positions(record_bytes);
+    let mut decoded = None;
+    for width in INT_WIDTHS {
+        for &position in &positions {
+            if let Some(candidate) = decode(record_bytes, position, width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate);
+            }
+        }
+    }
+    decoded
 }

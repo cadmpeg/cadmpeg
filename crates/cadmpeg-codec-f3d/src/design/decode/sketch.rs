@@ -1503,19 +1503,7 @@ fn decode_sketch_points_from_stream(
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
 pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
-            continue;
-        };
-        out.extend(decode_sketch_points_from_stream(bytes, &meta, &entry.name)?);
-    }
-    Ok(out)
+    decode_sketch_streams(scan, decode_sketch_points_from_stream)
 }
 
 /// Read a class property block: a presence byte, and when it is `01`, a u32
@@ -1596,19 +1584,7 @@ fn decode_sketch_texts_from_stream(
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
-            continue;
-        };
-        out.extend(decode_sketch_texts_from_stream(bytes, &meta, &entry.name)?);
-    }
-    Ok(out)
+    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -4022,3 +3998,22 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 
 #[cfg(test)]
 mod tests;
+
+fn decode_sketch_streams<T>(
+    scan: &ContainerScan,
+    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode(bytes, &meta, &entry.name)?);
+    }
+    Ok(out)
+}

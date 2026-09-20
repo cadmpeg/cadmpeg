@@ -1036,28 +1036,6 @@ fn v1_nurbs_surface_data(
     })
 }
 
-fn v1_nurbs_curve_object(
-    data: &[u8],
-    range: std::ops::Range<usize>,
-) -> Result<V1NurbsCurve, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
-    let curve = v1_nurbs_curve_data(data, data_chunk.body())?;
-    reader.skip_remaining().map_err(malformed)?;
-    Ok(curve)
-}
-
-fn v1_nurbs_surface_object(
-    data: &[u8],
-    range: std::ops::Range<usize>,
-) -> Result<V1NurbsSurface, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
-    let surface = v1_nurbs_surface_data(data, data_chunk.body())?;
-    reader.skip_remaining().map_err(malformed)?;
-    Ok(surface)
-}
-
 fn v1_nurbs_curve_group(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
@@ -1071,7 +1049,7 @@ fn v1_nurbs_curve_group(
     let mut segments = Vec::with_capacity(segment_count);
     for _ in 0..segment_count {
         let object = nested_chunk(data, reader, TCODE_RHINOIO_OBJECT_NURBS_CURVE)?;
-        segments.push(v1_nurbs_curve_object(data, object.body())?);
+        segments.push(v1_nurbs_object(data, object.body(), v1_nurbs_curve_data)?);
     }
     Ok(V1NurbsCurveGroup { segments })
 }
@@ -1120,7 +1098,7 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     let mut surfaces = Vec::with_capacity(surface_count);
     for _ in 0..surface_count {
         let object = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_NURBS_SURFACE)?;
-        surfaces.push(v1_nurbs_surface_object(data, object.body())?);
+        surfaces.push(v1_nurbs_object(data, object.body(), v1_nurbs_surface_data)?);
     }
 
     let vertex_count = v1_count(&mut reader, "Brep vertex", 1 << 20)?;
@@ -1231,12 +1209,16 @@ fn v1_direct_record(
         | TCODE_LINEAR_DIMENSION
         | TCODE_ANGULAR_DIMENSION
         | TCODE_RADIAL_DIMENSION => V1DirectPayload::Annotation(v1_annotation(data, chunk)?),
-        TCODE_RHINOIO_OBJECT_NURBS_CURVE => {
-            V1DirectPayload::NurbsCurve(v1_nurbs_curve_object(data, chunk.body().clone())?)
-        }
-        TCODE_RHINOIO_OBJECT_NURBS_SURFACE => {
-            V1DirectPayload::NurbsSurface(v1_nurbs_surface_object(data, chunk.body().clone())?)
-        }
+        TCODE_RHINOIO_OBJECT_NURBS_CURVE => V1DirectPayload::NurbsCurve(v1_nurbs_object(
+            data,
+            chunk.body().clone(),
+            v1_nurbs_curve_data,
+        )?),
+        TCODE_RHINOIO_OBJECT_NURBS_SURFACE => V1DirectPayload::NurbsSurface(v1_nurbs_object(
+            data,
+            chunk.body().clone(),
+            v1_nurbs_surface_data,
+        )?),
         TCODE_RHINOIO_OBJECT_BREP => V1DirectPayload::NurbsBrep(v1_nurbs_brep(data, chunk)?),
         _ => {
             return Err(CodecError::malformed(format_args!(
@@ -3537,4 +3519,16 @@ mod tests {
         let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
         assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
+}
+
+fn v1_nurbs_object<T>(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    decode: impl FnOnce(&[u8], std::ops::Range<usize>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
+    let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
+    let value = decode(data, data_chunk.body())?;
+    reader.skip_remaining().map_err(malformed)?;
+    Ok(value)
 }

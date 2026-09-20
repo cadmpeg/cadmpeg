@@ -69,18 +69,11 @@ pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features
 /// a primary writer. Keep that distinction explicit so an incomplete body
 /// binding cannot be mistaken for a construction-only record.
 pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.evaluation.outputs().is_empty()
+    has_no_body_result_or_reference(feature)
         && matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
         )
-        && !feature.source_properties.keys().any(|key| {
-            key == "primary_body_reference"
-                || key == "primary_body_object_index"
-                || key == "primary_body_data_block"
-                || key.as_str().starts_with("body_reference.")
-                || key.as_str().starts_with("body_reference_occurrence.")
-        })
 }
 
 /// Return whether a `TRIMMED_SH` record is a construction-only operation.
@@ -91,18 +84,11 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
 pub(super) fn output_free_trim_surface_construction(
     feature: &cadmpeg_ir::features::Feature,
 ) -> bool {
-    feature.evaluation.outputs().is_empty()
+    has_no_body_result_or_reference(feature)
         && matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::TrimSurface { .. })
         )
-        && !feature.source_properties.keys().any(|key| {
-            key == "primary_body_reference"
-                || key == "primary_body_object_index"
-                || key == "primary_body_data_block"
-                || key.as_str().starts_with("body_reference.")
-                || key.as_str().starts_with("body_reference_occurrence.")
-        })
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(
@@ -702,4 +688,15 @@ fn positive_feature_length(length: Length) -> bool {
 
 fn valid_feature_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > 0.0
+}
+
+fn has_no_body_result_or_reference(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.evaluation.outputs().is_empty()
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.as_str().starts_with("body_reference.")
+                || key.as_str().starts_with("body_reference_occurrence.")
+        })
 }

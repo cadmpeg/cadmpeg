@@ -1899,7 +1899,7 @@ fn measure_inner(
                 .iter()
                 .flat_map(|partial| &partial.parameters)
                 .find_map(|parameter| {
-                    scalar_number(parameter)
+                    ValueExt::typed_number(parameter)
                         .and_then(|number| PmiValue::new(number * scale, quantity))
                         .or_else(|| {
                             measure_inner(parameter, exchange, active, depth + 1, measurements)
@@ -1929,15 +1929,6 @@ fn measure_quantity(value: &Value) -> Option<PmiQuantity> {
             }
         }
         Value::List(values) => values.iter().find_map(measure_quantity),
-        _ => None,
-    }
-}
-
-fn scalar_number(value: &Value) -> Option<f64> {
-    match value {
-        Value::Integer(value) => Some(*value as f64),
-        Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => scalar_number(value),
         _ => None,
     }
 }

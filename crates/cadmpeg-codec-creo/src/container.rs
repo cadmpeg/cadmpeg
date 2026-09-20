@@ -1283,26 +1283,9 @@ fn surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
 }
 
 fn cross_section_surface_rows(sections: &[ScannedSection<'_>]) -> Vec<SurfaceRow> {
-    let mut rows = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        rows.extend(
-            surface::cross_section_rows(payload)
-                .into_iter()
-                .map(|mut row| {
-                    row.offset += section.section.offset();
-                    row
-                }),
-        );
-    }
-    rows.sort_by_key(|row| row.offset);
-    rows
+    collect_cross_section_records(sections, surface::cross_section_rows, |record| {
+        &mut record.offset
+    })
 }
 
 fn surface_prototype_count(sections: &[ScannedSection<'_>]) -> usize {
@@ -1527,26 +1510,9 @@ fn plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> 
 }
 
 fn cross_section_plane_envelopes(sections: &[ScannedSection<'_>]) -> Vec<PlaneEnvelopeRecord> {
-    let mut envelopes = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        envelopes.extend(
-            surface::cross_section_plane_envelopes(payload)
-                .into_iter()
-                .map(|mut envelope| {
-                    envelope.offset += section.section.offset();
-                    envelope
-                }),
-        );
-    }
-    envelopes.sort_by_key(|envelope| envelope.offset);
-    envelopes
+    collect_cross_section_records(sections, surface::cross_section_plane_envelopes, |record| {
+        &mut record.offset
+    })
 }
 
 fn curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
@@ -1705,26 +1671,9 @@ fn curve_topology_rows(
 }
 
 fn cross_section_curve_rows(sections: &[ScannedSection<'_>]) -> Vec<DepdbCurveRow> {
-    let mut rows = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.section.name() == "Xsections")
-    {
-        let payload = section.region;
-        if find(payload, b"Sld_Xsections\0", 0).is_none() {
-            continue;
-        }
-        rows.extend(
-            curve::depdb_cross_section_rows(payload)
-                .into_iter()
-                .map(|mut row| {
-                    row.offset += section.section.offset();
-                    row
-                }),
-        );
-    }
-    rows.sort_by_key(|row| row.offset);
-    rows
+    collect_cross_section_records(sections, curve::depdb_cross_section_rows, |record| {
+        &mut record.offset
+    })
 }
 
 fn cross_section_curve_prototypes(sections: &[ScannedSection<'_>]) -> Vec<CurvePrototype> {
@@ -3201,3 +3150,31 @@ mod feature_row_definition_tests {
 
 #[cfg(test)]
 mod tests;
+
+fn collect_cross_section_records<T>(
+    sections: &[ScannedSection<'_>],
+    decode: impl Fn(&[u8]) -> Vec<T>,
+    offset: impl Fn(&mut T) -> &mut usize,
+) -> Vec<T> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.section.name() == "Xsections")
+    {
+        if find(section.region, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(decode(section.region).into_iter().map(|mut record| {
+            *offset(&mut record) += section.section.offset();
+            record
+        }));
+    }
+    // Sorting a keyed pair keeps the field accessor unique, without requiring
+    // a trait solely to read and relocate an offset.
+    let mut keyed = records
+        .into_iter()
+        .map(|mut record| (*offset(&mut record), record))
+        .collect::<Vec<_>>();
+    keyed.sort_by_key(|(offset, _)| *offset);
+    keyed.into_iter().map(|(_, record)| record).collect()
+}

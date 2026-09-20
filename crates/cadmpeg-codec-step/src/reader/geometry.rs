@@ -3351,7 +3351,7 @@ fn unit_scale_radians_inner(
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
             let factor_id = unit.parameters.get(1)?.reference()?;
             let factor = exchange.records().get(&factor_id)?;
-            let value = record_values(factor).find_map(measure_number)?;
+            let value = record_values(factor).find_map(ValueExt::typed_number)?;
             let base = record_values(factor)
                 .find_map(Value::reference)
                 .and_then(|base| unit_scale_radians_inner(base, exchange, active, depth + 1))?;
@@ -3400,7 +3400,7 @@ fn unit_scale_mm_inner(
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
             let factor_id = unit.parameters.get(1)?.reference()?;
             let factor = exchange.records().get(&factor_id)?;
-            let value = record_values(factor).find_map(measure_number)?;
+            let value = record_values(factor).find_map(ValueExt::typed_number)?;
             let base = factor
                 .partials
                 .iter()
@@ -3466,7 +3466,7 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
             unresolved += 1;
             continue;
         };
-        let Some(value) = record_values(measure).find_map(measure_number) else {
+        let Some(value) = record_values(measure).find_map(ValueExt::typed_number) else {
             unresolved += 1;
             continue;
         };
@@ -3558,15 +3558,6 @@ fn string_value(value: &Value) -> Option<String> {
         return None;
     };
     crate::strings::decode(bytes).ok()
-}
-
-fn measure_number(value: &Value) -> Option<f64> {
-    match value {
-        Value::Integer(value) => Some(*value as f64),
-        Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => measure_number(value),
-        _ => None,
-    }
 }
 
 fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Option<f64> {

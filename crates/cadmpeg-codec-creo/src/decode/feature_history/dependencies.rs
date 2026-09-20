@@ -179,13 +179,12 @@ fn agreed_surface_merge_replay_quilt_ids(
     records: &[crate::feature::rows::FeatureSurfaceMergeAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.feature_id == feature_id);
-    let ids = matches.next()?.quilt_ids.as_slice();
-    matches
-        .all(|record| record.quilt_ids.as_slice() == ids)
-        .then_some(ids)
+    agreed_ids(
+        records
+            .iter()
+            .filter(|record| record.feature_id == feature_id)
+            .map(|record| record.quilt_ids.as_slice()),
+    )
 }
 
 pub(in super::super) fn surface_merge_quilt_ids<'a>(
@@ -361,26 +360,24 @@ pub(in super::super) fn agreed_feature_replay_geometry_ids(
     records: &[crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.feature_id == feature_id);
-    let ids = matches.next()?.geometry_ids.as_slice();
-    matches
-        .all(|record| record.geometry_ids.as_slice() == ids)
-        .then_some(ids)
+    agreed_ids(
+        records
+            .iter()
+            .filter(|record| record.feature_id == feature_id)
+            .map(|record| record.geometry_ids.as_slice()),
+    )
 }
 
 pub(in super::super) fn agreed_feature_replay_edge_ids(
     records: &[crate::feature::rows::FeatureReplayAffectedIds],
     feature_id: u32,
 ) -> Option<&[u32]> {
-    let mut matches = records
-        .iter()
-        .filter(|record| record.feature_id == feature_id);
-    let ids = matches.next()?.edge_ids.as_slice();
-    matches
-        .all(|record| record.edge_ids.as_slice() == ids)
-        .then_some(ids)
+    agreed_ids(
+        records
+            .iter()
+            .filter(|record| record.feature_id == feature_id)
+            .map(|record| record.edge_ids.as_slice()),
+    )
 }
 
 pub(in super::super) fn reconcile_feature_links(
@@ -564,4 +561,9 @@ pub(in super::super) fn reconciled_dependencies(
             }
             dependencies
         })
+}
+
+fn agreed_ids<'a>(mut values: impl Iterator<Item = &'a [u32]>) -> Option<&'a [u32]> {
+    let first = values.next()?;
+    values.all(|value| value == first).then_some(first)
 }
