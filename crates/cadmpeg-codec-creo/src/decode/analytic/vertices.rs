@@ -902,6 +902,53 @@ mod tests {
     }
 
     #[test]
+    fn numerical_followup_tangent_conics_state_the_contact_point() {
+        // An ellipse touching a circle from inside, at 0.39 radians off both
+        // chart axes. The ellipse's major vertex sits on the circle and the two
+        // share their tangent there, so the contact is a double root of the
+        // resultant, whose location the rounding of the resultant's own
+        // coefficients displaces by the square root of the rounding unit, and
+        // where the pair of conics has a singular Jacobian. The pair therefore
+        // states no converged step at the contact, and what the refinement
+        // leaves is 3.3e-5 from it at a model scale of 2000. Solving for the
+        // contact as a contact states it to half an ulp of that scale.
+        const HEADING: f64 = 0.39;
+        const RADIUS: f64 = 2000.0;
+        const SEMI_MAJOR_AXIS: f64 = 1200.0;
+        const EPS_TEST_CONTACT: f64 = 1.0e-9;
+        let semi_minor_axis = SEMI_MAJOR_AXIS * 0.9_f64.sqrt();
+        let x_axis = [HEADING.cos(), HEADING.sin(), 0.0];
+        let y_axis = [-HEADING.sin(), HEADING.cos(), 0.0];
+        let ellipse = PlanarConicEquation {
+            origin: std::array::from_fn(|coordinate| {
+                (RADIUS - SEMI_MAJOR_AXIS) * x_axis[coordinate]
+            }),
+            normal: [0.0, 0.0, 1.0],
+            x_axis,
+            y_axis,
+            quadratic: [
+                1.0 / (SEMI_MAJOR_AXIS * SEMI_MAJOR_AXIS),
+                1.0 / (semi_minor_axis * semi_minor_axis),
+            ],
+            linear: [0.0, 0.0],
+            constant: -1.0,
+            scale: SEMI_MAJOR_AXIS,
+        };
+        let circle = chart_circle(RADIUS);
+
+        let parameters = stated_parameters(circle, ellipse);
+
+        assert_eq!(parameters.len(), 1);
+        let point = chart_point(parameters[0]);
+        let contact: [f64; 3] = std::array::from_fn(|coordinate| RADIUS * x_axis[coordinate]);
+        for coordinate in 0..3 {
+            assert!((point[coordinate] - contact[coordinate]).abs() <= EPS_TEST_CONTACT);
+        }
+        assert!(conic_value(circle, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+        assert!(conic_value(ellipse, point).abs() <= EPS_TEST_CONIC_RESIDUAL);
+    }
+
+    #[test]
     fn numerical_followup_line_tangent_to_a_circle_states_one_point() {
         // The line x = 100 touches the circle of radius 100 at (100, 0, 0), so
         // the exact discriminant of the conic restricted to the line is zero.
