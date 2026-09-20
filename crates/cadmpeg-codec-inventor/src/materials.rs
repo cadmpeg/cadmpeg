@@ -35,12 +35,16 @@ pub(crate) fn project_catalog(
         .collect::<Vec<_>>();
     duplicate_guids.sort();
 
-    let textures = records
+    let mut textures = BTreeMap::new();
+    for record in records
         .iter()
         .filter(|record| guid_counts.get(record.guid.as_str()) == Some(&1))
-        .filter_map(|record| texture_asset(record).0)
-        .map(|texture| (texture.asset_guid.clone(), texture))
-        .collect::<BTreeMap<_, _>>();
+    {
+        let (Some(texture), _) = texture_asset(record)? else {
+            continue;
+        };
+        textures.insert(texture.asset_guid.clone(), texture);
+    }
     let mut appearances = Vec::new();
     for (instance_ordinal, instance) in instances.iter().enumerate() {
         for record in &instance.records {

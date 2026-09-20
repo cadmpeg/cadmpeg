@@ -39,5 +39,42 @@ fn distance_tags_convert_to_millimetres() {
 #[test]
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
-    assert_eq!(super::distance_property(&record, "Depth"), Err(0x0002_1008));
+    assert_eq!(
+        super::distance_property(&record, "Depth"),
+        Err(super::DistanceError::UnknownUnit(0x0002_1008))
+    );
+}
+
+#[test]
+fn numerical_audit_distance_conversion_rejects_nonfinite_results() {
+    for (unit, value) in [
+        (0x2016, 1.0e308),
+        (0x200d, f64::MAX),
+        (0x200e, f64::INFINITY),
+        (0x200e, f64::NAN),
+    ] {
+        let record = distance_record(unit, value);
+        assert_eq!(
+            super::distance_property(&record, "Depth"),
+            Err(super::DistanceError::NonFinite)
+        );
+    }
+    for schema in ["UnifiedBitmapSchema", "BumpMapSchema"] {
+        for suffix in [
+            "RealWorldOffsetX",
+            "RealWorldOffsetY",
+            "RealWorldScaleX",
+            "RealWorldScaleY",
+            "bumpmap_Depth",
+        ] {
+            if schema != "BumpMapSchema" && suffix == "bumpmap_Depth" {
+                continue;
+            }
+            let mut record = distance_record(0x2016, 1.0e308);
+            record.schema = schema.into();
+            let property = record.properties.remove("test_Depth").unwrap();
+            record.properties.insert(suffix.into(), property);
+            assert!(super::texture_asset(&record).is_err(), "{schema} {suffix}");
+        }
+    }
 }

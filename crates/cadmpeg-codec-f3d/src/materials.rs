@@ -689,7 +689,8 @@ fn appearances_from_schema_records(
 ) -> Result<(Vec<Appearance>, usize), CodecError> {
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0usize;
-    for (texture, untyped_count) in records.iter().map(texture_asset) {
+    for decoded in records.iter().map(texture_asset) {
+        let (texture, untyped_count) = decoded?;
         untyped_distance_properties = untyped_distance_properties
             .checked_add(untyped_count)
             .ok_or_else(|| {
