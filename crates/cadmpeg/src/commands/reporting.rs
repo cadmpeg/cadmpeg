@@ -359,7 +359,7 @@ pub(crate) fn command_report_json<P: ReportBody>(
     )?)
 }
 
-pub(crate) fn refused_command_report_json<P: ReportBody>(
+pub(super) fn refused_command_report_json<P: ReportBody>(
     command: &'static str,
     payload: P,
     refusal: &ConversionRefusal,

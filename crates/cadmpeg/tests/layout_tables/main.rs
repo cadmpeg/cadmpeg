@@ -137,7 +137,7 @@ struct Record {
     /// A version word *inside* a record is not a dialect. Key only on
     /// discriminants the document declares once, document-wide.
     #[serde(default)]
-    pub(crate) dialects: Vec<String>,
+    dialects: Vec<String>,
     /// Parser source paths. A locator, not a substring check.
     #[serde(default, deserialize_with = "deserialize_one_or_many")]
     parsed_by: Vec<String>,
