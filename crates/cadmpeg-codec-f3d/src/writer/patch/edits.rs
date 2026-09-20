@@ -3182,17 +3182,14 @@ pub(super) fn validate_pcurve_edits(
         };
         // `PcurveNurbs::new` and `PcurveNurbs::edit_control_points` both
         // require finite poles, so pole finiteness is not a condition this
-        // chain can refuse.
+        // chain can refuse. A 2D pole weight is a `PositiveReal`
+        // (`cadmpeg-ir/src/geometry/pcurve.rs:25`), which admits a finite
+        // positive value alone, so the weight value is not one either.
         let valid = id.starts_with("f3d:brep:entity#")
             && writable_nurbs_degree(after_nurbs.degree())
             && unchanged_unique_knot_count(before_nurbs.knots(), after_nurbs.knots())
             && before_nurbs.control_points().len() == after_nurbs.control_points().len()
-            && before_nurbs.weights().is_some() == after_nurbs.weights().is_some()
-            && after_nurbs.weights().is_none_or(|weights| {
-                weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-            });
+            && before_nurbs.weights().is_some() == after_nurbs.weights().is_some();
         let contract_valid = before.wrapper_reversed().is_some()
             == after.wrapper_reversed().is_some()
             && before.native_tail_flags().is_some() == after.native_tail_flags().is_some()
