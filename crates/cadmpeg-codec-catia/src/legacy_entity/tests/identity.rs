@@ -373,9 +373,10 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode container-bound legacy parameter");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_LEGACY_PARAMETER_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(decoded.ir().model.parameters.len(), 1);

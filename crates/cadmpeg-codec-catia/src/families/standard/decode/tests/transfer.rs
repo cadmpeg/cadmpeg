@@ -236,25 +236,28 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .iter()
         .any(|l| l.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        result
-            .report()
-            .coverage()
-            .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
-            .map(|(_, count)| count)
-            .sum::<usize>(),
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(result.report()),
+            "coverage"
+        )
+        .iter()
+        .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
+        .map(|(_, count)| count)
+        .sum::<usize>(),
         1
     );
     assert_eq!(
@@ -264,17 +267,24 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| cadmpeg_test_support::wire::field_or_default::<
+            std::collections::BTreeMap<String, usize>,
+        >(&(result.report()), "coverage")
+        .get(key)
+        .copied()
+        .unwrap_or(0))
         .sum::<usize>(),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT).as_str()
+        )
     );
     assert_eq!(
-        result
-            .report()
-            .coverage()
-            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(result.report()),
+            "coverage"
+        )
+        .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
         Some(&0)
     );
     assert_eq!(
@@ -284,53 +294,62 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| result.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| cadmpeg_test_support::wire::field_or_default::<
+            std::collections::BTreeMap<String, usize>,
+        >(&(result.report()), "coverage")
+        .get(key)
+        .copied()
+        .unwrap_or(0))
         .sum::<usize>(),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT).as_str()
+        )
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
-            + result
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
-            + result
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
-        result
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT).as_str()
+        ) + cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT).as_str()
+        ) + cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT).as_str()
+        ),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT).as_str()
+        )
     );
     assert!(
-        result
-            .report()
-            .coverage()
-            .iter()
-            .filter(|(key, _)| {
-                key.starts_with("standard_topology_mesh_rejection_")
-                    && !key.starts_with("standard_topology_mesh_rejection_incidence_")
-                    && (!key.contains("endpoint_incidence_")
-                        || key.ends_with("endpoint_incidence_count"))
-            })
-            .map(|(_, count)| count)
-            .sum::<usize>()
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(result.report()),
+            "coverage"
+        )
+        .iter()
+        .filter(|(key, _)| {
+            key.starts_with("standard_topology_mesh_rejection_")
+                && !key.starts_with("standard_topology_mesh_rejection_incidence_")
+                && (!key.contains("endpoint_incidence_")
+                    || key.ends_with("endpoint_incidence_count"))
+        })
+        .map(|(_, count)| count)
+        .sum::<usize>()
             <= 1
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT).as_str()),
+        cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT).as_str())
     );
     assert_eq!(
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + result.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT).as_str()),
+        cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(result.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT).as_str())
     );
 
     // The produced IR validates (free carriers, no dangling references).
@@ -427,25 +446,28 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         ) && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage()
-            .iter()
-            .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
-            .map(|(_, count)| count)
-            .sum::<usize>(),
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(decoded.report()),
+            "coverage"
+        )
+        .iter()
+        .filter(|(key, _)| key.starts_with("standard_topology_failure_"))
+        .map(|(_, count)| count)
+        .sum::<usize>(),
         0
     );
     assert_eq!(
@@ -455,17 +477,24 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_ambiguity_distinct_topology_solutions_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| cadmpeg_test_support::wire::field_or_default::<
+            std::collections::BTreeMap<String, usize>,
+        >(&(decoded.report()), "coverage")
+        .get(key)
+        .copied()
+        .unwrap_or(0))
         .sum::<usize>(),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_FAILURE_AMBIGUOUS_SOLUTION_COUNT).as_str()
+        )
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage()
-            .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(decoded.report()),
+            "coverage"
+        )
+        .get("standard_topology_mesh_exhaustion_quotient_preparation_count"),
         Some(&0)
     );
     assert_eq!(
@@ -475,53 +504,62 @@ fn decode_standard_builds_surface_bound_topology_graph() {
             "standard_topology_mesh_exhaustion_endpoint_resolution_count",
         ]
         .into_iter()
-        .map(|key| decoded.report().coverage().get(key).copied().unwrap_or(0))
+        .map(|key| cadmpeg_test_support::wire::field_or_default::<
+            std::collections::BTreeMap<String, usize>,
+        >(&(decoded.report()), "coverage")
+        .get(key)
+        .copied()
+        .unwrap_or(0))
         .sum::<usize>(),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_FAILURE_SEARCH_EXHAUSTED_COUNT).as_str()
+        )
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT)
-            + decoded
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT)
-            + decoded
-                .report()
-                .coverage_count(crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT),
-        decoded
-            .report()
-            .coverage_count(crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT)
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_EMPTY_ENDPOINT_DOMAIN_COUNT).as_str()
+        ) + cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_SINGLETON_ENDPOINT_DOMAIN_COUNT).as_str()
+        ) + cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_MULTIPLE_ENDPOINT_DOMAIN_COUNT).as_str()
+        ),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::STANDARD_TOPOLOGY_CURVE_SUPPORT_COUNT).as_str()
+        )
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage()
-            .iter()
-            .filter(|(key, _)| {
-                key.starts_with("standard_topology_mesh_rejection_")
-                    && !key.starts_with("standard_topology_mesh_rejection_incidence_")
-                    && (!key.contains("endpoint_incidence_")
-                        || key.ends_with("endpoint_incidence_count"))
-            })
-            .map(|(_, count)| count)
-            .sum::<usize>(),
+        cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+            &(decoded.report()),
+            "coverage"
+        )
+        .iter()
+        .filter(|(key, _)| {
+            key.starts_with("standard_topology_mesh_rejection_")
+                && !key.starts_with("standard_topology_mesh_rejection_incidence_")
+                && (!key.contains("endpoint_incidence_")
+                    || key.ends_with("endpoint_incidence_count"))
+        })
+        .map(|(_, count)| count)
+        .sum::<usize>(),
         0
     );
     assert_eq!(
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT),
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_COUNT).as_str()),
+        cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_BOUNDARY_RECONSTRUCTION_COUNT).as_str())
     );
     assert_eq!(
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT),
-        decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT)
-            + decoded.report().coverage_count(crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT)
+        cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_ENDPOINT_INCIDENCE_NO_ASSIGNMENT_COUNT).as_str()),
+        cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_INPUT_SHAPE_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_CHOICE_PRUNING_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_FIXED_ASSIGNMENT_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_DOMAIN_COUNT).as_str())
+            + cadmpeg_test_support::wire::coverage_count(&(decoded.report()), (crate::coverage::STANDARD_TOPOLOGY_MESH_REJECTION_INCIDENCE_COMPONENT_COMPOSITION_COUNT).as_str())
     );
 }
 
@@ -588,9 +626,10 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
                 })
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::REFINED_CONSOLIDATED_ANALYTIC_SURFACE_COUNT).as_str()
+        ),
         1
     );
 }

@@ -21,7 +21,10 @@ use std::io::Cursor;
 
 /// Reads the degradation reason from `plan`, or panics with the resolution.
 fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &plan.report().fidelity() {
+    match &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+        plan.report().write_path(),
+        "fidelity",
+    ) {
         FidelityResolution::Degraded { reason } => reason.clone(),
         other => panic!("{context}: {other:?}"),
     }
@@ -52,7 +55,10 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     let displacement = plan
@@ -94,7 +100,10 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
 }
@@ -118,7 +127,11 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert_eq!(
-        report.target(),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(report),
+            "identity/target"
+        )
+        .as_ref(),
         decoded
             .ir()
             .source
@@ -155,7 +168,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
             .unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
-        assert_eq!(report.target().map(DialectId::as_str), Some(id), "{id}");
+        assert_eq!(cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(&(report), "identity/target").as_ref().map(DialectId::as_str), Some(id), "{id}");
     }
 }
 

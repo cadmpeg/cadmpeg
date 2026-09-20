@@ -125,7 +125,12 @@ fn inherit_preserves_a_schema_four_source_entry_for_entry() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("fcstd:schema-4".to_owned())
     );
     let mut written = Vec::new();
@@ -169,7 +174,12 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
 
     let plan = inherit(decoded.ir()).expect("schema 2 is preserved");
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("fcstd:schema-2".to_owned())
     );
     let mut written = Vec::new();
@@ -217,7 +227,12 @@ fn inherit_preserves_an_unknown_schema_declaration_exactly() {
 
     let plan = inherit(decoded.ir()).expect("the retained residual dialect is preservable");
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("fcstd:unknown".to_owned())
     );
     let mut written = Vec::new();
@@ -417,11 +432,12 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
             .unwrap_or_else(|error| panic!("{label} source must decode, got {error}"));
         let plan = inherit(decoded.ir())
             .unwrap_or_else(|error| panic!("{label} is preserved, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("an FCStd write always names its dialect");
+        let claimed = cadmpeg_test_support::wire::field_or_default::<
+            Option<cadmpeg_core::dialect::DialectId>,
+        >(&(plan.report()), "identity/target")
+        .as_ref()
+        .cloned()
+        .expect("an FCStd write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).expect("the plan writes");
 

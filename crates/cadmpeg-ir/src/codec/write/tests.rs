@@ -22,7 +22,14 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("empty-catalog inheritance resolves to CADIR identity");
-    assert_eq!(plan.report().target(), None);
+    assert_eq!(
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref(),
+        None
+    );
     plan.write_to(&mut encoded).unwrap();
     let mut canonical = ir.to_canonical_json().unwrap();
     canonical.push('\n');
@@ -61,8 +68,21 @@ fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     assert_eq!(plan.report().format(), "cadir");
-    assert_eq!(plan.report().target(), None);
-    assert_eq!(plan.report().fidelity(), FidelityResolution::NotProvided {});
+    assert_eq!(
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref(),
+        None
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        FidelityResolution::NotProvided {}
+    );
 }
 
 #[test]
@@ -113,7 +133,11 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
         .unwrap();
     assert_eq!(plan.report().format(), "test");
     assert_eq!(
-        plan.report().target(),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref(),
         Some(&cadmpeg_core::dialect_id!("test:new"))
     );
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
@@ -125,7 +149,13 @@ fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
     let plan = CatalogEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
         .unwrap();
-    assert_eq!(plan.report().fidelity(), FidelityResolution::NotProvided {});
+    assert_eq!(
+        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
+        FidelityResolution::NotProvided {}
+    );
 }
 
 #[test]
@@ -139,7 +169,10 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
         )
         .unwrap();
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<crate::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Degraded {
             reason: "test backend never replays".to_owned()
         }

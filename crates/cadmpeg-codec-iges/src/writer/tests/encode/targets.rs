@@ -57,11 +57,19 @@ fn inherit_replays_a_non_default_version_verbatim() {
         WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();
@@ -86,7 +94,12 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
     assert!(plan
@@ -164,11 +177,19 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.3-fixed-ascii".to_owned())
     );
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotProvided {}
     );
     assert!(plan
@@ -231,11 +252,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
-        let claimed = plan
-            .report()
-            .target()
-            .cloned()
-            .expect("an IGES write always names its dialect");
+        let claimed = cadmpeg_test_support::wire::field_or_default::<
+            Option<cadmpeg_core::dialect::DialectId>,
+        >(&(plan.report()), "identity/target")
+        .as_ref()
+        .cloned()
+        .expect("an IGES write always names its dialect");
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
 

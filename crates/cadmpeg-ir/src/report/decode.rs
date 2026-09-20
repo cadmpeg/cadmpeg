@@ -8,7 +8,7 @@ use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::report::{loss::LossNote, Severity};
+use crate::report::loss::LossNote;
 
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -240,28 +240,6 @@ impl TransferRecord {
             TransferOutcome::Omitted { .. } => None,
         }
     }
-
-    /// Returns the final transfer disposition.
-    #[must_use]
-    pub const fn disposition(&self) -> TransferDisposition {
-        match &self.outcome {
-            TransferOutcome::Emitted { .. } => TransferDisposition::Emitted,
-            TransferOutcome::Retained { .. } => TransferDisposition::Retained,
-            TransferOutcome::Approximated { .. } => TransferDisposition::Approximated,
-            TransferOutcome::Omitted { .. } => TransferDisposition::Omitted,
-        }
-    }
-
-    /// Returns the transfer note, when the outcome carries one.
-    #[must_use]
-    pub fn note(&self) -> Option<&str> {
-        match &self.outcome {
-            TransferOutcome::Emitted { .. } => None,
-            TransferOutcome::Retained { note, .. }
-            | TransferOutcome::Approximated { note, .. }
-            | TransferOutcome::Omitted { note } => note.as_deref(),
-        }
-    }
 }
 
 /// Complete source-to-result accounting for a decode.
@@ -381,12 +359,6 @@ impl Coverage {
         self.entries.insert(key.wire_name(value), count);
     }
 
-    /// Returns an observed count, or zero when the measure was not recorded.
-    #[must_use]
-    fn count(&self, key: &CoverageKey) -> usize {
-        self.entries.get(key.as_str()).copied().unwrap_or(0)
-    }
-
     /// Returns all recorded counts by their wire names.
     #[must_use]
     fn as_map(&self) -> &BTreeMap<String, usize> {
@@ -501,12 +473,6 @@ impl DecodeReport {
         self.classification.classified_payload()
     }
 
-    /// Returns the typed source-transfer state.
-    #[must_use]
-    pub const fn transfer(&self) -> DecodeTransfer {
-        self.transfer
-    }
-
     /// Returns whether the decode stopped at the container layer.
     #[must_use]
     pub const fn container_only(&self) -> bool {
@@ -517,27 +483,6 @@ impl DecodeReport {
     #[must_use]
     pub const fn geometry_transferred(&self) -> bool {
         self.transfer.geometry_transferred()
-    }
-
-    /// Returns the recorded decode coverage by measure name.
-    #[must_use]
-    pub fn coverage(&self) -> &BTreeMap<String, usize> {
-        self.coverage.as_map()
-    }
-
-    /// Returns a coverage measure, treating an unobserved measure as zero.
-    // A by-value key accepts declared constants and temporary dynamic keys uniformly.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn coverage_count(&self, key: CoverageKey) -> usize {
-        self.coverage.count(&key)
-    }
-
-    /// Count loss notes at or above [`Severity::Error`].
-    pub fn error_count(&self) -> usize {
-        self.losses
-            .iter()
-            .filter(|l| l.severity >= Severity::Error)
-            .count()
     }
 }
 

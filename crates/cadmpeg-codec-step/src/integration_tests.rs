@@ -185,7 +185,10 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             cadmpeg_ir::report::export::WritePath::Synthesized { .. }
         ));
         assert_eq!(
-            &plan.report().fidelity(),
+            &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+                plan.report().write_path(),
+                "fidelity"
+            ),
             &cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
         );
         let mut edited_bytes = Vec::new();

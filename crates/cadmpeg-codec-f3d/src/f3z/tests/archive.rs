@@ -141,9 +141,12 @@ fn f3z_archive_merges_identity_occurrences() {
         .expect("merged F3Z regenerates at the named row");
     assert!(!regenerated.is_empty());
     assert_eq!(
-        report
-            .target()
-            .map(cadmpeg_core::dialect::DialectId::as_str),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(report),
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
         Some("f3d:manifest-3-2-0-0")
     );
     assert!(report
@@ -300,11 +303,12 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
             TargetRequest::Inherit,
         )
         .expect("unmerged F3Z archive remains replayable");
-    let reported = plan
-        .report()
-        .target()
-        .expect("an F3D export names its target")
-        .clone();
+    let reported = cadmpeg_test_support::wire::field_or_default::<
+        Option<cadmpeg_core::dialect::DialectId>,
+    >(&(plan.report()), "identity/target")
+    .as_ref()
+    .expect("an F3D export names its target")
+    .clone();
     let mut replayed = Vec::new();
     plan.write_to(&mut replayed).unwrap();
     assert_eq!(replayed, archive);

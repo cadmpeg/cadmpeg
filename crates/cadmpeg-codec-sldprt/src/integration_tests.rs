@@ -288,10 +288,13 @@ fn plan(
 }
 
 fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
-    plan.report()
-        .target()
-        .expect("a SLDPRT write always names its dialect")
-        .to_string()
+    cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+        &(plan.report()),
+        "identity/target",
+    )
+    .as_ref()
+    .expect("a SLDPRT write always names its dialect")
+    .to_string()
 }
 
 fn classify(bytes: Vec<u8>) -> String {
@@ -406,7 +409,10 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
         cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        plan.report().fidelity(),
+        cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
 
@@ -446,7 +452,10 @@ fn the_patch_path_names_the_preserved_dialect() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let cadmpeg_ir::report::export::FidelityResolution::Degraded { reason } =
-        &plan.report().fidelity()
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity",
+        )
     else {
         panic!("digest mismatch must report degraded fidelity");
     };
@@ -507,7 +516,10 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
         cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &cadmpeg_ir::report::export::FidelityResolution::Degraded {
             reason: "preserved SLDPRT source image is unavailable".into(),
         }

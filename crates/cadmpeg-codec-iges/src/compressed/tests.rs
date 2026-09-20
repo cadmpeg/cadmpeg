@@ -183,7 +183,10 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         &FidelityResolution::NotConsumed {}
     );
     let displacement = plan
@@ -221,11 +224,19 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         WritePath::VerbatimReplay { .. }
     ));
     assert_eq!(
-        plan.report().target().map(ToString::to_string),
+        cadmpeg_test_support::wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &(plan.report()),
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
         Some("iges:5.3-compressed-ascii".to_owned())
     );
     assert!(matches!(
-        &plan.report().fidelity(),
+        &cadmpeg_test_support::wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
+            plan.report().write_path(),
+            "fidelity"
+        ),
         FidelityResolution::Replayed {}
     ));
     let mut written = Vec::new();

@@ -563,9 +563,10 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     assert_eq!(record.fields()["major_radius"], 1.0);
     assert_eq!(record.fields()["minor_radius"], 1.0);
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_REFERENCE_ELLIPSE_COUNT).as_str()
+        ),
         1
     );
     let ellipse = result

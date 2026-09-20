@@ -78,8 +78,18 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
     }))
     .expect("omitted record has no target");
     assert_eq!(omitted.target(), None);
-    assert_eq!(omitted.disposition(), TransferDisposition::Omitted);
-    assert_eq!(omitted.note(), Some("unsupported"));
+    assert_eq!(
+        cadmpeg_test_support::wire::field::<crate::report::decode::TransferDisposition>(
+            &(omitted.outcome),
+            "disposition"
+        ),
+        TransferDisposition::Omitted
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::field_or_default::<Option<String>>(&(omitted.outcome), "note")
+            .as_deref(),
+        Some("unsupported")
+    );
 }
 
 #[test]
@@ -158,7 +168,7 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         "notes": [],
     });
     let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
-    assert_eq!(report.transfer(), DecodeTransfer::full(true));
+    assert_eq!(report.transfer, DecodeTransfer::full(true));
     assert_eq!(
         serde_json::to_value(&report).unwrap()["transfer"]["transfer"],
         "full"
@@ -178,7 +188,7 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         .expect("map")
         .remove("geometry_transferred");
     let report = serde_json::from_value::<DecodeReport>(container_only).expect("container only");
-    assert_eq!(report.transfer(), DecodeTransfer::ContainerOnly {});
+    assert_eq!(report.transfer, DecodeTransfer::ContainerOnly {});
     let wire = serde_json::to_value(&report).unwrap();
     assert_eq!(wire["transfer"]["transfer"], "container_only");
     assert!(wire["transfer"].get("geometry_transferred").is_none());

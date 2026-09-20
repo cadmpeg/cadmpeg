@@ -201,15 +201,17 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         )
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_GEOMETRY_GENERATOR_FEATURE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::TRANSFERRED_NATIVE_FEATURE_COUNT).as_str()
+        ),
         0
     );
     let surface = result
@@ -226,15 +228,17 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         })
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::RETAINED_UNKNOWN_VISIBLE_SURFACE_ROW_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT).as_str()
+        ),
         1
     );
 }
@@ -292,9 +296,10 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         assert_eq!(association.fields()["replay_ordinal"], ordinal);
     }
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT).as_str()
+        ),
         4
     );
 }

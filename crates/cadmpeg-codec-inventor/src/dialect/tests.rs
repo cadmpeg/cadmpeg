@@ -424,15 +424,17 @@ fn mixed_unframed_and_foreign_declarations_report_every_admission_cause() {
 
 /// The coverage counts one decode of `bytes` reported.
 fn coverage(bytes: &[u8]) -> std::collections::BTreeMap<String, usize> {
-    InventorCodec
-        .decode(
-            &mut std::io::Cursor::new(bytes.to_vec()),
-            &DecodeOptions::default(),
-        )
-        .expect("both version gates degrade rather than refuse")
-        .report()
-        .coverage()
-        .clone()
+    cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+        &(InventorCodec
+            .decode(
+                &mut std::io::Cursor::new(bytes.to_vec()),
+                &DecodeOptions::default(),
+            )
+            .expect("both version gates degrade rather than refuse")
+            .report()),
+        "coverage",
+    )
+    .clone()
 }
 
 #[test]

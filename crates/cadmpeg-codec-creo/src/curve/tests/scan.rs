@@ -80,15 +80,17 @@ fn scan_discovers_curve_halfedge_topology() {
         })
     ));
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::RETAINED_UNKNOWN_VISIBLE_CURVE_ROW_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        result
-            .report()
-            .coverage_count(crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(result.report()),
+            (crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT).as_str()
+        ),
         1
     );
 }

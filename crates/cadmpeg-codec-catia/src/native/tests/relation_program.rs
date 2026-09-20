@@ -163,27 +163,31 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
         )
         .expect("decode lead-12 paramout relation-program instance");
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(lead12_decoded.report()),
+            (crate::coverage::DECODED_RELATION_PROGRAM_OUTPUT_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(lead12_decoded.report()),
+            (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_OUTPUT_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(lead12_decoded.report()),
+            (crate::coverage::DECODED_NULL_RELATION_PROGRAM_OUTPUT_COUNT).as_str()
+        ),
         0
     );
     assert_eq!(
-        lead12_decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(lead12_decoded.report()),
+            (crate::coverage::UNRESOLVED_RELATION_PROGRAM_OUTPUT_COUNT).as_str()
+        ),
         0
     );
 
@@ -614,110 +618,131 @@ fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode lead-54 relation-program instance");
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+        ),
         1
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT),
-        3
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT).as_str()
         ),
         3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT).as_str()
         ),
-        0
+        3
     );
     assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
-        0
-    );
-    assert_eq!(
-        decoded
-            .report()
-            .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
-        1
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
-        ),
-        0
-    );
-    assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_TYPED_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
         ),
         1
     );
     assert_eq!(
-        decoded.report().coverage_count(
-            crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_RELATION_PROGRAM_INPUT_INSTANCE_COUNT).as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INPUT_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_DISTINCT_RELATION_PROGRAM_INPUT_ENTITY_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT)
+                .as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT).as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::DECODED_RESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT)
+                .as_str()
+        ),
+        1
+    );
+    assert_eq!(
+        cadmpeg_test_support::wire::coverage_count(
+            &(decoded.report()),
+            (crate::coverage::UNRESOLVED_LEAD54_RELATION_PROGRAM_TRAILING_ENTITY_COUNT).as_str()
         ),
         0
     );
@@ -773,206 +798,247 @@ fn decode_reports_exact_relation_program_instances() {
             )
             .expect("decode relation-program instance");
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+            ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT).as_str()
             ),
             8
         );
         let resolved_reference_incidences = 1 + usize::from(repeated_reference_entity_id == 1);
         let null_reference_incidences = usize::from(repeated_reference_entity_id == 3);
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT)
+                    .as_str()
             ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_NULL_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT).as_str()
             ),
             null_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT).as_str()
             ),
             8 - resolved_reference_incidences - null_reference_incidences
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REFERENCE_INCIDENCE_COUNT)
+                    .as_str()
             ),
             resolved_reference_incidences
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT),
-            1
-        );
-        assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT),
-            0
-        );
-        assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
             ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_LEAD54_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
             ),
             0
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT
-            ),
-            0
-        );
-        assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                    .as_str()
             ),
             1
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT).as_str()
             ),
             0
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_LEAD12_RELATION_PROGRAM_PARAMOUT_CONTEXT_ENTITY_COUNT)
+                    .as_str()
+            ),
+            0
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_OTHER_LEAD12_RELATION_PROGRAM_CONTEXT_CLASS_COUNT)
+                    .as_str()
+            ),
+            1
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNCLASSIFIED_LEAD12_RELATION_PROGRAM_CONTEXT_ENTITY_COUNT)
+                    .as_str()
+            ),
+            0
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+            ),
             resolved
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RELATION_EXPRESSION_PROGRAM_INSTANCE_COUNT).as_str()
             ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_OTHER_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+            ),
             other
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+            ),
             unresolved,
             "program entity {program_entity_id}"
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_NULL_RELATION_PROGRAM_INSTANCE_COUNT).as_str()
+            ),
             usize::from(program_entity_id == 3)
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT)
+                    .as_str()
             ),
             resolved_repeated
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT).as_str()
             ),
             usize::from(repeated_reference_entity_id > 3)
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_NULL_RELATION_PROGRAM_REPEATED_REFERENCE_COUNT).as_str()
             ),
             usize::from(repeated_reference_entity_id == 3)
         );
         let classified_program = usize::from(program_entity_id <= 2);
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT).as_str()
+            ),
             classified_program
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_ENTITY_COUNT).as_str()
+            ),
             1 - classified_program
         );
         let classified_repeated = usize::from(repeated_reference_entity_id == 1);
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_CLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT)
+                    .as_str()
             ),
             classified_repeated
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNCLASSIFIED_RELATION_PROGRAM_REPEATED_ENTITY_COUNT).as_str()
             ),
             1 - classified_repeated
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_INSTANCED_RELATION_EXPRESSION_COUNT).as_str()
+            ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_REFERENCED_RELATION_EXPRESSION_COUNT).as_str()
+            ),
             expression
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_FORMULA_REFERENCED_RELATION_EXPRESSION_COUNT).as_str()
             ),
             0
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_PROGRAM_REFERENCED_RELATION_EXPRESSION_COUNT).as_str()
             ),
             expression
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_UNREFERENCED_RELATION_EXPRESSION_COUNT).as_str()
+            ),
             1 - expression
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT).as_str()
             ),
             expression * 3
         );
         assert_eq!(
-            decoded.report().coverage_count(
-                crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::UNRESOLVED_RELATION_PROGRAM_PARAMETER_DEPENDENCY_COUNT).as_str()
             ),
             expression * 3
         );
         assert_eq!(
-            decoded
-                .report()
-                .coverage_count(crate::coverage::DECODED_FORMULA_RELATION_COUNT),
+            cadmpeg_test_support::wire::coverage_count(
+                &(decoded.report()),
+                (crate::coverage::DECODED_FORMULA_RELATION_COUNT).as_str()
+            ),
             0
         );
         assert!(decoded.ir().model.parameters.is_empty());

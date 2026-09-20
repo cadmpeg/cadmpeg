@@ -3322,10 +3322,34 @@ mod tests {
                 .count(),
             1
         );
-        assert_eq!(result.report().coverage()["legacy_v1_annotations"], 5);
-        assert_eq!(result.report().coverage()["legacy_v1_nurbs_curves"], 1);
-        assert_eq!(result.report().coverage()["legacy_v1_nurbs_surfaces"], 1);
-        assert_eq!(result.report().coverage()["legacy_v1_nurbs_breps"], 1);
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_annotations"],
+            5
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_nurbs_curves"],
+            1
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_nurbs_surfaces"],
+            1
+        );
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_nurbs_breps"],
+            1
+        );
         assert_eq!(result.source_fidelity().retained_records().len(), 8);
         assert!(result
             .source_fidelity()
@@ -3350,7 +3374,13 @@ mod tests {
         assert_eq!(model.edges.len(), 4);
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
-        assert_eq!(result.report().coverage()["legacy_v1_breps"], 1);
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_breps"],
+            1
+        );
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
@@ -3363,7 +3393,13 @@ mod tests {
         );
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
-        assert_eq!(result.report().coverage()["legacy_v1_breps"], 1);
+        assert_eq!(
+            cadmpeg_test_support::wire::field_or_default::<std::collections::BTreeMap<String, usize>>(
+                &(result.report()),
+                "coverage"
+            )["legacy_v1_breps"],
+            1
+        );
         let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
         assert!(report.is_ok(), "{report:?}");
     }
