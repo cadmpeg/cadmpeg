@@ -563,38 +563,51 @@ pub(in super::super) fn oriented_full_turn_angles(reversed: bool) -> [f64; 2] {
 }
 
 fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f64) -> bool {
-    let orient = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
-        (b[0] - a[0]).mul_add(point[1] - a[1], -((b[1] - a[1]) * (point[0] - a[0])))
+    use std::cmp::Ordering::{Greater, Less};
+    let orient = |a: [f64; 2], b: [f64; 2], p: [f64; 2]| {
+        cadmpeg_ir::math::planar::orientation(
+            Point2::new(a[0], a[1]),
+            Point2::new(b[0], b[1]),
+            Point2::new(p[0], p[1]),
+        )
     };
+    let opposite = |a, b| {
+        matches!(
+            (a, b),
+            (Some(Greater), Some(Less)) | (Some(Less), Some(Greater))
+        )
+    };
+    if opposite(
+        orient(first[0], first[1], second[0]),
+        orient(first[0], first[1], second[1]),
+    ) && opposite(
+        orient(second[0], second[1], first[0]),
+        orient(second[0], second[1], first[1]),
+    ) {
+        return true;
+    }
     let on_segment = |segment: [[f64; 2]; 2], point: [f64; 2]| {
-        point[0] >= segment[0][0].min(segment[1][0]) - tolerance
+        let dx = segment[1][0] - segment[0][0];
+        let dy = segment[1][1] - segment[0][1];
+        let length = dx.hypot(dy);
+        let x = point[0] - segment[0][0];
+        let y = point[1] - segment[0][1];
+        let distance = if length == 0.0 {
+            x.hypot(y)
+        } else {
+            x.mul_add(dy / length, -y * (dx / length)).abs()
+        };
+        distance.is_finite()
+            && distance <= tolerance
+            && point[0] >= segment[0][0].min(segment[1][0]) - tolerance
             && point[0] <= segment[0][0].max(segment[1][0]) + tolerance
             && point[1] >= segment[0][1].min(segment[1][1]) - tolerance
             && point[1] <= segment[0][1].max(segment[1][1]) + tolerance
     };
-    let orientations = [
-        orient(first[0], first[1], second[0]),
-        orient(first[0], first[1], second[1]),
-        orient(second[0], second[1], first[0]),
-        orient(second[0], second[1], first[1]),
-    ];
-    let first_length = (first[1][0] - first[0][0]).hypot(first[1][1] - first[0][1]);
-    let second_length = (second[1][0] - second[0][0]).hypot(second[1][1] - second[0][1]);
-    let first_cross_tolerance = tolerance * first_length.max(1.0);
-    let second_cross_tolerance = tolerance * second_length.max(1.0);
-    let opposite = |left: f64, right: f64, cross_tolerance: f64| {
-        (left > cross_tolerance && right < -cross_tolerance)
-            || (left < -cross_tolerance && right > cross_tolerance)
-    };
-    if opposite(orientations[0], orientations[1], first_cross_tolerance)
-        && opposite(orientations[2], orientations[3], second_cross_tolerance)
-    {
-        return true;
-    }
-    (orientations[0].abs() <= first_cross_tolerance && on_segment(first, second[0]))
-        || (orientations[1].abs() <= first_cross_tolerance && on_segment(first, second[1]))
-        || (orientations[2].abs() <= second_cross_tolerance && on_segment(second, first[0]))
-        || (orientations[3].abs() <= second_cross_tolerance && on_segment(second, first[1]))
+    on_segment(first, second[0])
+        || on_segment(first, second[1])
+        || on_segment(second, first[0])
+        || on_segment(second, first[1])
 }
 
 pub(in super::super) fn point_on_profile_arc(

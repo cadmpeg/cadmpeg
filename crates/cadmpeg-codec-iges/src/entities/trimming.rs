@@ -2,7 +2,6 @@
 //! Face-local trimmed-surface projection.
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
-use super::evaluation;
 use super::geometry::{
     entity_loss, linear_nurbs_parameters, planar_polyline_has_self_intersection,
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
@@ -757,7 +756,7 @@ fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Ve
     )?
     .into_iter()
     .map(|parameter| {
-        evaluation::pcurve(geometry, parameter)
+        cadmpeg_ir::eval::pcurve_uv(geometry, parameter)
             .map(|point| [point.u, point.v])
             .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
     })
@@ -1411,10 +1410,10 @@ fn pcurves_agree(
     let mapped = pcurves
         .iter()
         .map(|(geometry, range)| {
-            let start = evaluation::pcurve(geometry, range[0]).and_then(|uv| {
+            let start = cadmpeg_ir::eval::pcurve_uv(geometry, range[0]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
             })?;
-            let end = evaluation::pcurve(geometry, range[1]).and_then(|uv| {
+            let end = cadmpeg_ir::eval::pcurve_uv(geometry, range[1]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
             })?;
             Some((start, end))

@@ -146,8 +146,7 @@ pub(super) fn project(
             .max(coeff_c.abs())
             .max(coeff_d.abs())
             .max(coeff_e.abs())
-            .max(coeff_f.abs())
-            .max(1.0);
+            .max(coeff_f.abs());
         let zero = |value: f64| {
             value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
         };
@@ -232,14 +231,26 @@ pub(super) fn project(
             continue;
         };
 
-        let geometry_and_range = if zero(*coeff_e) && coeff_a * coeff_c > 0.0 {
-            let radius_x_squared = -*coeff_f / *coeff_a;
-            let radius_y_squared = -*coeff_f / *coeff_c;
-            if radius_x_squared <= 0.0 || radius_y_squared <= 0.0 {
+        let geometry_and_range = if zero(*coeff_e)
+            && *coeff_a != 0.0
+            && *coeff_c != 0.0
+            && coeff_a.is_sign_positive() == coeff_c.is_sign_positive()
+        {
+            let radius_x = if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
+                coeff_f.abs().sqrt() / coeff_a.abs().sqrt()
+            } else {
+                0.0
+            };
+            let radius_y = if coeff_f.is_sign_positive() != coeff_c.is_sign_positive() {
+                coeff_f.abs().sqrt() / coeff_c.abs().sqrt()
+            } else {
+                0.0
+            };
+            if radius_x <= 0.0 || radius_y <= 0.0 {
                 None
             } else {
-                let radius_x = radius_x_squared.sqrt() * factor * scale_x;
-                let radius_y = radius_y_squared.sqrt() * factor * scale_y;
+                let radius_x = radius_x * factor * scale_x;
+                let radius_y = radius_y * factor * scale_y;
                 let (major_direction, minor_direction, major_radius, minor_radius) =
                     if radius_x >= radius_y {
                         (basis_x, basis_y, radius_x, radius_y)
@@ -283,18 +294,28 @@ pub(super) fn project(
                     [start_parameter, start_parameter + sweep],
                 ))
             }
-        } else if zero(*coeff_e) && coeff_a * coeff_c < 0.0 {
-            let (major, minor, major_squared, minor_squared) = if -*coeff_f / *coeff_a > 0.0 {
-                (basis_x, basis_y, -*coeff_f / *coeff_a, *coeff_f / *coeff_c)
-            } else {
-                (
-                    basis_y,
-                    basis_x.scale(-1.0),
-                    -*coeff_f / *coeff_c,
-                    *coeff_f / *coeff_a,
-                )
-            };
-            if major_squared <= 0.0 || minor_squared <= 0.0 {
+        } else if zero(*coeff_e)
+            && *coeff_a != 0.0
+            && *coeff_c != 0.0
+            && coeff_a.is_sign_positive() != coeff_c.is_sign_positive()
+        {
+            let (major, minor, major_radius, minor_radius) =
+                if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
+                    (
+                        basis_x,
+                        basis_y,
+                        coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+                        coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
+                    )
+                } else {
+                    (
+                        basis_y,
+                        basis_x.scale(-1.0),
+                        coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
+                        coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+                    )
+                };
+            if major_radius <= 0.0 || minor_radius <= 0.0 {
                 None
             } else {
                 let major_scale = if major.dot(basis_x).abs() > 0.5 {
@@ -307,8 +328,8 @@ pub(super) fn project(
                 } else {
                     scale_y
                 };
-                let major_radius = major_squared.sqrt() * factor * major_scale;
-                let minor_radius = minor_squared.sqrt() * factor * minor_scale;
+                let major_radius = major_radius * factor * major_scale;
+                let minor_radius = minor_radius * factor * minor_scale;
                 let branch = if start.vector_from(plane_origin).dot(major) < 0.0 {
                     -1.0
                 } else {

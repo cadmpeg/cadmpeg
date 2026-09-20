@@ -325,3 +325,29 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
+
+#[test]
+fn conic_classification_preserves_common_coefficient_scale() {
+    for coefficient in ["1e-200", "1", "1e200"] {
+        let parameters = format!("104,{coefficient},0,{coefficient},0,0,-{coefficient},0,1,0,0,1;");
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(1, parameters.as_bytes())),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir().model.curves.len(),
+            1,
+            "{coefficient}: {:?}",
+            decoded.report().losses
+        );
+        let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) =
+            &decoded.ir().model.curves[0].geometry
+        else {
+            panic!("ellipse");
+        };
+        assert!((ellipse.major_radius() - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert!((ellipse.minor_radius() - 1.0).abs() <= 8.0 * f64::EPSILON);
+    }
+}

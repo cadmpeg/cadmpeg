@@ -796,11 +796,35 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
         ..identity
     };
     assert_eq!(
-        dimensioned_circle_transform(&[swap, identity], &[((10, 20), 5), ((20, 10), 5)]),
+        dimensioned_circle_transform(
+            &[swap, identity],
+            &[
+                (
+                    (10, 20),
+                    crate::resolved_features::grid::GridCoordinate::Cell(5)
+                ),
+                (
+                    (20, 10),
+                    crate::resolved_features::grid::GridCoordinate::Cell(5)
+                )
+            ]
+        ),
         Some(identity)
     );
     assert_eq!(
-        dimensioned_circle_transform(&[identity, swap], &[((10, 20), 5), ((20, 10), 7)]),
+        dimensioned_circle_transform(
+            &[identity, swap],
+            &[
+                (
+                    (10, 20),
+                    crate::resolved_features::grid::GridCoordinate::Cell(5)
+                ),
+                (
+                    (20, 10),
+                    crate::resolved_features::grid::GridCoordinate::Cell(7)
+                )
+            ]
+        ),
         None
     );
 }
@@ -821,7 +845,13 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     };
-    let circles = [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)];
+    let circles =
+        [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)].map(|(center, radius)| {
+            (
+                center,
+                crate::resolved_features::grid::GridCoordinate::Cell(radius),
+            )
+        });
     let surfaces = [(14.0, -6.0), (14.0, -14.0), (7.0, -14.0), (7.0, -6.0)]
         .into_iter()
         .enumerate()
@@ -953,4 +983,38 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         })
     ));
     assert_eq!(sketches[0].name.as_deref(), Some("Sketch1"));
+}
+
+#[test]
+fn dimensioned_circle_matching_keeps_large_radius_identity() {
+    use crate::resolved_features::grid::GridCoordinate;
+    let sketch = cadmpeg_ir::sketches::Sketch {
+        id: cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#large-radius").unwrap(),
+        name: None,
+        configuration: None,
+        visible: None,
+        native_ref: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+    };
+    let surface = Surface {
+        id: SurfaceId::mint("test:model:surface#large-cylinder").unwrap(),
+        source_object: None,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2e20,
+            )
+            .unwrap(),
+        )),
+    };
+    let circles = [((0, 0), GridCoordinate::new(1e20, 1.0))];
+    assert!(dimensioned_circle_surface_transforms(&sketch, &[surface], &circles, 1.0).is_empty());
 }

@@ -1,5 +1,7 @@
 //! Dimensioned sketch geometry and radial circle records.
 
+use super::grid::GridCoordinate;
+
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
 };
@@ -687,7 +689,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                             ),
                             QUANTUM,
                         ),
-                        (radius / QUANTUM).round() as i64,
+                        GridCoordinate::new(radius, QUANTUM),
                     ))
                 })
                 .collect::<Vec<_>>();

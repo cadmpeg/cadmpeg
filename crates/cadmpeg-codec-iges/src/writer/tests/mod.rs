@@ -986,3 +986,18 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     assert_eq!(ordered[0].id, unclassified_id);
     assert!(face_outer_loop(&face, &ordered).is_none());
 }
+
+#[test]
+fn conic_coefficients_preserve_extreme_finite_radii() {
+    for radius in [1e-200, 1.0, 1e200] {
+        let [a, c, f] = super::conic_coefficients(radius, radius).unwrap();
+        assert!(a.is_finite() && a > 0.0 && c == a && f.is_finite() && f < 0.0);
+        let recovered = (-f).sqrt() / a.sqrt();
+        assert!((recovered / radius - 1.0).abs() <= 16.0 * f64::EPSILON);
+    }
+    assert_eq!(
+        super::conic_coefficients(2.0, 1.0).unwrap(),
+        [0.25, 1.0, -1.0]
+    );
+    assert!(super::conic_coefficients(1e-200, 1e200).is_err());
+}
