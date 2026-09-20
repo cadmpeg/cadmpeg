@@ -92,8 +92,7 @@ fn subtransform_wire_rejects_missing_resolved_payload() {
     }
 }
 
-/// The two program graphs are parsed from the subtransform, so the wire states
-/// them nowhere and cannot disagree with them.
+/// The wire carries source programs and rejects additional graph fields.
 #[test]
 fn a_tspline_construction_states_no_program_graph_on_its_wire() {
     use super::super::TSplineSurfaceConstruction;
@@ -111,8 +110,6 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         crate::geometry::CacheContract::from_form(None),
     )
     .unwrap();
-    assert_eq!(construction.program_graph().records().len(), 1);
-
     let wire = serde_json::to_value(&construction).unwrap();
     assert!(wire.get("program_graph").is_none());
     assert!(wire.get("values_graph").is_none());

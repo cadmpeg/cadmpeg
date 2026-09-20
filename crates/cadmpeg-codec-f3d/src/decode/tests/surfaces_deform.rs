@@ -509,12 +509,8 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     else {
         panic!("expected resolved T-spline reference")
     };
-    assert!(resolved.program.as_str().contains("v 1 0 0 0"));
-    assert_eq!(construction.program_graph().records().len(), 1);
-    assert_eq!(
-        construction.values_graph().records()[0].kind(),
-        cadmpeg_ir::geometry::TSplineRecordKind::Verts100
-    );
+    assert_eq!(resolved.program.as_str(), "degree 3\nv 1 0 0 0\n");
+    assert_eq!(resolved.values.as_str(), "100verts 1\n");
 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;

@@ -103,8 +103,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
                 id: crate::native::native_id("archive-span", index.to_string()),
                 span: crate::native::ByteSpan::try_new(span.start, span.end)
                     .map_err(CodecError::Malformed)?,
-                role: crate::native::ArchiveSpanRole::try_from(&span.role)
-                    .map_err(CodecError::malformed)?,
+                role: crate::native::ArchiveSpanRole::from(&span.role),
             })
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
