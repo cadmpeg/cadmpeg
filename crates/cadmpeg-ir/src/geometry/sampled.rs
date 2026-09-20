@@ -207,10 +207,10 @@ impl TryFrom<PolylineCurveWire> for PolylineCurve {
 impl PolylineSamples {
     /// Number of samples. The sample list is nonempty by type.
     #[must_use]
-    pub fn count(&self) -> std::num::NonZeroUsize {
+    pub fn count(&self) -> usize {
         match self {
-            Self::Unparameterized { points } => points.count(),
-            Self::Parameterized { vertices } => vertices.count(),
+            Self::Unparameterized { points } => points.len(),
+            Self::Parameterized { vertices } => vertices.len(),
         }
     }
 
@@ -271,7 +271,7 @@ impl PolylineCurve {
         samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
-        if samples.count().get() < 2 {
+        if samples.count() < 2 {
             return Err(geometry_layout_error(
                 "polyline must contain at least two points",
             ));
@@ -308,7 +308,7 @@ impl PolylineCurve {
 
     /// Number of samples.
     #[must_use]
-    pub fn point_count(&self) -> std::num::NonZeroUsize {
+    pub fn point_count(&self) -> usize {
         self.samples.count()
     }
 

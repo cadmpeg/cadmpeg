@@ -5544,6 +5544,11 @@ pub enum FaceSelection {
 }
 
 /// A nonempty sequence of members in source order.
+///
+/// The members stay contiguous: the sequence is read through slice patterns
+/// and slice methods. The mint refuses an empty list, `push` only grows, and
+/// `DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no
+/// reader has to ask whether a member is there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
@@ -5578,16 +5583,6 @@ impl<T> NonEmptyMembers<T> {
     /// The members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0
-    }
-
-    /// Number of members.
-    ///
-    /// The mint refuses an empty sequence, so the count is nonzero by type
-    /// and no caller needs a floor under it.
-    #[must_use]
-    pub fn count(&self) -> std::num::NonZeroUsize {
-        // `MIN` is the count of the empty sequence this type does not hold.
-        std::num::NonZeroUsize::new(self.0.len()).unwrap_or(std::num::NonZeroUsize::MIN)
     }
 }
 

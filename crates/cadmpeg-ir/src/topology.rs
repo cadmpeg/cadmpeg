@@ -698,7 +698,7 @@ impl LoopRing {
         key_prefix: &IdentityKey,
         vertices: NonEmptyMembers<VertexId>,
     ) -> Self {
-        let member_count = vertices.count().get();
+        let member_count = vertices.len();
         let mut coedges = Vec::with_capacity(member_count);
         let mut vertex_uses = Vec::with_capacity(member_count);
         for (ordinal, vertex) in vertices.into_iter().enumerate() {
