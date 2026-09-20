@@ -28,7 +28,7 @@ pub(crate) struct ProteinEnvelope<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) declared_len: NonZeroU32,
     pub(crate) archive: ArchiveSnapshot<'a>,
-    pub(crate) payload: View<'a>,
+    payload: View<'a>,
 }
 
 pub(crate) struct ProteinInstanceRecords {

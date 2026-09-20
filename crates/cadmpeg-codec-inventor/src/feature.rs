@@ -124,7 +124,7 @@ pub(crate) struct FeatureProjection {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeaturePropertyPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) kind: PmDcFeaturePropertyKind,
 }
@@ -194,24 +194,24 @@ pub(crate) enum PmDcFeatureEnumFamily {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PmDcPatternFamily {
+enum PmDcPatternFamily {
     Rectangular,
     Mirror,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcPatternFeaturePayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) state: i32,
-    pub(crate) outline_value: u32,
+    state: i32,
+    outline_value: u32,
     pub(crate) properties: PmDcReferenceList,
-    pub(crate) value: u32,
+    value: u32,
     pub(crate) participants: PmDcReferenceList,
-    pub(crate) family: PmDcPatternFamily,
+    family: PmDcPatternFamily,
     pub(crate) property_slots: Vec<crate::pmdc::PmDcReference>,
-    pub(crate) control: u8,
-    pub(crate) extension_values: Vec<u32>,
+    control: u8,
+    extension_values: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,9 +226,9 @@ pub(crate) enum PmDcFeatureReferenceFamily {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcLinkedHeader {
-    pub(crate) header_value: u32,
-    pub(crate) header_id: u16,
-    pub(crate) values: [u32; 2],
+    header_value: u32,
+    header_id: u16,
+    values: [u32; 2],
     pub(crate) owner: crate::pmdc::PmDcReference,
     pub(crate) parent: crate::pmdc::PmDcReference,
     pub(crate) next: crate::pmdc::PmDcReference,
@@ -273,22 +273,22 @@ impl From<ClassId> for String {
     into = "PmDcFeatureLabelPayloadWire"
 )]
 pub(crate) struct PmDcFeatureLabelPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
-    pub(crate) index: u32,
+    index: u32,
     pub(crate) participants: PmDcReferenceList,
     name: NonBlankString,
     class_id: ClassId,
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct PmDcFeatureLabelPayloadWire {
-    pub(crate) save_version_major: u8,
-    pub(crate) header: PmDcLinkedHeader,
-    pub(crate) index: u32,
-    pub(crate) participants: PmDcReferenceList,
-    pub(crate) name: String,
-    pub(crate) class_id: String,
+struct PmDcFeatureLabelPayloadWire {
+    save_version_major: u8,
+    header: PmDcLinkedHeader,
+    index: u32,
+    participants: PmDcReferenceList,
+    name: String,
+    class_id: String,
 }
 
 impl TryFrom<PmDcFeatureLabelPayloadWire> for PmDcFeatureLabelPayload {
@@ -326,28 +326,28 @@ impl PmDcFeatureLabelPayload {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcEntityStyleLinkPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
-    pub(crate) value: u32,
-    pub(crate) associative_id: u32,
-    pub(crate) entity_type: u32,
+    value: u32,
+    associative_id: u32,
+    entity_type: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeaturePayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) state: i32,
-    pub(crate) outline_value: u32,
+    state: i32,
+    outline_value: u32,
     pub(crate) properties: PmDcReferenceList,
-    pub(crate) value: u32,
+    value: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeatureTerminatorPayload {
-    pub(crate) save_version_major: u8,
+    save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    pub(crate) state: i32,
+    state: i32,
 }
 
 pub(crate) fn inventory(

@@ -107,7 +107,7 @@ fn join(values: impl IntoIterator<Item = String>) -> String {
 
 /// One row of `docs/dialects.toml` under the `inventor` namespace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum InventorDialect {
+enum InventorDialect {
     /// `RSeDb` schema 31 and `RSe` Meta Stream version 8, both declared.
     Cfb3Rse31Meta8,
     /// The mandatory totality row: any other declaration, and
@@ -118,10 +118,10 @@ pub(crate) enum InventorDialect {
 impl InventorDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 2] = [Self::Cfb3Rse31Meta8, Self::Unknown];
+    const ALL: [Self; 2] = [Self::Cfb3Rse31Meta8, Self::Unknown];
 
     /// The registry-generated id for this variant.
-    pub(crate) const fn id(self) -> DialectId {
+    const fn id(self) -> DialectId {
         match self {
             Self::Cfb3Rse31Meta8 => INVENTOR_CFB3_RSE31_META8,
             Self::Unknown => INVENTOR_UNKNOWN,
@@ -379,7 +379,7 @@ fn unknown_kernel_layer() -> DialectMatch {
 /// manufacturing `acis:unknown` for it would turn missing carrier evidence
 /// into a false kernel identity. Inspection and decode both call this
 /// function and therefore make the same distinction.
-pub(crate) fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
+fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
     match state {
         ActiveCarrierState::Selected(carrier) => Some(carrier.header.as_ref().map_or_else(
             |_| unknown_kernel_layer(),

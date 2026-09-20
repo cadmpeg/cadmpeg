@@ -40,19 +40,19 @@ pub(crate) struct RseDatabase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SegmentObject {
-    pub(crate) revision_id: [u8; 16],
-    pub(crate) state: [u8; 9],
-    pub(crate) segment_id: [u8; 16],
-    pub(crate) value: u32,
-    pub(crate) node_count: u32,
+    revision_id: [u8; 16],
+    state: [u8; 9],
+    segment_id: [u8; 16],
+    value: u32,
+    node_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SegmentNode {
-    pub(crate) index: u32,
-    pub(crate) segment_list_indexes: [i16; 2],
-    pub(crate) values: [u16; 6],
-    pub(crate) number: u16,
+    index: u32,
+    segment_list_indexes: [i16; 2],
+    values: [u16; 6],
+    number: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,13 +60,13 @@ pub(crate) struct SegmentRegistryEntry {
     pub(crate) display_name: String,
     pub(crate) segment_id: [u8; 16],
     pub(crate) revision_id: [u8; 16],
-    pub(crate) value: u32,
-    pub(crate) state: [u32; 5],
-    pub(crate) secondary_count: u32,
+    value: u32,
+    state: [u32; 5],
+    secondary_count: u32,
     pub(crate) type_name: String,
-    pub(crate) type_state: [u32; 2],
+    type_state: [u32; 2],
     pub(crate) version: VersionTuple,
-    pub(crate) trailing_value: u32,
+    trailing_value: u32,
     pub(crate) objects: Vec<SegmentObject>,
     pub(crate) nodes: Vec<SegmentNode>,
 }
@@ -74,9 +74,9 @@ pub(crate) struct SegmentRegistryEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SegmentRegistry {
     pub(crate) entries: Vec<SegmentRegistryEntry>,
-    pub(crate) state: [u16; 2],
-    pub(crate) primary_ids: Vec<[u8; 16]>,
-    pub(crate) secondary_ids: Vec<[u8; 16]>,
+    state: [u16; 2],
+    primary_ids: Vec<[u8; 16]>,
+    secondary_ids: Vec<[u8; 16]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,7 +96,7 @@ pub(crate) struct RevisionEntry {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RevisionTable {
-    pub(crate) version: u32,
+    version: u32,
     pub(crate) entries: Vec<RevisionEntry>,
 }
 

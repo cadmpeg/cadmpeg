@@ -124,7 +124,7 @@ impl PropertyValue<'_> {
     }
 }
 
-pub(crate) fn has_property_set_header(bytes: &[u8]) -> bool {
+fn has_property_set_header(bytes: &[u8]) -> bool {
     View::u16_le_at(bytes, 0) == Some(BYTE_ORDER_LE)
         && matches!(View::u16_le_at(bytes, 2), Some(0 | 1))
         && matches!(View::u32_le_at(bytes, 24), Some(1 | 2))

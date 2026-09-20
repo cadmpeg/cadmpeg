@@ -90,9 +90,9 @@ pub(crate) struct PmDcParameterPayload {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcExpressionPayload {
-    pub(crate) save_version_major: u8,
-    pub(crate) header_value: u32,
-    pub(crate) header_id: u16,
+    save_version_major: u8,
+    header_value: u32,
+    header_id: u16,
     pub(crate) unit: PmDcReference,
     pub(crate) kind: PmDcExpressionKind,
 }
@@ -139,9 +139,9 @@ pub(crate) enum PmDcBinaryOperation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcUnitPayload {
-    pub(crate) save_version_major: u8,
-    pub(crate) header_value: u32,
-    pub(crate) header_id: u16,
+    save_version_major: u8,
+    header_value: u32,
+    header_id: u16,
     pub(crate) kind: PmDcUnitKind,
 }
 
