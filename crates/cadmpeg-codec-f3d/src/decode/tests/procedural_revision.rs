@@ -715,19 +715,24 @@ fn record_level_surface_bounds_round_trip() {
         .expect("exact revision decode");
     let (mut source_less, _, _) = decoded.into_parts();
     assert_eq!(
-        source_less.model.procedural_surfaces[0].record_bounds(),
+        source_less.model.procedural_surfaces[0]
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         None
     );
     {
         let replacement = Some([Some(0.1), None, Some(0.2), None]);
         edit::replace(&mut source_less.model.procedural_surfaces[0], |previous| {
-            cadmpeg_ir::geometry::RecordBounds::try_option(replacement).map(|bounds| {
-                cadmpeg_ir::geometry::ProceduralSurface::new(
-                    previous.id.clone(),
-                    previous.definition().clone(),
-                    bounds,
-                )
-            })
+            replacement
+                .map(cadmpeg_ir::geometry::RecordBounds::try_from)
+                .transpose()
+                .map(|bounds| {
+                    cadmpeg_ir::geometry::ProceduralSurface::new(
+                        previous.id.clone(),
+                        previous.definition().clone(),
+                        bounds,
+                    )
+                })
         })
     }
     .expect("finite record bounds");
@@ -742,7 +747,9 @@ fn record_level_surface_bounds_round_trip() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("record-bounds round trip");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].record_bounds(),
+        round_trip.ir().model.procedural_surfaces[0]
+            .record_bounds()
+            .map(cadmpeg_ir::geometry::RecordBounds::get),
         Some([Some(0.1), None, Some(0.2), None])
     );
 }

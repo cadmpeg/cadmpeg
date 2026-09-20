@@ -3101,12 +3101,12 @@ pub(super) fn analytic_surface_offset(
         ) if {
             let support_axis = cone_surface.axis();
             let support_ref = cone_surface.ref_direction();
-            let support_ratio = cone_surface.ratio();
-            let support_angle = cone_surface.half_angle();
+            let support_ratio = cone_surface.ratio().get();
+            let support_angle = cone_surface.half_angle().get();
             let offset_axis = cone_surface_2.axis();
             let offset_ref = cone_surface_2.ref_direction();
-            let offset_ratio = cone_surface_2.ratio();
-            let offset_angle = cone_surface_2.half_angle();
+            let offset_ratio = cone_surface_2.ratio().get();
+            let offset_angle = cone_surface_2.half_angle().get();
             support_axis == offset_axis
                 && support_ref == offset_ref
                 && support_ratio.to_bits() == 1.0_f64.to_bits()
@@ -3116,10 +3116,10 @@ pub(super) fn analytic_surface_offset(
         {
             let support_origin = cone_surface.origin();
             let support_axis = cone_surface.axis();
-            let support_radius = cone_surface.radius();
-            let support_angle = cone_surface.half_angle();
+            let support_radius = cone_surface.radius().get();
+            let support_angle = cone_surface.half_angle().get();
             let offset_origin = cone_surface_2.origin();
-            let offset_radius = cone_surface_2.radius();
+            let offset_radius = cone_surface_2.radius().get();
             let delta = Vector3::new(
                 offset_origin.x - support_origin.x,
                 offset_origin.y - support_origin.y,

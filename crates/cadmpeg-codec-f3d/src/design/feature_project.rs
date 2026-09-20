@@ -5586,7 +5586,7 @@ fn project_chamfer(
                     .map(|(distance, angle)| {
                         design_positive_length(distance)
                             .zip(design_angle(angle).and_then(|value| {
-                                cadmpeg_ir::scalar::InteriorAngle::new(value.get())
+                                cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()
                             }))
                             .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
                     })
@@ -5645,20 +5645,19 @@ fn project_chamfer(
         if distances.len() != group_count || angles.len() != group_count {
             return None;
         }
-        let candidates =
-            Some({
-                distances
-                    .iter()
-                    .zip(&angles)
-                    .map(|(distance, angle)| {
-                        design_positive_length(distance)
-                            .zip(design_angle(angle).and_then(|value| {
-                                cadmpeg_ir::scalar::InteriorAngle::new(value.get())
-                            }))
-                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
-                    })
-                    .collect::<Vec<_>>()
-            });
+        let candidates = Some({
+            distances
+                .iter()
+                .zip(&angles)
+                .map(|(distance, angle)| {
+                    design_positive_length(distance)
+                        .zip(design_angle(angle).and_then(|value| {
+                            cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()
+                        }))
+                        .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
+                })
+                .collect::<Vec<_>>()
+        });
         candidates
     } else if !distances.is_empty() {
         if distances.len() != group_count {
@@ -7138,9 +7137,7 @@ fn project_fixed_pipe(
     let wall_thickness = if *filled {
         None
     } else if section_thickness.get() < section_size.get() / 2.0 {
-        Some(cadmpeg_ir::scalar::PositiveLength::new(
-            section_thickness.get(),
-        )?)
+        Some(cadmpeg_ir::scalar::PositiveLength::try_from(section_thickness).ok()?)
     } else {
         return None;
     };
@@ -7568,7 +7565,7 @@ fn project_hole(
         (None, true) => (HoleKind::Simple, Some(HoleBottom::Flat)),
         (None, false) => (
             HoleKind::SimpleDrilled {
-                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(tip_angle.get())?,
+                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok()?,
             },
             None,
         ),
@@ -7580,7 +7577,7 @@ fn project_hole(
             HoleKind::CounterboreDrilled {
                 diameter,
                 depth,
-                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(tip_angle.get())?,
+                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok()?,
             },
             None,
         ),
@@ -7620,7 +7617,7 @@ fn project_hole(
         .ok()?,
 
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(depth.get())?,
+            length: cadmpeg_ir::scalar::NonZeroLength::try_from(depth).ok()?,
         }),
         bottom,
         taper_angle: None,

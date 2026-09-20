@@ -974,9 +974,9 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(
         matches!(decode_surface(&rec("cone", elliptical_cylinder)).unwrap().0, SolvedSurfaceGeometry::Cone(cone_surface)
         if {
-            (cone_surface.radius() == 20.0)
-                && (cone_surface.ratio() == 0.4)
-                && (cone_surface.half_angle() == 0.0)
+            (cone_surface.radius().get() == 20.0)
+                && (cone_surface.ratio().get() == 0.4)
+                && (cone_surface.half_angle().get() == 0.0)
         })
     );
 
@@ -1000,7 +1000,7 @@ fn analytic_carrier_decode_covers_each_shape() {
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let half_angle = cone_surface.half_angle();
+            let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(
@@ -1030,8 +1030,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     match geo {
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
             assert!((radius - 46.55).abs() < 1.0e-12);

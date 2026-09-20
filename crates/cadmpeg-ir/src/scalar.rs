@@ -109,16 +109,25 @@ checked_scalar!(
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
 
-/// Default linear tolerance in canonical units.
-const DEFAULT_LINEAR_TOLERANCE: f64 = 1.0e-6;
-/// Default angular tolerance in canonical units.
-const DEFAULT_ANGULAR_TOLERANCE: f64 = 1.0e-10;
+/// The millimetre distance the document tolerance owner states as its linear
+/// default.
+const EPS_DOCUMENT_LINEAR_DEFAULT: f64 = 1.0e-6;
+/// The radian angle the document tolerance owner states as its angular
+/// default.
+const EPS_DOCUMENT_ANGULAR_DEFAULT: f64 = 1.0e-10;
 
-impl PositiveReal {
-    /// Default linear tolerance in canonical units.
-    pub(crate) const UNIT_LINEAR_DEFAULT: Self = Self(DEFAULT_LINEAR_TOLERANCE);
-    /// Default angular tolerance in canonical units.
-    pub(crate) const UNIT_ANGULAR_DEFAULT: Self = Self(DEFAULT_ANGULAR_TOLERANCE);
+impl PositiveLength {
+    /// The document tolerance owner's linear default. The private field is
+    /// reachable only here, so the constant is admitted by construction
+    /// rather than by a fallible call a constant cannot make.
+    pub(crate) const UNIT_LINEAR_DEFAULT: Self = Self(EPS_DOCUMENT_LINEAR_DEFAULT);
+}
+
+impl PositiveAngle {
+    /// The document tolerance owner's angular default. The private field is
+    /// reachable only here, so the constant is admitted by construction
+    /// rather than by a fallible call a constant cannot make.
+    pub(crate) const UNIT_ANGULAR_DEFAULT: Self = Self(EPS_DOCUMENT_ANGULAR_DEFAULT);
 }
 
 impl Length {
@@ -143,7 +152,16 @@ impl PositiveAngle {
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
 }
 
-macro_rules! scalar_conversion {
+/// State one subset edge inside a quantity family.
+///
+/// `$from` accepts a subset of what `$to` accepts, so the widening carries the
+/// stored value without checking it again. The restriction back to `$from`
+/// runs `$from`'s own admission, so it is `TryFrom` and `$error` states the
+/// condition a refused value failed.
+///
+/// A pair whose domains only overlap has no subset direction and therefore no
+/// declaration here; such a conversion is a check its caller spells out.
+macro_rules! scalar_subset {
     ($from:ident => $to:ident, $error:literal) => {
         impl From<$from> for $to {
             fn from(value: $from) -> Self {
@@ -161,13 +179,43 @@ macro_rules! scalar_conversion {
     };
 }
 
-scalar_conversion!(PositiveLength => Length, "length must be positive");
-scalar_conversion!(NonZeroLength => Length, "length must be nonzero");
-scalar_conversion!(NonNegativeLength => Length, "length must be nonnegative");
-scalar_conversion!(SlopeAngle => Angle, "angle must be strictly between -pi/2 and pi/2");
-scalar_conversion!(InteriorAngle => Angle, "angle must be strictly between zero and pi");
-scalar_conversion!(PositiveAngle => Angle, "angle must be positive");
-scalar_conversion!(NonZeroAngle => Angle, "angle must be nonzero");
+scalar_subset!(PositiveLength => NonZeroLength, "length must be positive");
+scalar_subset!(PositiveLength => NonNegativeLength, "length must be positive");
+scalar_subset!(PositiveLength => Length, "length must be positive");
+scalar_subset!(NonZeroLength => Length, "length must be nonzero");
+scalar_subset!(NonNegativeLength => Length, "length must be nonnegative");
+
+scalar_subset!(InteriorAngle => PositiveAngle, "angle must be strictly less than pi");
+scalar_subset!(InteriorAngle => NonZeroAngle, "angle must be strictly between zero and pi");
+scalar_subset!(InteriorAngle => Angle, "angle must be strictly between zero and pi");
+scalar_subset!(PositiveAngle => NonZeroAngle, "angle must be positive");
+scalar_subset!(PositiveAngle => Angle, "angle must be positive");
+scalar_subset!(NonZeroAngle => Angle, "angle must be nonzero");
+scalar_subset!(SlopeAngle => Angle, "angle must be strictly between -pi/2 and pi/2");
+
+scalar_subset!(PositiveReal => NonZeroReal, "value must be positive");
+scalar_subset!(PositiveReal => NonNegativeReal, "value must be positive");
+scalar_subset!(PositiveReal => FiniteReal, "value must be positive");
+scalar_subset!(NonZeroReal => FiniteReal, "value must be nonzero");
+scalar_subset!(NonNegativeReal => FiniteReal, "value must be nonnegative");
+scalar_subset!(Fraction => NonNegativeReal, "value must be between zero and one");
+scalar_subset!(Fraction => FiniteReal, "value must be between zero and one");
+
+impl Length {
+    /// Reverse the sign.
+    #[must_use]
+    pub const fn negated(self) -> Self {
+        Self(-self.0)
+    }
+}
+
+impl Angle {
+    /// Reverse the sign.
+    #[must_use]
+    pub const fn negated(self) -> Self {
+        Self(-self.0)
+    }
+}
 
 impl FiniteReal {
     /// Unit scalar value.

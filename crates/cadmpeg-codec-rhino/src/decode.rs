@@ -5709,16 +5709,17 @@ pub(crate) fn seal_for_test(
 }
 
 /// Admits an archive tolerance with a recorded default repair.
-pub(crate) fn admitted_tolerance(
+pub(crate) fn admitted_tolerance<T: Copy + Into<f64>>(
+    admitted: Option<T>,
     value: f64,
-    default: cadmpeg_ir::scalar::PositiveReal,
+    default: T,
     field: &str,
     losses: &mut Vec<LossNote>,
-) -> cadmpeg_ir::scalar::PositiveReal {
-    cadmpeg_ir::scalar::PositiveReal::new(value).unwrap_or_else(|| {
+) -> T {
+    admitted.unwrap_or_else(|| {
         losses.push(RhinoLossCode::RedundantFieldRepaired.note(format!(
             "{field} tolerance {value} replaced with default {}",
-            default.get()
+            default.into()
         )));
         default
     })
@@ -5728,10 +5729,16 @@ fn build_ir(scan: &Scan<'_>, losses: &mut Vec<LossNote>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
-            ir.tolerances.linear =
-                admitted_tolerance(linear, ir.tolerances.linear, "linear", losses);
+            ir.tolerances.linear = admitted_tolerance(
+                cadmpeg_ir::scalar::PositiveLength::new(linear),
+                linear,
+                ir.tolerances.linear,
+                "linear",
+                losses,
+            );
         }
         ir.tolerances.angular = admitted_tolerance(
+            cadmpeg_ir::scalar::PositiveAngle::new(source_units.angular_tolerance),
             source_units.angular_tolerance,
             ir.tolerances.angular,
             "angular",

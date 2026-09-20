@@ -974,16 +974,16 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
-                let ratio = cone_surface.ratio();
+                let ratio = cone_surface.ratio().get();
                 ratio == 1.0
             } =>
         {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             let ref_direction = cone_surface.ref_direction();
-            let radius = cone_surface.radius();
-            let ratio = cone_surface.ratio();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let ratio = cone_surface.ratio().get();
+            let half_angle = cone_surface.half_angle().get();
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     origin.translated(*axis, -distance * half_angle.sin()),
@@ -1005,9 +1005,9 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
     }
 }
 
-fn offset_indicator_parameters(bounds: Option<[Option<f64>; 4]>) -> [f64; 2] {
+fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds>) -> [f64; 2] {
     bounds
-        .and_then(|bounds| match bounds {
+        .and_then(|bounds| match bounds.get() {
             [Some(u0), Some(u1), Some(v0), Some(v1)] => Some([u0.midpoint(u1), v0.midpoint(v1)]),
             _ => None,
         })
@@ -2551,7 +2551,7 @@ pub(super) fn project(
                 major_radius > 0.0 && minor_radius > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let radius = cone_surface.radius();
+                let radius = cone_surface.radius().get();
                 radius > 0.0
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => true,

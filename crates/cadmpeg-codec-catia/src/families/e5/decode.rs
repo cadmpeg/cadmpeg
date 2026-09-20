@@ -2834,8 +2834,8 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
             let axis = cone_surface.axis();
-            let radius = cone_surface.radius();
-            let half_angle = cone_surface.half_angle();
+            let radius = cone_surface.radius().get();
+            let half_angle = cone_surface.half_angle().get();
             Some((
                 (*origin).translated(*axis, v),
                 (radius + v * half_angle.tan()).abs(),
