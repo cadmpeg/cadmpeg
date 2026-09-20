@@ -208,6 +208,19 @@ impl Point2 {
     }
 }
 
+/// Compute `left * right / denominator` without intermediate range loss.
+/// Inputs must be finite and the denominator nonzero; the result must be finite.
+pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {
+    if ![left, right, denominator].into_iter().all(f64::is_finite) {
+        return None;
+    }
+    let denominator = sum::scaled_finite(denominator)?;
+    match sum::product_sum(std::iter::once(Some([left, right])))? {
+        Some(numerator) => numerator.quotient(denominator),
+        None => Some(0.0),
+    }
+}
+
 /// Reflect a finite parameter about the midpoint of two finite bounds.
 /// The exact sum avoids overflow and cancellation in `start + end - parameter`.
 /// Returns `None` when an input or the reflected result is non-finite.
