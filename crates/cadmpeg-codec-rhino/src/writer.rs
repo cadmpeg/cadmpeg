@@ -1386,7 +1386,8 @@ fn validate_nurbs_trim(
             let curve_parameter = if sense == Sense::Forward {
                 parameter
             } else {
-                domain[0] + domain[1] - parameter
+                cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1])
+                    .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
             };
             let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {
                 CodecError::malformed(format_args!(

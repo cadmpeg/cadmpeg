@@ -1256,20 +1256,19 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
         },
         &mut BTreeSet::new(),
         None,
-    )
-    .map(super::Affine::body_transform);
+    );
     assert!(result.is_err());
 }
 
 #[test]
 fn affine_composition_rejects_translation_overflow() {
-    let transform = super::Affine::new([
+    let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, f64::MAX],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    assert!(transform.compose(transform).is_none());
+    assert!(transform.compose(transform).is_err());
 }
 
 #[test]

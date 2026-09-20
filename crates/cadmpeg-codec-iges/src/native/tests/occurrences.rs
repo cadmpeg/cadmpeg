@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::transform::Transform;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::{Affine, OccurrenceDefinition, OccurrenceExpansion, RealPrecision};
+use super::super::{OccurrenceDefinition, OccurrenceExpansion, RealPrecision};
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 
 #[test]
@@ -34,7 +35,7 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
         3,
         OccurrenceDefinition {
             members: Vec::new(),
-            transform: Affine::identity(),
+            transform: Transform::identity(),
         },
     )]);
     let neutral_links = BTreeMap::new();
@@ -59,7 +60,7 @@ fn occurrence_expansion_reports_a_missing_instance_directory_entry() {
     let result = expansion
         .expand(
             1,
-            Affine::identity(),
+            Transform::identity(),
             &mut path,
             &mut occurrences,
             &mut depth_truncated_at,

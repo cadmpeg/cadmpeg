@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{
-    admit, entity_loss, resolve_transform, source_object, Affine, ProjectionOutcome,
-};
+use super::geometry::{admit, entity_loss, resolve_transform, source_object, ProjectionOutcome};
 use super::pointer;
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -13,6 +11,7 @@ use cadmpeg_ir::geometry::{
     derive_reference_direction, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -61,12 +60,9 @@ fn direction(
             "points to D{sequence}, whose direction components are not numeric"
         ));
     };
-    {
-        let v = Vector3::new(x, y, z);
-        let n = v.norm();
-        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-    }
-    .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
+    Vector3::new(x, y, z)
+        .unit_nonzero()
+        .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
 }
 
 fn required_direction(
@@ -85,17 +81,15 @@ fn transformed_direction(
     record: &ParameterRecord,
     index: usize,
     role: &str,
-    transform: Affine,
+    transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Result<Vector3, String> {
     let direction = required_direction(record, index, role, entries, records)?;
-    {
-        let v = transform.vector(direction);
-        let n = v.norm();
-        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-    }
-    .ok_or_else(|| format!("{role} collapses under the surface transformation"))
+    transform
+        .apply_vector(direction)
+        .and_then(Vector3::unit_nonzero)
+        .ok_or_else(|| format!("{role} collapses under the surface transformation"))
 }
 
 fn form_reference_direction(
@@ -103,7 +97,7 @@ fn form_reference_direction(
     record: &ParameterRecord,
     index: usize,
     role: &str,
-    transform: Affine,
+    transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Result<Option<Vector3>, String> {
@@ -131,7 +125,7 @@ fn surface_transform(
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<Affine, String> {
+) -> Result<Transform, String> {
     resolve_transform(
         entry.transform,
         entries,
@@ -185,7 +179,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        let location = transform.point(location);
+        let Some(location) = transform.apply_point(location) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
         let result = match entry.entity_type {
             190 => {
                 let axis = match transformed_direction(
@@ -369,12 +366,10 @@ pub(super) fn project(
                 let axis = if entry.form == 1 {
                     transformed_direction(record, 3, "sphere axis", transform, &entries, &records)
                 } else {
-                    {
-                        let v = transform.vector(Vector3::new(0.0, 0.0, 1.0));
-                        let n = v.norm();
-                        (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-                    }
-                    .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
+                    transform
+                        .apply_vector(Vector3::new(0.0, 0.0, 1.0))
+                        .and_then(Vector3::unit_nonzero)
+                        .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
                 let axis = match axis {
                     Ok(axis) => axis,

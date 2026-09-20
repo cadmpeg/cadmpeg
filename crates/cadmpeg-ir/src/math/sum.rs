@@ -108,7 +108,7 @@ impl ScaledExponent {
     ///
     /// Plain `-`: both sides lie in `MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT`,
     /// so the difference is at most `MAX_SCALED_EXPONENT - MIN_SCALED_EXPONENT`
-    /// in magnitude. This is the one operation the exponent is read for.
+    /// in magnitude.
     fn difference(self, other: Self) -> i32 {
         self.0 - other.0
     }

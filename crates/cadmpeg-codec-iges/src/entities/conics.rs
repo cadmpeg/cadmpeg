@@ -173,19 +173,25 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some((basis_x, scale_x)) = ({
-            let v = transform.vector(Vector3::new(1.0, 0.0, 0.0));
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
-        }) else {
+        let Some((basis_x, scale_x)) = transform
+            .apply_vector(Vector3::new(1.0, 0.0, 0.0))
+            .and_then(|v| {
+                let n = v.norm();
+                n.is_finite().then_some(())?;
+                Some((v.unit_nonzero()?, n))
+            })
+        else {
             losses.push(entity_loss(entry, "conic placement collapses the x axis"));
             continue;
         };
-        let Some((basis_y, scale_y)) = ({
-            let v = transform.vector(Vector3::new(0.0, 1.0, 0.0));
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
-        }) else {
+        let Some((basis_y, scale_y)) = transform
+            .apply_vector(Vector3::new(0.0, 1.0, 0.0))
+            .and_then(|v| {
+                let n = v.norm();
+                n.is_finite().then_some(())?;
+                Some((v.unit_nonzero()?, n))
+            })
+        else {
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
@@ -204,17 +210,27 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic placement collapses its plane"));
             continue;
         };
-        let plane_origin = transform.point(Point3::new(0.0, 0.0, *plane_z * factor));
-        let start = transform.point(Point3::new(
+        let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, *plane_z * factor))
+        else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
+        let Some(start) = transform.apply_point(Point3::new(
             *start_x * factor,
             *start_y * factor,
             *plane_z * factor,
-        ));
-        let end = transform.point(Point3::new(
+        )) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
+        let Some(end) = transform.apply_point(Point3::new(
             *end_x * factor,
             *end_y * factor,
             *plane_z * factor,
-        ));
+        )) else {
+            losses.push(entity_loss(entry, "placement produces a non-finite point"));
+            continue;
+        };
 
         let geometry_and_range = if zero(*coeff_e) && coeff_a * coeff_c > 0.0 {
             let radius_x_squared = -*coeff_f / *coeff_a;

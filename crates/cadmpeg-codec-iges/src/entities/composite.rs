@@ -109,12 +109,12 @@ impl CompositePointContext<'_, '_, '_, '_> {
             self.ctx,
         )
         .ok()?;
-        let point = transform.point(Point3::new(
+        let point = transform.apply_point(Point3::new(
             x * self.global.length_factor_mm(),
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
-        ));
-        (point.is_finite()).then_some(point)
+        ))?;
+        Some(point)
     }
 }
 
@@ -518,30 +518,22 @@ fn reverse_nurbs(
             domain_end,
         });
     }
-    let sum = domain_start + domain_end;
-    let reversed_range = [sum - end, sum - start];
-    if !sum.is_finite()
-        || reversed_range
-            .iter()
-            .any(|parameter| !parameter.is_finite())
-    {
-        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
-            domain_start,
-            domain_end,
-        });
-    }
+    let reflect = |parameter| {
+        cadmpeg_ir::math::reflect_parameter(parameter, domain_start, domain_end).ok_or(
+            CompositeCurveError::ReversedChildReflectionNonFinite {
+                domain_start,
+                domain_end,
+            },
+        )
+    };
+    let reversed_range = [reflect(end)?, reflect(start)?];
     let knots = curve
         .knots()
         .iter()
         .rev()
-        .map(|knot| sum - knot)
-        .collect::<Vec<_>>();
-    if knots.iter().any(|knot| !knot.is_finite()) {
-        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
-            domain_start,
-            domain_end,
-        });
-    }
+        .copied()
+        .map(reflect)
+        .collect::<Result<Vec<_>, _>>()?;
     let reversed = NurbsCurve::from_lanes(
         curve.degree(),
         knots,

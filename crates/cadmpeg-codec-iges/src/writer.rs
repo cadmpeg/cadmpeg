@@ -3527,26 +3527,19 @@ fn reverse_nurbs(
             "IGES reversed NURBS domain or parameter range is invalid".into(),
         ));
     }
-    let sum = domain[0] + domain[1];
-    if !sum.is_finite() {
-        return Err(CodecError::Malformed(
-            "IGES reversed NURBS parameter range is non-finite".into(),
-        ));
-    }
+    let reflect = |parameter| {
+        cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1]).ok_or_else(|| {
+            CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
+        })
+    };
     let knots = nurbs
         .knots()
         .iter()
         .rev()
-        .map(|knot| sum - knot)
-        .collect::<Vec<_>>();
-    let reversed_range = [sum - range[1], sum - range[0]];
-    if reversed_range.iter().any(|value| !value.is_finite())
-        || knots.iter().any(|knot| !knot.is_finite())
-    {
-        return Err(CodecError::Malformed(
-            "IGES reversed NURBS knot vector or parameter range is non-finite".into(),
-        ));
-    }
+        .copied()
+        .map(reflect)
+        .collect::<Result<Vec<_>, _>>()?;
+    let reversed_range = [reflect(range[1])?, reflect(range[0])?];
     let reversed = NurbsCurve::from_lanes(
         nurbs.degree(),
         knots,
@@ -6294,9 +6287,9 @@ fn apply_rigid_transform(
 }
 
 fn unit(vector: Vector3, label: &str) -> Result<Vector3, CodecError> {
-    vector.unit().ok_or_else(|| CodecError::malformed(format_args!(
-        "IGES {label} is degenerate"
-    )))
+    vector
+        .unit()
+        .ok_or_else(|| CodecError::malformed(format_args!("IGES {label} is degenerate")))
 }
 
 fn orthonormal_pair(
