@@ -18,6 +18,7 @@ const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
+const EPS_QUADRATIC_CANCELLATION: f64 = 64.0 * f64::EPSILON;
 
 #[derive(Clone, Copy)]
 pub(in crate::decode) struct PlaneEquation {
@@ -159,6 +160,28 @@ fn outer_product(left: [f64; 3], right: [f64; 3]) -> [[f64; 3]; 3] {
     left.map(|left| right.map(|right| left * right))
 }
 
+fn abs_dot(left: [f64; 3], right: [f64; 3]) -> f64 {
+    left.iter()
+        .zip(right)
+        .map(|(left, right)| (left * right).abs())
+        .sum()
+}
+
+/// A coefficient of a quadric restricted to a line or to a plane. The terms come
+/// from the quadric matrix and the restriction frame, so a sum that cancels to
+/// within the rounding error of those terms states that the coefficient is zero.
+/// A zero quadratic coefficient states that the direction is parallel to a
+/// ruling, so the line meets the quadric in the single point of the remaining
+/// linear equation. A zero constant states that the restriction origin lies on
+/// the quadric, which keeps a tangency a double root rather than a discriminant
+/// that is negative only by the rounding of its coefficients.
+fn cancelling_coefficient(value: f64, terms: f64) -> f64 {
+    if value.abs() <= EPS_QUADRATIC_CANCELLATION * terms {
+        return 0.0;
+    }
+    value
+}
+
 fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
     let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     match carrier {
@@ -232,12 +255,23 @@ fn restrict_quadric_to_plane(
     let matrix_u = matrix_vector(quadric.matrix, u_axis);
     let matrix_v = matrix_vector(quadric.matrix, v_axis);
     PlaneConicEquation {
-        uu: dot(u_axis, matrix_u),
-        uv: 2.0 * dot(u_axis, matrix_v),
-        vv: dot(v_axis, matrix_v),
-        u: 2.0 * dot(u_axis, matrix_origin) + dot(quadric.linear, u_axis),
-        v: 2.0 * dot(v_axis, matrix_origin) + dot(quadric.linear, v_axis),
-        constant: dot(origin, matrix_origin) + dot(quadric.linear, origin) + quadric.constant,
+        uu: cancelling_coefficient(dot(u_axis, matrix_u), abs_dot(u_axis, matrix_u)),
+        uv: cancelling_coefficient(2.0 * dot(u_axis, matrix_v), 2.0 * abs_dot(u_axis, matrix_v)),
+        vv: cancelling_coefficient(dot(v_axis, matrix_v), abs_dot(v_axis, matrix_v)),
+        u: cancelling_coefficient(
+            2.0 * dot(u_axis, matrix_origin) + dot(quadric.linear, u_axis),
+            2.0 * abs_dot(u_axis, matrix_origin) + abs_dot(quadric.linear, u_axis),
+        ),
+        v: cancelling_coefficient(
+            2.0 * dot(v_axis, matrix_origin) + dot(quadric.linear, v_axis),
+            2.0 * abs_dot(v_axis, matrix_origin) + abs_dot(quadric.linear, v_axis),
+        ),
+        constant: cancelling_coefficient(
+            dot(origin, matrix_origin) + dot(quadric.linear, origin) + quadric.constant,
+            abs_dot(origin, matrix_origin)
+                + abs_dot(quadric.linear, origin)
+                + quadric.constant.abs(),
+        ),
     }
 }
 
@@ -314,10 +348,20 @@ pub(super) fn intersect_two_planes_with_quadric(
     };
     let matrix_origin = matrix_vector(quadric.matrix, line_origin);
     let matrix_direction = matrix_vector(quadric.matrix, direction);
-    let quadratic = dot(direction, matrix_direction);
-    let linear = 2.0 * dot(line_origin, matrix_direction) + dot(quadric.linear, direction);
-    let constant =
-        dot(line_origin, matrix_origin) + dot(quadric.linear, line_origin) + quadric.constant;
+    let quadratic = cancelling_coefficient(
+        dot(direction, matrix_direction),
+        abs_dot(direction, matrix_direction),
+    );
+    let linear = cancelling_coefficient(
+        2.0 * dot(line_origin, matrix_direction) + dot(quadric.linear, direction),
+        2.0 * abs_dot(line_origin, matrix_direction) + abs_dot(quadric.linear, direction),
+    );
+    let constant = cancelling_coefficient(
+        dot(line_origin, matrix_origin) + dot(quadric.linear, line_origin) + quadric.constant,
+        abs_dot(line_origin, matrix_origin)
+            + abs_dot(quadric.linear, line_origin)
+            + quadric.constant.abs(),
+    );
     real_roots(quadratic, linear, constant)
         .into_iter()
         .map(|parameter| {
@@ -557,6 +601,21 @@ fn refine_plane_conic_intersection(
     [u, v]
 }
 
+/// The conic parameters v that satisfy the conic at the given u.
+fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
+    real_roots(
+        conic.vv,
+        cancelling_coefficient(
+            conic.uv.mul_add(u, conic.v),
+            (conic.uv * u).abs() + conic.v.abs(),
+        ),
+        cancelling_coefficient(
+            conic.uu * u * u + conic.u * u + conic.constant,
+            (conic.uu * u * u).abs() + (conic.u * u).abs() + conic.constant.abs(),
+        ),
+    )
+}
+
 pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
@@ -564,16 +623,8 @@ pub(super) fn common_plane_conic_parameters(
     let resultant = conic_resultant(first, second);
     let mut parameters = Vec::<[f64; 2]>::new();
     for u in real_polynomial_roots(&resultant) {
-        let first_v_roots = real_roots(
-            first.vv,
-            first.uv.mul_add(u, first.v),
-            first.uu * u * u + first.u * u + first.constant,
-        );
-        let second_v_roots = real_roots(
-            second.vv,
-            second.uv.mul_add(u, second.v),
-            second.uu * u * u + second.u * u + second.constant,
-        );
+        let first_v_roots = conic_v_roots(first, u);
+        let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
             let candidate = refine_plane_conic_intersection(first, second, u, v);
             let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
