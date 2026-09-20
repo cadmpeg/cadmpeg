@@ -1434,7 +1434,7 @@ fn closed_planar_circle(
         return None;
     }
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        *curves.get(edge.curve().as_ref()?)?
+        *curves.get(edge.curve()?)?
     else {
         return None;
     };
@@ -1743,7 +1743,7 @@ fn planar_trim(
                 return None;
             }
             let (samples, sample_tolerance) = planar_boundary_samples(
-                curves.get(edge.curve().as_ref()?)?,
+                curves.get(edge.curve()?)?,
                 start,
                 end,
                 surface,
@@ -1915,7 +1915,7 @@ fn cylindrical_trim(
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve().as_ref()?)?;
+        let curve = curves.get(edge.curve()?)?;
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = line_curve.direction();
@@ -2029,7 +2029,7 @@ fn conical_trim(
             return None;
         }
         let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve().as_ref()?)?;
+        let curve = curves.get(edge.curve()?)?;
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = line_curve.direction();

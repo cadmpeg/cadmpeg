@@ -42,7 +42,7 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve().as_ref() == Some(&curve))
+        .filter(|edge| edge.curve() == Some(&curve))
     {
         let start = point(&edge.start)?;
         let end = point(&edge.end)?;

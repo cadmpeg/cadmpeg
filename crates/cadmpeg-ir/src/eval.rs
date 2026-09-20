@@ -3254,7 +3254,7 @@ fn construction_curve_parameter(
             .model
             .edges
             .iter()
-            .filter(|edge| edge.curve().as_ref() == Some(directrix))
+            .filter(|edge| edge.curve() == Some(directrix))
             .filter_map(crate::topology::Edge::param_range);
         let interval = ranges.next()?;
         if ranges.any(|range| range != interval) {

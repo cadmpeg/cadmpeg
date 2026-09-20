@@ -1653,7 +1653,6 @@ fn plane_boundary_edge(
         .ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
         .curve()
-        .as_ref()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
     let curve = index
         .curves(curve_id.as_str())

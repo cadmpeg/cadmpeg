@@ -153,7 +153,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve().as_ref() == Some(owner))
+        .filter(|edge| edge.curve() == Some(owner))
         .all(|edge| edge.param_range().is_none()));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -191,9 +191,7 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         .model
         .edges
         .iter()
-        .find(|edge| {
-            edge.curve().as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
-        })
+        .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
         .expect("carrying edge");
     assert_eq!(edge.param_range(), None);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -338,9 +336,7 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .model
             .edges
             .iter()
-            .find(|edge| {
-                edge.curve().as_ref() == result.ir().model.procedural_curve_owner(&procedural.id)
-            })
+            .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
             .expect("carrying edge");
         assert_eq!(edge.param_range(), None);
         assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -538,7 +534,7 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     let mut cur = Cursor::new(prt_with_partition(&forward_trimmed_curve_chain_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
-    assert_eq!(edge.curve().as_ref(), Some(&result.ir().model.curves[0].id));
+    assert_eq!(edge.curve(), Some(&result.ir().model.curves[0].id));
     assert_eq!(edge.param_range(), Some([0.25, 0.75]));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -552,7 +548,6 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     let edge = result.ir().model.edges.first().expect("edge");
     let carrier = edge
         .curve()
-        .as_ref()
         .and_then(|id| {
             result
                 .ir()
@@ -593,7 +588,7 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir().model.edges[0].curve().as_ref(),
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
 }
@@ -634,7 +629,7 @@ fn decode_tracks_extended_edge_reference_shift() {
         Some(0.3)
     );
     assert_eq!(
-        result.ir().model.edges[0].curve().as_ref(),
+        result.ir().model.edges[0].curve(),
         Some(&result.ir().model.curves[0].id)
     );
 }

@@ -98,7 +98,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .enumerate()
         .filter(|(_, edge)| edge.param_range().is_none())
         .filter_map(|(index, edge)| {
-            let curve = edge.curve().clone()?;
+            let curve = edge.curve().cloned()?;
             let start = vertices.get(edge.start.as_str()).copied()?;
             let end = vertices.get(edge.end.as_str()).copied()?;
             Some((index, curve, start, end))
@@ -2674,7 +2674,7 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve().as_ref())
+        .filter_map(|edge| edge.curve())
         .chain(
             ir.model
                 .coedges

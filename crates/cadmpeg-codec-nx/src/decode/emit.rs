@@ -513,7 +513,7 @@ pub(super) fn emit_topology(
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve().clone()?)))
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve().cloned()?)))
         .collect();
     let mut faces = BTreeMap::new();
     let mut pending_faces: Vec<PendingFace> = Vec::new();
@@ -674,7 +674,7 @@ pub(super) fn emit_topology(
                     carrier.fit_tolerance(),
                     adaptive_geometry_budget,
                 )?;
-                let curve = index.edges(edge.as_str())?.curve().as_ref()?;
+                let curve = index.edges(edge.as_str())?.curve()?;
                 let parameter_range = parameter_range?;
                 let Some((candidate_geometry, candidate_range, _)) =
                     intersection_pcurves.get(&(curve.clone(), support.clone()))

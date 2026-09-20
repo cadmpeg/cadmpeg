@@ -33,7 +33,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     );
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().clone().unwrap();
+    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
     ir.model
         .curves
         .iter_mut()

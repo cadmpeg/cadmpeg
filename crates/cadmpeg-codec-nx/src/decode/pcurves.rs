@@ -114,7 +114,7 @@ fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
         .edges
         .iter()
         .enumerate()
-        .filter_map(|(index, edge)| Some((edge.curve().clone()?, index)))
+        .filter_map(|(index, edge)| Some((edge.curve().cloned()?, index)))
         .fold(BTreeMap::new(), |mut indices, (curve, index)| {
             indices.entry(curve).or_default().push(index);
             indices
@@ -152,7 +152,7 @@ impl IntersectionIncidenceIndex {
                 .insert(face.id.clone(), face.surface.clone());
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
-            let Some(curve) = edge.curve().clone() else {
+            let Some(curve) = edge.curve().cloned() else {
                 continue;
             };
             self.edge_curves.insert(edge.id.clone(), curve);
@@ -400,7 +400,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve().clone()?)))
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve().cloned()?)))
         .collect::<BTreeMap<_, _>>();
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
     for coedge in ir.model.coedges.iter().skip(coedge_start) {
@@ -1148,7 +1148,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
         .iter()
         .filter_map(|edge| {
             Some((
-                edge.curve().clone()?,
+                edge.curve().cloned()?,
                 edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)?,
             ))
         })

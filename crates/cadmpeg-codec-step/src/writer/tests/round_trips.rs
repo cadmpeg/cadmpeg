@@ -214,7 +214,7 @@ fn align_sheet_edge_to_pcurve(
             .find(|edge| edge.id == edge_id)
             .expect("sheet pcurve edge");
         (
-            edge.curve().clone().expect("sheet pcurve edge curve"),
+            edge.curve().cloned().expect("sheet pcurve edge curve"),
             [edge.start.clone(), edge.end.clone()],
         )
     };
@@ -564,7 +564,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
 pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].clone();
-    let curve = edge.curve().clone().expect("cube edge curve");
+    let curve = edge.curve().cloned().expect("cube edge curve");
     ir.model.edges.retain(|candidate| candidate.id == edge.id);
     ir.model.curves.retain(|candidate| candidate.id == curve);
     ir.model

@@ -54,7 +54,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         })
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
-    let curve = edge.curve().clone().expect("cube edge curve");
+    let curve = edge.curve().cloned().expect("cube edge curve");
     let _attached = ir.model.add_procedural_curve(
         curve,
         ProceduralCurve::new(

@@ -9055,7 +9055,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             .map(|edge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
                     entity: stable_ref(edge.id.as_str())?,
-                    carrier: match &edge.curve() {
+                    carrier: match edge.curve() {
                         Some(curve) => Some(stable_ref(curve.as_str())?),
                         None => None,
                     },

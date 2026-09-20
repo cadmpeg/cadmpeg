@@ -423,7 +423,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         let curve = model
             .curves
             .iter()
-            .find(|curve| Some(&curve.id) == edge.curve().as_ref())
+            .find(|curve| Some(&curve.id) == edge.curve())
             .expect("edge curve");
         let Some(SolvedCurveGeometry::Line(line_curve)) = curve.geometry.solved() else {
             panic!("edge line: {curve:#?}");

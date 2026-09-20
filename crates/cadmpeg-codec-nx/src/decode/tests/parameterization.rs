@@ -439,7 +439,6 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
 
     let carrier = result.ir().model.edges[0]
         .curve()
-        .as_ref()
         .and_then(|id| {
             result
                 .ir()
@@ -724,7 +723,7 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .edges
         .iter()
         .find(|candidate| candidate.id == edge)
-        .and_then(|edge| edge.curve().clone())
+        .and_then(|edge| edge.curve().cloned())
         .expect("edge curve");
     let edge_tolerance = ir
         .model

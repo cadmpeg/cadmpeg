@@ -189,7 +189,7 @@ fn source_parameter_range(
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve().as_ref() == Some(source_id))
+        .filter(|edge| edge.curve() == Some(source_id))
         .filter_map(|edge| {
             let range = edge.param_range()?;
             let start = point_position(&edge.start)?;

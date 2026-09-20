@@ -983,10 +983,17 @@ impl From<ParameterInterval> for [f64; 2] {
 /// An edge carrier and its admitted parameter endpoints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "EdgeCarrierWire"))]
 #[serde(try_from = "EdgeCarrierWire", into = "EdgeCarrierWire")]
-pub struct EdgeCarrier {
-    curve: Option<CurveId>,
-    param_range: Option<[f64; 2]>,
+pub enum EdgeCarrier {
+    /// Neither a carrier curve nor parameter endpoints.
+    Free,
+    /// Finite parameter endpoints with no carrier curve to order them against.
+    Endpoints([crate::scalar::FiniteReal; 2]),
+    /// A carrier curve with no parameter endpoints.
+    Curve(CurveId),
+    /// A carrier curve and the ordered interval admitted on it.
+    Bounded(CurveId, ParameterInterval),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1012,9 +1019,9 @@ struct EdgeCarrierWire {
 impl EdgeCarrier {
     /// Construct a carrier without parameter endpoints.
     pub fn unbounded(curve: Option<CurveId>) -> Self {
-        Self {
-            curve,
-            param_range: None,
+        match curve {
+            Some(curve) => Self::Curve(curve),
+            None => Self::Free,
         }
     }
 
@@ -1023,15 +1030,46 @@ impl EdgeCarrier {
         curve: Option<CurveId>,
         param_range: Option<[f64; 2]>,
     ) -> Result<Self, &'static str> {
-        if let Some(range) = param_range {
-            if curve.is_some() {
-                ParameterInterval::new(range)
-                    .map_err(|_| "edge param_range must be finite and ordered")?;
-            } else if !range.iter().all(|value| value.is_finite()) {
-                return Err("edge param_range endpoints must be finite");
+        match (curve, param_range) {
+            (None, None) => Ok(Self::Free),
+            (Some(curve), None) => Ok(Self::Curve(curve)),
+            (Some(curve), Some(range)) => ParameterInterval::new(range)
+                .map(|interval| Self::Bounded(curve, interval))
+                .map_err(|_| "edge param_range must be finite and ordered"),
+            (None, Some([start, end])) => {
+                let start = crate::scalar::FiniteReal::new(start);
+                let end = crate::scalar::FiniteReal::new(end);
+                match (start, end) {
+                    (Some(start), Some(end)) => Ok(Self::Endpoints([start, end])),
+                    _ => Err("edge param_range endpoints must be finite"),
+                }
             }
         }
-        Ok(Self { curve, param_range })
+    }
+
+    /// Return the carrier curve, when the carrier states one.
+    pub const fn curve(&self) -> Option<&CurveId> {
+        match self {
+            Self::Free | Self::Endpoints(_) => None,
+            Self::Curve(curve) | Self::Bounded(curve, _) => Some(curve),
+        }
+    }
+
+    /// Return the parameter endpoints, when the carrier states them.
+    pub fn param_range(&self) -> Option<[f64; 2]> {
+        match self {
+            Self::Free | Self::Curve(_) => None,
+            Self::Endpoints([start, end]) => Some([start.get(), end.get()]),
+            Self::Bounded(_, interval) => Some(interval.endpoints()),
+        }
+    }
+
+    /// Map the carrier identity without changing its presence or parameter range.
+    fn map_curve(&mut self, map: impl FnOnce(&CurveId) -> CurveId) {
+        match self {
+            Self::Free | Self::Endpoints(_) => {}
+            Self::Curve(curve) | Self::Bounded(curve, _) => *curve = map(curve),
+        }
     }
 }
 
@@ -1045,8 +1083,8 @@ impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
 impl From<EdgeCarrier> for EdgeCarrierWire {
     fn from(value: EdgeCarrier) -> Self {
         Self {
-            curve: value.curve,
-            param_range: value.param_range,
+            curve: value.curve().cloned(),
+            param_range: value.param_range(),
         }
     }
 }
@@ -1073,9 +1111,7 @@ pub struct Edge {
 impl Edge {
     /// Map the carrier identity without changing its presence or parameter range.
     pub fn map_curve(&mut self, map: impl FnOnce(&CurveId) -> CurveId) {
-        if let Some(curve) = &mut self.carrier.curve {
-            *curve = map(curve);
-        }
+        self.carrier.map_curve(map);
     }
 
     /// Replace the curve while retaining the range if it remains valid.
@@ -1085,16 +1121,16 @@ impl Edge {
     }
     /// Replace the parameter endpoints if valid for the carrier.
     pub fn set_param_range(&mut self, range: Option<[f64; 2]>) -> Result<(), &'static str> {
-        self.carrier = EdgeCarrier::new(self.curve().clone(), range)?;
+        self.carrier = EdgeCarrier::new(self.curve().cloned(), range)?;
         Ok(())
     }
     /// Return the underlying curve carrier.
-    pub fn curve(&self) -> &Option<CurveId> {
-        &self.carrier.curve
+    pub const fn curve(&self) -> Option<&CurveId> {
+        self.carrier.curve()
     }
     /// Return the parameter endpoints.
     pub fn param_range(&self) -> Option<[f64; 2]> {
-        self.carrier.param_range
+        self.carrier.param_range()
     }
 }
 
@@ -1273,7 +1309,7 @@ mod tests {
         edge.set_curve(None).unwrap();
         edge.set_param_range(Some([2.0, 1.0])).unwrap();
         let carrierless = edge.clone();
-        assert!(edge.set_curve(original.curve().clone()).is_err());
+        assert!(edge.set_curve(original.curve().cloned()).is_err());
         assert_eq!(edge, carrierless);
     }
 

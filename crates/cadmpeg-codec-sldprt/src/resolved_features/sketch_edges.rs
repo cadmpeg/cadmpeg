@@ -156,7 +156,7 @@ pub(super) fn project_edge(
     );
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
     let tolerance = EdgeProjectionTolerance::of(edge)?.get();
-    match edge.curve().as_ref().and_then(|id| curves.get(id).copied()) {
+    match edge.curve().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center();
             let radius = circle_curve.radius();

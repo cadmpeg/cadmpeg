@@ -231,7 +231,7 @@ fn writer_reports_unrepresented_topology_metadata() {
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
     ir.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"));
-    let edge_curve = ir.model.edges[0].curve().clone().expect("edge curve");
+    let edge_curve = ir.model.edges[0].curve().cloned().expect("edge curve");
     let coedge = ir
         .model
         .coedges
@@ -1435,7 +1435,7 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
     }));
 
     let mut nested_unknown = unit_cube().expect("unit cube fixture is admitted");
-    let curve_id = nested_unknown.model.edges[0].curve().clone().unwrap();
+    let curve_id = nested_unknown.model.edges[0].curve().cloned().unwrap();
     nested_unknown
         .model
         .curves

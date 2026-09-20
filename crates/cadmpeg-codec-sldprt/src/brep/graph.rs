@@ -2457,7 +2457,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let mut kept_curves = out
         .edges
         .iter()
-        .filter_map(|edge| edge.curve().clone())
+        .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
     kept_curves.extend(out.procedural_surfaces.iter().filter_map(|surface| {
         if let ProceduralSurfaceDefinition::Blend(definition_payload) = surface.definition() {
@@ -2473,7 +2473,7 @@ fn prune_rejected_topology(out: &mut Brep) {
         .edges
         .iter()
         .filter(|edge| {
-            edge.curve().as_ref().is_some_and(|curve_id| {
+            edge.curve().is_some_and(|curve_id| {
                 out.curves.iter().any(|curve| {
                     curve.id == *curve_id
                         && matches!(
@@ -2651,7 +2651,7 @@ fn derive_planar_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id).copied()) else {
+        let Some(curve) = edge.curve().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
         let uv = |point: cadmpeg_ir::math::Point3| {
@@ -2850,7 +2850,7 @@ fn derive_cylindrical_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id).copied()) else {
+        let Some(curve) = edge.curve().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
         let cross = cadmpeg_ir::math::Vector3::new(
@@ -3457,7 +3457,7 @@ fn derive_revolved_circle_pcurves(
         };
         let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) = edges
             .get(&coedge.edge)
-            .and_then(|edge| edge.curve().as_ref())
+            .and_then(|edge| edge.curve())
             .and_then(|curve_id| curves.get(curve_id))
             .map(|curve| &curve.geometry)
         else {
@@ -3658,7 +3658,6 @@ fn derive_spherical_pcurves(
         };
         let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) = edge
             .curve()
-            .as_ref()
             .and_then(|id| curves.get(id).copied())
             .map(|curve| &curve.geometry)
         else {
@@ -3802,7 +3801,6 @@ fn derive_nurbs_isoparametric_pcurves(
         };
         let Some(curve) = edge
             .curve()
-            .as_ref()
             .and_then(|id| curves.get(id).copied())
             .map(|item| &item.geometry)
         else {
@@ -5419,7 +5417,7 @@ fn synthesize_cylinder_seams(
             if edge.start != edge.end {
                 return None;
             }
-            let curve = curves.get(edge.curve().as_ref()?)?;
+            let curve = curves.get(edge.curve()?)?;
             let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
                 return None;
             };
@@ -5639,7 +5637,6 @@ fn synthesize_sphere_seams(
             .filter(|index| {
                 out.edges[*index]
                     .curve()
-                    .as_ref()
                     .and_then(|curve| curve_geometry.get(curve))
                     .is_some_and(|geometry| {
                         matches!(
@@ -5744,7 +5741,7 @@ fn synthesize_sphere_seams(
             coedges
                 .get(id)
                 .and_then(|coedge| edges.get(&coedge.edge))
-                .and_then(|edge| edge.curve().as_ref())
+                .and_then(|edge| edge.curve())
                 .is_some_and(|curve_id| {
                     curves.get(curve_id).is_some_and(|curve| {
                         matches!(

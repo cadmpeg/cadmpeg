@@ -227,7 +227,7 @@ impl CompositeIndex {
         }
         let mut edges = BTreeMap::new();
         for edge in &ir.model.edges {
-            if let Some(curve) = &edge.curve() {
+            if let Some(curve) = edge.curve() {
                 edges
                     .entry(curve.clone())
                     .or_insert_with(Vec::new)
@@ -1283,7 +1283,7 @@ fn bounded_edge_for_curve(
             ir.model
                 .edges
                 .iter()
-                .filter(|edge| edge.curve().as_ref() == Some(curve_id))
+                .filter(|edge| edge.curve() == Some(curve_id))
                 .map(|edge| CompositeEdge {
                     start: edge.start.clone(),
                     end: edge.end.clone(),

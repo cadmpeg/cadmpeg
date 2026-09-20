@@ -417,7 +417,7 @@ impl<'a> WritableModel<'a> {
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
         for edge in ordered_edges {
-            let curve_id = edge.curve().as_ref().ok_or_else(|| {
+            let curve_id = edge.curve().ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "edge {} has no writable curve",
                     edge.id.as_str()

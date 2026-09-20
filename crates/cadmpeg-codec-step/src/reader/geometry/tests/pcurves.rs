@@ -869,7 +869,7 @@ fn intersection_curve_binds_its_basis_curve_and_pcurves() {
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
         .expect("intersection-curve edge");
     assert_eq!(
-        edge.curve().as_ref().map(CurveId::as_str),
+        edge.curve().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
     assert!(decoded.ir().model.coedges.iter().any(|coedge| {

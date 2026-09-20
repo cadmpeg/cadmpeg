@@ -2022,7 +2022,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         .model
         .edges
         .iter()
-        .filter_map(|edge| Some((&edge.id, edge.curve().as_ref()?)))
+        .filter_map(|edge| Some((&edge.id, edge.curve()?)))
         .collect::<BTreeMap<_, _>>();
     let edge_tolerances = ir
         .model

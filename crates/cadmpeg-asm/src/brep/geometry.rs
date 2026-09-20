@@ -1017,11 +1017,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         let Some([mut start, mut end]) = edge.param_range() else {
             continue;
         };
-        let Some([first, last]) = edge
-            .curve()
-            .as_ref()
-            .and_then(|curve| domains.get(curve.as_str()))
-        else {
+        let Some([first, last]) = edge.curve().and_then(|curve| domains.get(curve.as_str())) else {
             continue;
         };
         let tolerance =

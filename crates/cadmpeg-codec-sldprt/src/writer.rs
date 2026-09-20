@@ -903,7 +903,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.curve().clone())
+        .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
     subset
         .model
@@ -2555,7 +2555,6 @@ pub(crate) fn brep_body(
             0,
             0,
             edge.curve()
-                .as_ref()
                 .and_then(|id| curves.get(id))
                 .copied()
                 .unwrap_or(0),

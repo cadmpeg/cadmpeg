@@ -44,11 +44,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .model
         .edges
         .iter()
-        .filter_map(|edge| {
-            edge.curve()
-                .as_ref()
-                .map(super::super::ids::CurveId::as_str)
-        })
+        .filter_map(|edge| edge.curve().map(super::super::ids::CurveId::as_str))
         .collect::<HashSet<_>>();
     curves.extend(
         ir.model
@@ -890,7 +886,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             continue;
         };
         let mut valid = true;
-        if let Some(curve) = edge.curve().as_ref().and_then(|id| curves.get(id.as_str())) {
+        if let Some(curve) = edge.curve().and_then(|id| curves.get(id.as_str())) {
             let tau = std::f64::consts::TAU;
             match curve {
                 CurveGeometry::Solved(

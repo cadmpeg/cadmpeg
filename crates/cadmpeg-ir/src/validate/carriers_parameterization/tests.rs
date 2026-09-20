@@ -138,7 +138,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
 #[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().clone().unwrap();
+    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
     ir.model
         .curves
         .iter_mut()
