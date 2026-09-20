@@ -9,6 +9,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Scaled planar intersections and exact orientation signs.
+pub mod planar;
+
 /// Scaled least-squares solvers.
 pub mod solve;
 pub(crate) mod sum;

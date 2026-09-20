@@ -1161,3 +1161,36 @@ fn numerical_followup_boolean_line_arc_matches_point_intersections() {
     };
     assert!(super::boundary_segments_intersect(&point, &arc));
 }
+
+#[test]
+fn scaled_planar_intersections_preserve_separation_and_witnesses() {
+    for r in [1e-200, 1e-100, 1., 1e200] {
+        let a = Point2::new(0., 0.);
+        let b = Point2::new(r, 0.);
+        assert!(!super::segments_intersect(
+            (a, b),
+            (Point2::new(0., 2. * r), Point2::new(r, 2. * r))
+        ));
+        assert!(super::segments_intersect(
+            (a, Point2::new(r, r)),
+            (Point2::new(0., r), b)
+        ));
+        assert_eq!(super::point_distance(a, b), r);
+        assert_eq!(
+            super::point_segment_distance(Point2::new(0.5 * r, r), (a, b)),
+            r
+        );
+        let arc = |x| ProfileBoundarySegment::Arc {
+            center: Point2::new(x, 0.),
+            radius: r,
+            start_angle: 0.,
+            end_angle: std::f64::consts::TAU,
+        };
+        let points = super::arc_intersection_points(&arc(0.), &arc(r)).unwrap();
+        assert_eq!(points.len(), 2);
+        assert!(super::boundary_segments_intersect(&arc(0.), &arc(r)));
+        for point in points {
+            assert!((point.u / r - 0.5).abs() <= 4. * f64::EPSILON);
+        }
+    }
+}

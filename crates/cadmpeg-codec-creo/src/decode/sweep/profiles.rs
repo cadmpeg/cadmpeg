@@ -622,28 +622,29 @@ pub(in super::super) fn line_arc_intersect(
     arc: ([f64; 2], f64, f64, f64),
     tolerance: f64,
 ) -> bool {
-    let direction = [line[1][0] - line[0][0], line[1][1] - line[0][1]];
-    let relative = [line[0][0] - arc.0[0], line[0][1] - arc.0[1]];
-    let a = direction[0].mul_add(direction[0], direction[1] * direction[1]);
-    let b = 2.0 * direction[0].mul_add(relative[0], direction[1] * relative[1]);
-    let c = relative[0].mul_add(relative[0], relative[1] * relative[1]) - arc.1 * arc.1;
-    let discriminant = b.mul_add(b, -(4.0 * a * c));
-    if a <= tolerance * tolerance || discriminant < -tolerance * tolerance {
+    let start = Point2::new(line[0][0], line[0][1]);
+    let end = Point2::new(line[1][0], line[1][1]);
+    if (end.u - start.u).hypot(end.v - start.v) <= tolerance {
         return false;
     }
-    let root = discriminant.max(0.0).sqrt();
-    [-root, root].into_iter().any(|signed_root| {
-        let parameter = (-b + signed_root) / (2.0 * a);
-        parameter >= -tolerance
-            && parameter <= 1.0 + tolerance
-            && point_on_profile_arc(
-                [
-                    line[0][0] + parameter * direction[0],
-                    line[0][1] + parameter * direction[1],
-                ],
-                arc,
-                tolerance,
-            )
+    cadmpeg_ir::math::planar::line_circle_parameters(
+        start,
+        end,
+        Point2::new(arc.0[0], arc.0[1]),
+        arc.1,
+    )
+    .is_some_and(|parameters| {
+        parameters.into_iter().any(|t| {
+            (-tolerance..=1.0 + tolerance).contains(&t)
+                && point_on_profile_arc(
+                    [
+                        start.u + t * (end.u - start.u),
+                        start.v + t * (end.v - start.v),
+                    ],
+                    arc,
+                    tolerance,
+                )
+        })
     })
 }
 
@@ -674,30 +675,20 @@ pub(in super::super) fn arcs_intersect(
                 .into_iter()
                 .any(|point| point_on_profile_arc(point, first, tolerance));
     }
-    if distance <= tolerance
-        || distance > first.1 + second.1 + tolerance
-        || distance < (first.1 - second.1).abs() - tolerance
-    {
+    if distance <= tolerance {
         return false;
     }
-    let along = (first.1 * first.1 - second.1 * second.1 + distance * distance) / (2.0 * distance);
-    let height_squared = first.1 * first.1 - along * along;
-    if height_squared < -tolerance * tolerance {
-        return false;
-    }
-    let base = [
-        first.0[0] + along * displacement[0] / distance,
-        first.0[1] + along * displacement[1] / distance,
-    ];
-    let height = height_squared.max(0.0).sqrt();
-    let offset = [
-        -height * displacement[1] / distance,
-        height * displacement[0] / distance,
-    ];
-    [-1.0, 1.0].into_iter().any(|sign| {
-        let point = [base[0] + sign * offset[0], base[1] + sign * offset[1]];
-        point_on_profile_arc(point, first, tolerance)
-            && point_on_profile_arc(point, second, tolerance)
+    cadmpeg_ir::math::planar::circle_intersections(
+        Point2::new(first.0[0], first.0[1]),
+        first.1,
+        Point2::new(second.0[0], second.0[1]),
+        second.1,
+    )
+    .is_some_and(|points| {
+        points.into_iter().any(|point| {
+            point_on_profile_arc([point.u, point.v], first, tolerance)
+                && point_on_profile_arc([point.u, point.v], second, tolerance)
+        })
     })
 }
 
