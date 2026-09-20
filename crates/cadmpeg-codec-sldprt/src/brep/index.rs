@@ -91,11 +91,7 @@ impl CarrierIndex {
     }
 
     #[cfg(test)]
-    pub(super) fn insert_blend_support_pair(
-        &mut self,
-        attr: u16,
-        carrier: blend::SupportPairCarrier,
-    ) {
+    fn insert_blend_support_pair(&mut self, attr: u16, carrier: blend::SupportPairCarrier) {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
@@ -158,4 +154,28 @@ pub(super) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     }
     out.lane_refusals = lane_refusals;
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{blend, CarrierIndex};
+
+    #[test]
+    fn merge_retains_zero_offset_blend_support_pairs() {
+        let mut base = CarrierIndex::default();
+        let mut delta = CarrierIndex::default();
+        delta.insert_blend_support_pair(
+            9,
+            blend::SupportPairCarrier {
+                supports: [11, 12],
+                intersection: 13,
+            },
+        );
+
+        base.merge_missing(delta);
+
+        let pair = base.blend_support_pair(9).expect("support pair");
+        assert_eq!(pair.supports, [11, 12]);
+        assert_eq!(pair.intersection, 13);
+    }
 }

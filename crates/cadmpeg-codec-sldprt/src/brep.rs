@@ -468,7 +468,7 @@ pub(crate) fn patch_nurbs_by_attr(
 #[cfg(test)]
 mod tests {
     use super::index::scan_carriers;
-    use super::{blend, index, parse_carrier, tag, Carrier};
+    use super::{parse_carrier, tag, Carrier};
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
@@ -585,25 +585,6 @@ mod tests {
             assert_eq!(origin, Point3::new(1_000_000_000_000.0, 0.0, 0.0));
             assert_eq!(direction, Vector3::new(1.0, 0.0, 0.0));
         }
-    }
-
-    #[test]
-    fn merge_retains_zero_offset_blend_support_pairs() {
-        let mut base = index::CarrierIndex::default();
-        let mut delta = index::CarrierIndex::default();
-        delta.insert_blend_support_pair(
-            9,
-            blend::SupportPairCarrier {
-                supports: [11, 12],
-                intersection: 13,
-            },
-        );
-
-        base.merge_missing(delta);
-
-        let pair = base.blend_support_pair(9).expect("support pair");
-        assert_eq!(pair.supports, [11, 12]);
-        assert_eq!(pair.intersection, 13);
     }
 
     #[test]
