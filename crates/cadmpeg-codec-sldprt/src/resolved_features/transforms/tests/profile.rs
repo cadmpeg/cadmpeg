@@ -633,7 +633,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let compact_id = SketchId::mint("sldprt:model:sketch#compact:lane:7").unwrap();
     let mut compact_sketch = sketches[0].clone();
     compact_sketch.id = compact_id.clone();
-    compact_sketch.profiles.clear();
+    compact_sketch.profiles = Default::default();
     let source_entity = &entities[0];
     let compact_entity = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#compact-entity").unwrap(),

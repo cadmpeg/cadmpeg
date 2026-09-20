@@ -412,24 +412,6 @@ impl ModelDraft<DraftAccounting> {
             .retain(|identity, _| keep(identity));
     }
 
-    /// Adds a staged loss note.
-    ///
-    /// Plain drafts have no accounting mutation route:
-    ///
-    /// ```compile_fail
-    /// fn stage(draft: &mut cadmpeg_ir::draft::ModelDraft, note: cadmpeg_ir::report::loss::LossNote) {
-    ///     draft.note(note);
-    /// }
-    /// ```
-    pub fn note(&mut self, note: LossNote) {
-        self.accounting.notes.push(note);
-    }
-
-    /// Returns the mutable staged transfer ledger.
-    pub fn ledger_mut(&mut self) -> &mut TransferLedger {
-        &mut self.accounting.ledger
-    }
-
     /// Validates and atomically extends a document, annotations, notes, and ledger.
     pub fn commit(
         mut self,
@@ -458,24 +440,6 @@ impl ModelDraft<DraftAccounting> {
         notes.extend(staged_notes);
         ledger.entries.extend(staged_ledger.entries);
         Ok(())
-    }
-
-    /// Keeps selected staged entities, then validates and commits the resulting salvage graph.
-    pub fn commit_incomplete(
-        mut self,
-        base: &mut CadIr,
-        annotations: &mut Annotations,
-        notes: &mut Vec<LossNote>,
-        ledger: &mut TransferLedger,
-        keep: impl FnMut(EntityKind, &str) -> bool,
-    ) -> Result<(), DraftError> {
-        self.model.retain_entities(keep);
-        let identity_index = index_model_identities(&self.model)?;
-        self.accounting
-            .exactness
-            .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
-        self.identity_index = Some(identity_index);
-        self.commit(base, annotations, notes, ledger)
     }
 }
 
@@ -674,11 +638,21 @@ mod tests {
             native_ref: None,
         });
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
-            model.features.push(Feature::new(
-                format!("test:checkpoint:feature#{key}").try_into().unwrap(),
-                ordinal as u64,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ));
+            model.features.push(Feature {
+                id: format!("test:checkpoint:feature#{key}").try_into().unwrap(),
+                ordinal: ordinal as u64,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            });
         }
         model
             .set_feature_regeneration_parent(
@@ -697,11 +671,21 @@ mod tests {
         let mut draft = ModelDraft::new();
         for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
             draft
-                .insert(Feature::new(
-                    format!("test:draft:feature#{key}").try_into().unwrap(),
-                    ordinal as u64,
-                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-                ))
+                .insert(Feature {
+                    id: format!("test:draft:feature#{key}").try_into().unwrap(),
+                    ordinal: ordinal as u64,
+                    name: None,
+                    suppressed: None,
+                    dependencies: Default::default(),
+                    source_properties: Default::default(),
+                    source_tag: None,
+                    source_text: None,
+                    source_content: Default::default(),
+                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                    ),
+                    native_ref: None,
+                })
                 .unwrap();
         }
         let child = "test:draft:feature#child".try_into().unwrap();
@@ -780,27 +764,6 @@ mod tests {
             })
         );
         assert!(ir.model.vertices.is_empty());
-    }
-
-    #[test]
-    fn incomplete_commit_rechecks_duplicate_identities() {
-        let identity = "test:model:point#incomplete-duplicate";
-        let mut draft = ModelDraft::new().with_accounting();
-        draft.model_mut().points.push(point(identity));
-        draft.model_mut().points.push(point(identity));
-        let mut ir = CadIr::empty();
-
-        assert_eq!(
-            draft.commit_incomplete(
-                &mut ir,
-                &mut Annotations::default(),
-                &mut Vec::new(),
-                &mut TransferLedger::default(),
-                |_, _| true,
-            ),
-            Err(DraftError::IdentityCollision(identity.into()))
-        );
-        assert!(ir.model.points.is_empty());
     }
 
     #[test]

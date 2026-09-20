@@ -27,11 +27,21 @@ fn staged_document() -> CadIr {
         native_ref: None,
     });
     for (ordinal, key) in ["parent", "child"].into_iter().enumerate() {
-        ir.model.features.push(Feature::new(
-            format!("test:append:feature#{key}").try_into().unwrap(),
-            ordinal as u64,
-            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-        ));
+        ir.model.features.push(Feature {
+            id: format!("test:append:feature#{key}").try_into().unwrap(),
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+            ),
+            native_ref: None,
+        });
     }
     ir.model
         .set_feature_regeneration_parent(

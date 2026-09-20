@@ -441,14 +441,24 @@ mod tests {
                 if definition == &crate::ids::neutral_component_id(&COMPONENT.to_owned().try_into().unwrap())
         ));
 
-        let mut feature = Feature::new(
-            FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
-            1,
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "DerivedInstance".into(),
-                parameters: std::collections::BTreeMap::new(),
-            }),
-        );
+        let mut feature = Feature {
+            id: FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
+            ordinal: 1,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Native {
+                    kind: "DerivedInstance".into(),
+                    parameters: std::collections::BTreeMap::new(),
+                }),
+            ),
+            native_ref: None,
+        };
         feature.native_ref = Some(scope.id.clone());
         super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope]);
         assert_eq!(

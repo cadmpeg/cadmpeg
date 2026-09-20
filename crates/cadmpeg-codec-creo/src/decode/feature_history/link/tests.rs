@@ -55,14 +55,24 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
 }
 
 fn feature(id: &str) -> Feature {
-    Feature::new(
-        cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
-        0,
-        IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-            kind: "test".into(),
-            parameters: BTreeMap::new(),
-        }),
-    )
+    Feature {
+        id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            IrFeatureDefinition::Operation(IrFeatureOperation::Native {
+                kind: "test".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    }
 }
 
 #[test]

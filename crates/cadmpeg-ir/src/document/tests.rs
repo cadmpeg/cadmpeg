@@ -112,23 +112,43 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 
     let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
-    let parent = Feature::new(
-        parent_id.clone(),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: crate::features::TreeChildren::new(
-                vec![child_id.clone()],
-                Some(child_id.clone()),
-            )
-            .unwrap(),
-        }),
-    );
-    let child = Feature::new(
-        child_id.clone(),
-        1,
-        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-    );
+    let parent = Feature {
+        id: parent_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: crate::features::TreeChildren::new(
+                    vec![child_id.clone()],
+                    Some(child_id.clone()),
+                )
+                .unwrap(),
+            }),
+        ),
+        native_ref: None,
+    };
+    let child = Feature {
+        id: child_id.clone(),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    };
     let model = Model {
         features: vec![parent, child],
         ..Model::default()
@@ -146,16 +166,36 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 
     let mut regeneration = Model {
         features: vec![
-            Feature::new(
-                parent_id.clone(),
-                0,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ),
-            Feature::new(
-                child_id.clone(),
-                1,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ),
+            Feature {
+                id: parent_id.clone(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            },
+            Feature {
+                id: child_id.clone(),
+                ordinal: 1,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            },
         ],
         ..Model::default()
     };
@@ -215,25 +255,55 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let model = Model {
         features: vec![
-            Feature::new(
-                first_id,
-                0,
-                FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: FeatureTreeNodeRole::History,
-                    children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
-                        .unwrap(),
-                }),
-            ),
-            Feature::new(
-                second_id.clone(),
-                1,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ),
-            Feature::new(
-                child_id,
-                2,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ),
+            Feature {
+                id: first_id,
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                        role: FeatureTreeNodeRole::History,
+                        children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
+                            .unwrap(),
+                    }),
+                ),
+                native_ref: None,
+            },
+            Feature {
+                id: second_id.clone(),
+                ordinal: 1,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            },
+            Feature {
+                id: child_id,
+                ordinal: 2,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            },
         ],
         ..Model::default()
     };
@@ -528,19 +598,39 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let mut model = Model {
         features: vec![
-            Feature::new(
-                parent_id.clone(),
-                0,
-                FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: FeatureTreeNodeRole::SolidBodies,
-                    children: crate::features::TreeChildren::default(),
-                }),
-            ),
-            Feature::new(
-                child_id.clone(),
-                1,
-                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            ),
+            Feature {
+                id: parent_id.clone(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                        role: FeatureTreeNodeRole::SolidBodies,
+                        children: crate::features::TreeChildren::default(),
+                    }),
+                ),
+                native_ref: None,
+            },
+            Feature {
+                id: child_id.clone(),
+                ordinal: 1,
+                name: None,
+                suppressed: None,
+                dependencies: Default::default(),
+                source_properties: Default::default(),
+                source_tag: None,
+                source_text: None,
+                source_content: Default::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+                ),
+                native_ref: None,
+            },
         ],
         ..Model::default()
     };
@@ -607,11 +697,21 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.features.push(Feature::new(
-        FeatureId::mint("test:model:feature#0").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-    ));
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#0").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
     let canonical = ir.to_canonical_json().unwrap();
     let document: serde_json::Value = serde_json::from_str(&canonical).unwrap();
 

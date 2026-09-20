@@ -156,19 +156,6 @@ impl FullRoundFilletGroup {
     pub fn side_two_faces(&self) -> &FullRoundSideSelection {
         &self.side_two
     }
-
-    /// Admit all edited selections before replacing the group.
-    pub fn try_edit(
-        &mut self,
-        edit: impl FnOnce(&mut FaceSelection, &mut FullRoundSideSelection, &mut FullRoundSideSelection),
-    ) -> Result<(), &'static str> {
-        let mut center = self.center.clone();
-        let mut first = self.side_one.clone();
-        let mut second = self.side_two.clone();
-        edit(&mut center, &mut first, &mut second);
-        *self = Self::new(center, first, second)?;
-        Ok(())
-    }
 }
 
 impl<'de> Deserialize<'de> for FullRoundFilletGroup {

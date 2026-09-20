@@ -820,15 +820,6 @@ impl DraftAnchor {
             Self::PartingLine { pull, .. } => Some(pull),
         }
     }
-
-    /// Mutable pull frame retained by this anchor, when available.
-    #[must_use]
-    pub fn pull_mut(&mut self) -> Option<&mut DraftPull> {
-        match self {
-            Self::NeutralPlane { pull, .. } => pull.as_mut(),
-            Self::PartingLine { pull, .. } => Some(pull),
-        }
-    }
 }
 
 crate::ids::id_type!(
@@ -1227,8 +1218,8 @@ impl FeatureEvaluation {
 
 /// An ordered neutral construction feature and its resulting bodies.
 ///
-/// Prefer [`Feature::new`] for invariant-bearing construction. There is no
-/// public [`Default`]: an empty id with an arbitrary definition is illegal.
+/// Construction requires an admitted identity and feature evaluation. There is
+/// no public [`Default`]: an empty id with an arbitrary definition is illegal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
     /// Globally unique feature id.
@@ -1253,25 +1244,6 @@ pub struct Feature {
     pub evaluation: FeatureEvaluation,
     /// Identifier of the full-fidelity record in a native namespace.
     pub native_ref: Option<String>,
-}
-
-impl Feature {
-    /// Construct a feature from its identity, construction order, and definition.
-    pub fn new(id: FeatureId, ordinal: u64, definition: FeatureDefinition) -> Self {
-        Self {
-            id,
-            ordinal,
-            name: None,
-            suppressed: None,
-            dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: FeatureContent::default(),
-            evaluation: FeatureEvaluation::from_definition(definition),
-            native_ref: None,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -4970,12 +4942,6 @@ pub struct FilledSurfaceContinuity {
 }
 
 impl FilledSurfaceContinuity {
-    /// Creates a component-specific condition sequence.
-    #[must_use]
-    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
-        Self { conditions }
-    }
-
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
     pub fn uniform(&self) -> Option<SurfaceContinuity> {
@@ -7358,16 +7324,6 @@ impl SweepShape {
                 section.is_unresolved()
             }
             Self::Solid { section, .. } => section.is_unresolved(),
-        }
-    }
-
-    /// The native carrier named by an unresolved primary cross-section.
-    pub fn unresolved_native_section(&self) -> Option<&str> {
-        match self {
-            Self::Unresolved { section, .. } | Self::Surface { section, .. } => {
-                section.unresolved_native()
-            }
-            Self::Solid { section, .. } => section.unresolved_native(),
         }
     }
 

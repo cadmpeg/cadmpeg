@@ -307,15 +307,26 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
         1200,
     );
-    let mut feature = cadmpeg_ir::features::Feature::new(
-        cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            faces: FaceSelection::Unresolved,
-            tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-        }),
-    );
+    let mut feature = cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200")
+            .expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces: FaceSelection::Unresolved,
+                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            }),
+        ),
+        native_ref: None,
+    };
     feature.native_ref = Some(scope.id.clone());
     let operation = DesignSurfaceTrimOperation::try_from(
         crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {

@@ -415,9 +415,13 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             parameter,
         )
         .expect("closed intersection evaluates");
-        let inverse =
-            cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, curve, point, parameter)
-                .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
+        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            curve,
+            point,
+            parameter,
+        )
+        .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
         assert!((inverse - parameter).abs() < 1.0e-10);
     }
 }

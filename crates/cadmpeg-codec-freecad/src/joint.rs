@@ -656,8 +656,8 @@ pub(crate) mod tests {
                 panic!("one neutral joint")
             };
             assert!(matches!(
-                joint.paired_kind(),
-                Some(PairedJointKind::Native { name, .. }) if name == family
+                cadmpeg_test_support::wire::field::<cadmpeg_ir::products::JointOperands>(joint, "operands"),
+                cadmpeg_ir::products::JointOperands::Pair { kind: PairedJointKind::Native { name, .. }, .. } if name == family
             ));
             assert_valid_document(result.ir());
             let wire = serde_json::to_string(result.ir()).unwrap();
@@ -720,10 +720,18 @@ pub(crate) mod tests {
         assert_eq!(joints[0].parameters().raw("Suppressed"), Some("true"));
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert!(matches!(
-            joint.paired_kind(),
-            Some(PairedJointKind::Revolute { .. })
-        ));
+        let cadmpeg_ir::products::JointOperands::Pair {
+            kind:
+                PairedJointKind::Revolute {
+                    angle,
+                    angular_limits,
+                },
+            offset_frames,
+            ..
+        } = cadmpeg_test_support::wire::field(joint, "operands")
+        else {
+            panic!("revolute pair")
+        };
         let connectors = joint.connectors().collect::<Vec<_>>();
         assert_eq!(connectors.len(), 2);
         assert!(connectors.iter().all(|connector| matches!(
@@ -731,20 +739,23 @@ pub(crate) mod tests {
             cadmpeg_ir::OperandContainer::Occurrence { .. }
         )));
         assert_eq!(connectors[1].frame.rows()[0][3], 2.0);
-        let offset_frames = joint.offset_frames().collect::<Vec<_>>();
+        let offset_frames = offset_frames.expect("offset frames");
         assert_eq!(offset_frames.len(), 2);
         assert_eq!(offset_frames[0].rows()[0][3], 0.5);
         assert_eq!(offset_frames[1].rows()[0][3], 1.5);
         assert!(joint.suppressed);
-        assert_eq!(joint.detached(), [true, false]);
-        assert!((joint.angle().expect("angle") - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
-        let limits = joint.angular_limits().expect("angular limits");
-        assert!(
-            (limits.minimum().expect("minimum") - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR
+        assert_eq!(
+            [connectors[0].detached, connectors[1].detached],
+            [true, false]
         );
-        assert!(
-            (limits.maximum().expect("maximum") - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR
-        );
+        assert!((angle.expect("angle").get() - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
+        let cadmpeg_ir::products::JointLimits::Range { minimum, maximum } =
+            angular_limits.expect("angular limits")
+        else {
+            panic!("bounded angular range")
+        };
+        assert!((minimum.get() - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR);
+        assert!((maximum.get() - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])
@@ -778,7 +789,12 @@ pub(crate) mod tests {
             .expect("grounded assembly object");
         assert_eq!(result.ir().model.assembly_joints.len(), 1);
         let joint = &result.ir().model.assembly_joints[0];
-        assert!(joint.is_grounded());
+        assert!(matches!(
+            cadmpeg_test_support::wire::field::<cadmpeg_ir::products::JointOperands>(
+                joint, "operands"
+            ),
+            cadmpeg_ir::products::JointOperands::Grounded { .. }
+        ));
         let connectors = joint.connectors().collect::<Vec<_>>();
         assert_eq!(connectors.len(), 1);
         assert!(matches!(

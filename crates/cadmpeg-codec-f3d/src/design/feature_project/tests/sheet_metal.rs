@@ -948,7 +948,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
             crate::design::feature_project::surface_patch_boundary_continuities(scope),
         )
         .ok()
-        .map(cadmpeg_ir::features::FilledSurfaceContinuity::per_boundary)
+        .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
         .and_then(|continuity| continuity.uniform())
     };
 

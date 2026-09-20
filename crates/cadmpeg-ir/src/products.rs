@@ -1081,22 +1081,6 @@ impl JointLimits {
             }
         }
     }
-
-    /// Returns the lower bound, when enabled.
-    pub fn minimum(&self) -> Option<f64> {
-        match self {
-            Self::Maximum { .. } => None,
-            Self::Minimum { minimum } | Self::Range { minimum, .. } => Some(minimum.get()),
-        }
-    }
-
-    /// Returns the upper bound, when enabled.
-    pub fn maximum(&self) -> Option<f64> {
-        match self {
-            Self::Minimum { .. } => None,
-            Self::Maximum { maximum } | Self::Range { maximum, .. } => Some(maximum.get()),
-        }
-    }
 }
 
 /// The wire spelling of [`JointLimits`], before the ordered-pair mint.
@@ -1520,21 +1504,6 @@ impl AssemblyJoint {
         }
     }
 
-    /// Paired family when this joint is not grounded.
-    #[must_use]
-    pub fn paired_kind(&self) -> Option<&PairedJointKind> {
-        match &self.operands {
-            JointOperands::Pair { kind, .. } => Some(kind),
-            JointOperands::Grounded { .. } => None,
-        }
-    }
-
-    /// Whether this joint grounds a single connector.
-    #[must_use]
-    pub fn is_grounded(&self) -> bool {
-        matches!(self.operands, JointOperands::Grounded { .. })
-    }
-
     /// Visits every connector in operand order.
     pub fn connectors(&self) -> impl Iterator<Item = &JointConnector> {
         let slice: &[JointConnector] = match &self.operands {
@@ -1542,60 +1511,6 @@ impl AssemblyJoint {
             JointOperands::Pair { connectors, .. } => connectors,
         };
         slice.iter()
-    }
-
-    /// Visits every attachment offset in operand order.
-    pub fn offset_frames(&self) -> impl Iterator<Item = &Transform> {
-        let slice: &[Transform] = match &self.operands {
-            JointOperands::Grounded {
-                offset_frame: Some(offset),
-                ..
-            } => std::slice::from_ref(offset),
-            JointOperands::Pair {
-                offset_frames: Some(offsets),
-                ..
-            } => offsets,
-            _ => &[],
-        };
-        slice.iter()
-    }
-
-    /// Per-connector detach flags in operand order. Grounded joints emit a false second flag.
-    #[must_use]
-    pub fn detached(&self) -> [bool; 2] {
-        match &self.operands {
-            JointOperands::Grounded { connector, .. } => [connector.detached, false],
-            JointOperands::Pair { connectors, .. } => {
-                [connectors[0].detached, connectors[1].detached]
-            }
-        }
-    }
-
-    /// Angular offset in radians.
-    #[must_use]
-    pub fn angle(&self) -> Option<f64> {
-        match self.paired_kind()? {
-            PairedJointKind::Fixed { angle, .. }
-            | PairedJointKind::Revolute { angle, .. }
-            | PairedJointKind::Cylindrical { angle, .. }
-            | PairedJointKind::Angle { angle }
-            | PairedJointKind::Native { angle, .. } => angle.map(FiniteReal::get),
-            _ => None,
-        }
-    }
-
-    /// Enabled angular interval in radians.
-    #[must_use]
-    pub fn angular_limits(&self) -> Option<&JointLimits> {
-        match self.paired_kind() {
-            Some(
-                PairedJointKind::Fixed { angular_limits, .. }
-                | PairedJointKind::Revolute { angular_limits, .. }
-                | PairedJointKind::Cylindrical { angular_limits, .. }
-                | PairedJointKind::Native { angular_limits, .. },
-            ) => angular_limits.as_ref(),
-            _ => None,
-        }
     }
 }
 

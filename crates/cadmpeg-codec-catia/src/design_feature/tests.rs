@@ -631,7 +631,14 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
                     panic!("expected a typed unresolved sweep");
                 };
                 let mode = shape.mode();
-                assert!(shape.unresolved_native_section().is_some());
+                assert!((match shape {
+                    cadmpeg_ir::features::SweepShape::Unresolved { section, .. }
+                    | cadmpeg_ir::features::SweepShape::Surface { section, .. } =>
+                        section.unresolved_native(),
+                    cadmpeg_ir::features::SweepShape::Solid { section, .. } =>
+                        section.unresolved_native(),
+                })
+                .is_some());
                 assert!(matches!(
                     path,
                     Some(cadmpeg_ir::features::PathRef::Unresolved(_))

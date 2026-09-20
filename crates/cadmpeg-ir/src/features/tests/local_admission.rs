@@ -106,7 +106,19 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
             native: "copied".into(),
         },
     });
-    let mut feature = Feature::new(feature_id("insert"), 0, definition);
+    let mut feature = Feature {
+        id: feature_id("insert"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    };
     assert!(feature.evaluation.outputs().is_empty());
     feature.evaluation.set_outputs(vec![body.clone()]);
     let wire = serde_json::to_value(&feature).unwrap();

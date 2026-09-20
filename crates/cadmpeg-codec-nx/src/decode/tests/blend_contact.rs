@@ -60,6 +60,8 @@ fn test_pcurve(
     }
 }
 
+const TEST_SURFACE_INVERSION_WORK: usize = 1_000_000;
+
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let surface = test_surface(
@@ -77,15 +79,22 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     let expected = Point2::new(0.37, 0.61);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(&surface, point, None).unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
+        &surface,
+        point,
+        None,
+        &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
+    )
+    .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-10);
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
-    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+    let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
         point,
         Some(Point2::new(f64::NAN, 0.5)),
+        &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
     .unwrap();
     assert!((after_invalid_seed.u - expected.u).abs() < 1.0e-10);
@@ -485,10 +494,11 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     let expected = Point2::new(0.125, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
         point,
         Some(Point2::new(0.875, 0.3)),
+        &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
     .unwrap();
 
@@ -515,10 +525,11 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     let expected = Point2::new(0.5001, 0.3);
     let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
 
-    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter(
+    let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
         point,
         Some(Point2::new(0.50011, 0.3)),
+        &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
     .unwrap();
 

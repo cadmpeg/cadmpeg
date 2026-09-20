@@ -9,11 +9,21 @@ use crate::validate::validate_neutral;
 fn a_standalone_feature_wire_declares_no_regeneration_parent() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-    let feature = Feature::new(
-        FeatureId::mint("test:model:feature#child").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-    );
+    let feature = Feature {
+        id: FeatureId::mint("test:model:feature#child").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: crate::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    };
     let mut wire = serde_json::to_value(&feature).unwrap();
     assert_eq!(
         serde_json::from_value::<Feature>(wire.clone()).unwrap(),

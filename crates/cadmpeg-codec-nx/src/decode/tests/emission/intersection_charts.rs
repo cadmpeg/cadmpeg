@@ -1038,9 +1038,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             parameter,
         )
         .expect("charted tolerant intersection evaluates");
-        let inverted =
-            cadmpeg_ir::eval::model_curve_parameter_near_point(&ir, owner, evaluated, parameter)
-                .expect("charted tolerant intersection inverts");
+        let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            owner,
+            evaluated,
+            parameter,
+        )
+        .expect("charted tolerant intersection inverts");
         assert!((inverted - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {
             let uv =

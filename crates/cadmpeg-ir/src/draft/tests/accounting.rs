@@ -30,14 +30,14 @@ fn adding_accounting_preserves_entities_and_commits_every_accounting_channel() {
     );
     draft.exactness(identity, Exactness::Derived);
     let note = loss_note();
-    draft.note(note.clone());
-    draft.ledger_mut().record(
+    draft.accounting.notes.push(note.clone());
+    draft.accounting.ledger.record(
         "test:source:record#point",
         TransferOutcome::Emitted {
             target: identity.into(),
         },
     );
-    let staged_ledger = draft.ledger_mut().clone();
+    let staged_ledger = draft.accounting.ledger.clone();
 
     let mut base = CadIr::empty();
     let mut annotations = Annotations::default();
@@ -81,8 +81,8 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
 
     let mut draft = point_draft(existing).with_accounting();
     draft.exactness(existing, Exactness::Derived);
-    draft.note(loss_note());
-    draft.ledger_mut().record(
+    draft.accounting.notes.push(loss_note());
+    draft.accounting.ledger.record(
         "test:source:record#rejected",
         TransferOutcome::Omitted { note: None },
     );

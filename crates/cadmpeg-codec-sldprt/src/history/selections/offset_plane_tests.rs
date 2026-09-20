@@ -149,21 +149,31 @@ fn unresolved_face_frame_resolves_one_preceding_parallel_plane() {
 
 #[test]
 fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry() {
-    let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, -1.0),
-                )
-                .unwrap(),
+    let mut offset = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::ResolvedPlane {
+                    frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, -1.0),
+                    )
+                    .unwrap(),
+                }),
+                distance: Length::new(6.0).unwrap(),
             }),
-            distance: Length::new(6.0).unwrap(),
-        }),
-    );
+        ),
+        native_ref: None,
+    };
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
     offset.source_properties.insert(
         cadmpeg_core::nonblank_literal!("Origin"),
@@ -187,13 +197,23 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
         cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
         "0,0,-1".into(),
     );
-    let mut principal = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#right").expect("identity grammar"),
-        1,
-        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
-            plane: cadmpeg_ir::features::PrincipalPlane::Right,
-        }),
-    );
+    let mut principal = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#right").expect("identity grammar"),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: cadmpeg_ir::features::PrincipalPlane::Right,
+            }),
+        ),
+        native_ref: None,
+    };
     principal.native_ref = Some("sldprt:history:feature#0:right".into());
 
     let mut features = vec![offset, principal];
@@ -214,30 +234,50 @@ fn unresolved_face_frame_resolves_a_later_principal_plane_from_support_geometry(
 
 #[test]
 fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
-    let mut base = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, -1.0),
-            )
-            .unwrap(),
-        }),
-    );
+    let mut base = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#base").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+                frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                )
+                .unwrap(),
+            }),
+        ),
+        native_ref: None,
+    };
     base.native_ref = Some("sldprt:history:feature#0:base".into());
 
-    let mut alias = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#alias").expect("identity grammar"),
-        1,
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature {
-                feature: base.id.clone(),
+    let mut alias = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#alias").expect("identity grammar"),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: base.id.clone(),
+                }),
+                distance: Length::new(0.0).unwrap(),
             }),
-            distance: Length::new(0.0).unwrap(),
-        }),
-    );
+        ),
+        native_ref: None,
+    };
     alias.native_ref = Some("sldprt:history:feature#0:alias".into());
     alias.source_properties.insert(
         cadmpeg_core::nonblank_literal!("Origin"),
@@ -250,21 +290,31 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
         .source_properties
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
 
-    let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
-        2,
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, -1.0),
-                )
-                .unwrap(),
+    let mut offset = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
+        ordinal: 2,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::ResolvedPlane {
+                    frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, -1.0),
+                    )
+                    .unwrap(),
+                }),
+                distance: Length::new(6.0).unwrap(),
             }),
-            distance: Length::new(6.0).unwrap(),
-        }),
-    );
+        ),
+        native_ref: None,
+    };
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
     offset.source_properties.insert(
         cadmpeg_core::nonblank_literal!("Origin"),
@@ -307,16 +357,27 @@ fn unresolved_face_frame_collapses_a_zero_offset_plane_alias() {
 
 #[test]
 fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
-    let mut offset = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
-        0,
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature {
-                feature: FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
+    let mut offset = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#offset").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: FeatureId::mint("synthetic:test:id#reference")
+                        .expect("identity grammar"),
+                }),
+                distance: Length::new(6.0).unwrap(),
             }),
-            distance: Length::new(6.0).unwrap(),
-        }),
-    );
+        ),
+        native_ref: None,
+    };
     offset.native_ref = Some("sldprt:history:feature#0:offset".into());
     offset.source_properties.insert(
         cadmpeg_core::nonblank_literal!("Reference"),
@@ -332,18 +393,28 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
     offset
         .source_properties
         .insert(cadmpeg_core::nonblank_literal!("UAxis"), "0,0,-1".into());
-    let mut reference = cadmpeg_ir::features::Feature::new(
-        FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
-        1,
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, -1.0),
-            )
-            .unwrap(),
-        }),
-    );
+    let mut reference = cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#reference").expect("identity grammar"),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+                frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, -1.0),
+                )
+                .unwrap(),
+            }),
+        ),
+        native_ref: None,
+    };
     reference.native_ref = Some("sldprt:history:feature#0:reference".into());
 
     let mut features = vec![offset, reference];
