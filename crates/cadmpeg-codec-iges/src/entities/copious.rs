@@ -19,10 +19,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
 pub(super) struct CopiousProjectionOutcome {
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-    pub(super) free_vertices: Vec<VertexId>,
+    decoded: BTreeSet<u32>,
+    losses: Vec<LossNote>,
+    wire_edges: Vec<EdgeId>,
+    free_vertices: Vec<VertexId>,
 }
 
 impl CopiousProjectionOutcome {

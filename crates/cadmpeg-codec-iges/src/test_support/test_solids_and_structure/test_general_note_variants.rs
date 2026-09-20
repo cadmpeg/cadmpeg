@@ -1,13 +1,13 @@
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 
-pub(crate) fn new_general_note_file_with_character_metrics(
+pub(super) fn new_general_note_file_with_character_metrics(
     character_width: &str,
     character_height: &str,
 ) -> Vec<u8> {
     new_general_note_file_with_fields("0", character_width, character_height, "", "0")
 }
 
-pub(crate) fn new_general_note_file_with_fields(
+pub(super) fn new_general_note_file_with_fields(
     fixed_or_variable: &str,
     character_width: &str,
     character_height: &str,
@@ -24,7 +24,7 @@ pub(crate) fn new_general_note_file_with_fields(
     )
 }
 
-pub(crate) fn new_general_note_file_with_font(
+pub(super) fn new_general_note_file_with_font(
     fixed_or_variable: &str,
     character_width: &str,
     character_height: &str,
@@ -43,7 +43,7 @@ pub(crate) fn new_general_note_file_with_font(
     )
 }
 
-pub(crate) fn new_general_note_file_with_font_and_character_set(
+pub(super) fn new_general_note_file_with_font_and_character_set(
     fixed_or_variable: &str,
     character_width: &str,
     character_height: &str,
@@ -69,7 +69,7 @@ pub(crate) fn new_general_note_file_with_font_and_character_set(
     }])
 }
 
-pub(crate) fn new_general_note_parameters(
+pub(super) fn new_general_note_parameters(
     fixed_or_variable: &str,
     character_width: &str,
     character_height: &str,

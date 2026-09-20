@@ -106,10 +106,7 @@ const DECLARED_VERSION_FLAG_DECLARATION: &str = "version_flag_declaration";
 /// Fixed ASCII has a row for every flag in [`VersionFlag::ALL`]. Compressed
 /// ASCII and Binary have rows for the five versions whose Global tables are
 /// verified. Every other pair lands on the mandatory totality row.
-pub(crate) const fn dialect_id(
-    representation: Representation,
-    version: Option<VersionFlag>,
-) -> DialectId {
+const fn dialect_id(representation: Representation, version: Option<VersionFlag>) -> DialectId {
     match (representation, version) {
         (Representation::FixedAscii, Some(VersionFlag::V1_0)) => IGES_1_0_FIXED_ASCII,
         (Representation::FixedAscii, Some(VersionFlag::AnsiY1426M1981)) => {

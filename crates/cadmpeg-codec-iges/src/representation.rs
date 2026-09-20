@@ -61,7 +61,7 @@ fn binary(prefix: &[u8]) -> bool {
         && flag[binary_flag::SEQUENCE] == b'1'
 }
 
-pub(crate) fn classify_prefix(prefix: &[u8]) -> Option<Representation> {
+fn classify_prefix(prefix: &[u8]) -> Option<Representation> {
     if compressed_ascii(prefix) {
         Some(Representation::CompressedAscii)
     } else if binary(prefix) {

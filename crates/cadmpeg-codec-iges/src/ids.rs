@@ -149,7 +149,7 @@ impl Stem {
     }
 
     /// This stem's identity key.
-    pub(crate) fn key(&self) -> IdentityKey {
+    fn key(&self) -> IdentityKey {
         self.key.clone()
     }
 

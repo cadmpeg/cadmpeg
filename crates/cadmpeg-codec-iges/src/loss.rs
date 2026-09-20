@@ -116,7 +116,7 @@ loss_codes! {
 impl IgesLossCode {
     /// The severity of this loss.
     #[must_use]
-    pub(crate) const fn severity(self) -> Severity {
+    const fn severity(self) -> Severity {
         match self {
             Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
                 Severity::Blocking

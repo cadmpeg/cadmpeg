@@ -28,10 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
-pub(crate) fn attribute_list_type_meaning(
-    value: i64,
-    global_table: GlobalTable,
-) -> Option<&'static str> {
+fn attribute_list_type_meaning(value: i64, global_table: GlobalTable) -> Option<&'static str> {
     match (global_table, value) {
         (GlobalTable::V4_0, 0) => Some("property-entity-defined"),
         (_, 0) => Some("type406-form15-defined"),
@@ -178,7 +175,7 @@ struct FlowAssociativity {
     continuations: Vec<Option<u32>>,
 }
 
-pub(crate) fn single_target_cycle(
+fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
     visited: &mut BTreeSet<u32>,
