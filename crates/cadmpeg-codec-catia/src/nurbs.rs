@@ -372,6 +372,27 @@ pub(crate) fn reverse_nurbs_curve(
     )
 }
 
+/// State one trim endpoint inside the carrier domain, or refuse it.
+///
+/// The record states the interval and the IR carrier states the domain, so the
+/// two agree only inside the parameter rounding the knot lane carries.
+/// `tolerance` names that band. An endpoint beyond the band states a different
+/// interval rather than a rounded one, so it is refused; only the excess the
+/// band admits is mapped onto the domain end. A domain the carrier states in
+/// the wrong order admits no endpoint at all.
+fn domain_endpoint(parameter: f64, [lower, upper]: [f64; 2], tolerance: f64) -> Option<f64> {
+    if !(lower - tolerance..=upper + tolerance).contains(&parameter) {
+        return None;
+    }
+    if parameter < lower {
+        return Some(lower);
+    }
+    if parameter > upper {
+        return Some(upper);
+    }
+    Some(parameter)
+}
+
 /// Normalize the parameter interval for a model-space carrier.
 ///
 /// The interval is a value the record states, so a non-finite bound, a bound
@@ -401,11 +422,13 @@ pub(crate) fn canonical_model_curve_range(
             let tolerance = EPS_NURBS_GEOMETRY.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
             if nurbs.periodic() {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
-            } else if lower - range[0] > tolerance || range[1] - upper > tolerance {
-                None
             } else {
                 // Correct only endpoints outside the domain; retain interior trims.
-                Some(range.map(|parameter| parameter.clamp(lower, upper)))
+                let [start, end] = range;
+                Some([
+                    domain_endpoint(start, [lower, upper], tolerance)?,
+                    domain_endpoint(end, [lower, upper], tolerance)?,
+                ])
             }
         }
         _ => Some(range),
