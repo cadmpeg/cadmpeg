@@ -302,6 +302,52 @@ struct ConeSurfaceWire {
 }
 
 impl ConeSurface {
+    /// Build a cone from checked parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    ///
+    /// One component is replaced and the rest move across unchanged:
+    ///
+    /// ```
+    /// use cadmpeg_ir::geometry::analytic::ConeSurface;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    /// use cadmpeg_ir::scalar::NonNegativeLength;
+    ///
+    /// let cone = ConeSurface::try_new(
+    ///     Point3::new(0.0, 0.0, 0.0),
+    ///     Vector3::new(0.0, 0.0, 1.0),
+    ///     Vector3::new(1.0, 0.0, 0.0),
+    ///     3.0,
+    ///     1.0,
+    ///     0.5,
+    /// )
+    /// .expect("orthonormal frame, finite origin and admitted dimensions");
+    /// let sharpened = ConeSurface::new(
+    ///     cone.origin(),
+    ///     cone.frame(),
+    ///     NonNegativeLength::new(0.0).expect("zero is a valid cone radius"),
+    ///     cone.ratio(),
+    ///     cone.half_angle(),
+    /// );
+    /// assert_eq!(sharpened.radius().get(), 0.0);
+    /// assert_eq!(sharpened.half_angle(), cone.half_angle());
+    /// ```
+    #[must_use]
+    pub const fn new(
+        origin: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radius: NonNegativeLength,
+        ratio: PositiveReal,
+        half_angle: Angle,
+    ) -> Self {
+        Self {
+            origin,
+            radius,
+            ratio,
+            half_angle,
+            frame,
+        }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         origin: Point3,
@@ -319,19 +365,19 @@ impl ConeSurface {
         let ratio =
             PositiveReal::new(ratio).ok_or("ConeSurface.ratio must be positive and finite")?;
         let half_angle = Angle::new(half_angle).ok_or("ConeSurface.half_angle must be finite")?;
-        Ok(Self {
-            origin,
-            radius,
-            ratio,
-            half_angle,
-            frame,
-        })
+        Ok(Self::new(origin, frame, radius, ratio, half_angle))
     }
 
     /// Return the origin.
     #[must_use]
-    pub const fn origin(&self) -> &Point3 {
-        self.origin.as_raw()
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// Return the frame.
+    #[must_use]
+    pub const fn frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 
     /// Return the axis.
@@ -370,7 +416,7 @@ impl ConeSurface {
 impl From<ConeSurface> for ConeSurfaceWire {
     fn from(value: ConeSurface) -> Self {
         Self {
-            origin: *value.origin(),
+            origin: value.origin().get(),
             axis: *value.axis(),
             ref_direction: *value.ref_direction(),
             radius: value.radius().get(),

@@ -162,23 +162,19 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = cone_surface.origin();
-                let axis = cone_surface.axis();
-                let ref_direction = cone_surface.ref_direction();
-                let radius = cone_surface.radius().get();
-                let ratio = cone_surface.ratio().get();
-                let half_angle = cone_surface.half_angle().get();
-                let mut origin = *origin;
+                let frame = cone_surface.frame();
+                let radius = cone_surface.radius();
+                let ratio = cone_surface.ratio();
+                let half_angle = cone_surface.half_angle();
+                let mut origin = cone_surface.origin().get();
                 origin.x += dx;
-                *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    origin,
-                    *axis,
-                    *ref_direction,
+                *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+                    frame,
                     radius,
                     ratio,
                     half_angle,
-                )
-                .unwrap();
+                );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center();

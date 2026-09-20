@@ -3326,13 +3326,11 @@ pub(super) fn validate_surface_edits(
             Some(SolvedSurfaceGeometry::Cone(cone_surface))
                 if { matches!(before, Some(SolvedSurfaceGeometry::Cone(_))) } =>
             {
-                let origin = cone_surface.origin();
                 let axis = cone_surface.axis();
                 let ref_direction = cone_surface.ref_direction();
                 let radius = cone_surface.radius().get();
                 let half_angle = cone_surface.half_angle().get();
-                origin.is_finite()
-                    && orthonormal_pair(*axis, *ref_direction)
+                orthonormal_pair(*axis, *ref_direction)
                     && radius != 0.0
                     && (0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
             }
