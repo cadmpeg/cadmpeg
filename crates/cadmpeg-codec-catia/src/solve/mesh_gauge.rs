@@ -54,7 +54,7 @@ fn canonicalize_topology_boundary_gauges(topology: &mut StandardTopology) {
     }
 
     fn rotate_to_minimum(coedges: &mut NonEmptyCoedges) {
-        let len = coedges.count().get();
+        let len = coedges.len();
         let cycle = coedges.as_slice();
         let key = |start: usize| {
             (0..len).map(move |offset| {

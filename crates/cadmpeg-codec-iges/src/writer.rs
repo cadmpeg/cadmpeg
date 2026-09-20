@@ -3257,7 +3257,7 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            let values = polyline_parameters(polyline.point_count().get(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             let original = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),
@@ -5711,7 +5711,7 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
         SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
         SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.point_count().get(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             Ok([values.first, values.last])
         }
         SolvedCurveGeometry::Line(_) => Err(CodecError::NotImplemented(
@@ -6003,7 +6003,7 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.point_count().get(), polyline.parameters())?;
+            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             let nurbs = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),

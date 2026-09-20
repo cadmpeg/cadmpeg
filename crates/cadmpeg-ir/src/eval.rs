@@ -2524,9 +2524,7 @@ pub fn curve_point_with_budget_solved(
                 curve_point_solved(geometry, t)
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                budget
-                    .charge_by(polyline.point_count().get())
-                    .then_some(())?;
+                budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_point_solved(geometry, t)
             }
             SolvedCurveGeometry::Transformed { basis, transform } => {
@@ -2564,9 +2562,7 @@ pub fn curve_tangent_with_budget_solved(
                 curve_tangent_solved(geometry, t)
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                budget
-                    .charge_by(polyline.point_count().get())
-                    .then_some(())?;
+                budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_tangent_solved(geometry, t)
             }
             SolvedCurveGeometry::Transformed { basis, transform } => {
@@ -2605,9 +2601,7 @@ pub fn curve_second_derivative_with_budget_solved(
                 curve_second_derivative_solved(geometry, t)
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                budget
-                    .charge_by(polyline.point_count().get())
-                    .then_some(())?;
+                budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_second_derivative_solved(geometry, t)
             }
             SolvedCurveGeometry::Transformed { basis, transform } => {
