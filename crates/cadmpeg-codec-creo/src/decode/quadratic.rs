@@ -82,6 +82,26 @@ impl Coefficient {
     }
 }
 
+/// The exponent bits of an f64.
+const EXPONENT_MASK: u64 = 0x7ff0_0000_0000_0000;
+
+/// The power of two at a positive finite value: the largest power of two not
+/// above it, or the smallest normal power of two when it is subnormal.
+///
+/// Dividing by this is exact, where dividing by the value itself rounds every
+/// quotient. It keeps what the division is for: the quotient of the value
+/// itself is in `[1, 2)` for a normal value and below `1` for a subnormal one,
+/// so no scaled coefficient overflows, and every other coefficient's quotient
+/// is no smaller than it would be under division by the value, so no quotient
+/// underflows that would not have underflowed anyway.
+fn power_of_two_at(value: f64) -> f64 {
+    let exponent = f64::from_bits(value.to_bits() & EXPONENT_MASK);
+    if exponent == 0.0 {
+        return f64::MIN_POSITIVE;
+    }
+    exponent
+}
+
 /// Return finite real roots in ascending order.
 ///
 /// The discriminant is read against the error its coefficients carry, not
@@ -89,6 +109,12 @@ impl Coefficient {
 /// terms` of the exact one, so a discriminant inside the band that propagates
 /// from those three error bars states a repeated root, and only a discriminant
 /// below the band states that the equation has no real root.
+///
+/// The three coefficients are divided by the power of two at the largest of
+/// them, which is exact, so every quotient carries its dividend's significand
+/// and a problem whose arithmetic is exact keeps exact roots. The decision
+/// `|discriminant| <= band` has both sides in the square of that divisor, so
+/// it is invariant under the divisor's choice.
 pub(super) fn real_roots(
     quadratic: Coefficient,
     linear: Coefficient,
@@ -104,11 +130,13 @@ pub(super) fn real_roots(
         let root = -constant.value / linear.value;
         return root.is_finite().then_some(root).into_iter().collect();
     }
-    let scale = quadratic
-        .value
-        .abs()
-        .max(linear.value.abs())
-        .max(constant.value.abs());
+    let scale = power_of_two_at(
+        quadratic
+            .value
+            .abs()
+            .max(linear.value.abs())
+            .max(constant.value.abs()),
+    );
     let a = quadratic.value / scale;
     let b = linear.value / scale;
     let c = constant.value / scale;
