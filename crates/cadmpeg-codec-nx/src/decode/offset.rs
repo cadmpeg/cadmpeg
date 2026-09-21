@@ -778,7 +778,8 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let v_count = surface.v_count();
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let point = |u: usize, v: usize| surface.control_grid()[u][v];
+    let grid = surface.control_grid();
+    let point = |u: usize, v: usize| grid[u][v];
     let difference = |end: Point3, start: Point3| {
         Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
     };

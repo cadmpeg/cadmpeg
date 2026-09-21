@@ -88,28 +88,7 @@ pub(in super::super) fn curve_contains_points(
                 dot(residual, residual).sqrt() <= EPS_ON_CURVE * scale
             })
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)) => {
-            let Some(PeriodicConicFrame {
-                center,
-                normal,
-                x_axis,
-                y_axis,
-                radii,
-            }) = periodic_conic_frame(geometry)
-            else {
-                return false;
-            };
-            points.into_iter().all(|point| {
-                let relative: [f64; 3] = std::array::from_fn(|index| point[index] - center[index]);
-                let scale = radii.into_iter().fold(1.0, f64::max);
-                let x = dot(relative, x_axis) / radii[0];
-                let y = dot(relative, y_axis) / radii[1];
-                dot(relative, normal).abs() <= EPS_ON_CURVE * scale
-                    && x.mul_add(x, y * y).is_finite()
-                    && (x.mul_add(x, y * y) - 1.0).abs() <= EPS_ON_CURVE
-            })
-        }
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)) => {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
             let Some(PeriodicConicFrame {
                 center,
                 normal,
