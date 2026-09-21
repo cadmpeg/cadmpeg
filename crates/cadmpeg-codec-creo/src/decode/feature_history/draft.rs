@@ -75,7 +75,18 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeSet;
 
-const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-12;
+/// The tolerance a feature definition's `local_sys` parameter frame is written to.
+///
+/// [`crate::placement::unique_complete_local_system`] yields twelve finite values, and every
+/// reader of that record normalizes the columns it takes, so a column's length states nothing
+/// and only the mutual orthogonality of the columns and the sign of their determinant remain.
+/// This bound gates both: each pairwise dot against zero, and the determinant against one.
+/// `placement.rs` reads the same record at the same value under `EPS_PLACEMENT_EXACT_GEOMETRY`.
+///
+/// `FeatureDatumPlaneFrame::new` and `FeatureCoordinateFrame::new` restate these conditions at
+/// `1.0e-9`, in the one-sided determinant form used below, so this narrower bound is what
+/// decides which matrices become a datum plane or a coordinate system.
+const EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL: f64 = 1.0e-12;
 
 pub(super) fn thicken_feature_definition(
     scan: &ContainerScan,
@@ -745,7 +756,7 @@ pub(in super::super) fn schema_feature_definition(
                 let raw_u_axis = [values[0], values[1], values[2]];
                 if let (Some(normal), Some(u_axis)) = (normalize(raw_normal), normalize(raw_u_axis))
                 {
-                    if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
+                    if dot(normal, u_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL {
                         let origin = [values[9], values[10], values[11]];
                         if let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                             Point3::new(origin[0], origin[1], origin[2]),
@@ -783,12 +794,13 @@ pub(in super::super) fn schema_feature_definition(
                 let z_axis = normalize([values[6], values[7], values[8]]);
                 let origin = [values[9], values[10], values[11]];
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
-                    let right_handed =
-                        dot(cross(x_axis, y_axis), z_axis) >= 1.0 - EPS_FRAME_ORTHONORMAL;
-                    let orthogonal = dot(x_axis, y_axis).abs() <= EPS_FRAME_ORTHONORMAL
-                        && dot(x_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL
-                        && dot(y_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL;
-                    if origin.into_iter().all(f64::is_finite) && orthogonal && right_handed {
+                    let right_handed = dot(cross(x_axis, y_axis), z_axis)
+                        >= 1.0 - EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
+                    let orthogonal = dot(x_axis, y_axis).abs()
+                        <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL
+                        && dot(x_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL
+                        && dot(y_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
+                    if orthogonal && right_handed {
                         if let Some(frame) = cadmpeg_ir::features::FeatureCoordinateFrame::new(
                             Point3::new(origin[0], origin[1], origin[2]),
                             Vector3::new(x_axis[0], x_axis[1], x_axis[2]),

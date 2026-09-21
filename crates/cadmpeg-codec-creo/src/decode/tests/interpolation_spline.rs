@@ -1602,6 +1602,63 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
 }
 
 #[test]
+fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features
+        .definitions
+        .push(crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(7),
+            },
+            body: Vec::new(),
+            parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
+                kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                body: Vec::new(),
+                decoded_values: Some([
+                    1.0, 0.0, 0.0, 1.0e-10, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0,
+                ]),
+                offset: 1,
+            }],
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        });
+
+    // The normalized columns reach the IR frame constructor as unit vectors whose largest
+    // pairwise dot is 1.0e-10, and that constructor admits them.
+    assert!(cadmpeg_ir::features::FeatureCoordinateFrame::new(
+        Point3::new(5.0, 6.0, 7.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(1.0e-10, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0)
+    )
+    .is_some());
+    // The record is written to a tighter bound, so the feature stays unresolved.
+    assert_eq!(
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            7,
+            Some(SchemaClass::CoordinateSystem),
+            "PRT_CSYS_DEF"
+        )
+        .expect("valid test fixture"),
+        IrFeatureDefinition::Operation(IrFeatureOperation::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem
+        })
+    );
+}
+
+#[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs| Feature {
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
