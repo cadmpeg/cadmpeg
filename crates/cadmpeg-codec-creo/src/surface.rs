@@ -7004,11 +7004,11 @@ fn decode_compact_axis_aligned_cylinder_frame(
         *value = decoded;
         cursor = next;
     }
-    (cursor == body.len() && values[0] > 0.0).then_some(())?;
+    (cursor == body.len()).then_some(())?;
     axis_aligned_cylinder_from_corners(
         values[1..4].try_into().ok()?,
         values[4..7].try_into().ok()?,
-        Some(values[0]),
+        Some(PositiveLength::new(values[0])?),
         AxisAlignedCornerOrientation::SecondToFirst,
     )
 }
@@ -7034,6 +7034,8 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
     } else {
         return None;
     };
+    // The lane's leading value is a positive axial extent the frame does not carry: the corners
+    // are `values[1..7]`, and no later statement reads `values[0]`.
     (values[0] > 0.0).then_some(())?;
     axis_aligned_cylinder_from_corners(
         values[1..4].try_into().ok()?,
@@ -7049,18 +7051,25 @@ enum AxisAlignedCornerOrientation {
     SecondToFirst,
 }
 
+/// Admits the cylinder frame that two axis-aligned corners describe.
+///
+/// `stored_length` is a body's own axial extent, which the candidate filter uses as a witness of
+/// the axial span within `EPS_SURFACE_AGREEMENT`. Its type states the extent's sign and finiteness,
+/// so a caller reading one admits it once and this function states no refusal of its own. A body
+/// whose lane carries no extent, or carries one the frame does not witness, passes `None`.
 fn axis_aligned_cylinder_from_corners(
     first: [f64; 3],
     second: [f64; 3],
-    stored_length: Option<f64>,
+    stored_length: Option<PositiveLength>,
     orientation: AxisAlignedCornerOrientation,
 ) -> Option<PositionalCylinderFrame> {
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
     let scale = first
         .iter()
         .chain(second.iter())
-        .chain(stored_length.iter())
-        .map(|value| value.abs())
+        .copied()
+        .chain(stored_length.map(PositiveLength::get))
+        .map(f64::abs)
         .fold(1.0, f64::max);
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let radial_pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
@@ -7075,7 +7084,7 @@ fn axis_aligned_cylinder_from_corners(
                 _ => return None,
             };
             stored_length
-                .is_none_or(|length| close(spans[axis_index], length))
+                .is_none_or(|length| close(spans[axis_index], length.get()))
                 .then_some((diameter_index, radius_index, axis_index))
         })
         .collect::<Vec<_>>();
