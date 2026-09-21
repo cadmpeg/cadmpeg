@@ -1628,8 +1628,8 @@ fn normalize_pcurve_parameter_range(
             let basis = offset_pcurve.basis();
             return normalize_pcurve_parameter_range(basis, Some(range));
         }
-        PcurveGeometry::Transformed { basis, .. } => {
-            return normalize_pcurve_parameter_range(basis, Some(range));
+        PcurveGeometry::Transformed(placed) => {
+            return normalize_pcurve_parameter_range(placed.basis(), Some(range));
         }
         _ => return Some(range),
     };
@@ -1708,13 +1708,16 @@ fn transformed_pcurve_geometry(
     {
         return Some(geometry);
     }
-    Some(PcurveGeometry::Transformed {
-        basis: Box::new(geometry),
-        transform: Transform2::affine([
-            [affine.u_scale, 0.0, affine.u_offset],
-            [0.0, affine.v_scale, affine.v_offset],
-        ])?,
-    })
+    Some(PcurveGeometry::Transformed(
+        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(geometry),
+            Transform2::affine([
+                [affine.u_scale, 0.0, affine.u_offset],
+                [0.0, affine.v_scale, affine.v_offset],
+            ])?,
+        )
+        .ok()?,
+    ))
 }
 
 fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {

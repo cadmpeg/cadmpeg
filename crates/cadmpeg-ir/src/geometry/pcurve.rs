@@ -937,6 +937,8 @@ pub struct TrimmedPcurve {
     #[serde(default = "crate::default_true")]
     same_sense: bool,
     basis: Box<PcurveGeometry>,
+    #[serde(skip)]
+    depth: usize,
 }
 
 #[derive(Deserialize)]
@@ -964,10 +966,13 @@ impl TrimmedPcurve {
         {
             return Err("TrimmedPcurve.parameter_range must be finite and ordered");
         }
+        let depth = nesting_depth_over(&basis)
+            .ok_or("TrimmedPcurve.basis nests past the admitted inline basis depth")?;
         Ok(Self {
             parameter_range,
             same_sense,
             basis,
+            depth,
         })
     }
 
@@ -1004,6 +1009,8 @@ impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
 pub struct OffsetPcurve {
     distance: FiniteReal,
     basis: Box<PcurveGeometry>,
+    #[serde(skip)]
+    depth: usize,
 }
 
 #[derive(Deserialize)]
@@ -1020,7 +1027,13 @@ impl OffsetPcurve {
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
         let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
-        Ok(Self { distance, basis })
+        let depth = nesting_depth_over(&basis)
+            .ok_or("OffsetPcurve.basis nests past the admitted inline basis depth")?;
+        Ok(Self {
+            distance,
+            basis,
+            depth,
+        })
     }
 
     /// Return the distance.
@@ -1081,12 +1094,7 @@ pub enum PcurveGeometry {
         nurbs: PcurveNurbs,
     },
     /// Affine replica of a parent pcurve in the same parameter space.
-    Transformed {
-        /// Exact parent pcurve and its parameterization.
-        basis: Box<PcurveGeometry>,
-        /// Two-dimensional affine map from parent coordinates to replica coordinates.
-        transform: Transform2,
-    },
+    Transformed(PlacedPcurve),
     /// Parameter restriction of an exact basis pcurve.
     Trimmed(TrimmedPcurve),
     /// Signed planar offset of an exact basis pcurve.
@@ -1460,39 +1468,105 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
     }
 }
 
-impl PcurveGeometry {
-    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
-    /// nesting carriers.
+/// The depth a new nesting carrier over `basis` would hold, or `None` when
+/// that is past [`MAX_GEOMETRY_NESTING`].
+///
+/// A pcurve nests through three wrappers rather than one: [`PlacedPcurve`],
+/// [`TrimmedPcurve`] and [`OffsetPcurve`] each hold one inline basis, and the
+/// admitted depth counts all three together. Each stores its own depth, so
+/// this reads one field.
+fn nesting_depth_over(basis: &PcurveGeometry) -> Option<usize> {
+    basis
+        .nesting_depth()
+        .checked_add(1)
+        .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+}
+
+/// Affine replica of a parent pcurve in the same parameter space.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`PcurveGeometry`] value nests past the
+/// bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedPcurveWire")]
+pub struct PlacedPcurve {
+    basis: Box<PcurveGeometry>,
+    transform: Transform2,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedPcurveWire {
+    /// Exact parent pcurve and its parameterization.
+    basis: Box<PcurveGeometry>,
+    /// Two-dimensional affine map from parent coordinates to replica coordinates.
+    transform: Transform2,
+}
+
+impl PlacedPcurve {
+    /// Place a basis pcurve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
     ///
-    /// A pcurve nests through three wrappers rather than one: `Transformed`,
-    /// `Trimmed` and `Offset` each hold one inline basis, and the admitted
-    /// depth counts all three together. The walk is iterative, so it answers a
-    /// chain of any depth without recursing.
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<PcurveGeometry>,
+        transform: Transform2,
+    ) -> Result<Self, &'static str> {
+        let depth = nesting_depth_over(&basis)
+            .ok_or("PlacedPcurve.basis nests past the admitted inline basis depth")?;
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
+    }
+
+    /// Return the basis.
     #[must_use]
-    pub fn nesting_within_bound(&self) -> bool {
-        let mut current = self;
-        for _ in 0..MAX_GEOMETRY_NESTING {
-            match current {
-                Self::Transformed { basis, .. } => current = basis,
-                Self::Trimmed(trimmed) => current = trimmed.basis(),
-                Self::Offset(offset) => current = offset.basis(),
-                Self::Line(_)
-                | Self::PolarHarmonic(_)
-                | Self::PolarNurbs { .. }
-                | Self::SphericalGreatCircle(_)
-                | Self::Circle(_)
-                | Self::Ellipse(_)
-                | Self::Harmonic(_)
-                | Self::Parabola(_)
-                | Self::Hyperbola(_)
-                | Self::Hyperbolic(_)
-                | Self::Nurbs { .. } => return true,
-            }
+    pub const fn basis(&self) -> &PcurveGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform2 {
+        &self.transform
+    }
+}
+
+impl TryFrom<PlacedPcurveWire> for PlacedPcurve {
+    type Error = &'static str;
+    fn try_from(wire: PlacedPcurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
+    }
+}
+
+impl PcurveGeometry {
+    /// Nesting carriers enclosing the leaf of this carrier's inline chain.
+    #[must_use]
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Trimmed(trimmed) => trimmed.depth,
+            Self::Offset(offset) => offset.depth,
+            Self::Line(_)
+            | Self::PolarHarmonic(_)
+            | Self::PolarNurbs { .. }
+            | Self::SphericalGreatCircle(_)
+            | Self::Circle(_)
+            | Self::Ellipse(_)
+            | Self::Harmonic(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Hyperbolic(_)
+            | Self::Nurbs { .. } => 0,
         }
-        !matches!(
-            current,
-            Self::Transformed { .. } | Self::Trimmed(_) | Self::Offset(_)
-        )
     }
 
     /// Scale chart coordinates atomically without changing the curve parameterization.
@@ -1599,23 +1673,23 @@ impl PcurveGeometry {
                 basis.try_scale_coordinates(scales)?;
                 Self::Offset(OffsetPcurve::try_new(offset.distance() * u_scale, basis)?)
             }
-            Self::Transformed { basis, transform } => {
+            Self::Transformed(placed) => {
                 if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0
                 {
                     return Err(
                         "transformed pcurve coordinate scales must be finite and nonzero".into(),
                     );
                 }
-                let mut rows = transform.affine_rows();
+                let mut rows = placed.transform.affine_rows();
                 rows[0][1] *= u_scale / v_scale;
                 rows[0][2] *= u_scale;
                 rows[1][0] *= v_scale / u_scale;
                 rows[1][2] *= v_scale;
                 let transform =
                     Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
-                let mut basis = basis.clone();
+                let mut basis = placed.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Transformed { basis, transform }
+                Self::Transformed(PlacedPcurve::try_new(basis, transform)?)
             }
             Self::PolarHarmonic(_) | Self::PolarNurbs { .. } | Self::SphericalGreatCircle(_) => {
                 return if isotropic && u_scale == 1.0 {
@@ -1641,8 +1715,9 @@ impl PcurveGeometry {
                 let direction = line_pcurve.direction();
                 Some((*origin, *direction))
             }
-            Self::Transformed { basis, transform } => {
-                let (origin, direction) = basis.line_parameters()?;
+            Self::Transformed(placed) => {
+                let (origin, direction) = placed.basis().line_parameters()?;
+                let transform = placed.transform();
                 Some((
                     transform.apply_point(origin),
                     transform.apply_vector(direction),

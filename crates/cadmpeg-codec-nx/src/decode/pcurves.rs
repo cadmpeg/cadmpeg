@@ -814,14 +814,16 @@ fn reverse_pcurve_over_range(
             .ok()
             .map(PcurveGeometry::Trimmed))
         }
-        PcurveGeometry::Transformed { basis, transform } => {
-            let Some(reversed) = reverse_pcurve_over_range(basis, [start, end])? else {
+        PcurveGeometry::Transformed(placed) => {
+            let Some(reversed) = reverse_pcurve_over_range(placed.basis(), [start, end])? else {
                 return Ok(None);
             };
-            Ok(Some(PcurveGeometry::Transformed {
-                basis: Box::new(reversed),
-                transform: *transform,
-            }))
+            Ok(cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+                Box::new(reversed),
+                *placed.transform(),
+            )
+            .ok()
+            .map(PcurveGeometry::Transformed))
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();

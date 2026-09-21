@@ -6737,20 +6737,13 @@ pub(super) fn native_ref_pcurve_companion(
 
 /// NURBS form the source-less writer states for `geometry` over `range`.
 ///
-/// A pcurve that nests past
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) is not
-/// walked. It takes the same route as every other pcurve family this writer
-/// does not write.
+/// The recursion over a trimmed basis is bounded by the carrier: each pcurve
+/// nesting constructor refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING).
 fn native_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
-    if !geometry.nesting_within_bound() {
-        return Err(CodecError::NotImplemented(
-            "F3D writing of a pcurve nesting past the admitted basis depth is not implemented"
-                .into(),
-        ));
-    }
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -6815,7 +6808,7 @@ fn native_pcurve_geometry(
         PcurveGeometry::Offset(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
-        PcurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
+        PcurveGeometry::Transformed(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
     }

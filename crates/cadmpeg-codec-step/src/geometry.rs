@@ -219,22 +219,12 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
 ///
 /// `Transformed`, `Trimmed` and `Offset` each hold their basis inline in a
-/// `Box`. The IR counts the three of them together and admits at most
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) of
-/// them over one leaf; a deeper pcurve is unwritable and nothing is emitted
-/// for it.
-pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
-    pcurve_nested(e, geometry)
-}
-
-/// Emit a parameter-space curve whose nesting [`pcurve`] has already admitted.
-///
+/// `Box`, and each constructor refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING)
+/// carriers over one leaf, so the recursion here is bounded by the carrier.
 /// Each nesting arm emits its own record after the basis record it references,
 /// so the chain is written from the leaf outwards.
-fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -328,11 +318,12 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
                 )
             }
         }
-        PcurveGeometry::Transformed { basis, transform } => {
+        PcurveGeometry::Transformed(placed) => {
+            let transform = placed.transform();
             if !similarity_transform_2d(transform) {
                 return None;
             }
-            let basis = pcurve_nested(e, basis)?;
+            let basis = pcurve(e, placed.basis())?;
             let operator = transformation_operator_2d(e, *transform)?;
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
@@ -340,7 +331,7 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
             let parameter_range = trimmed_pcurve.parameter_range();
             let same_sense = trimmed_pcurve.same_sense();
             let basis = trimmed_pcurve.basis();
-            let basis = pcurve_nested(e, basis)?;
+            let basis = pcurve(e, basis)?;
             let sense = if same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
@@ -354,7 +345,7 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let basis = pcurve_nested(e, basis)?;
+            let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
                 &format!("'',{basis},{},.F.", real(distance)),

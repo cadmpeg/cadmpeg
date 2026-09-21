@@ -687,9 +687,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("replica pcurve");
-    let PcurveGeometry::Transformed { transform, .. } = &pcurve.geometry else {
+    let PcurveGeometry::Transformed(placed) = &pcurve.geometry else {
         panic!("pcurve replica lost its transformation")
     };
+    let transform = placed.transform();
     let root_two = 2.0_f64.sqrt();
     assert!((transform.rows()[0][0] - 1.0 / root_two).abs() < 1.0e-12);
     assert!((transform.rows()[0][1] + 1.0 / root_two).abs() < 1.0e-12);

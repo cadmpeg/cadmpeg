@@ -42,30 +42,6 @@ fn procedural_support_allowance(
     COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
 }
 
-/// A carrier's inline basis chain must hold at most
-/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING) nesting
-/// carriers.
-///
-/// Every other consumer of a nesting chain stops at that depth and answers
-/// `None`, so without this pass a model holding a deeper chain validates
-/// silently. One finding names each carrier whose chain the rest of the
-/// validator declines to walk.
-pub(super) fn check_geometry_nesting(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let mut refuse = |kind: &str, id: &str| {
-        findings.push(Finding {
-            check: Check::GeometricConsistency,
-            severity: Severity::Error,
-            message: format!("{kind} carrier nests past the admitted inline basis depth"),
-            entity: Some(id.to_owned()),
-        });
-    };
-    for pcurve in &ir.model.pcurves {
-        if !pcurve.geometry.nesting_within_bound() {
-            refuse("pcurve", pcurve.id.as_str());
-        }
-    }
-}
-
 /// Embedded support pcurves must map through their surfaces onto the curve
 /// they constrain at both ends of the construction interval.
 pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -919,9 +895,6 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::pcurve::Pcurve) -> Option
 }
 
 fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -931,7 +904,7 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             let basis = offset_pcurve.basis();
             pcurve_geometry_trim_range(basis)
         }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_geometry_trim_range(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_geometry_trim_range(placed.basis()),
         PcurveGeometry::Line(_) => None,
         PcurveGeometry::Circle(_) => None,
         PcurveGeometry::Ellipse(_) => None,

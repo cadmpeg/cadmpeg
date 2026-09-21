@@ -1101,15 +1101,15 @@ fn nurbs_pcurve_leaf() -> PcurveGeometry {
     }
 }
 
-fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> PcurveGeometry {
+fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> Result<PcurveGeometry, &'static str> {
     let mut geometry = leaf;
     for _ in 0..placements {
-        geometry = PcurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: crate::transform::Transform2::identity(),
-        };
+        geometry = PcurveGeometry::Transformed(crate::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(geometry),
+            crate::transform::Transform2::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 #[test]
@@ -1137,60 +1137,17 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
         .unwrap(),
     );
     // The trim itself is one carrier, so the chain over it holds one less.
-    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone());
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone())
+        .expect("admitted nesting");
     assert_eq!(
         super::pcurve_geometry_trim_range(&accepted),
         Some([0.25, 0.75])
     );
 
-    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed);
-    assert!(super::pcurve_geometry_trim_range(&refused).is_none());
-}
-
-/// The findings the nesting walk produces, separated from the reachability
-/// findings an isolated carrier also raises.
-fn nesting_findings(
-    report: &crate::report::check::ValidationReport,
-) -> Vec<&crate::report::check::Finding> {
-    report
-        .findings
-        .iter()
-        .filter(|finding| {
-            finding.check == Check::GeometricConsistency
-                && finding
-                    .message
-                    .contains("nests past the admitted inline basis depth")
-        })
-        .collect()
-}
-
-#[test]
-fn a_pcurve_chain_one_past_the_bound_is_reported() {
-    let mut ir = CadIr::empty();
-    ir.model.pcurves.push(Pcurve {
-        id: crate::ids::PcurveId::mint("test:model:pcurve#deep").unwrap(),
-        geometry: placed_pcurve(
-            crate::geometry::MAX_GEOMETRY_NESTING + 1,
-            nurbs_pcurve_leaf(),
-        ),
-        metadata: PcurveMetadata::default(),
-    });
-
-    let report = validate_neutral(&ir, Vec::new());
-    let reported = nesting_findings(&report);
-    assert_eq!(reported.len(), 1, "{:?}", report.findings);
-    assert_eq!(reported[0].severity, Severity::Error);
+    // The walk has no depth gate because the carrier one placement deeper
+    // cannot be built: `PlacedPcurve::try_new` refuses it.
     assert_eq!(
-        reported[0].entity.as_deref(),
-        Some("test:model:pcurve#deep")
-    );
-
-    ir.model.pcurves[0].geometry =
-        placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, nurbs_pcurve_leaf());
-    let at_bound = validate_neutral(&ir, Vec::new());
-    assert!(
-        nesting_findings(&at_bound).is_empty(),
-        "{:?}",
-        at_bound.findings
+        placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed),
+        Err("PlacedPcurve.basis nests past the admitted inline basis depth")
     );
 }

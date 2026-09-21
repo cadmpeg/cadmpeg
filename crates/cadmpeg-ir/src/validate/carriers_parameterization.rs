@@ -1004,12 +1004,9 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
 }
 
 fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
-    if !geometry.nesting_within_bound() {
-        return false;
-    }
     match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
-        PcurveGeometry::Transformed { basis, .. } => pcurve_requires_bounded_domain(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_requires_bounded_domain(placed.basis()),
         PcurveGeometry::Line(_) => false,
         PcurveGeometry::SphericalGreatCircle(_) => false,
         PcurveGeometry::Circle(_) => false,

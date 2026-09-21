@@ -117,12 +117,13 @@ fn curve_geometry_for_sheet_pcurve(
                 nurbs.periodic(),
             )?,
         ))),
-        PcurveGeometry::Transformed { basis, transform } => {
+        PcurveGeometry::Transformed(placed) => {
             let Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))) =
-                curve_geometry_for_sheet_pcurve(basis)?
+                curve_geometry_for_sheet_pcurve(placed.basis())?
             else {
                 return Ok(None);
             };
+            let transform = placed.transform();
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             let transform = Transform::affine([
@@ -432,17 +433,20 @@ fn writer_round_trips_every_exact_step_pcurve_family(
             )
             .unwrap(),
         ),
-        PcurveGeometry::Transformed {
-            basis: Box::new(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    Point2::new(1.0, 2.0),
-                    Point2::new(3.0, 4.0),
-                )
-                .unwrap(),
-            )),
-            transform: Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
-                .expect("affine transform"),
-        },
+        PcurveGeometry::Transformed(
+            cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+                Box::new(PcurveGeometry::Line(
+                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                        Point2::new(1.0, 2.0),
+                        Point2::new(3.0, 4.0),
+                    )
+                    .unwrap(),
+                )),
+                Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
+                    .expect("affine transform"),
+            )
+            .expect("placed pcurve"),
+        ),
     ];
 
     for geometry in cases {
@@ -458,7 +462,7 @@ fn writer_round_trips_every_exact_step_pcurve_family(
         )
         .expect("write exact pcurve");
         let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
-        if matches!(&geometry, PcurveGeometry::Transformed { .. }) {
+        if matches!(&geometry, PcurveGeometry::Transformed(_)) {
             assert!(output_text.contains("CURVE_REPLICA"));
             assert!(output_text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D"));
         }

@@ -7628,8 +7628,9 @@ fn pcurve_uv_differential_inner(
                 t,
             );
         }
-        PcurveGeometry::Transformed { basis, transform } => {
-            let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+        PcurveGeometry::Transformed(placed) => {
+            let transform = placed.transform();
+            let basis = pcurve_uv_differential_inner(placed.basis(), t, depth + 1)?;
             let point = transform.apply_point(basis.point);
             let tangent = basis.tangent.map(|tangent| transform.apply_vector(tangent));
             let acceleration = basis
