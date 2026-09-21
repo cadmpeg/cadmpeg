@@ -45,19 +45,35 @@ mod tests {
     #[test]
     fn unit_vector_preserves_direction_across_finite_magnitudes() {
         for magnitude in [f64::from_bits(1), 1e-310, 1e-200, 1.0, 1e200, f64::MAX] {
-            for value in [
-                [magnitude, -magnitude, 0.0],
-                [0.0, magnitude, -magnitude],
-                [-magnitude, 0.0, magnitude],
-                [magnitude, 0.0, 0.0],
+            for (value, expected) in [
+                (
+                    [magnitude, -magnitude, 0.0],
+                    [
+                        std::f64::consts::FRAC_1_SQRT_2,
+                        -std::f64::consts::FRAC_1_SQRT_2,
+                        0.0,
+                    ],
+                ),
+                (
+                    [0.0, magnitude, -magnitude],
+                    [
+                        0.0,
+                        std::f64::consts::FRAC_1_SQRT_2,
+                        -std::f64::consts::FRAC_1_SQRT_2,
+                    ],
+                ),
+                (
+                    [-magnitude, 0.0, magnitude],
+                    [
+                        -std::f64::consts::FRAC_1_SQRT_2,
+                        0.0,
+                        std::f64::consts::FRAC_1_SQRT_2,
+                    ],
+                ),
+                ([magnitude, 0.0, 0.0], [1.0, 0.0, 0.0]),
             ] {
                 let result = unit_vector(value).expect("finite nonzero direction");
-                for (actual, source) in result.into_iter().zip(value) {
-                    let expected = if source == 0.0 {
-                        0.0
-                    } else {
-                        std::f64::consts::FRAC_1_SQRT_2.copysign(source)
-                    };
+                for (actual, expected) in result.into_iter().zip(expected) {
                     assert!((actual - expected).abs() <= EPS_UNIT_ROUNDING);
                 }
                 assert!(
