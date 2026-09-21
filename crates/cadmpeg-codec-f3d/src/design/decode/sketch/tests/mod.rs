@@ -6,7 +6,6 @@
     clippy::uninlined_format_args
 )]
 
-mod constraints;
 mod curves;
 mod placement;
 mod points;
