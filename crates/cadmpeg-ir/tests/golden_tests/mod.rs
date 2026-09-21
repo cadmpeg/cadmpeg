@@ -240,13 +240,41 @@ const DOCUMENT_KEY: &str = "ir";
 /// Member every `CadIr` serializes, and the marker of a document root.
 const DOCUMENT_VERSION_KEY: &str = "ir_version";
 
-/// Whether this document's `native` arena is the elision marker rather than a
+/// Whether this document's `native` arena is the elision block rather than a
 /// readable arena.
+///
+/// The key is the whole predicate. A `native` member is a map of codec
+/// namespaces, so a readable document reaches [`NATIVE_ELISION_KEY`] only
+/// through a namespace of that name, whose value is an object; a string there
+/// is written by nothing but the elision block. The marker's sentence is for a
+/// reader of the golden, and reading it here would make this answer depend on
+/// whether the `FreeCAD` harness ran before or after this binary in a
+/// regeneration that changes the sentence.
 fn states_native_elision(ir: &Value) -> bool {
     ir.get("native")
         .and_then(|native| native.get(NATIVE_ELISION_KEY))
-        .and_then(Value::as_str)
-        == Some(NATIVE_ELISION_MARKER)
+        .is_some_and(Value::is_string)
+}
+
+#[test]
+fn the_elision_predicate_reads_the_key_and_not_its_text() {
+    let elided = |marker: Value| serde_json::json!({ "native": { NATIVE_ELISION_KEY: marker } });
+    assert!(states_native_elision(&elided(serde_json::json!(
+        NATIVE_ELISION_MARKER
+    ))));
+    assert!(states_native_elision(&elided(serde_json::json!(
+        "any other sentence a regeneration writes"
+    ))));
+
+    assert!(!states_native_elision(&serde_json::json!({})));
+    assert!(!states_native_elision(&serde_json::json!({ "native": {} })));
+    assert!(!states_native_elision(&serde_json::json!({
+        "native": { "fcstd": { "objects": [] } }
+    })));
+    // A namespace of that name is an object, not the block's sentence.
+    assert!(!states_native_elision(&elided(serde_json::json!({
+        "objects": []
+    }))));
 }
 
 /// Every document root under `value`, with the pointer that reaches it, and
