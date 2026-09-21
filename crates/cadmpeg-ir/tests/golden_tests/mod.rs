@@ -27,6 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::CadIr;
+use cadmpeg_test_support::golden::{NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER};
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
 
@@ -238,13 +239,6 @@ const DOCUMENT_KEY: &str = "ir";
 
 /// Member every `CadIr` serializes, and the marker of a document root.
 const DOCUMENT_VERSION_KEY: &str = "ir_version";
-
-/// Key the `FreeCAD` golden test writes in place of the native arena.
-const NATIVE_ELISION_KEY: &str = "__elided";
-
-/// Value that key carries.
-const NATIVE_ELISION_MARKER: &str =
-    "native arena values are omitted; structure is pinned by identity";
 
 /// Whether this document's `native` arena is the elision marker rather than a
 /// readable arena.

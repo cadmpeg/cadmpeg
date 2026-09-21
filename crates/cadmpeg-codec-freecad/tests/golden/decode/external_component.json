@@ -666,7 +666,7 @@
           "string_tables": 1
         }
       },
-      "__elided": "native arena values are omitted; structure is pinned by identity",
+      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON",
       "__shape_sha256": "5d28acc6c7e7d38c4f0d24bb352b1628ad2b06522926b20ced79c37639ee68b1"
     },
     "source": {
