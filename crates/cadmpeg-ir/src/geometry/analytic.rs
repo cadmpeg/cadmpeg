@@ -412,8 +412,39 @@ impl ConeSurface {
         self.ratio
     }
 
-    /// Return the half angle. Any finite signed angle is a valid cone half
-    /// angle, so the type admits it.
+    /// Return the half angle. The type admits every finite signed angle.
+    ///
+    /// The angle is the signed radial slope of the parameterization: the
+    /// cross-section radius at signed axial distance `v` is
+    /// `radius + v * tan(half_angle)`, so a negative half angle shrinks the
+    /// cross-section along `+axis`. `(half_angle, axis)` and
+    /// `(-half_angle, -axis)` carry the same locus under the parameter change
+    /// `(u, v) -> (-u, -v)`, so the sign belongs to the chart the surface's
+    /// pcurves use, not to the locus. A reader that prefers a nonnegative
+    /// angle therefore flips the axis and the parameters together; the ASM and
+    /// Creo readers do this, and the F3D writers read the sign back out to
+    /// recover the native axis and the native axial parameter scale.
+    ///
+    /// Each reader narrows the angle to what its own carrier holds, and the
+    /// intervals differ:
+    ///
+    /// - `[0, pi/2]`: the ASM b-rep and procedural-curve surface readers,
+    ///   which build the angle as `atan2(|sine|, |cosine|)`, and the SLDPRT
+    ///   b-rep reader, which builds it as `asin(|sine|)`.
+    /// - `[0, pi/2)`: the Creo swept-surface reader, whose axial rate is
+    ///   nonzero.
+    /// - `(0, pi/2)`: the IGES entity 194 reader, the NX reader, the CATIA b2,
+    ///   b5, e5 and zero-entity readers, and the Creo positional and legacy
+    ///   cone frames.
+    /// - Every finite angle: the STEP `CONICAL_SURFACE` reader and the `FCStd`
+    ///   b-rep reader, which pass the file's number through unchecked. The STEP
+    ///   writer emits it back unchanged.
+    ///
+    /// Consumers that need a narrower angle state it where they need it: the
+    /// F3D patch validator admits `[0, pi/2]` because the ASM cone record
+    /// stores the sine and the cosine and folds anything else to a different
+    /// angle, and the Creo `ConeEquation` and mirrored-apex witness admit
+    /// `[0, pi/2)`.
     #[must_use]
     pub const fn half_angle(&self) -> Angle {
         self.half_angle

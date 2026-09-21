@@ -181,6 +181,41 @@ fn surface_radius_admission_refuses_both_signed_zeros_and_keeps_a_negative_cone_
 }
 
 #[test]
+fn cone_half_angle_admission_is_finiteness_alone() {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    for half_angle in [
+        -std::f64::consts::PI,
+        -std::f64::consts::FRAC_PI_2,
+        -0.5,
+        0.0,
+        0.5,
+        std::f64::consts::FRAC_PI_2,
+        2.0,
+        std::f64::consts::PI,
+    ] {
+        let cone = ConeSurface::try_new(center, axis, reference, 1.0, 1.0, half_angle).unwrap();
+        assert_eq!(cone.half_angle().get().to_bits(), half_angle.to_bits());
+        let wire = serde_json::to_value(cone).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ConeSurface>(wire)
+                .unwrap()
+                .half_angle()
+                .get()
+                .to_bits(),
+            half_angle.to_bits()
+        );
+    }
+    for half_angle in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            ConeSurface::try_new(center, axis, reference, 1.0, 1.0, half_angle).unwrap_err(),
+            "ConeSurface.half_angle must be finite"
+        );
+    }
+}
+
+#[test]
 fn surface_admission_names_the_refused_component() {
     let finite = Point3::new(0.0, 0.0, 0.0);
     let nonfinite = Point3::new(f64::NAN, 0.0, 0.0);
