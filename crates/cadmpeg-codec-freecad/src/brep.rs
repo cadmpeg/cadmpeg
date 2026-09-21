@@ -5488,6 +5488,15 @@ fn append_text_surface(
             )
             .map_err(CodecError::malformed)?,
         )),
+        // The persisted b-rep cone holds a signed half angle in
+        // `0 < |half_angle| < pi/2`, and the sign selects the direction the
+        // cross-section grows along the frame axis. The reader keeps it: the
+        // slant-to-axial conversion `surface_parameter_affine` applies to the
+        // cone's pcurves is `cos(half_angle)`, which is even, so a negative
+        // angle converts as consistently as a positive one. Both decode goldens
+        // that hold cones hold negative half angles, so a positive interval here
+        // would fail those decodes. Each arm of this match refuses what its IR
+        // carrier refuses and nothing more.
         TextSurface::Cone {
             origin,
             axis,
@@ -6696,6 +6705,48 @@ pub(crate) mod tests {
                 matches!((matched_payload.transposed(),), (true,)),
             _ => false,
         });
+    }
+
+    #[test]
+    fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
+        let surface = crate::brep::TextSurface::Cone {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+            half_angle: -0.715_584_993_317_674_8,
+            u_reversed: false,
+        };
+        let association = cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Fcstd,
+            object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
+                .expect("nonempty source identity"),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        let mut curves = crate::brep::CurveTransfer::default();
+        let mut surfaces = crate::brep::SurfaceTransfer::default();
+        let geometry = crate::brep::append_text_surface(
+            &surface,
+            cadmpeg_ir::ids::SurfaceId::mint("fcstd:model:surface#cone").expect("identity grammar"),
+            &association,
+            &mut curves,
+            &mut surfaces,
+        )
+        .expect("a signed half angle is a b-rep cone the reader admits");
+        assert!(matches!(
+            geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
+            if {
+                let axis = *cone.axis();
+                cone.half_angle().get() == -0.715_584_993_317_674_8
+                    && cone.radius().get() == 5.0
+                    && (axis.x, axis.y, axis.z) == (0.0, 0.0, -1.0)
+            }
+        ));
     }
 
     #[test]
