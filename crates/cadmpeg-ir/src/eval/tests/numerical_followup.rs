@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::*;
+use super::super::{
+    direct_curve_parameter_near_point, map_nurbs_curve_parameter, nurbs_curve_parameter_near_point,
+    nurbs_curve_speed_bound, nurbs_pcurve_contains_point, nurbs_surface_parameter_near_point,
+    scalar_sweep_law_differential, scalar_unary_sweep_law_differential, ScalarSweepDifferential,
+};
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+use crate::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface},
+    LawExpression, SolvedCurveGeometry,
+};
+use crate::math::{Point2, Point3, Vector3};
 
 #[test]
 fn numerical_followup_surface_projection_is_independent_of_scale() {

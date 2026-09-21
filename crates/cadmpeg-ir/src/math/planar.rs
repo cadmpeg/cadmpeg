@@ -240,7 +240,9 @@ pub fn circle_intersections(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::cmp::Ordering;
+
+    use super::{circle_intersections, line_circle_parameters, orientation, Point2};
     #[test]
     fn distant_diagonal_line_preserves_exact_circle_incidence() {
         const RADIUS: f64 = 1e-10;
