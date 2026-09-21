@@ -1895,9 +1895,9 @@ fn transform_surface(
     transform: Transform,
 ) -> Result<SurfaceGeometry, CodecError> {
     ensure_similarity(transform)?;
-    Ok(SurfaceGeometry::Solved(
-        SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(
+    Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(
                 geometry
                     .clone()
                     .solved()
@@ -1909,8 +1909,9 @@ fn transform_surface(
                     .clone(),
             ),
             transform,
-        },
-    ))
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    )))
 }
 
 /// Places every polyline sample, refusing a sample the transform sends out of

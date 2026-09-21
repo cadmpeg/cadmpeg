@@ -1077,15 +1077,15 @@ fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
     )
 }
 
-fn placed_nurbs_surface(placements: usize) -> SolvedSurfaceGeometry {
+fn placed_nurbs_surface(placements: usize) -> Result<SolvedSurfaceGeometry, &'static str> {
     let mut geometry = nurbs_surface_leaf();
     for _ in 0..placements {
-        geometry = SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: crate::transform::Transform::identity(),
-        };
+        geometry = SolvedSurfaceGeometry::Transformed(crate::geometry::PlacedSurface::try_new(
+            Box::new(geometry),
+            crate::transform::Transform::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
@@ -1114,11 +1114,16 @@ fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> PcurveGeometry {
 
 #[test]
 fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
-    let accepted = placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING);
+    let accepted =
+        placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
     assert!(super::solved_surface_parameter_domains(&accepted).is_some());
 
-    let refused = placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-    assert!(super::solved_surface_parameter_domains(&refused).is_none());
+    // The walk has no depth gate because the carrier one placement deeper
+    // cannot be built: `PlacedSurface::try_new` refuses it.
+    assert_eq!(
+        placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING + 1),
+        Err("PlacedSurface.basis nests past the admitted inline basis depth")
+    );
 }
 
 #[test]
@@ -1174,36 +1179,6 @@ fn nesting_findings(
                     .contains("nests past the admitted inline basis depth")
         })
         .collect()
-}
-
-#[test]
-fn a_surface_chain_one_past_the_bound_is_reported() {
-    let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("test:model:surface#deep").unwrap(),
-        geometry: SurfaceGeometry::Solved(placed_nurbs_surface(
-            crate::geometry::MAX_GEOMETRY_NESTING + 1,
-        )),
-        source_object: None,
-    });
-
-    let report = validate_neutral(&ir, Vec::new());
-    let reported = nesting_findings(&report);
-    assert_eq!(reported.len(), 1, "{:?}", report.findings);
-    assert_eq!(reported[0].severity, Severity::Error);
-    assert_eq!(
-        reported[0].entity.as_deref(),
-        Some("test:model:surface#deep")
-    );
-
-    ir.model.surfaces[0].geometry =
-        SurfaceGeometry::Solved(placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING));
-    let at_bound = validate_neutral(&ir, Vec::new());
-    assert!(
-        nesting_findings(&at_bound).is_empty(),
-        "{:?}",
-        at_bound.findings
-    );
 }
 
 #[test]

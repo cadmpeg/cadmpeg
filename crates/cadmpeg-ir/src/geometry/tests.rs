@@ -648,10 +648,13 @@ fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
         serde_json::from_value::<CurveGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
         solved
     );
-    let solved = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Unknown { record: None }),
-        transform: crate::transform::Transform::default(),
-    });
+    let solved = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Unknown { record: None }),
+            crate::transform::Transform::default(),
+        )
+        .expect("placed surface"),
+    ));
     assert_eq!(
         serde_json::from_value::<SurfaceGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
         solved

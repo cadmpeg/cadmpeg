@@ -1452,11 +1452,13 @@ fn scale_surface_geometry(
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *surface = scaled;
         }
-        SolvedSurfaceGeometry::Transformed {
-            basis, transform, ..
-        } => {
-            scale_surface_geometry(basis, scale)?;
-            scale_transform_translation(transform, scale)?;
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            let mut basis = placed.basis().clone();
+            scale_surface_geometry(&mut basis, scale)?;
+            let mut transform = *placed.transform();
+            scale_transform_translation(&mut transform, scale)?;
+            *placed = cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
+                .map_err(CodecError::malformed)?;
         }
         SolvedSurfaceGeometry::Unknown { .. } => {}
     }
@@ -1712,8 +1714,8 @@ fn surface_parameter_scales(geometry: &SolvedSurfaceGeometry, length_scale_mm: f
         SolvedSurfaceGeometry::Cone(_) => [1.0, length_scale_mm],
         SolvedSurfaceGeometry::Sphere(_) => [1.0, 1.0],
         SolvedSurfaceGeometry::Torus(_) => [1.0, 1.0],
-        SolvedSurfaceGeometry::Transformed { basis, .. } => {
-            surface_parameter_scales(basis, length_scale_mm)
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            surface_parameter_scales(placed.basis(), length_scale_mm)
         }
         SolvedSurfaceGeometry::Nurbs { .. }
         | SolvedSurfaceGeometry::Polygonal(_)

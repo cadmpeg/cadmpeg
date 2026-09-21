@@ -3,11 +3,15 @@
 
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
 use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, TrimmedPcurve};
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING};
+use crate::geometry::{
+    PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
+};
 use crate::math::{Point3, Vector3};
 use crate::transform::{Transform, Transform2};
 
-fn placed_plane(placements: usize) -> SolvedSurfaceGeometry {
+/// A chain of `placements` placements over a plane leaf, or the constructor's
+/// refusal at the placement that would pass the bound.
+fn placed_plane(placements: usize) -> Result<SolvedSurfaceGeometry, &'static str> {
     let mut geometry = SolvedSurfaceGeometry::Plane(
         PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -17,12 +21,12 @@ fn placed_plane(placements: usize) -> SolvedSurfaceGeometry {
         .expect("a unit-axis plane"),
     );
     for _ in 0..placements {
-        geometry = SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: Transform::identity(),
-        };
+        geometry = SolvedSurfaceGeometry::Transformed(PlacedSurface::try_new(
+            Box::new(geometry),
+            Transform::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 fn placed_line(placements: usize) -> SolvedCurveGeometry {
@@ -63,8 +67,11 @@ fn nested_pcurve(carriers: usize) -> PcurveGeometry {
 
 #[test]
 fn a_surface_placement_chain_one_past_the_bound_is_refused() {
-    assert!(placed_plane(MAX_GEOMETRY_NESTING).nesting_within_bound());
-    assert!(!placed_plane(MAX_GEOMETRY_NESTING + 1).nesting_within_bound());
+    assert!(placed_plane(MAX_GEOMETRY_NESTING).is_ok());
+    assert_eq!(
+        placed_plane(MAX_GEOMETRY_NESTING + 1),
+        Err("PlacedSurface.basis nests past the admitted inline basis depth")
+    );
 }
 
 #[test]
@@ -81,7 +88,6 @@ fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
 
 #[test]
 fn a_leaf_carrier_is_within_the_bound() {
-    assert!(placed_plane(0).nesting_within_bound());
     assert!(placed_line(0).nesting_within_bound());
     assert!(nested_pcurve(0).nesting_within_bound());
 }
@@ -92,7 +98,8 @@ fn the_json_parser_refuses_a_chain_well_under_the_bound() {
     // parser gives up at 128 nested structures. A chain deep enough to matter
     // therefore cannot arrive through a document at all; it arrives from a
     // decoder that builds the carrier in process.
-    let json = serde_json::to_string(&placed_plane(MAX_GEOMETRY_NESTING)).expect("serialized");
+    let deep = placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting");
+    let json = serde_json::to_string(&deep).expect("serialized");
     let error = serde_json::from_str::<SolvedSurfaceGeometry>(&json)
         .expect_err("serde_json refuses this nesting depth");
     assert!(
@@ -100,9 +107,31 @@ fn the_json_parser_refuses_a_chain_well_under_the_bound() {
         "unexpected parser error: {error}"
     );
 
-    let shallow = serde_json::to_string(&placed_plane(60)).expect("serialized");
+    let shallow_chain = placed_plane(60).expect("admitted nesting");
+    let shallow = serde_json::to_string(&shallow_chain).expect("serialized");
     assert_eq!(
         serde_json::from_str::<SolvedSurfaceGeometry>(&shallow).expect("admitted nesting"),
-        placed_plane(60)
+        shallow_chain
+    );
+}
+
+#[test]
+fn deserialization_refuses_a_surface_placement_past_the_bound() {
+    // `serde_json::value::de` has no recursion guard, so it is the deepest
+    // route a document can take into the carrier. The constructor the wire
+    // routes through is what refuses the extra placement.
+    let admitted =
+        serde_json::to_value(placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting"))
+            .expect("serialized");
+    let past_the_bound = serde_json::json!({
+        "kind": "transformed",
+        "basis": admitted,
+        "transform": serde_json::to_value(Transform::identity()).expect("serialized"),
+    });
+    let error = serde_json::from_value::<SolvedSurfaceGeometry>(past_the_bound)
+        .expect_err("one placement past the bound");
+    assert_eq!(
+        error.to_string(),
+        "PlacedSurface.basis nests past the admitted inline basis depth"
     );
 }

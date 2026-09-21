@@ -4135,8 +4135,8 @@ fn surface_selection_parameter_domains_from_geometry(
                 nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
             ]
         }
-        SolvedSurfaceGeometry::Transformed { basis, .. } => {
-            surface_selection_parameter_domains_from_geometry(basis)
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            surface_selection_parameter_domains_from_geometry(placed.basis())
         }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Cylinder(_)

@@ -1037,7 +1037,7 @@ fn approximate_trimmed_surface_owner(
 fn is_planar_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
         SolvedSurfaceGeometry::Plane(_) => true,
-        SolvedSurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => is_planar_surface(placed.basis()),
         _ => false,
     }
 }
@@ -1045,7 +1045,7 @@ fn is_planar_surface(surface: &SolvedSurfaceGeometry) -> bool {
 fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
     match surface {
         SolvedSurfaceGeometry::Nurbs(_) => true,
-        SolvedSurfaceGeometry::Transformed { basis, .. } => contains_nurbs_surface(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => contains_nurbs_surface(placed.basis()),
         _ => false,
     }
 }
@@ -2243,8 +2243,9 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
             let u_axis = plane_surface.u_axis();
             (origin, *normal, *u_axis)
         }
-        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
-            let basis = plane_frame(basis)?;
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            let basis = plane_frame(placed.basis())?;
+            let transform = placed.transform();
             (
                 transform.apply_point(basis.origin)?,
                 transform.apply_vector(basis.normal)?,
@@ -2751,17 +2752,18 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
                 - axis.scale(slope * local_radius.signum()))
             .unit()
         }
-        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
+            let transform = placed.transform();
             transform
                 .apply_vector(analytic_surface_normal(
-                    basis,
+                    placed.basis(),
                     transform.try_inverse_affine().ok()?.apply_point(point)?,
                 )?)?
                 .unit()
         }
         SolvedSurfaceGeometry::Nurbs(_)
         | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Transformed { .. }
+        | SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }
@@ -2839,15 +2841,19 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
             let elliptical_radius = major.hypot(minor / ratio);
             Some((elliptical_radius - local_radius.abs()).abs())
         }
-        SolvedSurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+        SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
             analytic_surface_residual(
-                basis,
-                transform.try_inverse_affine().ok()?.apply_point(point)?,
+                placed.basis(),
+                placed
+                    .transform()
+                    .try_inverse_affine()
+                    .ok()?
+                    .apply_point(point)?,
             )
         }
         SolvedSurfaceGeometry::Nurbs(_)
         | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Transformed { .. }
+        | SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
     .filter(|residual| residual.is_finite())
@@ -2878,10 +2884,11 @@ fn surface_measure(
         })
         .filter(|measure| measure.residual.is_finite());
     }
-    if let SolvedSurfaceGeometry::Transformed { basis, transform } = surface {
+    if let SolvedSurfaceGeometry::Transformed(placed) = surface {
+        let transform = placed.transform();
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
-                basis,
+                placed.basis(),
                 transform.try_inverse_affine().ok()?.apply_point(point)?,
                 fit_tolerance,
             )?;

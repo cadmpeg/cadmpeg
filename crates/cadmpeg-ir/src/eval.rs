@@ -4260,10 +4260,10 @@ fn surface_point_with_budget_inner(
             ))
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
-        SolvedSurfaceGeometry::Transformed { basis, transform } => {
+        SolvedSurfaceGeometry::Transformed(placed) => {
             budget.charge().then_some(())?;
-            surface_point_with_budget_inner(basis, u, v, depth + 1, budget)
-                .and_then(|point| transform.apply_point(point))
+            surface_point_with_budget_inner(placed.basis(), u, v, depth + 1, budget)
+                .and_then(|point| placed.transform().apply_point(point))
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -4658,9 +4658,10 @@ fn surface_second_partials_inner(
             })
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
-        SolvedSurfaceGeometry::Transformed { basis, transform } => {
-            surface_second_partials_inner(basis, u, v, depth + 1)
-                .and_then(|partials| transform_surface_second_partials(partials, *transform))
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            surface_second_partials_inner(placed.basis(), u, v, depth + 1).and_then(|partials| {
+                transform_surface_second_partials(partials, *placed.transform())
+            })
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -6191,10 +6192,10 @@ fn model_surface_point_with_budget_solved(
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
             nurbs_surface_point_with_budget(nurbs, u, v, budget)
         }
-        (SolvedSurfaceGeometry::Transformed { basis, transform }, Some(budget)) => {
+        (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
             budget.charge().then_some(())?;
-            model_surface_point_with_budget_solved(basis, u, v, Some(budget), depth + 1)
-                .and_then(|point| transform.apply_point(point))
+            model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget), depth + 1)
+                .and_then(|point| placed.transform().apply_point(point))
         }
         _ => surface_point_solved(geometry, u, v),
     }
@@ -6220,9 +6221,10 @@ fn surface_partials_with_budget_solved(
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_partials_with_budget(nurbs, u, v, budget)
             }
-            SolvedSurfaceGeometry::Transformed { basis, transform } => {
+            SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(basis, u, v, depth + 1, budget).and_then(|partials| {
+                evaluate(placed.basis(), u, v, depth + 1, budget).and_then(|partials| {
+                    let transform = placed.transform();
                     Some(SurfacePartials {
                         point: transform.apply_point(partials.point)?,
                         du: transform.apply_vector(partials.du)?,
@@ -6260,10 +6262,11 @@ fn surface_second_partials_with_budget_solved(
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
             }
-            SolvedSurfaceGeometry::Transformed { basis, transform } => {
+            SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(basis, u, v, depth + 1, budget)
-                    .and_then(|partials| transform_surface_second_partials(partials, *transform))
+                evaluate(placed.basis(), u, v, depth + 1, budget).and_then(|partials| {
+                    transform_surface_second_partials(partials, *placed.transform())
+                })
             }
             _ => surface_second_partials_solved(geometry, u, v),
         }

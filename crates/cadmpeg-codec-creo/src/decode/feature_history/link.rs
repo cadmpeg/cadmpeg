@@ -71,7 +71,7 @@ fn solved_surface_kind(geometry: &SolvedSurfaceGeometry) -> Option<crate::surfac
         SolvedSurfaceGeometry::Sphere(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
         SolvedSurfaceGeometry::Torus(_) => Some(crate::surface::SurfaceKind::TorusOrSphere),
         SolvedSurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
-        SolvedSurfaceGeometry::Transformed { basis, .. } => solved_surface_kind(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => solved_surface_kind(placed.basis()),
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
 }

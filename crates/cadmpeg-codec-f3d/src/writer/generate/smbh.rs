@@ -1198,7 +1198,7 @@ fn encode_face_topology_smbh(
                     surface.id
                 )));
             }
-            Some(SolvedSurfaceGeometry::Transformed { .. }) => {
+            Some(SolvedSurfaceGeometry::Transformed(_)) => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D face generation does not support transformed surface carrier {}",
                     surface.id

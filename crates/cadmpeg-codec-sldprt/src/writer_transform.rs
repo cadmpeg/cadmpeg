@@ -351,12 +351,11 @@ fn transform_surface(
                 "SLDPRT cannot transform a non-explicit surface".into(),
             ))
         }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-            transform: carrier, ..
-        }) => {
-            *carrier = transform.compose(*carrier).map_err(|error| {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+            let composed = transform.compose(*placed.transform()).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
             })?;
+            placed.set_transform(composed);
         }
     }
     Ok(())

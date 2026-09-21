@@ -1761,16 +1761,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let geometry = SolvedSurfaceGeometry::Transformed {
-                basis: Box::new(basis),
-                transform,
-            };
-            if !geometry.nesting_within_bound() {
+            let Ok(placed) =
+                cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
+            else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "SURFACE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
                 continue;
-            }
+            };
+            let geometry = SolvedSurfaceGeometry::Transformed(placed);
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
@@ -4693,10 +4692,10 @@ fn surface_geometry_parameter_scales(
             Some([angle_scale, angle_scale])
         }
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
-        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
+        SolvedSurfaceGeometry::Transformed(placed) => surface_geometry_parameter_scales(
             ir,
             surface_id,
-            basis,
+            placed.basis(),
             length_scale,
             angle_scale,
             source_curve_parameter_scales,
@@ -4920,7 +4919,7 @@ pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Op
                 })
                 .flatten(),
         ],
-        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => surface_parameter_periods(placed.basis()),
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => [None, None],

@@ -24,32 +24,22 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 /// The affine placements over `surface`, outermost first, and the basis carrier
 /// under them.
 ///
-/// The IR admits at most
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING)
-/// placements over one basis, and states that as `nesting_within_bound`. A
-/// chain past it is refused here, so it is an unwritable carrier at every
-/// caller: [`surface_is_supported`], [`surface`] and [`emitted_basis`] take
-/// their bound from this walk. Both the bound question and the walk are
-/// iterative, so a chain of any depth is read without stack recursion.
-fn placed_surface(
-    surface: &SolvedSurfaceGeometry,
-) -> Option<(Vec<&Transform>, &SolvedSurfaceGeometry)> {
-    if !surface.nesting_within_bound() {
-        return None;
-    }
+/// `cadmpeg_ir::geometry::PlacedSurface::try_new` refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING), so
+/// the walk reads at most that many placements. It is iterative, so it costs
+/// no stack.
+fn placed_surface(surface: &SolvedSurfaceGeometry) -> (Vec<&Transform>, &SolvedSurfaceGeometry) {
     let mut placements = Vec::new();
     let mut geometry = surface;
-    while let SolvedSurfaceGeometry::Transformed { basis, transform } = geometry {
-        placements.push(transform);
-        geometry = basis;
+    while let SolvedSurfaceGeometry::Transformed(placed) = geometry {
+        placements.push(placed.transform());
+        geometry = placed.basis();
     }
-    Some((placements, geometry))
+    (placements, geometry)
 }
 
 pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
-    let Some((placements, basis)) = placed_surface(surface) else {
-        return false;
-    };
+    let (placements, basis) = placed_surface(surface);
     placements
         .iter()
         .all(|transform| similarity_transform(transform))
@@ -62,7 +52,7 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
             SolvedSurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
             // `placed_surface` ends the walk at the first carrier that is not a
             // placement, so the basis is never `Transformed`.
-            SolvedSurfaceGeometry::Transformed { .. }
+            SolvedSurfaceGeometry::Transformed(_)
             | SolvedSurfaceGeometry::Polygonal(_)
             | SolvedSurfaceGeometry::Unknown { .. } => false,
         }
@@ -446,16 +436,15 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 ///
 /// [`surface`] emits a `Transformed` carrier as a `SURFACE_REPLICA` over the
 /// record of its basis, so the radii and angles in the file are the basis's.
-/// The export census reads them here. `None` for a carrier [`surface`] refuses
-/// because its placements nest past
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING).
-pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> Option<&SolvedSurfaceGeometry> {
-    placed_surface(g).map(|(_, basis)| basis)
+/// The export census reads them here.
+pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry {
+    let (_, basis) = placed_surface(g);
+    basis
 }
 
 /// Emit an analytic or NURBS surface carrier.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
-    let (placements, basis) = placed_surface(g)?;
+    let (placements, basis) = placed_surface(g);
     let mut reference = basis_surface(e, basis)?;
     // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
     // references the record written for the placement inside it.
@@ -538,7 +527,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         // report the omitted carrier instead of fabricating a placeholder.
         // `placed_surface` ends the walk at the first carrier that is not a
         // placement, so `Transformed` does not reach this function.
-        SolvedSurfaceGeometry::Transformed { .. }
+        SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })

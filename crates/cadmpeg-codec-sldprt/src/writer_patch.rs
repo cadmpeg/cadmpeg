@@ -346,7 +346,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => 5,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => 6,
         SurfaceGeometry::Procedural { .. } => 7,
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => 7,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => 7,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => 8,
     }
 }

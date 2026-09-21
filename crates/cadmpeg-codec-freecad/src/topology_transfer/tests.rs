@@ -1357,13 +1357,12 @@ Co 1001000 +2 1 +2 3 *
         .iter()
         .find(|surface| surface.id == face.surface)
         .expect("required invariant");
-    let Some(SolvedSurfaceGeometry::Transformed { basis, transform }) = surface.geometry.solved()
-    else {
+    let Some(SolvedSurfaceGeometry::Transformed(placed)) = surface.geometry.solved() else {
         panic!("located face must retain its exact transformed basis");
     };
-    assert!(matches!(basis.as_ref(), SolvedSurfaceGeometry::Plane(_)));
-    assert_eq!(transform.rows()[0][0], -2.0);
-    assert_eq!(transform.rows()[1][1], 2.0);
+    assert!(matches!(placed.basis(), SolvedSurfaceGeometry::Plane(_)));
+    assert_eq!(placed.transform().rows()[0][0], -2.0);
+    assert_eq!(placed.transform().rows()[1][1], 2.0);
     let origin =
         cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).expect("required invariant");
     assert_eq!([origin.x, origin.y], [10.0, 5.0]);

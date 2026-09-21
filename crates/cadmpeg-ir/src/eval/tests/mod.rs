@@ -298,15 +298,18 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_some());
     assert_eq!(budget.consumed(), 28);
 
-    let transformed = SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Nurbs(surface)),
-        transform: Transform::affine([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 1.0],
-        ])
-        .expect("affine transform"),
-    };
+    let transformed = SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Nurbs(surface)),
+            Transform::affine([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed surface"),
+    );
     let budget = WorkBudget::new(12);
     assert!(surface_point_with_budget(
         &SurfaceGeometry::Solved(transformed.clone()),
@@ -1651,22 +1654,25 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
         )
         .unwrap(),
     );
-    let transformed = SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Plane(
-            crate::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform: Transform::affine([
-            [2.0, 0.0, 0.0, 7.0],
-            [0.0, 3.0, 0.0, 11.0],
-            [0.0, 0.0, 4.0, 13.0],
-        ])
-        .expect("affine transform"),
-    };
+    let transformed = SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                crate::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            Transform::affine([
+                [2.0, 0.0, 0.0, 7.0],
+                [0.0, 3.0, 0.0, 11.0],
+                [0.0, 0.0, 4.0, 13.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed surface"),
+    );
 
     let cylinder_second =
         surface_second_partials(&SurfaceGeometry::Solved(cylinder.clone()), 0.0, 4.0)

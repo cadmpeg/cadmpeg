@@ -1376,7 +1376,7 @@ fn common_generated_surface_axis(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => None,
             SurfaceGeometry::Procedural { .. } => None,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { .. }) => None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
         })
         .collect::<Vec<_>>();

@@ -5826,7 +5826,7 @@ fn native_embedded_surface(
                 "source-less F3D embedded polygonal support surfaces are unsupported".into(),
             ));
         }
-        SolvedSurfaceGeometry::Transformed { .. } => {
+        SolvedSurfaceGeometry::Transformed(_) => {
             return Err(CodecError::NotImplemented(
                 "source-less F3D embedded transformed support surfaces are unsupported".into(),
             ));
@@ -6307,7 +6307,7 @@ fn native_embedded_surface_with_bounds(
         | SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Unknown { .. }
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Transformed { .. },
+            | SolvedSurfaceGeometry::Transformed(_),
         ) => {
             return Err(CodecError::Malformed(
                 "support bounds require an embeddable analytic or spline support".into(),

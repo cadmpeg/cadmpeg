@@ -347,7 +347,7 @@ pub(super) fn try_decode_geometry(
                 SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Nurbs(_)
                     | SolvedSurfaceGeometry::Polygonal(_)
-                    | SolvedSurfaceGeometry::Transformed { .. }
+                    | SolvedSurfaceGeometry::Transformed(_)
                     | SolvedSurfaceGeometry::Unknown { .. },
                 )
                 | SurfaceGeometry::Procedural { .. } => {}

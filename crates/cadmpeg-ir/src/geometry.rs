@@ -120,12 +120,7 @@ pub enum SolvedSurfaceGeometry {
     /// Source-native polygonal surface with an explicit chordal error bound.
     Polygonal(PolygonalSurface),
     /// Exact affine placement of an inline basis surface.
-    Transformed {
-        /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<SolvedSurfaceGeometry>,
-        /// Affine map from basis coordinates to model coordinates.
-        transform: Transform,
-    },
+    Transformed(PlacedSurface),
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -146,30 +141,98 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
-    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
-    /// placements.
+    /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
-    /// The walk is iterative, so it answers a chain of any depth without
-    /// recursing. A consumer that recurses on `basis` is bounded by calling
-    /// this first; a producer that adds one placement is bounded by calling it
-    /// on the carrier it built.
+    /// [`PlacedSurface`] stores its own depth, so this reads one field and
+    /// building a chain costs one addition per placement.
     #[must_use]
-    pub fn nesting_within_bound(&self) -> bool {
-        let mut current = self;
-        for _ in 0..MAX_GEOMETRY_NESTING {
-            match current {
-                Self::Transformed { basis, .. } => current = basis,
-                Self::Plane(_)
-                | Self::Cylinder(_)
-                | Self::Cone(_)
-                | Self::Sphere(_)
-                | Self::Torus(_)
-                | Self::Nurbs(_)
-                | Self::Polygonal(_)
-                | Self::Unknown { .. } => return true,
-            }
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Plane(_)
+            | Self::Cylinder(_)
+            | Self::Cone(_)
+            | Self::Sphere(_)
+            | Self::Torus(_)
+            | Self::Nurbs(_)
+            | Self::Polygonal(_)
+            | Self::Unknown { .. } => 0,
         }
-        !matches!(current, Self::Transformed { .. })
+    }
+}
+
+/// Exact affine placement of an inline basis surface.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`SolvedSurfaceGeometry`] value nests past
+/// the bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedSurfaceWire")]
+pub struct PlacedSurface {
+    basis: Box<SolvedSurfaceGeometry>,
+    transform: Transform,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedSurfaceWire {
+    /// Unplaced basis geometry with unchanged parameterization.
+    basis: Box<SolvedSurfaceGeometry>,
+    /// Affine map from basis coordinates to model coordinates.
+    transform: Transform,
+}
+
+impl PlacedSurface {
+    /// Place a basis surface, refusing a chain past [`MAX_GEOMETRY_NESTING`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<SolvedSurfaceGeometry>,
+        transform: Transform,
+    ) -> Result<Self, &'static str> {
+        let Some(depth) = basis
+            .nesting_depth()
+            .checked_add(1)
+            .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+        else {
+            return Err("PlacedSurface.basis nests past the admitted inline basis depth");
+        };
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &SolvedSurfaceGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Replace the transform. The basis chain, and so the depth, is unchanged.
+    pub const fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+}
+
+impl TryFrom<PlacedSurfaceWire> for PlacedSurface {
+    type Error = &'static str;
+    fn try_from(wire: PlacedSurfaceWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
     }
 }
 
