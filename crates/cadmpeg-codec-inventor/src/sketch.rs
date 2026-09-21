@@ -1605,7 +1605,17 @@ fn line_carrier_matches(
         return false;
     };
     let parallel_error = (unit.x * span.y - unit.y * span.x).abs();
+    if parallel_error > EPS_SKETCH_LINE_CARRIER_MATCHES_E10 {
+        return false;
+    }
     let from_origin = Vector3::new(start[0] - origin[0], start[1] - origin[1], 0.0);
+    if !from_origin.x.is_finite() || !from_origin.y.is_finite() {
+        return false;
+    }
+    let offset_scale = from_origin.x.abs().max(from_origin.y.abs());
+    if offset_scale == 0.0 {
+        return true;
+    }
     // Position agreement uses the finite segment scale, which stays unchanged
     // when the stored origin moves along the same infinite line.
     // Preserve the stored direction ratio when measuring position: rounding a
@@ -1620,12 +1630,27 @@ fn line_carrier_matches(
     else {
         return false;
     };
-    let right = dy * from_origin.x;
-    let determinant = dx.mul_add(from_origin.y, -right) - dy.mul_add(from_origin.x, -right);
-    let carrier_error = determinant.abs() / dx.hypot(dy);
-    parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
-        && carrier_error.is_finite()
-        && carrier_error / span_scale <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
+    // Scale position and span separately so a subnormal perpendicular offset
+    // survives the determinant and a distant origin cannot overflow it.
+    let (Some(offset_exponent), Some(span_exponent)) = (
+        cadmpeg_ir::math::power_of_two_bound(offset_scale),
+        cadmpeg_ir::math::power_of_two_bound(span_scale),
+    ) else {
+        return false;
+    };
+    let [Some(x), Some(y)] = [from_origin.x, from_origin.y]
+        .map(|value| cadmpeg_ir::math::scale_power_of_two(value, -offset_exponent))
+    else {
+        return false;
+    };
+    let Some(scaled_span) = cadmpeg_ir::math::scale_power_of_two(span_scale, -span_exponent) else {
+        return false;
+    };
+    let right = dy * x;
+    let determinant = dx.mul_add(y, -right) - dy.mul_add(x, -right);
+    let carrier_error = determinant.abs() / dx.hypot(dy) / scaled_span;
+    cadmpeg_ir::math::scale_power_of_two(carrier_error, offset_exponent - span_exponent)
+        .is_some_and(|error| error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10)
 }
 
 fn resolve_point(
