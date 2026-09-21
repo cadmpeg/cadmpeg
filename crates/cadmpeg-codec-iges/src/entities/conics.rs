@@ -236,15 +236,15 @@ pub(super) fn project(
             && *coeff_c != 0.0
             && coeff_a.is_sign_positive() == coeff_c.is_sign_positive()
         {
-            let radius_x = if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
+            let radius_x = if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
+                0.0
+            } else {
                 coeff_f.abs().sqrt() / coeff_a.abs().sqrt()
-            } else {
-                0.0
             };
-            let radius_y = if coeff_f.is_sign_positive() != coeff_c.is_sign_positive() {
-                coeff_f.abs().sqrt() / coeff_c.abs().sqrt()
-            } else {
+            let radius_y = if coeff_f.is_sign_positive() == coeff_c.is_sign_positive() {
                 0.0
+            } else {
+                coeff_f.abs().sqrt() / coeff_c.abs().sqrt()
             };
             if radius_x <= 0.0 || radius_y <= 0.0 {
                 None
@@ -300,19 +300,19 @@ pub(super) fn project(
             && coeff_a.is_sign_positive() != coeff_c.is_sign_positive()
         {
             let (major, minor, major_radius, minor_radius) =
-                if coeff_f.is_sign_positive() != coeff_a.is_sign_positive() {
-                    (
-                        basis_x,
-                        basis_y,
-                        coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
-                        coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
-                    )
-                } else {
+                if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
                     (
                         basis_y,
                         basis_x.scale(-1.0),
                         coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
                         coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+                    )
+                } else {
+                    (
+                        basis_x,
+                        basis_y,
+                        coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
+                        coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
                     )
                 };
             if major_radius <= 0.0 || minor_radius <= 0.0 {
