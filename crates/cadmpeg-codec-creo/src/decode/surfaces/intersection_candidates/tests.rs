@@ -166,7 +166,7 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
                     1.,
                     std::f64::consts::FRAC_PI_4,
                 )
-                .unwrap(),
+                .expect("valid finite regression fixture"),
             )
         };
         let plane = |x| {
@@ -196,7 +196,10 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
         );
         let cones = super::coaxial_cones_section_candidates(cone(r), cone(2. * r));
         assert_eq!(cones.len(), 1);
-        let circle = cones[0].0.solved().unwrap();
+        let circle = cones[0]
+            .0
+            .solved()
+            .expect("valid finite regression fixture");
         let cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle) = circle else {
             panic!("circle")
         };
@@ -218,4 +221,31 @@ fn numerical_followup_carrier_candidates_follow_geometry_scale() {
         assert!(super::coaxial_sphere_torus_circle_candidates(sphere, torus(0.)).is_empty());
         assert!(super::coaxial_tori_circle_candidates(torus(0.), torus(5. * r)).is_empty());
     }
+}
+
+#[test]
+fn numerical_followup_zero_radius_cone_retains_rotated_apex_plane() {
+    use crate::decode::analytic::equations::{CarrierEquation, ConeEquation, PlaneEquation};
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.; 3],
+            [0., 0., 1.],
+            [1., 0., 0.],
+            0.,
+            1.,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("apex cone"),
+    );
+    let plane = |offset| {
+        CarrierEquation::Plane(PlaneEquation {
+            origin: [-4. + offset, 3., 0.],
+            normal: [0.6, 0.8, 0.],
+        })
+    };
+    assert_eq!(
+        super::apex_plane_cone_generator_candidates(plane(0.), cone).len(),
+        2
+    );
+    assert!(super::apex_plane_cone_generator_candidates(plane(0.001), cone).is_empty());
 }

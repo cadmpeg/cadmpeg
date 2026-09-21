@@ -1980,12 +1980,13 @@ mod tests {
         use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
         let mut geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: Point2::new(0., 0.),
-            axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
-            focal_length: Length::new(2.).unwrap(),
+            axis_angle: cadmpeg_ir::scalar::Angle::new(0.)
+                .expect("valid finite regression fixture"),
+            focal_length: Length::new(2.).expect("valid finite regression fixture"),
             bounds: Some([1., 2.]),
         })
-        .unwrap();
-        super::scale_sketch_geometry(&mut geometry, 10.).unwrap();
+        .expect("valid finite regression fixture");
+        super::scale_sketch_geometry(&mut geometry, 10.).expect("valid finite regression fixture");
         assert!(
             matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some([10.,20.]),focal_length,..} if focal_length.get()==20.)
         );

@@ -615,7 +615,7 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 Vector3::new(1., 0., 0.),
                 radius,
             )
-            .unwrap(),
+            .expect("valid finite regression fixture"),
         ));
         assert!(solve(
             small,
