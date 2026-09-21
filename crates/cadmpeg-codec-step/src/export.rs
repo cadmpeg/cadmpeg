@@ -2584,11 +2584,13 @@ impl<'a> Builder<'a> {
                 if !geometry::surface_is_supported(solved) {
                     return None;
                 }
+                // The basis is taken before the record is emitted: both refuse a
+                // carrier whose placements nest too deep, so the census cannot
+                // miss a record the writer put in the file.
+                let basis = geometry::emitted_basis(solved)?;
                 let reference = geometry::surface(&mut self.emitter, solved)?;
                 self.written_analytic_surfaces
-                    .push(WrittenAnalyticSurface::Carrier(geometry::emitted_basis(
-                        solved,
-                    )));
+                    .push(WrittenAnalyticSurface::Carrier(basis));
                 reference
             };
             Some(r)

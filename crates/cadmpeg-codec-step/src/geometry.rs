@@ -21,19 +21,58 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
-pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
-    match surface {
-        SolvedSurfaceGeometry::Transformed { basis, transform } => {
-            similarity_transform(transform) && surface_is_supported(basis)
+/// The number of nested affine placements the writer accepts over one basis
+/// carrier.
+///
+/// `SolvedSurfaceGeometry::Transformed`, `SolvedCurveGeometry::Transformed` and
+/// the three nesting `PcurveGeometry` variants hold their basis inline in a
+/// `Box`, so the nesting is whatever the decoded or built IR contains. Nothing
+/// in the IR bounds it. A carrier nested deeper than this is unwritable, and
+/// every reader of it here refuses instead of walking the chain.
+const MAX_PLACEMENT_NESTING: usize = 256;
+
+/// The affine placements over `surface`, outermost first, and the basis carrier
+/// under them.
+///
+/// The walk is iterative, so a chain of any depth is read without stack
+/// recursion. It yields nothing past [`MAX_PLACEMENT_NESTING`] placements:
+/// [`surface_is_supported`], [`surface`] and [`emitted_basis`] take their bound
+/// here, so a deeper chain is an unwritable carrier at every caller.
+fn placed_surface(
+    surface: &SolvedSurfaceGeometry,
+) -> Option<(Vec<&Transform>, &SolvedSurfaceGeometry)> {
+    let mut placements = Vec::new();
+    let mut geometry = surface;
+    while let SolvedSurfaceGeometry::Transformed { basis, transform } = geometry {
+        if placements.len() == MAX_PLACEMENT_NESTING {
+            return None;
         }
-        SolvedSurfaceGeometry::Plane(_)
-        | SolvedSurfaceGeometry::Cylinder(_)
-        | SolvedSurfaceGeometry::Cone(_)
-        | SolvedSurfaceGeometry::Sphere(_)
-        | SolvedSurfaceGeometry::Torus(_) => true,
-        SolvedSurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => false,
+        placements.push(transform);
+        geometry = basis;
     }
+    Some((placements, geometry))
+}
+
+pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
+    let Some((placements, basis)) = placed_surface(surface) else {
+        return false;
+    };
+    placements
+        .iter()
+        .all(|transform| similarity_transform(transform))
+        && match basis {
+            SolvedSurfaceGeometry::Plane(_)
+            | SolvedSurfaceGeometry::Cylinder(_)
+            | SolvedSurfaceGeometry::Cone(_)
+            | SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_) => true,
+            SolvedSurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
+            // `placed_surface` ends the walk at the first carrier that is not a
+            // placement, so the basis is never `Transformed`.
+            SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Polygonal(_)
+            | SolvedSurfaceGeometry::Unknown { .. } => false,
+        }
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
@@ -56,21 +95,46 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     ) || curve.solved().is_some_and(leaf_curve_is_supported)
 }
 
-fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
-    match curve {
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            similarity_transform(transform) && leaf_curve_is_supported(basis)
+/// The affine placements over `curve`, outermost first, and the basis carrier
+/// under them.
+///
+/// The walk is iterative and bounded exactly as [`placed_surface`] is:
+/// [`leaf_curve_is_supported`] and [`curve`] take their bound here.
+fn placed_curve(curve: &SolvedCurveGeometry) -> Option<(Vec<&Transform>, &SolvedCurveGeometry)> {
+    let mut placements = Vec::new();
+    let mut geometry = curve;
+    while let SolvedCurveGeometry::Transformed { basis, transform } = geometry {
+        if placements.len() == MAX_PLACEMENT_NESTING {
+            return None;
         }
-        SolvedCurveGeometry::Line(_)
-        | SolvedCurveGeometry::Circle(_)
-        | SolvedCurveGeometry::Ellipse(_)
-        | SolvedCurveGeometry::Parabola(_)
-        | SolvedCurveGeometry::Hyperbola(_)
-        | SolvedCurveGeometry::Degenerate(_)
-        | SolvedCurveGeometry::Nurbs(_)
-        | SolvedCurveGeometry::Polyline(_) => true,
-        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => false,
+        placements.push(transform);
+        geometry = basis;
     }
+    Some((placements, geometry))
+}
+
+fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
+    let Some((placements, basis)) = placed_curve(curve) else {
+        return false;
+    };
+    placements
+        .iter()
+        .all(|transform| similarity_transform(transform))
+        && match basis {
+            SolvedCurveGeometry::Line(_)
+            | SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_)
+            | SolvedCurveGeometry::Parabola(_)
+            | SolvedCurveGeometry::Hyperbola(_)
+            | SolvedCurveGeometry::Degenerate(_)
+            | SolvedCurveGeometry::Nurbs(_)
+            | SolvedCurveGeometry::Polyline(_) => true,
+            // `placed_curve` ends the walk at the first carrier that is not a
+            // placement, so the basis is never `Transformed`.
+            SolvedCurveGeometry::Transformed { .. }
+            | SolvedCurveGeometry::Composite { .. }
+            | SolvedCurveGeometry::Unknown { .. } => false,
+        }
 }
 
 fn similarity_transform(transform: &Transform) -> bool {
@@ -176,6 +240,18 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
 pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    pcurve_nested(e, geometry, 0)
+}
+
+/// Emit a parameter-space curve nested under `nesting` enclosing carriers.
+///
+/// `Transformed`, `Trimmed` and `Offset` each hold their basis inline in a
+/// `Box`, so this walk carries the bound the three of them share: past
+/// [`MAX_PLACEMENT_NESTING`] enclosing carriers the pcurve is unwritable.
+fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry, nesting: usize) -> Option<Ref> {
+    if nesting > MAX_PLACEMENT_NESTING {
+        return None;
+    }
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -273,7 +349,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             if !similarity_transform_2d(transform) {
                 return None;
             }
-            let basis = pcurve(e, basis)?;
+            let basis = pcurve_nested(e, basis, nesting + 1)?;
             let operator = transformation_operator_2d(e, *transform)?;
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
@@ -281,7 +357,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let parameter_range = trimmed_pcurve.parameter_range();
             let same_sense = trimmed_pcurve.same_sense();
             let basis = trimmed_pcurve.basis();
-            let basis = pcurve(e, basis)?;
+            let basis = pcurve_nested(e, basis, nesting + 1)?;
             let sense = if same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
@@ -295,7 +371,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let basis = pcurve(e, basis)?;
+            let basis = pcurve_nested(e, basis, nesting + 1)?;
             e.emit(
                 "OFFSET_CURVE_2D",
                 &format!("'',{basis},{},.F.", real(distance)),
@@ -372,23 +448,27 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 ///
 /// [`surface`] emits a `Transformed` carrier as a `SURFACE_REPLICA` over the
 /// record of its basis, so the radii and angles in the file are the basis's.
-/// The export census reads them here.
-pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry {
-    match g {
-        SolvedSurfaceGeometry::Transformed { basis, .. } => emitted_basis(basis),
-        SolvedSurfaceGeometry::Plane(_)
-        | SolvedSurfaceGeometry::Cylinder(_)
-        | SolvedSurfaceGeometry::Cone(_)
-        | SolvedSurfaceGeometry::Sphere(_)
-        | SolvedSurfaceGeometry::Torus(_)
-        | SolvedSurfaceGeometry::Nurbs(_)
-        | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Unknown { .. } => g,
-    }
+/// The export census reads them here. `None` for a carrier [`surface`] refuses
+/// because its placements nest past [`MAX_PLACEMENT_NESTING`].
+pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> Option<&SolvedSurfaceGeometry> {
+    placed_surface(g).map(|(_, basis)| basis)
 }
 
 /// Emit an analytic or NURBS surface carrier.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
+    let (placements, basis) = placed_surface(g)?;
+    let mut reference = basis_surface(e, basis)?;
+    // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
+    // references the record written for the placement inside it.
+    for transform in placements.iter().rev() {
+        let operator = transformation_operator(e, **transform);
+        reference = e.emit("SURFACE_REPLICA", &format!("'',{reference},{operator}"));
+    }
+    Some(reference)
+}
+
+/// Emit the basis carrier under a chain of affine placements.
+fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
@@ -455,19 +535,31 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
             )
         }
         SolvedSurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
-        SolvedSurfaceGeometry::Transformed { basis, transform } => {
-            let parent = surface(e, basis)?;
-            let operator = transformation_operator(e, *transform);
-            e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
-        }
         // These carrier families have no direct STEP representation; callers
         // report the omitted carrier instead of fabricating a placeholder.
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => return None,
+        // `placed_surface` ends the walk at the first carrier that is not a
+        // placement, so `Transformed` does not reach this function.
+        SolvedSurfaceGeometry::Transformed { .. }
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => return None,
     })
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
 pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
+    let (placements, basis) = placed_curve(g)?;
+    let mut reference = basis_curve(e, basis)?;
+    // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
+    // references the record written for the placement inside it.
+    for transform in placements.iter().rev() {
+        let operator = transformation_operator(e, **transform);
+        reference = e.emit("CURVE_REPLICA", &format!("'',{reference},{operator}"));
+    }
+    Some(reference)
+}
+
+/// Emit the basis carrier under a chain of affine placements.
+fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     Some(match g {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin().get();
@@ -532,12 +624,13 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
                 .join(",");
             e.emit("POLYLINE", &format!("'',({points})"))
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            let parent = curve(e, basis)?;
-            let operator = transformation_operator(e, *transform);
-            e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
-        }
-        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => return None,
+        // `placed_curve` ends the walk at the first carrier that is not a
+        // placement, so `Transformed` does not reach this function. A composite
+        // carrier is emitted from its child graph by the exporter, and an
+        // unknown carrier has no STEP record.
+        SolvedCurveGeometry::Transformed { .. }
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Unknown { .. } => return None,
     })
 }
 
