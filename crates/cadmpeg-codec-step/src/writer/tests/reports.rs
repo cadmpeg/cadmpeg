@@ -1664,6 +1664,41 @@ fn right_angle_cone_semi_angle_is_reported() {
     assert!(reports_cone_semi_angle_out_of_domain(&report));
 }
 
+#[test]
+fn a_surface_placement_chain_past_the_bound_is_reported_not_written() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let surface_id = ir.model.surfaces[0].id.clone();
+    let mut geometry = ir.model.surfaces[0]
+        .geometry
+        .solved()
+        .expect("the fixture surface is solved")
+        .clone();
+    // One placement past what the writer emits over a basis carrier.
+    for _ in 0..=256 {
+        geometry = SolvedSurfaceGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: replica_transform(),
+        };
+    }
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(geometry);
+
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode must not abort on a carrier nested past the writer's bound");
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+
+    assert!(!text.contains("SURFACE_REPLICA"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains(surface_id.as_str())
+    }));
+}
+
 /// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
 fn replica_transform() -> Transform {
     Transform::affine([

@@ -97,6 +97,106 @@ fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
         .any(|line| line.contains("DIRECTION('',(0.,0.,1.))")));
 }
 
+/// The deepest chain of affine placements the writer accepts over one basis
+/// carrier.
+const ACCEPTED_PLACEMENTS: usize = super::MAX_PLACEMENT_NESTING;
+
+fn placed_plane(placements: usize) -> cadmpeg_ir::geometry::SolvedSurfaceGeometry {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    let mut geometry = SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("a unit-axis plane"),
+    );
+    for _ in 0..placements {
+        geometry = SolvedSurfaceGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: Transform::identity(),
+        };
+    }
+    geometry
+}
+
+#[test]
+fn a_surface_placement_chain_past_the_bound_is_unwritable() {
+    use super::{emitted_basis, surface, surface_is_supported};
+
+    let accepted = placed_plane(ACCEPTED_PLACEMENTS);
+    assert!(surface_is_supported(&accepted));
+    assert!(emitted_basis(&accepted).is_some());
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(surface(&mut emitter, &accepted).is_some());
+
+    let refused = placed_plane(ACCEPTED_PLACEMENTS + 1);
+    assert!(!surface_is_supported(&refused));
+    assert!(emitted_basis(&refused).is_none());
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(surface(&mut emitter, &refused).is_none());
+    assert!(emitter.into_lines().is_empty());
+}
+
+fn placed_line(placements: usize) -> CurveGeometry {
+    let mut geometry = SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("a unit-direction line"),
+    );
+    for _ in 0..placements {
+        geometry = SolvedCurveGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: Transform::identity(),
+        };
+    }
+    CurveGeometry::Solved(geometry)
+}
+
+#[test]
+fn a_curve_placement_chain_past_the_bound_is_unwritable() {
+    let accepted = placed_line(ACCEPTED_PLACEMENTS);
+    assert!(curve_is_supported(&accepted));
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(curve(&mut emitter, accepted.solved().expect("solved carrier")).is_some());
+
+    let refused = placed_line(ACCEPTED_PLACEMENTS + 1);
+    assert!(!curve_is_supported(&refused));
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(curve(&mut emitter, refused.solved().expect("solved carrier")).is_none());
+    assert!(emitter.into_lines().is_empty());
+}
+
+fn placed_pcurve(placements: usize) -> cadmpeg_ir::geometry::pcurve::PcurveGeometry {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::transform::Transform2;
+    let mut geometry = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+            .expect("a unit-direction parameter-space line"),
+    );
+    for _ in 0..placements {
+        geometry = PcurveGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: Transform2::identity(),
+        };
+    }
+    geometry
+}
+
+#[test]
+fn a_pcurve_placement_chain_past_the_bound_is_unwritable() {
+    use super::pcurve;
+
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(pcurve(&mut emitter, &placed_pcurve(ACCEPTED_PLACEMENTS)).is_some());
+
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(pcurve(&mut emitter, &placed_pcurve(ACCEPTED_PLACEMENTS + 1)).is_none());
+}
+
 #[test]
 fn small_shears_are_not_similarities() {
     use super::{Transform, Transform2};
