@@ -3550,9 +3550,15 @@ fn bezier_levels(control: BezierSpan) -> [[Point3; 6]; 6] {
     for degree in 0..5 {
         for index in 0..(5 - degree) {
             levels[degree + 1][index] = Point3::new(
-                0.5 * (levels[degree][index].x + levels[degree][index + 1].x),
-                0.5 * (levels[degree][index].y + levels[degree][index + 1].y),
-                0.5 * (levels[degree][index].z + levels[degree][index + 1].z),
+                levels[degree][index]
+                    .x
+                    .midpoint(levels[degree][index + 1].x),
+                levels[degree][index]
+                    .y
+                    .midpoint(levels[degree][index + 1].y),
+                levels[degree][index]
+                    .z
+                    .midpoint(levels[degree][index + 1].z),
             );
         }
     }
@@ -3614,14 +3620,11 @@ fn collect_bezier_point_parameters(
         return;
     }
     let root_midpoint = midpoint(&control);
-    let mut best = (
-        0.5 * (range[0] + range[1]),
-        root_midpoint.distance_squared(point).sqrt(),
-    );
+    let mut best = (range[0].midpoint(range[1]), root_midpoint.distance(point));
     let first = control[0];
     let last = control[5];
     for (parameter, position) in [(range[0], first), (range[1], last)] {
-        let distance = position.distance_squared(point).sqrt();
+        let distance = position.distance(point);
         if distance < best.1 {
             best = (parameter, distance);
         }
@@ -3642,8 +3645,8 @@ fn collect_bezier_point_parameters(
         if node.depth >= 48 || node.range[1] - node.range[0] <= parameter_resolution {
             let position = midpoint(&node.control);
             let candidate = (
-                0.5 * (node.range[0] + node.range[1]),
-                position.distance_squared(point).sqrt(),
+                node.range[0].midpoint(node.range[1]),
+                position.distance(point),
             );
             if candidate.1 < best.1 {
                 best = candidate;
@@ -3654,7 +3657,7 @@ fn collect_bezier_point_parameters(
             continue;
         }
         let (left, right) = split_bezier_half(node.control);
-        let middle = 0.5 * (node.range[0] + node.range[1]);
+        let middle = node.range[0].midpoint(node.range[1]);
         let depth = node.depth + 1;
         for (control, range) in [
             (left, [node.range[0], middle]),
@@ -3665,10 +3668,7 @@ fn collect_bezier_point_parameters(
                 continue;
             }
             let position = midpoint(&control);
-            let candidate = (
-                0.5 * (range[0] + range[1]),
-                position.distance_squared(point).sqrt(),
-            );
+            let candidate = (range[0].midpoint(range[1]), position.distance(point));
             if candidate.1 < best.1 {
                 best = candidate;
             }
@@ -3708,15 +3708,15 @@ fn standard_limit_curve_point_parameter(
         .map(|control| {
             control
                 .windows(2)
-                .map(|pair| pair[0].distance_squared(pair[1]).sqrt())
+                .map(|pair| pair[0].distance(pair[1]))
                 .sum::<f64>()
         })
         .sum::<f64>();
     let parameter_tolerance = (4.0 * tolerance * parameter_span
         / control_polygon_length.max(tolerance))
-    .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span.max(1.0));
+    .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span);
     let parameter_resolution =
-        0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span.max(1.0));
+        0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span);
     let mut parameters = Vec::new();
     for (span, control_points) in curve.control_points().chunks_exact(6).enumerate() {
         let control: BezierSpan = std::array::from_fn(|index| control_points[index]);
@@ -9811,3 +9811,6 @@ mod circle_axis_tests {
         assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2));
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

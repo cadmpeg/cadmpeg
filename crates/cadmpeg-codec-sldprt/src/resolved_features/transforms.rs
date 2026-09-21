@@ -766,19 +766,20 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         } => {
             let mut loci = vec![locus(*center, SketchLocus::Center(entity.id().clone()))];
             let point = |parameter: f64| {
-                let x = major_radius.get() * parameter.cosh();
-                let y = minor_radius.get() * parameter.sinh();
-                Point2::new(
-                    center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
-                    center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),
-                )
+                let (_, x) = cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)?;
+                let (y, _) = cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.get(), parameter)?;
+                let (sine, cosine) = major_angle.get().sin_cos();
+                let point = Point2::new(
+                    center.u + x * cosine - y * sine,
+                    center.v + x * sine + y * cosine,
+                );
+                point.is_finite().then_some(point)
             };
             if let Some([start, end]) = bounds {
-                loci.push(locus(
-                    point(*start),
-                    SketchLocus::Start(entity.id().clone()),
-                ));
-                loci.push(locus(point(*end), SketchLocus::End(entity.id().clone())));
+                if let (Some(start), Some(end)) = (point(*start), point(*end)) {
+                    loci.push(locus(start, SketchLocus::Start(entity.id().clone())));
+                    loci.push(locus(end, SketchLocus::End(entity.id().clone())));
+                }
             }
             loci
         }
@@ -909,3 +910,6 @@ fn marker_entities_inner(
 
 #[cfg(test)]
 pub(in crate::resolved_features) mod tests;
+
+#[cfg(test)]
+mod numerical_range_tests;

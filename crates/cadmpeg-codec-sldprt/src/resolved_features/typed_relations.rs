@@ -918,8 +918,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
 fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
     match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some(Point2::new(
-            (start.u + end.u) * 0.5,
-            (start.v + end.v) * 0.5,
+            start.u.midpoint(end.u),
+            start.v.midpoint(end.v),
         )),
         SketchGeometryDefinition::Arc {
             center,
@@ -1043,11 +1043,23 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let sine = major_angle.get().sin();
             let du = point.u - center.u;
             let dv = point.v - center.v;
-            let x = du * cosine + dv * sine;
-            let y = -du * sine + dv * cosine;
-            let parameter = (y / minor_radius.get()).asinh();
-            let on_curve = (x - major_radius.get() * parameter.cosh()).abs()
-                <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            let x = du.mul_add(cosine, dv * sine);
+            let y = (-du).mul_add(sine, dv * cosine);
+            if !x.is_finite() || !y.is_finite() {
+                return false;
+            }
+            let ratio = y / minor_radius.get();
+            let parameter = if ratio.is_finite() {
+                ratio.asinh()
+            } else {
+                (y.abs().ln() - minor_radius.get().ln() + std::f64::consts::LN_2).copysign(y)
+            };
+            let Some((_, expected_x)) =
+                cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)
+            else {
+                return false;
+            };
+            let on_curve = (x - expected_x).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
                     ((*start).min(*end) - SKETCH_POINT_TOLERANCE
@@ -2593,3 +2605,6 @@ pub(super) fn legacy_terminal_indexed_profile_line(
 
 #[cfg(test)]
 mod typed_relations_tests;
+
+#[cfg(test)]
+mod numerical_range_tests;
