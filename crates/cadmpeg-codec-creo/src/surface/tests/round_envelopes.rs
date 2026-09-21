@@ -6,6 +6,7 @@ use crate::surface::{
     decode_complete_directrix_interval_cylinder_frame, parameter_records, PositionalCylinderFrame,
     SurfaceBodyBoundary, SurfaceParameterRecord, Type24RoundEdgeEnvelope,
 };
+use cadmpeg_ir::scalar::PositiveLength;
 
 #[test]
 fn decodes_structurally_delimited_type24_round_edge_envelope() {
@@ -185,7 +186,9 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 4.5);
-    assert!((frame.length.expect("required invariant") - 6.872_998_848_194_527).abs() < 1.0e-12);
+    assert!(
+        (frame.length.expect("required invariant").get() - 6.872_998_848_194_527).abs() < 1.0e-12
+    );
 
     let control_terminated_body = [
         24, 45, 53, 164, 168, 193, 84, 201, 135, 18, 45, 59, 164, 168, 193, 84, 201, 135, 72, 51,
@@ -207,7 +210,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert!((frame.radius - 5.0).abs() < 1.0e-12);
-    assert!((frame.length.expect("required invariant") - 21.643_2).abs() < 1.0e-12);
+    assert!((frame.length.expect("required invariant").get() - 21.643_2).abs() < 1.0e-12);
 
     let mut ambiguous = record.clone();
     ambiguous.scalar_frames[1].slots[6].value = Some(-102.837_702_082_688_25);
@@ -238,7 +241,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 0.1).abs() < 1.0e-12);
-    assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
+    assert!((frame.length.expect("required invariant").get() - 6.4).abs() < 1.0e-12);
 
     let nine_slot_body = [
         0x18, 0x18, 0x18, 0x48, 0x24, 0x00, 0x2e, 0x1f, 0xff, 0x2f, 0x14, 0x00, 0x48, 0x22, 0x00,
@@ -260,7 +263,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 0.5);
-    assert_eq!(frame.length, Some(40.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(40.0));
 
     let single_diameter_body = [
         0x18, 0x2f, 0x00, 0x00, 0x48, 0x68, 0x10, 0x48, 0x14, 0x00, 0x2f, 0x3b, 0x80, 0x48, 0x64,
@@ -280,7 +283,9 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     );
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
-    assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1.0e-12);
+    assert!(
+        (frame.length.expect("bounded carrier").get() - 31.25_f64.sqrt() * 5.0).abs() < 1.0e-12
+    );
 
     let collision_body = [
         0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x0f, 0x0f, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00, 0x00,
@@ -339,7 +344,7 @@ fn decodes_negative_a7_repeated_diameter_round_envelope() {
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert!((frame.radius - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
-    assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
+    assert!((frame.length.expect("required invariant").get() - length).abs() < 1.0e-12);
     assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
     assert!((frame.frame().axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
     assert_eq!(frame.frame().axis()[2], 0.0);
@@ -369,7 +374,7 @@ fn decodes_prefixed_repeated_diameter_round_envelope() {
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert!((frame.radius - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
-    assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
+    assert!((frame.length.expect("required invariant").get() - length).abs() < 1.0e-12);
     assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
     assert!((frame.frame().axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
     assert_eq!(frame.frame().axis()[2], 0.0);
@@ -409,7 +414,7 @@ fn decodes_held_coordinate_type24_round_envelope() {
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
     assert_eq!(base_record.type24_round_radius(), Some(1.0));
 
     let replay_body = [

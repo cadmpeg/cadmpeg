@@ -770,7 +770,7 @@ fn unique_support_tangent_cylinder_frame(
             stored.frame().axis(),
             stored.frame().ref_direction(),
             stored.radius(),
-            stored.length(),
+            stored.length().map(cadmpeg_ir::scalar::PositiveLength::get),
         ) else {
             continue;
         };

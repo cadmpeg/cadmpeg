@@ -1,6 +1,7 @@
 mod chamfer;
 
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::scalar::PositiveLength;
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
@@ -428,7 +429,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 0.5);
-    assert_eq!(frame.length(), Some(2.0));
+    assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
     assert!(super::round_support_envelope_cylinder(
         &scan,
         &ir,

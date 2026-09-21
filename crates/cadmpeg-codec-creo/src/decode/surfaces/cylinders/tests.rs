@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use super::{unique_support_tangent_cylinder_frame, unique_tangent_axial_interval_corner_frame};
 use crate::decode::analytic::equations::PlaneEquation;
@@ -645,7 +646,7 @@ fn round_edge_support_frame_selects_one_offset_line() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 0.2);
-    assert_eq!(frame.length(), Some(5.0));
+    assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
 #[test]
@@ -677,7 +678,7 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
         .all(|(actual, expected)| (actual - expected).abs() < EPS_TEST_GEOMETRY));
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert!((frame.radius() - 0.2).abs() < EPS_TEST_GEOMETRY);
-    assert_eq!(frame.length(), Some(5.0));
+    assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
 #[test]
