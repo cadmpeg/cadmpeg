@@ -45,12 +45,10 @@ pub(super) fn embedded_image_asset(
 }
 
 /// Decode image scopes in their owning streams, ordered by native identity.
-// Callers pass a temporary image-kind selector for this decode operation.
-#[allow(clippy::needless_pass_by_value)]
 pub(super) fn decode_scoped_images<T>(
     scan: &ContainerScan,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
-    kind: crate::records::feature::scope::DesignFeatureKind,
+    kind: &crate::records::feature::scope::DesignFeatureKind,
     mut parse: impl FnMut(
         &[u8],
         &str,
@@ -70,7 +68,7 @@ pub(super) fn decode_scoped_images<T>(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind() == kind
+                    scope.kind().as_str() == kind.as_str()
                         && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse(bytes, &entry.name, scope)),

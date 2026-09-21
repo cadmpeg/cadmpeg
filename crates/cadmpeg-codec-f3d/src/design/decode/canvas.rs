@@ -30,7 +30,7 @@ pub(crate) fn decode_canvas_images(
     super::image::decode_scoped_images(
         scan,
         scopes,
-        crate::records::feature::scope::DesignFeatureKind::Canvas,
+        &crate::records::feature::scope::DesignFeatureKind::Canvas,
         parse_canvas_image,
         |image| image.id.as_str(),
     )

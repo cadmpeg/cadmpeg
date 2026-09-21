@@ -906,13 +906,12 @@ fn camera_field<const N: usize>(
     })
 }
 
+#[derive(Clone, Copy)]
 enum PrimitiveStyle {
     Line(Option<f64>),
     Point(Option<f64>),
 }
 
-// Callers construct this small style value only for this transfer.
-#[allow(clippy::needless_pass_by_value)]
 fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,

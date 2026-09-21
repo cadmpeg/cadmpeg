@@ -95,8 +95,6 @@ fn endpoint_agrees_with_coefficient_carrier(
     distance == 0.0 || distance < resolution
 }
 
-// Opposite coefficient signs directly express a positive squared radius.
-#[allow(clippy::if_not_else)]
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -254,10 +252,10 @@ pub(super) fn project(
                 let radius_x = radius_x * factor * scale_x;
                 let radius_y = radius_y * factor * scale_y;
                 let (major_direction, minor_direction, major_radius, minor_radius) =
-                    if radius_x >= radius_y {
-                        (basis_x, basis_y, radius_x, radius_y)
-                    } else {
+                    if radius_x < radius_y {
                         (basis_y, basis_x.scale(-1.0), radius_y, radius_x)
+                    } else {
+                        (basis_x, basis_y, radius_x, radius_y)
                     };
                 let parameter = |point: Point3| {
                     let delta = point.vector_from(plane_origin);
