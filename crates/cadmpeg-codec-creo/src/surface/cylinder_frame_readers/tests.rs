@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::scalar;
-use crate::surface::decode_selector_corner_interval_cylinder_frame;
-use crate::surface::decode_type24_axial_interval_corner_candidates;
+use crate::surface::cylinder_frame_readers::{
+    decode_selector_corner_interval_cylinder_frame, decode_type24_axial_interval_corner_candidates,
+};
 use crate::surface::parameter_records;
 use crate::surface::PositionalCylinderFrame;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceParameterRecord;
 use cadmpeg_ir::scalar::PositiveLength;
+
+mod positional;
+
 #[test]
 fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
     let mut body = vec![0x18];

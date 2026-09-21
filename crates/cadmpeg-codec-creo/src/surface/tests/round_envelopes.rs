@@ -2,9 +2,10 @@
 
 use super::EPS_FRAME_COMPONENT;
 use crate::scalar;
+use crate::surface::cylinder_frame_readers::decode_complete_directrix_interval_cylinder_frame;
 use crate::surface::{
-    decode_complete_directrix_interval_cylinder_frame, parameter_records, PositionalCylinderFrame,
-    SurfaceBodyBoundary, SurfaceParameterRecord, Type24RoundEdgeEnvelope,
+    parameter_records, PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord,
+    Type24RoundEdgeEnvelope,
 };
 use cadmpeg_ir::scalar::PositiveLength;
 
