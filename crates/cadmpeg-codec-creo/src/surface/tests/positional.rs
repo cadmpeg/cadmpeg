@@ -206,8 +206,44 @@ fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
 
     assert!(PositionalCylinderFrame::new(
         valid.frame().origin(),
+        [0.0, 0.0, f64::NAN],
+        valid.frame().ref_direction(),
+        valid.radius,
+        valid.length
+    )
+    .is_none());
+
+    assert!(PositionalCylinderFrame::new(
+        valid.frame().origin(),
+        [0.0, 0.0, f64::INFINITY],
+        valid.frame().ref_direction(),
+        valid.radius,
+        valid.length
+    )
+    .is_none());
+
+    assert!(PositionalCylinderFrame::new(
+        valid.frame().origin(),
         valid.frame().axis(),
         [0.0, 1.0, 1.0],
+        valid.radius,
+        valid.length
+    )
+    .is_none());
+
+    assert!(PositionalCylinderFrame::new(
+        valid.frame().origin(),
+        valid.frame().axis(),
+        [f64::NAN, 0.0, 0.0],
+        valid.radius,
+        valid.length
+    )
+    .is_none());
+
+    assert!(PositionalCylinderFrame::new(
+        valid.frame().origin(),
+        valid.frame().axis(),
+        [f64::NEG_INFINITY, 0.0, 0.0],
         valid.radius,
         valid.length
     )

@@ -33,7 +33,12 @@ const EPS_AXIS_COMPONENT_NONZERO: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
 
-fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
+/// Whether two directions are a unit-length orthogonal pair.
+///
+/// This is the crate's one statement of that condition. A non-finite component makes the norm
+/// `NaN` or `+inf` and the dot product `NaN` or `+-inf`, and both comparisons below are false on
+/// those values, so the pair carries its own finiteness admission.
+pub(crate) fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
     let norm = |vector: [f64; 3]| {
         vector
             .into_iter()
@@ -48,10 +53,7 @@ fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -
         .zip(ref_direction)
         .map(|(axis, reference)| axis * reference)
         .sum::<f64>();
-    axis_norm.is_finite()
-        && ref_norm.is_finite()
-        && dot.is_finite()
-        && (axis_norm - 1.0).abs() <= EPS_FRAME_UNIT
+    (axis_norm - 1.0).abs() <= EPS_FRAME_UNIT
         && (ref_norm - 1.0).abs() <= EPS_FRAME_UNIT
         && dot.abs() <= EPS_FRAME_ORTHOGONAL
 }
@@ -150,24 +152,6 @@ impl BoundaryType {
             Self::CodeF6 => 0xf6,
         }
     }
-}
-
-pub(crate) fn valid_right_handed_frame(first: [f64; 3], second: [f64; 3], third: [f64; 3]) -> bool {
-    let cross = [
-        first[1] * second[2] - first[2] * second[1],
-        first[2] * second[0] - first[0] * second[2],
-        first[0] * second[1] - first[1] * second[0],
-    ];
-    let handedness = cross
-        .into_iter()
-        .zip(third)
-        .map(|(left, right)| left * right)
-        .sum::<f64>();
-    valid_orthonormal_frame_directions(third, first)
-        && valid_orthonormal_frame_directions(third, second)
-        && valid_orthonormal_frame_directions(first, second)
-        && handedness.is_finite()
-        && (handedness - 1.0).abs() <= EPS_FRAME_ORTHOGONAL
 }
 
 /// One `srf_array` row whose fixed prefix passed the row grammar.
@@ -769,12 +753,13 @@ pub(crate) struct PositionalFrame {
 }
 
 impl PositionalFrame {
+    /// Admits a finite origin and a unit-length orthogonal direction pair.
+    ///
+    /// The origin carries its own finiteness check because no other condition reads it.
+    /// [`valid_orthonormal_frame_directions`] refuses a non-finite axis or ref direction
+    /// through the unit-length and orthogonality comparisons.
     fn new(origin: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Option<Self> {
-        (origin
-            .into_iter()
-            .chain(axis)
-            .chain(ref_direction)
-            .all(f64::is_finite)
+        (origin.into_iter().all(f64::is_finite)
             && valid_orthonormal_frame_directions(axis, ref_direction))
         .then_some(Self {
             origin,
@@ -820,7 +805,13 @@ pub(crate) struct PositionalCylinderFrame {
     frame: PositionalFrame,
     /// Cylinder radius.
     radius: f64,
-    /// Positive distance between axial ends when the body stores an extent.
+    /// Distance between the axial ends, finite and greater than zero.
+    ///
+    /// `None` states a file condition and not a decode gap: the body either carries no axial
+    /// extent field, or carries an axial span that its own nonzero tolerance refuses. A reader
+    /// that needs an extent takes one from the surrounding feature or states no geometry; it
+    /// does not re-decide the sign or the finiteness of a stated one, which
+    /// [`PositionalCylinderFrame::new`] owns.
     length: Option<f64>,
 }
 
