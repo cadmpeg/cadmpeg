@@ -85,11 +85,9 @@ impl NurbsPoles3 {
         })
     }
 
-    /// Number of poles.
+    /// Count poles.
     #[must_use]
-    // Curve admission consumes pole counts; no caller needs an emptiness accessor.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> usize {
         match self {
             Self::Polynomial { points } => points.len(),
             Self::Rational { points } => points.len(),
@@ -883,7 +881,7 @@ impl NurbsCurve {
         poles: NurbsPoles3,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
         poles.require_finite_points()?;
         require_nondecreasing_knots(&knots)?;
         Ok(Self {
@@ -946,7 +944,7 @@ impl NurbsCurve {
 
     /// Number of poles.
     pub fn pole_count(&self) -> usize {
-        self.poles.len()
+        self.poles.count()
     }
 
     /// Atomically edit pole positions and preserve finite coordinates.

@@ -2014,9 +2014,9 @@ fn known_body_count(selection: &BodySelection) -> Option<usize> {
             Some(bodies.len())
         }
         BodySelection::Local { bodies, .. } => Some(bodies.len()),
-        BodySelection::ResolvedSet { members } => Some(members.len()),
+        BodySelection::ResolvedSet { members } => Some(members.count()),
         BodySelection::Historical { bodies, .. } => Some(bodies.len()),
-        BodySelection::HistoricalSet { members, .. } => Some(members.len()),
+        BodySelection::HistoricalSet { members, .. } => Some(members.count()),
         BodySelection::Generated { bodies, .. } => Some(bodies.len()),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
     }
@@ -6155,12 +6155,15 @@ impl<B> BodyMembers<B> {
         Ok(Self(rows))
     }
 
-    /// Number of paired selection rows.
+    /// Count paired selection rows.
     #[must_use]
-    // Construction and deserialization reject empty selections.
-    #[allow(clippy::len_without_is_empty)]
-    pub const fn len(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.0.len()
+    }
+
+    /// Iterate over paired selection rows in source order.
+    pub fn iter(&self) -> std::slice::Iter<'_, BodyMember<B>> {
+        self.0.iter()
     }
 
     /// Borrow the body identities in source order.
@@ -6169,14 +6172,12 @@ impl<B> BodyMembers<B> {
     }
 }
 
-// Callers use borrowed iteration; a separate `iter` accessor has no callers.
-#[allow(clippy::into_iter_without_iter)]
 impl<'a, B> IntoIterator for &'a BodyMembers<B> {
     type Item = &'a BodyMember<B>;
     type IntoIter = std::slice::Iter<'a, BodyMember<B>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.iter()
     }
 }
 
