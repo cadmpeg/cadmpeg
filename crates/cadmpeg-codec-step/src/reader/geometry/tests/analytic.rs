@@ -636,6 +636,33 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 }
 
 #[test]
+fn conical_surface_accepts_a_negative_semi_angle() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,5.,-0.7155849933176748);
+#6=GEOMETRIC_SET('',(#5));
+#7=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#6),#8);
+#8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    assert!(result.ir().model.surfaces.iter().any(|surface| {
+        matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
+        if {
+            let axis = *cone_surface.axis();
+            cone_surface.half_angle().get() == -0.715_584_993_317_674_8
+                && cone_surface.radius().get() == 5.0
+                && (axis.x, axis.y, axis.z) == (0.0, 0.0, 1.0)
+        })
+    }));
+    assert!(result.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("CONICAL_SURFACE #5 has invalid geometry")));
+}
+
+#[test]
 fn complex_geometry_instances_decode_named_partials() {
     let source =
         String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
