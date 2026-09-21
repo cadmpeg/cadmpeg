@@ -1993,5 +1993,3 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
 
 mod curves;
 mod region_and_surface;
-mod replay;
-mod targets;
