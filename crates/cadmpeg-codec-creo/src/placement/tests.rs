@@ -13,7 +13,7 @@ use crate::CreoCodec;
 use super::{
     definition_local_plane_equation, generated_cylinder_section_transform,
     generated_planar_section_transform, plane_equation, resolve, unique_complete_local_system,
-    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_FRAME_AGREEMENT,
+    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -1472,7 +1472,7 @@ fn section_frame_derives_normal_from_rotated_axes() {
 
 #[test]
 fn section_frame_preserves_reconstructed_frame_tolerance() {
-    let u_axis = [(1.0 + EPS_FRAME_AGREEMENT * 0.5).sqrt(), 0.0, 0.0];
+    let u_axis = [(1.0 + EPS_PLACEMENT_GEOMETRY * 0.5).sqrt(), 0.0, 0.0];
     assert!(FeatureSectionTransform::new(1, None, [0.0; 3], u_axis, [0.0, 1.0, 0.0], 0).is_some());
     assert!(FeatureSectionTransform::new(
         1,
@@ -1483,4 +1483,24 @@ fn section_frame_preserves_reconstructed_frame_tolerance() {
         0
     )
     .is_none());
+}
+
+#[test]
+fn section_frame_refuses_a_non_finite_origin_or_axis() {
+    let u_axis = [1.0, 0.0, 0.0];
+    let v_axis = [0.0, 1.0, 0.0];
+    for component in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0, component, 0.0], u_axis, v_axis, 0)
+                .is_none()
+        );
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0; 3], [component, 0.0, 0.0], v_axis, 0)
+                .is_none()
+        );
+        assert!(
+            FeatureSectionTransform::new(1, None, [0.0; 3], u_axis, [0.0, component, 0.0], 0)
+                .is_none()
+        );
+    }
 }
