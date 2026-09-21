@@ -769,6 +769,9 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let v_count = surface.v_count();
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    if u_degree == 0 || v_degree == 0 {
+        return None;
+    }
     let grid = surface.control_grid();
     let point = |u: usize, v: usize| grid[u][v];
     let difference = |end: Point3, start: Point3| {
@@ -2634,6 +2637,33 @@ mod tests {
             assert!((bounds.u - 1.).abs() <= 16. * f64::EPSILON);
             assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
             assert_eq!([bounds.uu, bounds.uv, bounds.vv], [0., 0., 0.]);
+        }
+    }
+
+    #[test]
+    fn audit_regression_translation_normal_rejects_constant_parameter_axes() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+        for degrees in [[0, 0], [0, 1], [1, 0]] {
+            let axes = degrees.map(|degree| {
+                let knots = if degree == 0 {
+                    vec![0., 1.]
+                } else {
+                    vec![0., 0., 1., 1.]
+                };
+                NurbsSurfaceAxis::new(degree, knots, false)
+            });
+            let points = (0..=degrees[0])
+                .map(|u| {
+                    (0..=degrees[1])
+                        .map(|v| Point3::new(f64::from(u), f64::from(v), 0.))
+                        .collect()
+                })
+                .collect();
+            let [u, v] = axes;
+            let surface =
+                NurbsSurface::from_lanes(u, v, NurbsSurfaceLanes::new(points, None), false)
+                    .expect("a degree-zero axis can contain a single pole");
+            assert!(super::translation_net_normal(&surface).is_none());
         }
     }
 }
