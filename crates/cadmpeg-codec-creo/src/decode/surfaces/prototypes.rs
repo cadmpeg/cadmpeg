@@ -328,9 +328,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(origin[0], origin[1], origin[2]),
-                        Vector3::new(axis[0], axis[1], axis[2]),
-                        Vector3::new(reference[0], reference[1], reference[2]),
+                        Point3::from(origin),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                     ) {
                         Ok(payload) => payload,
                         Err(_) => continue,
@@ -348,9 +348,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        Point3::new(origin[0], origin[1], origin[2]),
-                        Vector3::new(axis[0], axis[1], axis[2]),
-                        Vector3::new(reference[0], reference[1], reference[2]),
+                        Point3::from(origin),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                         radius,
                     ) {
                         Ok(payload) => payload,
@@ -362,9 +362,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
-                let point = Point3::new(origin[0], origin[1], origin[2]);
-                let axis = Vector3::new(axis[0], axis[1], axis[2]);
-                let reference = Vector3::new(reference[0], reference[1], reference[2]);
+                let point = Point3::from(origin);
+                let axis = Vector3::from(axis);
+                let reference = Vector3::from(reference);
                 let prototype_radii = match (
                     prototype_scalar(record, "radius1")
                         .filter(|radius| radius.is_finite() && *radius >= 0.0),

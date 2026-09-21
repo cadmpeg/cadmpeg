@@ -1064,8 +1064,8 @@ fn linear_pcurve_carrier(
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(first[0], first[1], first[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(first),
+                    Vector3::from(direction),
                 )
                 .ok()?,
             )))
@@ -1093,8 +1093,8 @@ fn linear_pcurve_carrier(
             let direction = normalize([axis.x, axis.y, axis.z])?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(point[0], point[1], point[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(point),
+                    Vector3::from(direction),
                 )
                 .ok()?,
             )))
@@ -1122,8 +1122,8 @@ fn linear_pcurve_carrier(
             let direction = normalize(std::array::from_fn(|axis| second[axis] - first[axis]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(first[0], first[1], first[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(first),
+                    Vector3::from(direction),
                 )
                 .ok()?,
             )))
@@ -1161,7 +1161,7 @@ fn linear_pcurve_carrier(
                     [axis.x, axis.y, axis.z],
                     [ref_direction.x, ref_direction.y, ref_direction.z],
                 );
-                let transverse = Vector3::new(transverse[0], transverse[1], transverse[2]);
+                let transverse = Vector3::from(transverse);
                 let (major_direction, major_radius, minor_radius) = if first_radius > second_radius
                 {
                     (
@@ -1223,8 +1223,7 @@ fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
-            let frame =
-                OrthonormalFrame3::new(Vector3::new(normal[0], normal[1], normal[2]), radial)?;
+            let frame = OrthonormalFrame3::new(Vector3::from(normal), radial)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     sphere_surface.center(),
@@ -1272,8 +1271,7 @@ fn linear_pcurve_carrier(
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
             let center = FinitePoint3::new(offset_point(center, radial, major_radius))?;
-            let frame =
-                OrthonormalFrame3::new(Vector3::new(normal[0], normal[1], normal[2]), radial)?;
+            let frame = OrthonormalFrame3::new(Vector3::from(normal), radial)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, minor_radius),
             )))

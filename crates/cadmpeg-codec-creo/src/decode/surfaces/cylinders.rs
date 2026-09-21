@@ -224,13 +224,9 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         };
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(cylinder.origin[0], cylinder.origin[1], cylinder.origin[2]),
-            Vector3::new(cylinder.axis[0], cylinder.axis[1], cylinder.axis[2]),
-            Vector3::new(
-                cylinder.ref_direction[0],
-                cylinder.ref_direction[1],
-                cylinder.ref_direction[2],
-            ),
+            Point3::from(cylinder.origin),
+            Vector3::from(cylinder.axis),
+            Vector3::from(cylinder.ref_direction),
             cylinder.radius,
         ) else {
             continue;
@@ -464,10 +460,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         let Some(plane) = reconciled_model_plane(&local_planes, ir, plane_id) else {
             continue;
         };
-        let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        let normal = Vector3::from(plane.normal);
         let plane_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                Point3::from(plane.origin),
                 normal,
                 cadmpeg_ir::geometry::derive_reference_direction(normal),
             ) {
@@ -1536,9 +1532,9 @@ pub(in super::super) fn transfer_cross_section_planes(
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(origin[0], origin[1], origin[2]),
-            Vector3::new(normal[0], normal[1], normal[2]),
-            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            Point3::from(origin),
+            Vector3::from(normal),
+            Vector3::from(u_axis),
         ) else {
             continue;
         };
@@ -1580,9 +1576,9 @@ pub(in super::super) fn transfer_cross_section_planes(
             continue;
         }
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-            Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-            Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
+            Point3::from(plane.origin),
+            Vector3::from(plane.normal),
+            Vector3::from(plane.u_axis),
         ) else {
             continue;
         };

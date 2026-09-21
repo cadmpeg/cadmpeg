@@ -315,8 +315,8 @@ fn conic_conic_intersections(first: &CurveGeometry, second: &CurveGeometry) -> V
             return Vec::new();
         };
         let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(origin[0], origin[1], origin[2]),
-            Vector3::new(direction[0], direction[1], direction[2]),
+            Point3::from(origin),
+            Vector3::from(direction),
         ) else {
             return Vec::new();
         };

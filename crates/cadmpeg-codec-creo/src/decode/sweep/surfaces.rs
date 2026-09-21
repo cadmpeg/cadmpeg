@@ -67,8 +67,8 @@ pub(in super::super) fn revolved_section_surface(
         let radial = std::array::from_fn(|index| point[index] - on_axis[index]);
         (on_axis, radial)
     };
-    let vector = |values: [f64; 3]| Vector3::new(values[0], values[1], values[2]);
-    let point = |values: [f64; 3]| Point3::new(values[0], values[1], values[2]);
+    let vector = |values: [f64; 3]| Vector3::from(values);
+    let point = |values: [f64; 3]| Point3::from(values);
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             let start = section_point_in_model(transform, [start.u, start.v]);
@@ -183,8 +183,8 @@ pub(in super::super) fn placed_section_geometry_curve(
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(start[0], start[1], start[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(start),
+                    Vector3::from(direction),
                 )
                 .ok()?,
             )))
@@ -198,8 +198,8 @@ pub(in super::super) fn placed_section_geometry_curve(
             ])?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(origin),
+                    Vector3::from(direction),
                 )
                 .ok()?,
             )))
@@ -209,17 +209,9 @@ pub(in super::super) fn placed_section_geometry_curve(
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(center[0], center[1], center[2]),
-                    Vector3::new(
-                        transform.normal()[0],
-                        transform.normal()[1],
-                        transform.normal()[2],
-                    ),
-                    Vector3::new(
-                        transform.u_axis()[0],
-                        transform.u_axis()[1],
-                        transform.u_axis()[2],
-                    ),
+                    Point3::from(center),
+                    Vector3::from(transform.normal()),
+                    Vector3::from(transform.u_axis()),
                     radius.get(),
                 )
                 .ok()?,
@@ -495,9 +487,9 @@ pub(in super::super) fn revolved_section_circle(
     (radius > EPS_RADIUS_NONZERO * scale).then_some(())?;
     let reference = radial.map(|component| component / radius);
     Some(RevolvedSectionCircle {
-        center: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis_direction[0], axis_direction[1], axis_direction[2]),
-        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+        center: Point3::from(center),
+        axis: Vector3::from(axis_direction),
+        ref_direction: Vector3::from(reference),
         radius,
     })
 }
@@ -510,8 +502,8 @@ pub(in super::super) fn extruded_section_line(
     let origin = section_point_in_model(transform, point);
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(origin[0], origin[1], origin[2]),
-            Vector3::new(direction[0], direction[1], direction[2]),
+            Point3::from(origin),
+            Vector3::from(direction),
         )
         .ok()?,
     )))
@@ -847,7 +839,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                     curve_id,
                     Some([lower_knot, upper_knot]),
-                    Vector3::new(sweep[0], sweep[1], sweep[2]),
+                    Vector3::from(sweep),
                     None,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )

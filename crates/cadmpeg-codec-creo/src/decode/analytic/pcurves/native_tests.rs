@@ -32,8 +32,8 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                    Vector3::from(normal),
+                    Vector3::from(u_axis),
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
@@ -197,7 +197,7 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
 
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(a[0], a[1], a[2]),
+            Point3::from(a),
             Vector3::new(0.0, 1.0, 0.0),
         )
         .expect("valid LineCurve fixture"),

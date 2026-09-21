@@ -632,8 +632,8 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Point3::from(origin),
+                    Vector3::from(normal),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .expect("valid PlaneSurface fixture"),
@@ -930,8 +930,8 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Point3::from(origin),
+                    Vector3::from(normal),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .expect("valid PlaneSurface fixture"),
@@ -1009,8 +1009,8 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Point3::from(origin),
+                    Vector3::from(normal),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .expect("valid PlaneSurface fixture"),
@@ -1092,8 +1092,8 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(origin[0], origin[1], origin[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
+                    Point3::from(origin),
+                    Vector3::from(normal),
                     Vector3::new(0.0, 0.0, 1.0),
                 )
                 .expect("valid PlaneSurface fixture"),

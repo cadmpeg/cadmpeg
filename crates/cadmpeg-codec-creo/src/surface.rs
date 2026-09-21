@@ -797,19 +797,15 @@ impl PositionalFrame {
 
     /// Returns the origin as the geometry point the carrier constructors take.
     pub(crate) fn origin_point(&self) -> Point3 {
-        Point3::new(self.origin[0], self.origin[1], self.origin[2])
+        Point3::from(self.origin)
     }
     /// Returns the axis as the geometry vector the carrier constructors take.
     pub(crate) fn axis_vector(&self) -> Vector3 {
-        Vector3::new(self.axis[0], self.axis[1], self.axis[2])
+        Vector3::from(self.axis)
     }
     /// Returns the ref direction as the geometry vector the carrier constructors take.
     pub(crate) fn ref_direction_vector(&self) -> Vector3 {
-        Vector3::new(
-            self.ref_direction[0],
-            self.ref_direction[1],
-            self.ref_direction[2],
-        )
+        Vector3::from(self.ref_direction)
     }
 }
 

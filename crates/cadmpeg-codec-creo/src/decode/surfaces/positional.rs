@@ -103,7 +103,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 continue;
             }
             let Ok(sphere_surface) = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(center[0], center[1], center[2]),
+                Point3::from(center),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 radius,
@@ -324,23 +324,15 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             record.surface_id,
         );
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(
-                frame.directrix[0][0],
-                frame.directrix[0][1],
-                frame.directrix[0][2],
-            ),
-            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            Point3::from(frame.directrix[0]),
+            Vector3::from(u_axis),
         ) else {
             continue;
         };
         let Ok(plane_surface) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(
-                frame.directrix[0][0],
-                frame.directrix[0][1],
-                frame.directrix[0][2],
-            ),
-            Vector3::new(normal[0], normal[1], normal[2]),
-            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            Point3::from(frame.directrix[0]),
+            Vector3::from(normal),
+            Vector3::from(u_axis),
         ) else {
             continue;
         };
@@ -411,7 +403,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 curve_id,
                 None,
-                Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
+                Vector3::from(frame.direction),
                 None,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
@@ -625,7 +617,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 curve_id,
                 Some([0.0, 1.0]),
-                Vector3::new(sweep[0], sweep[1], sweep[2]),
+                Vector3::from(sweep),
                 None,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )

@@ -245,16 +245,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                             transform.origin()[1] + offset * transform.normal()[1],
                             transform.origin()[2] + offset * transform.normal()[2],
                         ),
-                        Vector3::new(
-                            transform.normal()[0],
-                            transform.normal()[1],
-                            transform.normal()[2],
-                        ),
-                        Vector3::new(
-                            transform.u_axis()[0],
-                            transform.u_axis()[1],
-                            transform.u_axis()[2],
-                        ),
+                        Vector3::from(transform.normal()),
+                        Vector3::from(transform.u_axis()),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )),
@@ -269,16 +261,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                             center[1] + offset * transform.normal()[1],
                             center[2] + offset * transform.normal()[2],
                         ),
-                        Vector3::new(
-                            transform.normal()[0],
-                            transform.normal()[1],
-                            transform.normal()[2],
-                        ),
-                        Vector3::new(
-                            transform.u_axis()[0],
-                            transform.u_axis()[1],
-                            transform.u_axis()[2],
-                        ),
+                        Vector3::from(transform.normal()),
+                        Vector3::from(transform.u_axis()),
                         radius,
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -374,17 +358,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             id: side_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(center[0], center[1], center[2]),
-                    Vector3::new(
-                        transform.normal()[0],
-                        transform.normal()[1],
-                        transform.normal()[2],
-                    ),
-                    Vector3::new(
-                        transform.u_axis()[0],
-                        transform.u_axis()[1],
-                        transform.u_axis()[2],
-                    ),
+                    Point3::from(center),
+                    Vector3::from(transform.normal()),
+                    Vector3::from(transform.u_axis()),
                     radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,

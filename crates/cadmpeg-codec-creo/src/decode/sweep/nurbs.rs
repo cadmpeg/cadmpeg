@@ -46,9 +46,9 @@ pub(in super::super) fn extruded_geometry_surface(
             let normal = normalize(cross(line, transform.normal()))?;
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(start[0], start[1], start[2]),
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    Vector3::new(line[0], line[1], line[2]),
+                    Point3::from(start),
+                    Vector3::from(normal),
+                    Vector3::from(line),
                 )
                 .ok()?,
             )))
@@ -58,17 +58,9 @@ pub(in super::super) fn extruded_geometry_surface(
             let center = section_point_in_model(transform, [center.u, center.v]);
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(center[0], center[1], center[2]),
-                    Vector3::new(
-                        transform.normal()[0],
-                        transform.normal()[1],
-                        transform.normal()[2],
-                    ),
-                    Vector3::new(
-                        transform.u_axis()[0],
-                        transform.u_axis()[1],
-                        transform.u_axis()[2],
-                    ),
+                    Point3::from(center),
+                    Vector3::from(transform.normal()),
+                    Vector3::from(transform.u_axis()),
                     radius.get(),
                 )
                 .ok()?,
@@ -241,10 +233,7 @@ pub(in super::super) fn saved_spline_nurbs(
     let tangents = spline.endpoint_tangents.as_ref()?.value;
     let (knots, control_points) =
         interpolation_curve_data(&spline.interpolation_points, parameters, tangents)?;
-    let control_points = control_points
-        .into_iter()
-        .map(|point| Point3::new(point[0], point[1], point[2]))
-        .collect();
+    let control_points = control_points.into_iter().map(Point3::from).collect();
     match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
         Ok(curve) => Some(curve),
         Err(error) => {
@@ -398,11 +387,7 @@ pub(in super::super) fn interpolation_spline_surface(
             [v_derivative_controls[0][u], v_derivative_controls[1][u]],
         )?;
         v_knots.get_or_insert(knots);
-        control_points.extend(
-            controls
-                .into_iter()
-                .map(|point| Point3::new(point[0], point[1], point[2])),
-        );
+        control_points.extend(controls.into_iter().map(Point3::from));
     }
 
     match NurbsSurface::from_lanes(
@@ -436,7 +421,7 @@ pub(in super::super) fn placed_section_nurbs(
     placed
         .edit_control_points(|point| {
             let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
-            *point = Point3::new(model[0], model[1], model[2]);
+            *point = Point3::from(model);
             Ok(())
         })
         .ok()?;
@@ -867,7 +852,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
                     placed[*sweep_axis] = first[*sweep_axis];
                 }
             }
-            Point3::new(placed[0], placed[1], placed[2])
+            Point3::from(placed)
         })
         .collect();
     let mut sweep = [0.0; 3];

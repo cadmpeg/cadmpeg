@@ -49,14 +49,8 @@ pub(in super::super) fn resolved_revolution_axis(
             let end = section_point_in_model(transform, *end);
             let direction = normalize(std::array::from_fn(|axis| end[axis] - start[axis]))?;
             Some(RevolutionAxis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                    start[0], start[1], start[2],
-                ))?,
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    direction[0],
-                    direction[1],
-                    direction[2],
-                ))?,
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(start))?,
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
                 reference: None,
             })
         })
@@ -192,14 +186,8 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     Some(RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-            origin[0], origin[1], origin[2],
-        ))?,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-            direction[0],
-            direction[1],
-            direction[2],
-        ))?,
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
         reference: None,
     })
 }

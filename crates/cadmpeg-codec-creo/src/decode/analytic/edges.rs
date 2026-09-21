@@ -28,8 +28,8 @@ pub(in crate::decode) fn orient_line_edge_carrier(
     let length = dot(delta, delta).sqrt();
     let oriented = normalize(delta)?;
     *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-        Point3::new(points[0][0], points[0][1], points[0][2]),
-        Vector3::new(oriented[0], oriented[1], oriented[2]),
+        Point3::from(points[0]),
+        Vector3::from(oriented),
     )
     .ok()?;
     Some([0.0, length])
