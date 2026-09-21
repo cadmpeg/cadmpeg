@@ -4,6 +4,7 @@
 pub(crate) mod configuration_carriers;
 mod flex_history;
 mod helix_surfaces;
+mod nesting_bound;
 mod parameters_extrude;
 mod patterns_history;
 mod round_trip;

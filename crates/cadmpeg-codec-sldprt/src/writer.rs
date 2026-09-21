@@ -3642,7 +3642,23 @@ pub(super) fn curve_values(
     Ok(result)
 }
 
+/// Reference direction the compact carrier record states for `geometry`.
+///
+/// A chain that nests past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) is not
+/// walked, so the writer is bounded by the depth the IR admits. Both callers
+/// pass the same carrier to `surface_values`, which refuses every transformed
+/// surface, so a carrier past the bound leaves the file through
+/// `CodecError::NotImplemented` whatever direction this returns.
 pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
+    const DEFAULT_REFERENCE: cadmpeg_ir::math::Vector3 = cadmpeg_ir::math::Vector3 {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    if !geometry.nesting_within_bound() {
+        return DEFAULT_REFERENCE;
+    }
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let u_axis = plane_surface.u_axis();
@@ -3667,11 +3683,7 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
         SolvedSurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
         SolvedSurfaceGeometry::Nurbs(_)
         | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
-            x: 1.0,
-            y: 0.0,
-            z: 0.0,
-        },
+        | SolvedSurfaceGeometry::Unknown { .. } => DEFAULT_REFERENCE,
     }
 }
 

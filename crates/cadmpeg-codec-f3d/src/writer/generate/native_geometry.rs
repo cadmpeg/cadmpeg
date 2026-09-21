@@ -6735,10 +6735,22 @@ pub(super) fn native_ref_pcurve_companion(
     Ok(())
 }
 
+/// NURBS form the source-less writer states for `geometry` over `range`.
+///
+/// A pcurve that nests past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) is not
+/// walked. It takes the same route as every other pcurve family this writer
+/// does not write.
 fn native_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
+    if !geometry.nesting_within_bound() {
+        return Err(CodecError::NotImplemented(
+            "F3D writing of a pcurve nesting past the admitted basis depth is not implemented"
+                .into(),
+        ));
+    }
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -7031,3 +7043,6 @@ mod null_law_token_tests {
 
 #[cfg(test)]
 mod law_tests;
+
+#[cfg(test)]
+mod pcurve_nesting_tests;
