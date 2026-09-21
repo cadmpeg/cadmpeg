@@ -196,19 +196,89 @@ fn placed_pcurve(placements: usize) -> PcurveGeometry {
 }
 
 #[test]
-fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
-    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
-    assert!(super::pcurve_parameter_domain(&accepted).is_some());
-
-    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-    assert!(super::pcurve_parameter_domain(&refused).is_none());
-}
-
-#[test]
 fn pcurve_bounded_domain_requirement_stops_at_the_admitted_nesting_depth() {
     let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
     assert!(super::pcurve_requires_bounded_domain(&accepted));
 
     let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
     assert!(!super::pcurve_requires_bounded_domain(&refused));
+}
+
+fn trimmed_over_the_nurbs_leaf() -> PcurveGeometry {
+    PcurveGeometry::Trimmed(
+        crate::geometry::pcurve::TrimmedPcurve::try_new(
+            [0.25, 0.75],
+            true,
+            Box::new(nurbs_pcurve_leaf()),
+        )
+        .unwrap(),
+    )
+}
+
+fn offset_over_the_nurbs_leaf() -> PcurveGeometry {
+    PcurveGeometry::Offset(
+        crate::geometry::pcurve::OffsetPcurve::try_new(0.5, Box::new(nurbs_pcurve_leaf())).unwrap(),
+    )
+}
+
+/// A unit cube whose bottom coedge uses one nested pcurve over `range`.
+fn cube_with_one_coedge_pcurve(
+    geometry: PcurveGeometry,
+    range: [f64; 2],
+) -> crate::document::CadIr {
+    let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#nested").expect("valid identity");
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        id: id.clone(),
+        geometry,
+        metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+    });
+    let coedge = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| {
+            coedge.id.as_str().contains("bottom") && coedge.edge.as_str() == "synthetic:cube:edge#0"
+        })
+        .expect("bottom face uses edge #0");
+    coedge.pcurves = vec![crate::topology::PcurveUse {
+        pcurve: id,
+        isoparametric: None,
+        parameter_range: Some(crate::geometry::DirectedParameterRange::new(range).unwrap()),
+    }];
+    ir
+}
+
+fn coedge_pcurve_range_reported(ir: &crate::document::CadIr) -> bool {
+    validate_neutral(ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == Check::ParameterDomain
+                && finding.message.contains("coedge pcurve range")
+        })
+}
+
+#[test]
+fn a_coedge_range_outside_a_trimmed_pcurve_interval_is_out_of_domain() {
+    assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        trimmed_over_the_nurbs_leaf(),
+        [0.25, 0.75]
+    )));
+    assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        trimmed_over_the_nurbs_leaf(),
+        [0.0, 1.0]
+    )));
+}
+
+#[test]
+fn a_coedge_range_outside_an_offset_pcurve_basis_domain_is_out_of_domain() {
+    assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        offset_over_the_nurbs_leaf(),
+        [0.0, 1.0]
+    )));
+    assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        offset_over_the_nurbs_leaf(),
+        [0.0, 2.0]
+    )));
 }
