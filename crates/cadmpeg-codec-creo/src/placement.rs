@@ -14,7 +14,7 @@ use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
-use crate::vecmath::{add, cross, dot, normalize, scale};
+use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale};
 use std::collections::BTreeSet;
 
 const EPS_PLACEMENT_GEOMETRY: f64 = 1.0e-9;
@@ -590,10 +590,8 @@ fn plane_equation(
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
-    let values = unique_complete_local_system(definition)?;
-    let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
+    let [.., raw_normal, origin] = local_system_lanes(unique_complete_local_system(definition)?);
     let normal = normalize(raw_normal)?;
-    let origin: [f64; 3] = values[9..12].try_into().ok()?;
     Some(SignedPlaneEquation {
         normal,
         offset: dot(normal, origin),
@@ -662,12 +660,12 @@ fn definition_local_frame_transform(
     section: &crate::feature::definitions::FeatureSection3d,
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.identity.owner_feature_id()?;
-    let values = unique_complete_local_system(definition)?;
-    let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
-    let raw_normal = normalize(values[6..9].try_into().ok()?)?;
+    let [stored_u_axis, _, stored_axis, origin] =
+        local_system_lanes(unique_complete_local_system(definition)?);
+    let mut u_axis = normalize(stored_u_axis)?;
+    let raw_normal = normalize(stored_axis)?;
     (dot(u_axis, raw_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
     let mut normal = raw_normal;
-    let origin: [f64; 3] = values[9..12].try_into().ok()?;
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         normal = scale(normal, -1.0);
     }
