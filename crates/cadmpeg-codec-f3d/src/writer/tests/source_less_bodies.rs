@@ -91,6 +91,20 @@ fn generated_source_less_rejects_translucent_direct_color() {
 }
 
 #[test]
+fn generated_source_less_rejects_empty_display_name_as_not_implemented() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.bodies[0].name = Some(String::new());
+
+    let error = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("display name"))
+    );
+}
+
+#[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
     use crate::records::{
         recipes::CreationTimestamp,

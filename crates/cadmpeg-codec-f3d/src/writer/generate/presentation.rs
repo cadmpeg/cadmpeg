@@ -41,13 +41,13 @@ impl TryFrom<&SegmentType> for GeneratedDesignType {
                 .as_str()
                 .to_owned()
                 .try_into()
-                .map_err(CodecError::Malformed)?,
+                .map_err(CodecError::NotImplemented)?,
             base_type_guid: value
                 .base_type_guid
                 .value()
                 .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
                 .transpose()
-                .map_err(CodecError::Malformed)?,
+                .map_err(CodecError::NotImplemented)?,
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
@@ -121,7 +121,7 @@ impl GeneratedDesignRegistry {
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key,
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
+                    |_| CodecError::NotImplemented("source-less ASM body key is negative".into()),
                 )?,
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
@@ -170,7 +170,7 @@ impl GeneratedDesignRegistry {
                 .unwrap_or(0)
                 .checked_add(1)
                 .ok_or_else(|| {
-                    CodecError::Malformed("F3D Design record index space is full".into())
+                    CodecError::NotImplemented("F3D Design record index space is full".into())
                 })?
         };
 
@@ -246,15 +246,15 @@ impl GeneratedDesignRegistry {
 
 fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {
     while used.contains(next) {
-        *next = next
-            .checked_add(1)
-            .ok_or_else(|| CodecError::Malformed("F3D Design record index space is full".into()))?;
+        *next = next.checked_add(1).ok_or_else(|| {
+            CodecError::NotImplemented("F3D Design record index space is full".into())
+        })?;
     }
     let allocated = *next;
     used.insert(allocated);
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::Malformed("F3D Design record index space is full".into()))?;
+    *next = next.checked_add(1).ok_or_else(|| {
+        CodecError::NotImplemented("F3D Design record index space is full".into())
+    })?;
     Ok(allocated)
 }
 

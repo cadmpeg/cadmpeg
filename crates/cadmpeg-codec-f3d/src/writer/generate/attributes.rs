@@ -1203,7 +1203,7 @@ fn native_name_attribute(
     owner: i64,
 ) -> Result<(), CodecError> {
     if name.is_empty() {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "source-less F3D display name must not be empty".into(),
         ));
     }
