@@ -36,8 +36,8 @@ enum ShapePayloadForm {
 }
 
 /// One exact-shape property bound to its side entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ShapePayloadRecordWire", into = "ShapePayloadRecordWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ShapePayloadRecordWire")]
 pub(crate) struct ShapePayloadRecord {
     /// Stable payload identity.
     pub(crate) id: String,
@@ -549,7 +549,7 @@ fn validate_location_ref(location: LocationRef, length: usize, label: &str) -> R
     validate_optional_index(location.index(), length, label)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ShapePayloadRecordWire {
     id: String,
     property: String,
@@ -559,7 +559,7 @@ struct ShapePayloadRecordWire {
     binary: Option<BinaryFactsWire>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct TextFactsWire {
     topology_version: u8,
     section_counts: BTreeMap<String, usize>,
@@ -575,7 +575,7 @@ struct TextFactsWire {
     roots: Vec<TextShapeUse>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct BinaryFactsWire {
     topology_version: u8,
     locations: Vec<TextLocation>,
@@ -589,19 +589,83 @@ struct BinaryFactsWire {
     roots: Vec<TextShapeUse>,
 }
 
-impl From<(ShapeSet, BinaryTopologyVersion)> for BinaryFactsWire {
-    fn from((value, version): (ShapeSet, BinaryTopologyVersion)) -> Self {
+/// The retained wire shape, borrowed from the record it states.
+///
+/// Reading owns the tables it builds; writing needs no copy of them. The text
+/// form states two censuses beside its tables, and they are derived, so only
+/// they are owned here.
+#[derive(Serialize)]
+struct ShapePayloadRecordOut<'a> {
+    id: &'a str,
+    property: &'a str,
+    entry: &'a str,
+    form: ShapePayloadForm,
+    text: Option<TextFactsOut<'a>>,
+    binary: Option<BinaryFactsOut<'a>>,
+}
+
+#[derive(Serialize)]
+struct TextFactsOut<'a> {
+    topology_version: u8,
+    section_counts: BTreeMap<String, usize>,
+    shape_types: BTreeMap<String, usize>,
+    locations: &'a [TextLocation],
+    curve2ds: &'a [TextCurve2d],
+    curves: &'a [TextCurve],
+    surfaces: &'a [TextSurface],
+    polygons3d: &'a [TextPolygon3d],
+    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    triangulations: &'a [TextTriangulation],
+    tshapes: &'a TextTShapes,
+    roots: &'a [TextShapeUse],
+}
+
+#[derive(Serialize)]
+struct BinaryFactsOut<'a> {
+    topology_version: u8,
+    locations: &'a [TextLocation],
+    curve2ds: &'a [TextCurve2d],
+    curves: &'a [TextCurve],
+    polygons3d: &'a [TextPolygon3d],
+    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    surfaces: &'a [TextSurface],
+    triangulations: &'a [TextTriangulation],
+    tshapes: &'a TextTShapes,
+    roots: &'a [TextShapeUse],
+}
+
+impl<'a> BinaryFactsOut<'a> {
+    fn new(facts: &'a ShapeSet, version: BinaryTopologyVersion) -> Self {
         Self {
             topology_version: version.number(),
-            locations: value.locations,
-            curve2ds: value.curve2ds,
-            curves: value.curves,
-            polygons3d: value.polygons3d,
-            polygons_on_triangulations: value.polygons_on_triangulations,
-            surfaces: value.surfaces,
-            triangulations: value.triangulations,
-            tshapes: value.tshapes,
-            roots: value.roots,
+            locations: &facts.locations,
+            curve2ds: &facts.curve2ds,
+            curves: &facts.curves,
+            polygons3d: &facts.polygons3d,
+            polygons_on_triangulations: &facts.polygons_on_triangulations,
+            surfaces: &facts.surfaces,
+            triangulations: &facts.triangulations,
+            tshapes: &facts.tshapes,
+            roots: &facts.roots,
+        }
+    }
+}
+
+impl<'a> TextFactsOut<'a> {
+    fn new(facts: &'a ShapeSet, version: TextTopologyVersion) -> Self {
+        Self {
+            topology_version: version.number(),
+            section_counts: facts.section_counts(),
+            shape_types: facts.shape_type_counts(),
+            locations: &facts.locations,
+            curve2ds: &facts.curve2ds,
+            curves: &facts.curves,
+            surfaces: &facts.surfaces,
+            polygons3d: &facts.polygons3d,
+            polygons_on_triangulations: &facts.polygons_on_triangulations,
+            triangulations: &facts.triangulations,
+            tshapes: &facts.tshapes,
+            roots: &facts.roots,
         }
     }
 }
@@ -626,41 +690,26 @@ impl TryFrom<BinaryFactsWire> for ShapeSet {
     }
 }
 
-impl From<ShapePayloadRecord> for ShapePayloadRecordWire {
-    fn from(value: ShapePayloadRecord) -> Self {
-        let form = value.payload.form();
-        let (text, binary) = match value.payload {
+impl Serialize for ShapePayloadRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (text, binary) = match &self.payload {
             ShapePayload::Empty => (None, None),
             ShapePayload::Text { facts, version } => {
-                let section_counts = facts.section_counts();
-                (
-                    Some(TextFactsWire {
-                        topology_version: version.number(),
-                        section_counts,
-                        shape_types: facts.shape_type_counts(),
-                        locations: facts.locations,
-                        curve2ds: facts.curve2ds,
-                        curves: facts.curves,
-                        surfaces: facts.surfaces,
-                        polygons3d: facts.polygons3d,
-                        polygons_on_triangulations: facts.polygons_on_triangulations,
-                        triangulations: facts.triangulations,
-                        tshapes: facts.tshapes,
-                        roots: facts.roots,
-                    }),
-                    None,
-                )
+                (Some(TextFactsOut::new(facts, *version)), None)
             }
-            ShapePayload::Binary { facts, version } => (None, Some((facts, version).into())),
+            ShapePayload::Binary { facts, version } => {
+                (None, Some(BinaryFactsOut::new(facts, *version)))
+            }
         };
-        Self {
-            id: value.id,
-            property: value.property,
-            entry: value.entry,
-            form,
+        ShapePayloadRecordOut {
+            id: &self.id,
+            property: &self.property,
+            entry: &self.entry,
+            form: self.payload.form(),
             text,
             binary,
         }
+        .serialize(serializer)
     }
 }
 
