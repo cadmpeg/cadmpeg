@@ -326,11 +326,20 @@ pub(super) fn spun_nurbs(
                 (radius, pole_weight)
             };
             let (sin, cos) = angle.sin_cos();
-            control.push(Point3::new(
-                center.x + scale * (cos * x_hat[0] + sin * y_hat[0]),
-                center.y + scale * (cos * x_hat[1] + sin * y_hat[1]),
-                center.z + scale * (cos * x_hat[2] + sin * y_hat[2]),
-            ));
+            let mut coordinates = [center.x, center.y, center.z];
+            for (coordinate, (x, y)) in coordinates.iter_mut().zip(x_hat.into_iter().zip(y_hat)) {
+                let component = cos * x + sin * y;
+                let offset = if scale.is_finite() {
+                    scale * component
+                } else {
+                    cadmpeg_ir::math::product_quotient(
+                        [radius, std::f64::consts::SQRT_2, component],
+                        [1.0],
+                    )?
+                };
+                *coordinate += offset;
+            }
+            control.push(Point3::new(coordinates[0], coordinates[1], coordinates[2]));
             weights.push(weight);
         }
     }
@@ -724,27 +733,29 @@ mod tests {
     }
     #[test]
     fn audit_regression_spun_profile_retains_large_finite_radius() {
-        let profile = NurbsCurve::from_lanes(
-            1,
-            vec![0., 0., 1., 1.],
-            vec![Point3::new(1e200, 0., 0.), Point3::new(1e200, 0., 1.)],
-            None,
-            false,
-        )
-        .unwrap();
-        let surface = super::spun_nurbs(
-            &profile,
-            Point3::new(0., 0., 0.),
-            Vector3::new(0., 0., 1.),
-            &"audit",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .unwrap();
-        assert!(surface
-            .control_grid()
-            .iter()
-            .flatten()
-            .all(Point3::is_finite));
-        assert_eq!(surface.control_grid()[0][0], Point3::new(1e200, 0., 0.));
+        for radius in [1e200, 1.6e308] {
+            let profile = NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(radius, 0., 0.), Point3::new(radius, 0., 1.)],
+                None,
+                false,
+            )
+            .unwrap();
+            let surface = super::spun_nurbs(
+                &profile,
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                &"audit",
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+            .unwrap();
+            assert!(surface
+                .control_grid()
+                .iter()
+                .flatten()
+                .all(Point3::is_finite));
+            assert_eq!(surface.control_grid()[0][0], Point3::new(radius, 0., 0.));
+        }
     }
 }
