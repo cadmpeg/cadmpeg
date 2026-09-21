@@ -223,3 +223,45 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     assert!((nested_point.v - 5.8).abs() < 1.0e-12);
     assert_eq!(pcurve_tangent(&nested, 0.5), None);
 }
+
+#[test]
+fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
+    // Degree 1 over two poles on [0, 1]: the knot interval is the declared
+    // domain and the curve is the segment (0, 0) to (1, 2).
+    let nurbs = PcurveGeometry::Nurbs {
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    let trimmed = PcurveGeometry::Trimmed(
+        crate::geometry::pcurve::TrimmedPcurve::try_new(
+            [0.25, 0.75],
+            true,
+            Box::new(nurbs.clone()),
+        )
+        .unwrap(),
+    );
+
+    // The bare NURBS extrapolates its end span on both sides of the knot
+    // interval, so out-of-domain is not a refusal anywhere in this evaluator.
+    assert_eq!(pcurve_uv(&nurbs, 0.5), Some(Point2::new(0.5, 1.0)));
+    assert_eq!(pcurve_uv(&nurbs, 2.0), Some(Point2::new(2.0, 4.0)));
+    assert_eq!(pcurve_uv(&nurbs, -1.0), Some(Point2::new(-1.0, -2.0)));
+    assert_eq!(pcurve_tangent(&nurbs, 2.0), Some(Point2::new(1.0, 2.0)));
+
+    // The trim declares [0.25, 0.75] and reparameterizes nothing, so it
+    // answers exactly what its basis answers at every parameter, inside the
+    // interval and outside it.
+    for parameter in [-1.0, 0.1, 0.25, 0.5, 0.75, 2.0] {
+        assert_eq!(pcurve_uv(&trimmed, parameter), pcurve_uv(&nurbs, parameter));
+        assert_eq!(
+            pcurve_tangent(&trimmed, parameter),
+            pcurve_tangent(&nurbs, parameter)
+        );
+    }
+}
