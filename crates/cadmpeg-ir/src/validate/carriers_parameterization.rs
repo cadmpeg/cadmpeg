@@ -13,6 +13,8 @@ use crate::report::{
     Severity,
 };
 
+use super::pcurve_parameter_domain;
+
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
@@ -999,26 +1001,6 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
     let scale = value.abs().max(lower.abs()).max(upper.abs()).max(1.0);
     let tolerance = scale * EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12;
     value >= lower - tolerance && value <= upper + tolerance
-}
-
-fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
-    match geometry {
-        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points().len(),
-        ),
-        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.poles().len(),
-        ),
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
-        _ => None,
-    }
 }
 
 fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {

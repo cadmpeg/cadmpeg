@@ -1122,18 +1122,6 @@ fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
 }
 
 #[test]
-fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
-    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, nurbs_pcurve_leaf());
-    assert!(pcurve_parameter_domain(&accepted).is_some());
-
-    let refused = placed_pcurve(
-        crate::geometry::MAX_GEOMETRY_NESTING + 1,
-        nurbs_pcurve_leaf(),
-    );
-    assert!(pcurve_parameter_domain(&refused).is_none());
-}
-
-#[test]
 fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     let trimmed = PcurveGeometry::Trimmed(
         crate::geometry::pcurve::TrimmedPcurve::try_new(

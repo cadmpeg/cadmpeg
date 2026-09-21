@@ -56,6 +56,59 @@ use topology::{
     check_topology_tolerances, check_wire_topology,
 };
 
+/// The parameter interval a pcurve carrier is defined on, when the carrier
+/// states one.
+///
+/// A nesting carrier states its own interval where it has one and otherwise
+/// reports its basis's: a trim is the interval the trimmed carrier exists on,
+/// and a placement and an offset both keep their basis's parameterization. An
+/// analytic carrier has no bounded domain. The match is exhaustive, so a new
+/// pcurve variant states its answer here rather than inheriting one.
+///
+/// Both the carrier-parameterization pass and the geometric-consistency pass
+/// ask this question of the same carrier, so they ask it of one function.
+/// `None` past [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING)
+/// enclosing carriers: the walk states no domain for a chain it refuses to
+/// follow.
+fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -> Option<[f64; 2]> {
+    use crate::geometry::pcurve::PcurveGeometry;
+
+    if !geometry.nesting_within_bound() {
+        return None;
+    }
+    match geometry {
+        PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.control_points().len(),
+        ),
+        PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
+            nurbs.degree(),
+            nurbs.knots(),
+            nurbs.poles().len(),
+        ),
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            let parameter_range = trimmed_pcurve.parameter_range();
+            if parameter_range[0] < parameter_range[1] {
+                Some(*parameter_range)
+            } else {
+                pcurve_parameter_domain(trimmed_pcurve.basis())
+            }
+        }
+        PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(offset_pcurve.basis()),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
+        PcurveGeometry::Line(_)
+        | PcurveGeometry::Circle(_)
+        | PcurveGeometry::Ellipse(_)
+        | PcurveGeometry::Harmonic(_)
+        | PcurveGeometry::Parabola(_)
+        | PcurveGeometry::Hyperbola(_)
+        | PcurveGeometry::Hyperbolic(_)
+        | PcurveGeometry::PolarHarmonic(_)
+        | PcurveGeometry::SphericalGreatCircle(_) => None,
+    }
+}
+
 /// Record an error finding of `check` against one entity.
 fn error_finding(findings: &mut Vec<Finding>, check: Check, entity: &str, message: &str) {
     findings.push(Finding {
@@ -180,15 +233,52 @@ pub fn validate_neutral_with_source_fidelity(
 
 #[cfg(test)]
 mod tests {
-    use super::validate_neutral;
+    use super::{pcurve_parameter_domain, validate_neutral};
     use crate::features::{
         ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
         FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SplitFaceTool,
     };
+    use crate::geometry::pcurve::PcurveGeometry;
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
     use std::collections::BTreeMap;
+
+    fn nurbs_pcurve_leaf() -> PcurveGeometry {
+        PcurveGeometry::Nurbs {
+            nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    crate::math::Point2::new(0.0, 0.0),
+                    crate::math::Point2::new(1.0, 1.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        }
+    }
+
+    fn placed_pcurve(placements: usize) -> PcurveGeometry {
+        let mut geometry = nurbs_pcurve_leaf();
+        for _ in 0..placements {
+            geometry = PcurveGeometry::Transformed {
+                basis: Box::new(geometry),
+                transform: crate::transform::Transform2::identity(),
+            };
+        }
+        geometry
+    }
+
+    #[test]
+    fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
+        let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
+        assert!(pcurve_parameter_domain(&accepted).is_some());
+
+        let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+        assert!(pcurve_parameter_domain(&refused).is_none());
+    }
 
     #[test]
     fn configuration_feature_sketch_resolves_against_model_sketches() {

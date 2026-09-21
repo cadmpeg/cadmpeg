@@ -21,6 +21,8 @@ use crate::topology::Sense;
 
 use crate::units::COINCIDENCE_TOLERANCE;
 
+use super::pcurve_parameter_domain;
+
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
 fn allowance(document_tolerance: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
@@ -959,45 +961,6 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::PolarHarmonic(_) => None,
         PcurveGeometry::PolarNurbs { .. } => None,
         PcurveGeometry::Nurbs { .. } => None,
-        PcurveGeometry::SphericalGreatCircle(_) => None,
-    }
-}
-
-fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
-    match geometry {
-        PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
-            nurbs.degree(),
-            nurbs.knots(),
-            nurbs.control_points().len(),
-        ),
-        PcurveGeometry::PolarNurbs { nurbs } => {
-            nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
-        }
-        PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let parameter_range = trimmed_pcurve.parameter_range();
-            let basis = trimmed_pcurve.basis();
-            if parameter_range[0] < parameter_range[1] {
-                Some(*parameter_range)
-            } else {
-                pcurve_parameter_domain(basis)
-            }
-        }
-        PcurveGeometry::Offset(offset_pcurve) => {
-            let basis = offset_pcurve.basis();
-            pcurve_parameter_domain(basis)
-        }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
-        PcurveGeometry::Line(_) => None,
-        PcurveGeometry::Circle(_) => None,
-        PcurveGeometry::Ellipse(_) => None,
-        PcurveGeometry::Harmonic(_) => None,
-        PcurveGeometry::Parabola(_) => None,
-        PcurveGeometry::Hyperbola(_) => None,
-        PcurveGeometry::Hyperbolic(_) => None,
-        PcurveGeometry::PolarHarmonic(_) => None,
         PcurveGeometry::SphericalGreatCircle(_) => None,
     }
 }
