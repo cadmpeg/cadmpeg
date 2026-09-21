@@ -430,7 +430,7 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
                 "TOROIDAL_SURFACE",
                 &format!(
                     "'',{pl},{},{}",
-                    real(major_radius.abs()),
+                    real(major_radius),
                     real(minor_radius.abs())
                 ),
             )
