@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::*;
+use super::{saved_section_arc_carrier, section_arc_geometry, BTreeMap};
 use crate::feature::definitions::{FeatureSegment, FeatureSegmentKind};
 #[test]
 fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
@@ -27,7 +27,10 @@ fn numerical_ranges_section_arc_radius_agreement_has_no_length_floor() {
 
 #[test]
 fn numerical_ranges_saved_section_arc_rejects_different_tiny_radii() {
-    use crate::feature::definitions::*;
+    use crate::feature::definitions::{
+        DefinitionIdentity, FeatureDefinition, FeatureOrderRow, FeatureOrderTable, FeatureSavedArc,
+        FeatureSavedEntity, FeatureSavedSection,
+    };
     let segment = FeatureSegment {
         kind: FeatureSegmentKind::Arc([1, 2]),
         directions: [None; 3],

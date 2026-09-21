@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS boundary regressions.
 
-use super::*;
+use super::{
+    edit, nurbs_plane_boundary_curve, shared_extrusion_generator_curve, CurveGeometry,
+    NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, PlaneEquation, Point3,
+    SolvedCurveGeometry,
+};
+use crate::decode::quadratic::Coefficient;
+use crate::decode::surfaces::nurbs_boundaries::{
+    cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots,
+};
+use crate::decode::tests::with_decode_ctx;
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {

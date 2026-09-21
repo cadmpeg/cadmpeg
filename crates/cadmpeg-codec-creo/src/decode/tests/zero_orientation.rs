@@ -6,7 +6,6 @@ use cadmpeg_test_support::edit;
 
 use crate::decode::sweep::pcurves::RevolutionBoundary;
 
-use super::with_decode_ctx;
 use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
 use crate::decode::analytic::equations::{
     CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
@@ -20,7 +19,6 @@ use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::named::{
     named_feature_definition, named_or_referenced_feature_definition,
 };
-use crate::decode::quadratic::Coefficient;
 use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
@@ -33,8 +31,7 @@ use crate::decode::surfaces::intersection_resolve::{
     resolve_curve_candidates, select_unique_curve_candidate,
 };
 use crate::decode::surfaces::nurbs_boundaries::{
-    cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots, nurbs_plane_boundary_curve,
-    shared_extrusion_generator_curve,
+    nurbs_plane_boundary_curve, shared_extrusion_generator_curve,
 };
 use crate::decode::sweep::nurbs::{
     bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,

@@ -72,7 +72,7 @@ pub(super) fn quantize(point: Point2, quantum: f64) -> GridPoint {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{quantize, Point2};
     #[test]
     fn large_coordinate_keys_do_not_alias_or_enter_integer_transforms() {
         for sign in [-1., 1.] {

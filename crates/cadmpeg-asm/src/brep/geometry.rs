@@ -1215,7 +1215,7 @@ mod sense_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
     #[test]
     fn numerical_seventh_analytic_spine_rejects_relative_curvature_at_small_scale() {
