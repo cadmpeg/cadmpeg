@@ -93,7 +93,10 @@ struct TargetCapture {
 enum Kept {
     Head(Vec<Box<RawValue>>),
     Ids {
-        records: Vec<Box<RawValue>>,
+        /// Each matched record beside the id the capture read out of it, so
+        /// no record's id is parsed twice.
+        matched: Vec<(String, Box<RawValue>)>,
+        /// Every string id in the arena, for the miss message.
         all_ids: Vec<String>,
     },
 }
@@ -141,11 +144,11 @@ pub(super) fn run(args: &ItemArgs) -> Result<()> {
             let values = parse_kept(&records)?;
             emit_values("item", output, &values)
         }
-        Kept::Ids { records, all_ids } => {
+        Kept::Ids { matched, all_ids } => {
             let dotted = target.dotted();
             let (values, errors) = resolve_ids(
                 requested_ids(&args.records),
-                &records,
+                &matched,
                 &all_ids,
                 target_capture.entry_count,
                 &dotted,
@@ -177,25 +180,24 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
         .collect()
 }
 
+/// Selects the requested records out of the capture's matched records, each
+/// of which already carries the id the capture parsed out of it.
 fn resolve_ids(
     ids: &[String],
-    kept: &[Box<RawValue>],
+    matched: &[(String, Box<RawValue>)],
     all_ids: &[String],
     entry_count: u64,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
-    let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(kept.len());
-    for raw in kept {
-        indexed.push((string_id(raw), raw.as_ref()));
-    }
-
     let mut values = Vec::new();
     let mut errors = Vec::new();
 
     for request in ids {
         match resolve_one(
             request,
-            indexed.iter().map(|(id, raw)| (id.as_deref(), *raw)),
+            matched
+                .iter()
+                .map(|(id, raw)| (Some(id.as_str()), raw.as_ref())),
         ) {
             Ok(raw) => {
                 let value: serde_json::Value = serde_json::from_str(raw.get())
@@ -672,7 +674,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             kept: match self.mode {
                 RecordSelection::Head(_) => Kept::Head(Vec::new()),
                 RecordSelection::Ids(_) => Kept::Ids {
-                    records: Vec::new(),
+                    matched: Vec::new(),
                     all_ids: Vec::new(),
                 },
             },
@@ -685,13 +687,13 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
                         records.push(raw);
                     }
                 }
-                Kept::Ids { records, all_ids } => {
+                Kept::Ids { matched, all_ids } => {
                     if let Some(id) = string_id(&raw) {
-                        let matched = matches!(self.mode, RecordSelection::Ids(ids) if ids.as_slice().iter().any(|req| id == *req || id.ends_with(req)));
-                        all_ids.push(id);
-                        if matched {
-                            records.push(raw);
+                        if matches!(self.mode, RecordSelection::Ids(ids) if ids.as_slice().iter().any(|req| id == *req || id.ends_with(req)))
+                        {
+                            matched.push((id.clone(), raw));
                         }
+                        all_ids.push(id);
                     }
                 }
             }
