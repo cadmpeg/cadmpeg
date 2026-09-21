@@ -39,7 +39,11 @@ fn low_confidence_step_archive_inspects_and_loads_with_step() {
     let summary: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
     assert_eq!(summary["selection"]["kind"], "detected");
     assert_eq!(summary["selection"]["confidence"], "low");
-    assert_eq!(summary["summary"]["format"], "step");
+    assert!(
+        summary["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("step:"))
+    );
 
     let loaded = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -52,5 +56,9 @@ fn low_confidence_step_archive_inspects_and_loads_with_step() {
         String::from_utf8_lossy(&loaded.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&loaded.stdout).unwrap();
-    assert_eq!(document["source"]["format"], "step");
+    assert!(
+        document["source"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("step:"))
+    );
 }
