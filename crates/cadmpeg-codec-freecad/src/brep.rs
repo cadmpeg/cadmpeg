@@ -1674,6 +1674,29 @@ pub(crate) struct NurbsCurve2d {
     pub(crate) periodic: bool,
 }
 
+/// Admitted count of inline geometry records over one leaf record.
+///
+/// A geometry record states its basis or directrix inline, so one input token
+/// or byte adds a record and an input of ordinary size can nest deeper than the
+/// stack holds. `NestedCurve2d`, `NestedCurve` and `NestedSurface` own this
+/// count: every recursive field of `TextCurve2d`, `TextCurve` and `TextSurface`
+/// is one of them, and each refuses a record whose own count is already the
+/// bound. No deeper tree exists to parse, deserialize or walk, so
+/// `census_surface`, `append_text_surface`, `append_text_curve`,
+/// `surface_parameter_affine` and `pcurve_geometry` hold no budget of their
+/// own. An extrusion or revolution directrix spends the same count as its
+/// surface, so the count is the records in one table entry, not per type.
+///
+/// The six parsers restate the number because their recursion descends before
+/// any record is constructed: the parser guard bounds the parse stack, these
+/// carriers bound the value. One table entry therefore costs at most
+/// `MAX_GEOMETRY_NESTING_DEPTH + 1` parse frames on either route.
+///
+/// The native trees are not neutral carriers. `MAX_GEOMETRY_NESTING` bounds the
+/// neutral chain separately, in the carrier constructors `topology_transfer`
+/// calls.
+const MAX_GEOMETRY_NESTING_DEPTH: usize = 64;
+
 /// One exact parameter-space curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1715,13 +1738,68 @@ pub(crate) enum TextCurve2d {
     /// Parameter restriction of an inline basis curve.
     Trimmed {
         parameter_range: [f64; 2],
-        basis: Box<TextCurve2d>,
+        basis: NestedCurve2d,
     },
     /// Signed planar offset of an inline basis curve.
-    Offset {
-        distance: f64,
-        basis: Box<TextCurve2d>,
-    },
+    Offset { distance: f64, basis: NestedCurve2d },
+}
+
+impl TextCurve2d {
+    /// Inline records this curve carries over its leaf record.
+    const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Line { .. }
+            | Self::Circle { .. }
+            | Self::Ellipse { .. }
+            | Self::Parabola { .. }
+            | Self::Hyperbola { .. }
+            | Self::Nurbs(_) => 0,
+            Self::Trimmed { basis, .. } | Self::Offset { basis, .. } => basis.depth,
+        }
+    }
+}
+
+/// One inline parameter-space basis curve, with the records it carries.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Box<TextCurve2d>")]
+pub(crate) struct NestedCurve2d {
+    curve: Box<TextCurve2d>,
+    depth: usize,
+}
+
+impl NestedCurve2d {
+    /// Admits `curve` as the basis of one more inline record.
+    pub(crate) fn try_new(curve: TextCurve2d) -> Result<Self, String> {
+        let depth = curve.nesting_depth() + 1;
+        if depth > MAX_GEOMETRY_NESTING_DEPTH {
+            return Err(format!(
+                "parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
+            ));
+        }
+        Ok(Self {
+            curve: Box::new(curve),
+            depth,
+        })
+    }
+
+    /// The carried record.
+    pub(crate) fn curve(&self) -> &TextCurve2d {
+        &self.curve
+    }
+}
+
+impl TryFrom<Box<TextCurve2d>> for NestedCurve2d {
+    type Error = String;
+
+    fn try_from(curve: Box<TextCurve2d>) -> Result<Self, Self::Error> {
+        Self::try_new(*curve)
+    }
+}
+
+impl Serialize for NestedCurve2d {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.curve.serialize(serializer)
+    }
 }
 
 /// One factor in a compound location.
@@ -1783,14 +1861,72 @@ pub(crate) enum TextCurve {
     /// A parameter sub-range of an inline basis curve.
     Trimmed {
         parameter_range: [f64; 2],
-        basis: Box<TextCurve>,
+        basis: NestedCurve,
     },
     /// A signed offset from an inline basis curve in a fixed direction.
     Offset {
         distance: f64,
         direction: Vector3,
-        basis: Box<TextCurve>,
+        basis: NestedCurve,
     },
+}
+
+impl TextCurve {
+    /// Inline records this curve carries over its leaf record.
+    const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Line { .. }
+            | Self::Circle { .. }
+            | Self::Ellipse { .. }
+            | Self::Parabola { .. }
+            | Self::Hyperbola { .. }
+            | Self::Nurbs(_) => 0,
+            Self::Trimmed { basis, .. } | Self::Offset { basis, .. } => basis.depth,
+        }
+    }
+}
+
+/// One inline 3D basis or directrix curve, with the records it carries.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Box<TextCurve>")]
+pub(crate) struct NestedCurve {
+    curve: Box<TextCurve>,
+    depth: usize,
+}
+
+impl NestedCurve {
+    /// Admits `curve` as the basis or directrix of one more inline record.
+    pub(crate) fn try_new(curve: TextCurve) -> Result<Self, String> {
+        let depth = curve.nesting_depth() + 1;
+        if depth > MAX_GEOMETRY_NESTING_DEPTH {
+            return Err(format!(
+                "3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
+            ));
+        }
+        Ok(Self {
+            curve: Box::new(curve),
+            depth,
+        })
+    }
+
+    /// The carried record.
+    pub(crate) fn curve(&self) -> &TextCurve {
+        &self.curve
+    }
+}
+
+impl TryFrom<Box<TextCurve>> for NestedCurve {
+    type Error = String;
+
+    fn try_from(curve: Box<TextCurve>) -> Result<Self, Self::Error> {
+        Self::try_new(*curve)
+    }
+}
+
+impl Serialize for NestedCurve {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.curve.serialize(serializer)
+    }
 }
 
 /// Supported byte-exact surface records from the text carrier table.
@@ -1843,24 +1979,82 @@ pub(crate) enum TextSurface {
     /// Translation of an inline directrix curve.
     Extrusion {
         direction: Vector3,
-        directrix: Box<TextCurve>,
+        directrix: NestedCurve,
     },
     /// Revolution of an inline directrix around an axis.
     Revolution {
         axis_origin: Point3,
         axis_direction: Vector3,
-        directrix: Box<TextCurve>,
+        directrix: NestedCurve,
     },
     /// Rectangular parameter sub-range of an inline basis surface.
     Trimmed {
         parameter_ranges: [[f64; 2]; 2],
-        basis: Box<TextSurface>,
+        basis: NestedSurface,
     },
     /// Signed normal offset from an inline basis surface.
-    Offset {
-        distance: f64,
-        basis: Box<TextSurface>,
-    },
+    Offset { distance: f64, basis: NestedSurface },
+}
+
+impl TextSurface {
+    /// Inline records this surface carries over its leaf record.
+    const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Plane { .. }
+            | Self::Cylinder { .. }
+            | Self::Cone { .. }
+            | Self::Sphere { .. }
+            | Self::Torus { .. }
+            | Self::Nurbs(_) => 0,
+            Self::Extrusion { directrix, .. } | Self::Revolution { directrix, .. } => {
+                directrix.depth
+            }
+            Self::Trimmed { basis, .. } | Self::Offset { basis, .. } => basis.depth,
+        }
+    }
+}
+
+/// One inline basis surface, with the records it carries.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Box<TextSurface>")]
+pub(crate) struct NestedSurface {
+    surface: Box<TextSurface>,
+    depth: usize,
+}
+
+impl NestedSurface {
+    /// Admits `surface` as the basis of one more inline record.
+    pub(crate) fn try_new(surface: TextSurface) -> Result<Self, String> {
+        let depth = surface.nesting_depth() + 1;
+        if depth > MAX_GEOMETRY_NESTING_DEPTH {
+            return Err(format!(
+                "surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
+            ));
+        }
+        Ok(Self {
+            surface: Box::new(surface),
+            depth,
+        })
+    }
+
+    /// The carried record.
+    pub(crate) fn surface(&self) -> &TextSurface {
+        &self.surface
+    }
+}
+
+impl TryFrom<Box<TextSurface>> for NestedSurface {
+    type Error = String;
+
+    fn try_from(surface: Box<TextSurface>) -> Result<Self, Self::Error> {
+        Self::try_new(*surface)
+    }
+}
+
+impl Serialize for NestedSurface {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.surface.serialize(serializer)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1910,7 +2104,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             parameter_ranges,
             basis,
         } => {
-            let basis = surface_parameter_affine(basis);
+            let basis = surface_parameter_affine(basis.surface());
             let u_scale = basis.u_scale.abs();
             let v_scale = basis.v_scale.abs();
             SurfaceParameterAffine {
@@ -1920,7 +2114,7 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
                 v_offset: -parameter_ranges[1][0] * v_scale,
             }
         }
-        TextSurface::Offset { basis, .. } => surface_parameter_affine(basis),
+        TextSurface::Offset { basis, .. } => surface_parameter_affine(basis.surface()),
         _ => identity,
     }
 }
@@ -2089,10 +2283,14 @@ fn census_curve(mut curve: CensusCurve<'_>, counts: &mut BTreeMap<String, u64>) 
                 ("hyperbola", None)
             }
             Model(TextCurve::Nurbs(_)) | Parameter(TextCurve2d::Nurbs(_)) => ("nurbs", None),
-            Model(TextCurve::Trimmed { basis, .. }) => ("trimmed", Some(Model(basis))),
-            Parameter(TextCurve2d::Trimmed { basis, .. }) => ("trimmed", Some(Parameter(basis))),
-            Model(TextCurve::Offset { basis, .. }) => ("offset", Some(Model(basis))),
-            Parameter(TextCurve2d::Offset { basis, .. }) => ("offset", Some(Parameter(basis))),
+            Model(TextCurve::Trimmed { basis, .. }) => ("trimmed", Some(Model(basis.curve()))),
+            Parameter(TextCurve2d::Trimmed { basis, .. }) => {
+                ("trimmed", Some(Parameter(basis.curve())))
+            }
+            Model(TextCurve::Offset { basis, .. }) => ("offset", Some(Model(basis.curve()))),
+            Parameter(TextCurve2d::Offset { basis, .. }) => {
+                ("offset", Some(Parameter(basis.curve())))
+            }
         };
         increment(counts, family);
         let Some(basis) = basis else { return };
@@ -2114,22 +2312,22 @@ fn census_surface(
         TextSurface::Nurbs(_) => "nurbs",
         TextSurface::Extrusion { directrix, .. } => {
             increment(counts, "extrusion");
-            census_curve(CensusCurve::Model(directrix), curves);
+            census_curve(CensusCurve::Model(directrix.curve()), curves);
             return;
         }
         TextSurface::Revolution { directrix, .. } => {
             increment(counts, "revolution");
-            census_curve(CensusCurve::Model(directrix), curves);
+            census_curve(CensusCurve::Model(directrix.curve()), curves);
             return;
         }
         TextSurface::Trimmed { basis, .. } => {
             increment(counts, "trimmed");
-            census_surface(basis, counts, curves);
+            census_surface(basis.surface(), counts, curves);
             return;
         }
         TextSurface::Offset { basis, .. } => {
             increment(counts, "offset");
-            census_surface(basis, counts, curves);
+            census_surface(basis.surface(), counts, curves);
             return;
         }
     };
@@ -3009,35 +3207,13 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
     }
 }
 
-/// Recursion budget of the geometry parsers, shared by the text and binary
-/// routes.
-///
-/// A geometry record states its basis or directrix inline, so one input token
-/// or byte adds a parse frame and an input of ordinary size can nest deeper
-/// than the stack holds. The six `parse_surface`, `parse_curve` and
-/// `parse_curve2d` functions share this budget across their mutual recursion,
-/// so one table entry costs at most `MAX_GEOMETRY_PARSE_DEPTH + 1` frames on
-/// either route. The two routes carry the same OCCT geometry model, so they
-/// admit the same depth.
-///
-/// The budget also bounds the later passes over the tree it admits:
-/// `census_surface`, `append_text_surface`, `append_text_curve`,
-/// `surface_parameter_affine` and `pcurve_geometry` walk the same inline bases
-/// recursively and hold no budget of their own.
-///
-/// It bounds the parser only: the native `TextSurface`, `TextCurve` and
-/// `TextCurve2d` trees are not neutral carriers. `MAX_GEOMETRY_NESTING` bounds
-/// the neutral chain separately, in the carrier constructors
-/// `topology_transfer` calls.
-const MAX_GEOMETRY_PARSE_DEPTH: usize = 64;
-
 fn parse_binary_surface(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary surface nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "binary surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     Ok(match cursor.u8("binary surface kind")? {
@@ -3109,12 +3285,14 @@ fn parse_binary_surface(
         }
         6 => TextSurface::Extrusion {
             direction: cursor.vector3("binary extrusion direction")?,
-            directrix: Box::new(parse_binary_curve(cursor, depth + 1)?),
+            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         7 => TextSurface::Revolution {
             axis_origin: cursor.point3("binary revolution axis origin")?,
             axis_direction: cursor.vector3("binary revolution axis direction")?,
-            directrix: Box::new(parse_binary_curve(cursor, depth + 1)?),
+            directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         8 => {
             let u_rational = cursor.bool("binary Bezier u-rational flag")?;
@@ -3210,11 +3388,13 @@ fn parse_binary_surface(
                     cursor.f64("binary surface v trim end")?,
                 ],
             ],
-            basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
+            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         11 => TextSurface::Offset {
             distance: cursor.f64("binary surface offset")?,
-            basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
+            basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         other => {
             return Err(CodecError::malformed(format_args!(
@@ -3235,9 +3415,9 @@ fn parse_binary_curve(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary 3D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "binary 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
@@ -3353,12 +3533,14 @@ fn parse_binary_curve(
                 cursor.f64("binary trim start")?,
                 cursor.f64("binary trim end")?,
             ],
-            basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
+            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         9 => TextCurve::Offset {
             distance: cursor.f64("binary offset distance")?,
             direction: cursor.vector3("binary offset direction")?,
-            basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
+            basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         other => {
             return Err(CodecError::malformed(format_args!(
@@ -3372,9 +3554,9 @@ fn parse_binary_curve2d(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary parameter-curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "binary parameter-curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
@@ -3469,11 +3651,13 @@ fn parse_binary_curve2d(
                 cursor.f64("binary trim start")?,
                 cursor.f64("binary trim end")?,
             ],
-            basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
+            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         9 => TextCurve2d::Offset {
             distance: cursor.f64("binary offset distance")?,
-            basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
+            basis: NestedCurve2d::try_new(parse_binary_curve2d(cursor, depth + 1)?)
+                .map_err(CodecError::malformed)?,
         },
         other => {
             return Err(CodecError::malformed(format_args!(
@@ -3769,9 +3953,9 @@ fn parse_curve2d(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve2d, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "text B-rep 2D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "text B-rep 2D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     let kind = cursor.integer("2D curve type")?;
@@ -3818,12 +4002,14 @@ fn parse_curve2d(
             }
             TextCurve2d::Trimmed {
                 parameter_range: [first, last],
-                basis: Box::new(parse_curve2d(cursor, depth + 1, table_index)?),
+                basis: NestedCurve2d::try_new(parse_curve2d(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         9 => TextCurve2d::Offset {
             distance: cursor.real("offset 2D curve distance")?,
-            basis: Box::new(parse_curve2d(cursor, depth + 1, table_index)?),
+            basis: NestedCurve2d::try_new(parse_curve2d(cursor, depth + 1, table_index)?)
+                .map_err(CodecError::malformed)?,
         },
         other => {
             return Err(CodecError::NotImplemented(format!(
@@ -4569,9 +4755,9 @@ fn parse_surface(
     depth: usize,
     table_index: usize,
 ) -> Result<TextSurface, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "text B-rep surface nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "text B-rep surface nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     let kind = cursor.integer("surface type")?;
@@ -4588,7 +4774,8 @@ fn parse_surface(
             }
             TextSurface::Extrusion {
                 direction,
-                directrix: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+                directrix: NestedCurve::try_new(parse_curve(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         7 => {
@@ -4602,7 +4789,8 @@ fn parse_surface(
             TextSurface::Revolution {
                 axis_origin,
                 axis_direction,
-                directrix: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+                directrix: NestedCurve::try_new(parse_curve(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         8 => TextSurface::Nurbs(parse_bezier_surface(cursor)?),
@@ -4623,12 +4811,14 @@ fn parse_surface(
             }
             TextSurface::Trimmed {
                 parameter_ranges: [u_range, v_range],
-                basis: Box::new(parse_surface(cursor, depth + 1, table_index)?),
+                basis: NestedSurface::try_new(parse_surface(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         11 => TextSurface::Offset {
             distance: cursor.real("offset surface distance")?,
-            basis: Box::new(parse_surface(cursor, depth + 1, table_index)?),
+            basis: NestedSurface::try_new(parse_surface(cursor, depth + 1, table_index)?)
+                .map_err(CodecError::malformed)?,
         },
         other => {
             return Err(CodecError::NotImplemented(format!(
@@ -4973,9 +5163,9 @@ fn parse_curve(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve, CodecError> {
-    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_NESTING_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "text B-rep 3D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+            "text B-rep 3D curve nesting exceeds {MAX_GEOMETRY_NESTING_DEPTH}"
         )));
     }
     let kind = cursor.integer("curve type")?;
@@ -5046,7 +5236,8 @@ fn parse_curve(
             }
             TextCurve::Trimmed {
                 parameter_range: [first, last],
-                basis: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+                basis: NestedCurve::try_new(parse_curve(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         9 => {
@@ -5060,7 +5251,8 @@ fn parse_curve(
             TextCurve::Offset {
                 distance,
                 direction,
-                basis: Box::new(parse_curve(cursor, depth + 1, table_index)?),
+                basis: NestedCurve::try_new(parse_curve(cursor, depth + 1, table_index)?)
+                    .map_err(CodecError::malformed)?,
             }
         }
         other => {
@@ -5354,7 +5546,8 @@ fn append_text_curve(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
-            let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer)?;
+            let basis_geometry =
+                append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
@@ -5394,7 +5587,7 @@ fn append_text_curve(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "curve"),
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
-            append_text_curve(basis, basis_id.clone(), association, transfer)?;
+            append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
@@ -5580,7 +5773,12 @@ fn append_text_surface(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
                 id.key().colon(cadmpeg_ir::identity_key!("directrix")),
             );
-            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
+            append_text_curve(
+                directrix.curve(),
+                directrix_id.clone(),
+                association,
+                curve_transfer,
+            )?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -5613,7 +5811,12 @@ fn append_text_surface(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
                 id.key().colon(cadmpeg_ir::identity_key!("directrix")),
             );
-            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer)?;
+            append_text_curve(
+                directrix.curve(),
+                directrix_id.clone(),
+                association,
+                curve_transfer,
+            )?;
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -5643,7 +5846,7 @@ fn append_text_surface(
             parameter_ranges,
             basis,
         } => {
-            let basis_parameters = surface_parameter_affine(basis);
+            let basis_parameters = surface_parameter_affine(basis.surface());
             let parameter_ranges = [
                 parameter_ranges[0].map(|value| {
                     value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
@@ -5657,7 +5860,7 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
             let basis_geometry = append_text_surface(
-                basis,
+                basis.surface(),
                 basis_id.clone(),
                 association,
                 curve_transfer,
@@ -5692,7 +5895,7 @@ fn append_text_surface(
                 id.key().colon(cadmpeg_ir::identity_key!("basis")),
             );
             append_text_surface(
-                basis,
+                basis.surface(),
                 basis_id.clone(),
                 association,
                 curve_transfer,
@@ -6282,12 +6485,12 @@ pub(crate) mod tests {
             panic!("expected extrusion")
         };
         assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 2.0]);
-        assert!(matches!(directrix.as_ref(), TextCurve::Line { .. }));
+        assert!(matches!(directrix.curve(), TextCurve::Line { .. }));
 
         let TextSurface::Revolution { directrix, .. } = &facts.surfaces[1] else {
             panic!("expected revolution")
         };
-        assert!(matches!(directrix.as_ref(), TextCurve::Line { .. }));
+        assert!(matches!(directrix.curve(), TextCurve::Line { .. }));
 
         let TextSurface::Trimmed {
             parameter_ranges,
@@ -6297,7 +6500,7 @@ pub(crate) mod tests {
             panic!("expected trimmed surface")
         };
         assert_eq!(*parameter_ranges, [[0.0, 1.0], [2.0, 3.0]]);
-        assert!(matches!(basis.as_ref(), TextSurface::Offset { .. }));
+        assert!(matches!(basis.surface(), TextSurface::Offset { .. }));
     }
 
     #[test]
@@ -6427,7 +6630,7 @@ pub(crate) mod tests {
             panic!("expected trimmed 2D curve")
         };
         assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
-        assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
+        assert!(matches!(basis.curve(), TextCurve2d::Offset { .. }));
     }
 
     #[test]
@@ -6518,15 +6721,17 @@ pub(crate) mod tests {
     pub(crate) fn transfers_recursive_exact_parameter_curve_geometry() {
         let source = crate::brep::TextCurve2d::Offset {
             distance: 0.25,
-            basis: Box::new(crate::brep::TextCurve2d::Trimmed {
+            basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Trimmed {
                 parameter_range: [0.0, std::f64::consts::PI],
-                basis: Box::new(crate::brep::TextCurve2d::Circle {
+                basis: super::NestedCurve2d::try_new(crate::brep::TextCurve2d::Circle {
                     center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
                     x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
                     y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
                     radius: 3.0,
-                }),
-            }),
+                })
+                .expect("one inline basis is admitted"),
+            })
+            .expect("two inline bases are admitted"),
         };
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Offset(offset_pcurve) =
             crate::topology_transfer::pcurve_geometry(&source)
@@ -6694,12 +6899,13 @@ pub(crate) mod tests {
         let surface = crate::brep::TextSurface::Revolution {
             axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            directrix: Box::new(crate::brep::TextCurve::Circle {
+            directrix: super::NestedCurve::try_new(crate::brep::TextCurve::Circle {
                 center: cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
                 ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
                 radius: 1.0,
-            }),
+            })
+            .expect("one inline directrix is admitted"),
         };
         let association = cadmpeg_ir::SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Fcstd,
@@ -6823,14 +7029,14 @@ pub(crate) mod tests {
 
     fn text_offset_surface_wrappers(surface: &TextSurface) -> usize {
         match surface {
-            TextSurface::Offset { basis, .. } => 1 + text_offset_surface_wrappers(basis),
+            TextSurface::Offset { basis, .. } => 1 + text_offset_surface_wrappers(basis.surface()),
             _ => 0,
         }
     }
 
     fn binary_offset_curve2d_wrappers(curve: &TextCurve2d) -> usize {
         match curve {
-            TextCurve2d::Offset { basis, .. } => 1 + binary_offset_curve2d_wrappers(basis),
+            TextCurve2d::Offset { basis, .. } => 1 + binary_offset_curve2d_wrappers(basis.curve()),
             _ => 0,
         }
     }
@@ -6872,7 +7078,7 @@ pub(crate) mod tests {
     #[test]
     fn a_directrix_spends_the_same_budget_as_its_surface_on_both_routes() {
         // The extrusion record and the line leaf are two of the records.
-        let admitted = super::MAX_GEOMETRY_PARSE_DEPTH - 1;
+        let admitted = super::MAX_GEOMETRY_NESTING_DEPTH - 1;
 
         let tokens = text_extrusion_tokens(admitted);
         let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
@@ -6909,17 +7115,17 @@ pub(crate) mod tests {
 
     #[test]
     fn the_text_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
-        let admitted = text_offset_surface_tokens(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let admitted = text_offset_surface_tokens(super::MAX_GEOMETRY_NESTING_DEPTH);
         let tokens: Vec<&str> = admitted.iter().map(String::as_str).collect();
         let mut cursor = TokenCursor::new(&tokens);
         let surface = super::parse_surface(&mut cursor, 0, 1).expect("the budget is admitted");
         assert_eq!(
             text_offset_surface_wrappers(&surface),
-            super::MAX_GEOMETRY_PARSE_DEPTH
+            super::MAX_GEOMETRY_NESTING_DEPTH
         );
         assert!(cursor.is_empty());
 
-        let refused = text_offset_surface_tokens(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let refused = text_offset_surface_tokens(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
         let tokens: Vec<&str> = refused.iter().map(String::as_str).collect();
         let error = super::parse_surface(&mut TokenCursor::new(&tokens), 0, 1)
             .expect_err("one record past the budget is refused");
@@ -6933,16 +7139,16 @@ pub(crate) mod tests {
 
     #[test]
     fn the_binary_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
-        let admitted = binary_offset_surface_bytes(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let admitted = binary_offset_surface_bytes(super::MAX_GEOMETRY_NESTING_DEPTH);
         let mut cursor = BinaryCursor::new(&admitted);
         let surface = super::parse_binary_surface(&mut cursor, 0).expect("the budget is admitted");
         assert_eq!(
             text_offset_surface_wrappers(&surface),
-            super::MAX_GEOMETRY_PARSE_DEPTH
+            super::MAX_GEOMETRY_NESTING_DEPTH
         );
         assert_eq!(cursor.remaining(), 0);
 
-        let refused = binary_offset_surface_bytes(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let refused = binary_offset_surface_bytes(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
         let error = super::parse_binary_surface(&mut BinaryCursor::new(&refused), 0)
             .expect_err("one record past the budget is refused");
         assert!(
@@ -6955,22 +7161,132 @@ pub(crate) mod tests {
 
     #[test]
     fn the_binary_parameter_curve_parser_admits_the_budget_and_refuses_one_record_past_it() {
-        let admitted = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let admitted = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_NESTING_DEPTH);
         let mut cursor = BinaryCursor::new(&admitted);
         let curve = super::parse_binary_curve2d(&mut cursor, 0).expect("the budget is admitted");
         assert_eq!(
             binary_offset_curve2d_wrappers(&curve),
-            super::MAX_GEOMETRY_PARSE_DEPTH
+            super::MAX_GEOMETRY_NESTING_DEPTH
         );
         assert_eq!(cursor.remaining(), 0);
 
-        let refused = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let refused = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_NESTING_DEPTH + 1);
         let error = super::parse_binary_curve2d(&mut BinaryCursor::new(&refused), 0)
             .expect_err("one record past the budget is refused");
         assert!(
             error
                 .to_string()
                 .contains("binary parameter-curve nesting exceeds 64"),
+            "{error}"
+        );
+    }
+
+    /// `wrappers` offset surface records over one plane leaf, built through the
+    /// carrier.
+    fn nested_offset_surface(wrappers: usize) -> Result<TextSurface, String> {
+        let mut surface = TextSurface::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            v_reversed: false,
+        };
+        for _ in 0..wrappers {
+            surface = TextSurface::Offset {
+                distance: 1.0,
+                basis: super::NestedSurface::try_new(surface)?,
+            };
+        }
+        Ok(surface)
+    }
+
+    /// `wrappers` trimmed 3D curve records over one line leaf.
+    fn nested_trimmed_curve(wrappers: usize) -> Result<TextCurve, String> {
+        let mut curve = TextCurve::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        };
+        for _ in 0..wrappers {
+            curve = TextCurve::Trimmed {
+                parameter_range: [0.0, 1.0],
+                basis: super::NestedCurve::try_new(curve)?,
+            };
+        }
+        Ok(curve)
+    }
+
+    #[test]
+    fn the_surface_carrier_admits_the_bound_and_refuses_one_record_past_it() {
+        let admitted = nested_offset_surface(super::MAX_GEOMETRY_NESTING_DEPTH)
+            .expect("the bound is admitted");
+        assert_eq!(
+            text_offset_surface_wrappers(&admitted),
+            super::MAX_GEOMETRY_NESTING_DEPTH
+        );
+        let error = super::NestedSurface::try_new(admitted)
+            .expect_err("one record past the bound is refused");
+        assert_eq!(error, "surface nesting exceeds 64");
+    }
+
+    #[test]
+    fn a_directrix_and_its_surface_share_one_nesting_count() {
+        let curve = nested_trimmed_curve(super::MAX_GEOMETRY_NESTING_DEPTH - 1)
+            .expect("the bound is admitted");
+        let surface = TextSurface::Extrusion {
+            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            directrix: super::NestedCurve::try_new(curve)
+                .expect("the directrix is the last admitted record"),
+        };
+        assert!(matches!(surface, TextSurface::Extrusion { .. }));
+
+        let curve =
+            nested_trimmed_curve(super::MAX_GEOMETRY_NESTING_DEPTH).expect("the bound is admitted");
+        let error = super::NestedCurve::try_new(curve)
+            .expect_err("a directrix over the whole count leaves no record for the surface");
+        assert_eq!(error, "3D curve nesting exceeds 64");
+    }
+
+    #[test]
+    fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
+        let facts = super::ShapeSet {
+            locations: Vec::new(),
+            curve2ds: Vec::new(),
+            curves: Vec::new(),
+            polygons3d: Vec::new(),
+            polygons_on_triangulations: Vec::new(),
+            surfaces: vec![nested_offset_surface(super::MAX_GEOMETRY_NESTING_DEPTH)
+                .expect("the bound is admitted")],
+            triangulations: Vec::new(),
+            tshapes: Vec::new().into(),
+            roots: Vec::new(),
+        };
+        let record = ShapePayloadRecord {
+            id: "fcstd:native:shape_payload#1".to_owned(),
+            property: "fcstd:native:property#1".to_owned(),
+            entry: "Shape.brp".to_owned(),
+            payload: ShapePayload::Binary {
+                version: super::BinaryTopologyVersion::V4,
+                facts,
+            },
+        };
+
+        let admitted = serde_json::to_value(&record).expect("a retained payload serializes");
+        assert_eq!(
+            serde_json::from_value::<ShapePayloadRecord>(admitted.clone())
+                .expect("the bound round-trips"),
+            record
+        );
+
+        let mut refused = admitted;
+        let basis = refused["binary"]["surfaces"][0].take();
+        refused["binary"]["surfaces"][0] = serde_json::json!({
+            "kind": "offset",
+            "distance": 1.0,
+            "basis": basis,
+        });
+        let error = serde_json::from_value::<ShapePayloadRecord>(refused)
+            .expect_err("one record past the bound is refused");
+        assert!(
+            error.to_string().contains("surface nesting exceeds 64"),
             "{error}"
         );
     }

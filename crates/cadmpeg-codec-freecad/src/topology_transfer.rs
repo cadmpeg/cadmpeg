@@ -1802,7 +1802,7 @@ pub(crate) fn pcurve_geometry(
             parameter_range,
             basis,
         } => {
-            let Some(basis) = pcurve_geometry(basis)? else {
+            let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
             cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
@@ -1814,7 +1814,7 @@ pub(crate) fn pcurve_geometry(
             .map(PcurveGeometry::Trimmed)
         }
         TextCurve2d::Offset { distance, basis } => {
-            let Some(basis) = pcurve_geometry(basis)? else {
+            let Some(basis) = pcurve_geometry(basis.curve())? else {
                 return Ok(None);
             };
             cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(*distance, Box::new(basis))
