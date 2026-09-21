@@ -290,8 +290,9 @@ pub(super) fn spun_nurbs(
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::with_capacity(n * 9);
     let mut weights = Vec::with_capacity(n * 9);
+    let profile_weights = profile.weights();
     for (i, pole) in profile.control_points().iter().enumerate() {
-        let pole_weight = profile.weights().map_or(1.0, |w| w[i]);
+        let pole_weight = profile_weights.as_ref().map_or(1.0, |w| w[i]);
         let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
         let along = offset[0] * axis.x + offset[1] * axis.y + offset[2] * axis.z;
         let center = Point3::new(

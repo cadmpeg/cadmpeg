@@ -797,42 +797,6 @@ fn has_schema_edit(bytes: &[u8], offset: usize, terminator: usize) -> bool {
     })
 }
 
-fn schema_regions(bytes: &[u8], offset: usize) -> Vec<RegionNode> {
-    let mut regions = Vec::new();
-    for z in offset + 2..bytes.len() {
-        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
-            if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
-                regions.push(region);
-            }
-        }
-    }
-    regions
-}
-
-fn schema_shells(bytes: &[u8], offset: usize) -> Vec<ShellNode> {
-    let mut shells = Vec::new();
-    for z in offset + 2..bytes.len() {
-        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
-            if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
-                shells.push(shell);
-            }
-        }
-    }
-    shells
-}
-
-fn schema_faces(bytes: &[u8], offset: usize) -> Vec<FaceNode> {
-    let mut faces = Vec::new();
-    for z in offset + 2..bytes.len() {
-        if bytes[z] == b'Z' && has_schema_edit(bytes, offset, z) {
-            if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
-                faces.push(face);
-            }
-        }
-    }
-    faces
-}
-
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
 pub(super) fn scan(bytes: &[u8]) -> Facts {
     let mut facts = Facts::default();
@@ -844,19 +808,26 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
         body_offsets.insert(body.offset);
         facts.bodies.push(body);
     }
-    for shell in schema_shells(bytes, 0) {
-        if shell_offsets.insert(shell.offset) {
-            facts.shells.push(shell);
+    let mut has_edit = false;
+    for (z, &byte) in bytes.iter().enumerate().skip(2) {
+        has_edit |= matches!(byte, b'C' | b'D' | b'I' | b'A');
+        if byte != b'Z' || !has_edit {
+            continue;
         }
-    }
-    for region in schema_regions(bytes, 0) {
-        if region_offsets.insert(region.offset) {
-            facts.regions.push(region);
+        if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
+            if shell_offsets.insert(shell.offset) {
+                facts.shells.push(shell);
+            }
         }
-    }
-    for face in schema_faces(bytes, 0) {
-        if face_offsets.insert(face.offset) {
-            facts.faces.push(face);
+        if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
+            if region_offsets.insert(region.offset) {
+                facts.regions.push(region);
+            }
+        }
+        if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
+            if face_offsets.insert(face.offset) {
+                facts.faces.push(face);
+            }
         }
     }
     for offset in 0..bytes.len().saturating_sub(2) {
