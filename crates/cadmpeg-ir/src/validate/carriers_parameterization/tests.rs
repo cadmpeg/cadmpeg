@@ -3,7 +3,7 @@
 
 use super::parameter_in_domain;
 use crate::examples::unit_cube;
-use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+use crate::geometry::{pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry};
 use crate::ids::{CurveId, UnknownId};
 use crate::math::{Point3, Vector3};
 use crate::report::check::Check;
@@ -166,4 +166,49 @@ fn periodic_curve_parameter_domain_is_checked() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
+}
+
+fn nurbs_pcurve_leaf() -> PcurveGeometry {
+    PcurveGeometry::Nurbs {
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                crate::math::Point2::new(0.0, 0.0),
+                crate::math::Point2::new(1.0, 1.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    }
+}
+
+fn placed_pcurve(placements: usize) -> PcurveGeometry {
+    let mut geometry = nurbs_pcurve_leaf();
+    for _ in 0..placements {
+        geometry = PcurveGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: crate::transform::Transform2::identity(),
+        };
+    }
+    geometry
+}
+
+#[test]
+fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
+    assert!(super::pcurve_parameter_domain(&accepted).is_some());
+
+    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    assert!(super::pcurve_parameter_domain(&refused).is_none());
+}
+
+#[test]
+fn pcurve_bounded_domain_requirement_stops_at_the_admitted_nesting_depth() {
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
+    assert!(super::pcurve_requires_bounded_domain(&accepted));
+
+    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    assert!(!super::pcurve_requires_bounded_domain(&refused));
 }

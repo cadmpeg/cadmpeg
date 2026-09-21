@@ -4,7 +4,7 @@
 use super::nurbs::{
     require_curve_cardinality, require_nondecreasing_knots, NurbsCurve, NurbsError, NurbsPoles3,
 };
-use super::{CacheContractError, FitTolerance};
+use super::{CacheContractError, FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -1461,6 +1461,40 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
 }
 
 impl PcurveGeometry {
+    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
+    /// nesting carriers.
+    ///
+    /// A pcurve nests through three wrappers rather than one: `Transformed`,
+    /// `Trimmed` and `Offset` each hold one inline basis, and the admitted
+    /// depth counts all three together. The walk is iterative, so it answers a
+    /// chain of any depth without recursing.
+    #[must_use]
+    pub fn nesting_within_bound(&self) -> bool {
+        let mut current = self;
+        for _ in 0..MAX_GEOMETRY_NESTING {
+            match current {
+                Self::Transformed { basis, .. } => current = basis,
+                Self::Trimmed(trimmed) => current = trimmed.basis(),
+                Self::Offset(offset) => current = offset.basis(),
+                Self::Line(_)
+                | Self::PolarHarmonic(_)
+                | Self::PolarNurbs { .. }
+                | Self::SphericalGreatCircle(_)
+                | Self::Circle(_)
+                | Self::Ellipse(_)
+                | Self::Harmonic(_)
+                | Self::Parabola(_)
+                | Self::Hyperbola(_)
+                | Self::Hyperbolic(_)
+                | Self::Nurbs { .. } => return true,
+            }
+        }
+        !matches!(
+            current,
+            Self::Transformed { .. } | Self::Trimmed(_) | Self::Offset(_)
+        )
+    }
+
     /// Scale chart coordinates atomically without changing the curve parameterization.
     pub fn try_scale_coordinates(&mut self, scales: [f64; 2]) -> Result<(), String> {
         let [u_scale, v_scale] = scales;

@@ -861,6 +861,9 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
 }
 
 fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<[[f64; 2]; 2]> {
+    if !geometry.nesting_within_bound() {
+        return None;
+    }
     match geometry {
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let u_count = surface.u_count();
@@ -891,6 +894,9 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::pcurve::Pcurve) -> Option
 }
 
 fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    if !geometry.nesting_within_bound() {
+        return None;
+    }
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -916,6 +922,9 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
 }
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    if !geometry.nesting_within_bound() {
+        return None;
+    }
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => nurbs_pcurve_parameter_domain(
             nurbs.degree(),
