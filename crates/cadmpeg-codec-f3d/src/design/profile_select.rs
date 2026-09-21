@@ -2183,11 +2183,11 @@ fn coincident_spatial_profile_geometry(
     let Some((first_normal, second_normal)) = first_normal.unit().zip(second_normal.unit()) else {
         return false;
     };
-    let normal_angle = first_normal.dot(second_normal).abs().clamp(0.0, 1.0).acos();
-    center_delta.x * center_delta.x
-        + center_delta.y * center_delta.y
-        + center_delta.z * center_delta.z
-        <= linear_tolerance * linear_tolerance
+    let normal_angle = first_normal
+        .cross(second_normal)
+        .norm()
+        .atan2(first_normal.dot(second_normal).abs());
+    center_delta.norm() <= linear_tolerance
         && (first_radius.get() - second_radius.get()).abs() <= linear_tolerance
         && normal_angle <= angular_tolerance
 }
@@ -2541,3 +2541,6 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod numerical_range_tests;

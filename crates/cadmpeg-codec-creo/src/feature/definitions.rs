@@ -3466,61 +3466,26 @@ fn trim_line_circle_intersection(
     center: [f64; 2],
     radius: f64,
 ) -> Option<[f64; 2]> {
-    let direction = [end[0] - start[0], end[1] - start[1]];
-    let relative = [start[0] - center[0], start[1] - center[1]];
-    let coordinate_scale = direction
+    let parameters = cadmpeg_ir::math::planar::line_circle_parameters(
+        cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        cadmpeg_ir::math::Point2::new(center[0], center[1]),
+        radius,
+    )?;
+    let mut inside = parameters
         .into_iter()
-        .chain(relative)
-        .map(f64::abs)
-        .fold(radius.abs(), f64::max);
-    if !coordinate_scale.is_finite() || coordinate_scale == 0.0 {
+        .filter(|parameter| (-TRIM_COORDINATE_EPS..=1.0 + TRIM_COORDINATE_EPS).contains(parameter));
+    let parameter = inside.next()?;
+    if inside.next().is_some_and(|other| other != parameter) {
         return None;
     }
-    let d = direction.map(|value| value / coordinate_scale);
-    let r = relative.map(|value| value / coordinate_scale);
-    let radius = radius / coordinate_scale;
-    let quadratic = d[0].mul_add(d[0], d[1] * d[1]);
-    if quadratic <= 0.0 || !quadratic.is_finite() {
-        return None;
-    }
-    let linear = 2.0 * r[0].mul_add(d[0], r[1] * d[1]);
-    let constant = r[0].mul_add(r[0], r[1] * r[1]) - radius * radius;
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let scale = linear.abs().max((4.0 * quadratic * constant).abs().sqrt());
-    let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
-    if !discriminant.is_finite() || discriminant < -tolerance {
-        return None;
-    }
-    let in_segment =
-        |parameter: f64| (-TRIM_COORDINATE_EPS..=1.0 + TRIM_COORDINATE_EPS).contains(&parameter);
-    let point = |parameter: f64| {
-        let coordinate = [
-            start[0] + parameter * direction[0],
-            start[1] + parameter * direction[1],
-        ];
-        coordinate
-            .into_iter()
-            .all(f64::is_finite)
-            .then_some(coordinate)
-    };
-    if discriminant.abs() <= tolerance {
-        let parameter = -linear / (2.0 * quadratic);
-        return in_segment(parameter)
-            .then(|| point(parameter.clamp(0.0, 1.0)))
-            .flatten();
-    }
-    let root = discriminant.sqrt();
-    let q = -0.5 * (linear + root.copysign(linear));
-    let parameters = [q / quadratic, constant / q];
-    let mut matching = parameters
-        .into_iter()
-        .filter(|parameter| in_segment(*parameter));
-    let parameter = matching.next()?;
-    matching
-        .next()
-        .is_none()
-        .then(|| point(parameter.clamp(0.0, 1.0)))
-        .flatten()
+    let parameter = parameter.clamp(0.0, 1.0);
+    let point = [
+        cadmpeg_ir::math::interpolate(start[0], end[0], parameter)?,
+        cadmpeg_ir::math::interpolate(start[1], end[1], parameter)?,
+    ];
+    let radial = (point[0] - center[0]).hypot(point[1] - center[1]);
+    ((radial - radius).abs() <= TRIM_COORDINATE_EPS * radius).then_some(point)
 }
 
 fn trim_circle_circle_intersection(
@@ -7432,3 +7397,6 @@ mod tests {
         assert_eq!(admitted(u32::MAX, 0), None);
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

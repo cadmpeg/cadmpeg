@@ -68,9 +68,9 @@ pub fn spatial_points_are_reflections(
         return false;
     }
     let midpoint = Point3::new(
-        0.5 * (first.x + second.x),
-        0.5 * (first.y + second.y),
-        0.5 * (first.z + second.z),
+        first.x.midpoint(second.x),
+        first.y.midpoint(second.y),
+        first.z.midpoint(second.z),
     );
     let from_axis = Vector3::new(
         midpoint.x - axis_start.x,
@@ -88,9 +88,16 @@ pub fn spatial_points_are_reflections(
             .max(second.x.abs())
             .max(second.y.abs())
             .max(second.z.abs());
-    axis.cross(from_axis).norm() <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9 * axis_length * scale
-        && axis.dot(separation).abs()
-            <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9 * axis_length * scale
+    if !scale.is_finite() {
+        return false;
+    }
+    let Some(axis) = axis.unit_nonzero() else {
+        return false;
+    };
+    let scaled =
+        |vector: Vector3| Vector3::new(vector.x / scale, vector.y / scale, vector.z / scale);
+    axis.cross(scaled(from_axis)).norm() <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9
+        && axis.dot(scaled(separation)).abs() <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9
 }
 
 /// Recover native parameters for an analytic surface point.
@@ -429,7 +436,7 @@ fn rational_patch_parameter_segment(
     end: Point2,
 ) -> Option<Vec<[f64; 4]>> {
     let normalize = |value: f64, domain: [f64; 2]| {
-        let parameter = (value - domain[0]) / (domain[1] - domain[0]);
+        let parameter = difference_quotient(value, domain[0], domain[1], domain[0])?;
         parameter.is_finite().then(|| parameter.clamp(0.0, 1.0))
     };
     let u_range = [
@@ -567,8 +574,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
             (patch.v_domain[0], parameters[0].v, parameters[1].v),
             (patch.v_domain[1], parameters[0].v, parameters[1].v),
         ] {
-            if start != end {
-                let parameter = (boundary - start) / (end - start);
+            if start.min(end) < boundary && boundary < start.max(end) {
+                let parameter = difference_quotient(boundary, start, end, start)?;
                 if parameter.is_finite() && 0.0 < parameter && parameter < 1.0 {
                     splits.push(parameter);
                 }
@@ -580,12 +587,12 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     splits.windows(2).try_fold(0.0_f64, |bound, range| {
         let middle = 0.5 * (range[0] + range[1]);
         let parameter_point = |parameter: f64| {
-            Point2::new(
-                parameters[0].u + parameter * (parameters[1].u - parameters[0].u),
-                parameters[0].v + parameter * (parameters[1].v - parameters[0].v),
-            )
+            Some(Point2::new(
+                crate::math::interpolate(parameters[0].u, parameters[1].u, parameter)?,
+                crate::math::interpolate(parameters[0].v, parameters[1].v, parameter)?,
+            ))
         };
-        let midpoint = parameter_point(middle);
+        let midpoint = parameter_point(middle)?;
         let patch = patches.iter().find(|patch| {
             patch.u_domain[0] <= midpoint.u
                 && midpoint.u <= patch.u_domain[1]
@@ -594,8 +601,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
         })?;
         let controls = rational_patch_parameter_segment(
             patch,
-            parameter_point(range[0]),
-            parameter_point(range[1]),
+            parameter_point(range[0])?,
+            parameter_point(range[1])?,
         )?;
         let piece_bound = rational_curve_chord_bound(
             &controls,
@@ -631,17 +638,17 @@ fn rational_patch_distance_bounds_with_budget(
     let lower = (0..3)
         .map(|axis| {
             if minimum[axis] > 0.0 {
-                minimum[axis] * minimum[axis]
+                minimum[axis]
             } else if maximum[axis] < 0.0 {
-                maximum[axis] * maximum[axis]
+                -maximum[axis]
             } else {
                 0.0
             }
         })
-        .sum::<f64>();
+        .fold(0.0_f64, f64::hypot);
     let diameter = (0..3)
-        .map(|axis| (maximum[axis] - minimum[axis]).powi(2))
-        .sum::<f64>();
+        .map(|axis| maximum[axis] - minimum[axis])
+        .fold(0.0_f64, f64::hypot);
     (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
 }
 
@@ -686,8 +693,8 @@ fn split_rational_surface_patch(
             lines.into_iter().flatten().collect()
         }
     };
-    let u_middle = patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5;
-    let v_middle = patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5;
+    let u_middle = patch.u_domain[0].midpoint(patch.u_domain[1]);
+    let v_middle = patch.v_domain[0].midpoint(patch.v_domain[1]);
     let (first_u, second_u, first_v, second_v) = if split_u {
         (
             [patch.u_domain[0], u_middle],
@@ -837,18 +844,17 @@ fn complete_nurbs_surface_starts(
         None => 0.0,
     };
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
-    let squared_tolerance = distance_tolerance * distance_tolerance;
-    let squared_distance = |parameters: Point2| {
+    let distance_at = |parameters: Point2| {
         let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
-        distance.is_finite().then_some(distance * distance)
+        distance.is_finite().then_some(distance)
     };
     let center = |patch: &RationalBezierSurfacePatch| {
         Point2::new(
-            patch.u_domain[0] + (patch.u_domain[1] - patch.u_domain[0]) * 0.5,
-            patch.v_domain[0] + (patch.v_domain[1] - patch.v_domain[0]) * 0.5,
+            patch.u_domain[0].midpoint(patch.u_domain[1]),
+            patch.v_domain[0].midpoint(patch.v_domain[1]),
         )
     };
     let surface_u_domain = [
@@ -867,7 +873,7 @@ fn complete_nurbs_surface_starts(
         let parameters =
             refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
                 .unwrap_or(start);
-        Some((parameters, squared_distance(parameters)?))
+        Some((parameters, distance_at(parameters)?))
     };
     let mut best_distance = f64::INFINITY;
     let mut best_upper_parameters = Vec::new();
@@ -883,7 +889,7 @@ fn complete_nurbs_surface_starts(
                 * distance
                     .abs()
                     .max(best_distance.abs())
-                    .max(squared_tolerance);
+                    .max(distance_tolerance);
             if distance < best_distance && best_distance - distance > tolerance {
                 best_distance = distance;
                 best_upper_parameters.clear();
@@ -908,7 +914,7 @@ fn complete_nurbs_surface_starts(
     best_distance.is_finite().then_some(())?;
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
-    if fit_tolerance.is_some() && best_distance <= squared_tolerance {
+    if fit_tolerance.is_some() && best_distance <= distance_tolerance {
         return (!best_upper_parameters.is_empty()).then_some(best_upper_parameters);
     }
     let mut queue = BinaryHeap::new();
@@ -941,14 +947,14 @@ fn complete_nurbs_surface_starts(
             * lower_bound
                 .abs()
                 .max(best_distance.abs())
-                .max(squared_tolerance);
+                .max(distance_tolerance);
         if lower_bound > best_distance + comparison_tolerance {
             break;
         }
         let parameters = center(&patch);
         let (upper_parameters, center_distance) =
             refined_upper(parameters, patch.u_domain, patch.v_domain)?;
-        if fit_tolerance.is_some() && center_distance <= squared_tolerance {
+        if fit_tolerance.is_some() && center_distance <= distance_tolerance {
             return Some(vec![upper_parameters]);
         }
         let upper_tolerance = 128.0
@@ -956,7 +962,7 @@ fn complete_nurbs_surface_starts(
             * center_distance
                 .abs()
                 .max(best_distance.abs())
-                .max(squared_tolerance);
+                .max(distance_tolerance);
         if center_distance < best_distance && best_distance - center_distance > upper_tolerance {
             best_distance = center_distance;
             best_upper_parameters.clear();
@@ -968,8 +974,8 @@ fn complete_nurbs_surface_starts(
             || parameters.u == patch.u_domain[1]
             || parameters.v == patch.v_domain[0]
             || parameters.v == patch.v_domain[1];
-        if diameter <= squared_tolerance
-            || center_distance - lower_bound <= squared_tolerance
+        if diameter <= distance_tolerance
+            || center_distance - lower_bound <= distance_tolerance
             || indivisible
         {
             terminal.push((upper_parameters, lower_bound));
@@ -990,8 +996,8 @@ fn complete_nurbs_surface_starts(
                 let first = control(u, v);
                 let second = control(u + 1, v);
                 (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
+                    .map(|axis| second[axis] - first[axis])
+                    .fold(0.0_f64, f64::hypot)
             })
             .fold(0.0_f64, f64::max);
         let v_variation = (0..=patch.u_degree)
@@ -1000,8 +1006,8 @@ fn complete_nurbs_surface_starts(
                 let first = control(u, v);
                 let second = control(u, v + 1);
                 (0..3)
-                    .map(|axis| (second[axis] - first[axis]).powi(2))
-                    .sum::<f64>()
+                    .map(|axis| second[axis] - first[axis])
+                    .fold(0.0_f64, f64::hypot)
             })
             .fold(0.0_f64, f64::max);
         let children = split_rational_surface_patch(&patch, u_variation >= v_variation, budget)?;
@@ -1017,7 +1023,7 @@ fn complete_nurbs_surface_starts(
             sequence += 1;
         }
     }
-    let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(squared_tolerance);
+    let final_tolerance = 128.0 * f64::EPSILON * best_distance.abs().max(distance_tolerance);
     let mut starts = terminal
         .into_iter()
         .filter_map(|(parameters, lower)| {
@@ -1176,11 +1182,17 @@ pub fn nurbs_surface_parameter_near_point(
         None => {
             let mut best = None;
             for u_index in 0..=COARSE_GRID {
-                let u = u_domain[0]
-                    + (u_index as f64 / COARSE_GRID as f64) * (u_domain[1] - u_domain[0]);
+                let u = crate::math::interpolate(
+                    u_domain[0],
+                    u_domain[1],
+                    u_index as f64 / COARSE_GRID as f64,
+                )?;
                 for v_index in 0..=COARSE_GRID {
-                    let v = v_domain[0]
-                        + (v_index as f64 / COARSE_GRID as f64) * (v_domain[1] - v_domain[0]);
+                    let v = crate::math::interpolate(
+                        v_domain[0],
+                        v_domain[1],
+                        v_index as f64 / COARSE_GRID as f64,
+                    )?;
                     let candidate = nurbs_surface_point(surface, u, v)?;
                     let distance = candidate.distance(point);
                     if best.is_none_or(|(_, best_distance)| distance < best_distance) {
@@ -5264,7 +5276,7 @@ fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> b
 fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(Vector3, Vector3)> {
     use crate::math::sum::ExactSignedSum;
 
-    let unit = vector.unit()?;
+    let unit = vector.unit_nonzero()?;
     if !derivative.is_finite() {
         return None;
     }
@@ -7754,3 +7766,6 @@ fn model_surface_point_with_budget(
         None => model_surface_point(ir, geometry, u, v),
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

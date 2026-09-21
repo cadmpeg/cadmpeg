@@ -3249,8 +3249,9 @@ fn unique_inverse_parameter(
         parameter.is_finite() && error.is_finite() && *error <= tolerance_squared
     });
     candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
-    let parameter_tolerance =
-        INVERSE_PARAMETER_TOLERANCE * (parameter_domain[1] - parameter_domain[0]).abs();
+    let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
+        - INVERSE_PARAMETER_TOLERANCE * parameter_domain[0])
+        .abs();
     let mut unique = Vec::<(f64, f64)>::new();
     for candidate in candidates {
         if let Some(previous) = unique.last_mut() {
@@ -4793,7 +4794,7 @@ fn extended_nurbs_isocurve_axis_candidate(
         curve_domain[1].min(varying_domain[1]),
     ];
     if overlap[0] < overlap[1] {
-        let parameter = (overlap[0] + overlap[1]) * 0.5;
+        let parameter = overlap[0].midpoint(overlap[1]);
         let control_points = curve.control_points();
         let weights = curve.weights();
         if let Some(point) = nurbs_curve_point(
@@ -4819,8 +4820,9 @@ fn extended_nurbs_isocurve_axis_candidate(
             }
         }
     }
-    let parameter_tolerance =
-        INVERSE_PARAMETER_TOLERANCE * (fixed_domain[1] - fixed_domain[0]).abs();
+    let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * fixed_domain[1]
+        - INVERSE_PARAMETER_TOLERANCE * fixed_domain[0])
+        .abs();
     let mut unique_fixed_values = Vec::new();
     for value in fixed_values {
         if value.is_finite()
@@ -4928,14 +4930,12 @@ fn nurbs_curve_sample_parameters(
         }
         for index in 0..=NURBS_CACHE_SAMPLES_PER_SPAN {
             let fraction = index as f64 / NURBS_CACHE_SAMPLES_PER_SPAN as f64;
-            parameters.push(start + fraction * (end - start));
+            parameters.push(cadmpeg_ir::math::interpolate(start, end, fraction)?);
         }
     }
     parameters.sort_by(f64::total_cmp);
-    parameters.dedup_by(|left, right| {
-        (*left - *right).abs()
-            <= INVERSE_PARAMETER_TOLERANCE * (1.0 + range[1].abs().max(range[0].abs()))
-    });
+    // Every distinct sample participates in the fit bound, including tiny spans.
+    parameters.dedup();
     (!parameters.is_empty()).then_some(parameters)
 }
 
@@ -7320,3 +7320,6 @@ mod tests {
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

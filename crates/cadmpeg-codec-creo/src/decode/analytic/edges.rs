@@ -231,8 +231,10 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             return None;
         };
         reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
-        let sum = intrinsic_range[0] + intrinsic_range[1];
-        return Some([sum - first, sum - second]);
+        return Some([
+            cadmpeg_ir::math::reflect_parameter(first, intrinsic_range[0], intrinsic_range[1])?,
+            cadmpeg_ir::math::reflect_parameter(second, intrinsic_range[0], intrinsic_range[1])?,
+        ]);
     }
 
     let mapped = intrinsic_range.map(|parameter| {
@@ -256,13 +258,13 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
 }
 
 fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<()> {
-    let sum = range[0] + range[1];
     let mut reversed = nurbs.clone();
     reversed.reverse_parameterization();
     reversed
         .edit_knots(|knots| {
             for knot in knots {
-                *knot += sum;
+                *knot = cadmpeg_ir::math::reflect_parameter(-*knot, range[0], range[1])
+                    .unwrap_or(f64::NAN);
             }
         })
         .ok()?;
@@ -310,7 +312,7 @@ fn degree_one_nurbs_point_parameter(
     range: [f64; 2],
     tolerance: f64,
 ) -> Option<f64> {
-    let parameter_tolerance = EPS_AGREE * (range[1] - range[0]).max(1.0);
+    let parameter_tolerance = (EPS_AGREE * range[1] - EPS_AGREE * range[0]).abs();
     let mut candidates = Vec::<f64>::new();
     for span in 1..nurbs.control_points().len() {
         let lower = nurbs.knots()[span];
@@ -353,7 +355,7 @@ fn degree_one_nurbs_point_parameter(
             continue;
         }
         let local = fraction * first_weight / rational_denominator;
-        let parameter = lower + local * (upper - lower);
+        let parameter = cadmpeg_ir::math::interpolate(lower, upper, local)?;
         let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
             continue;
         };
@@ -714,3 +716,6 @@ mod tests {
         assert_eq!(reversed, original);
     }
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

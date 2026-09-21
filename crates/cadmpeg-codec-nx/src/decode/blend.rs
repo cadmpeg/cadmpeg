@@ -1959,7 +1959,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             parameter.clamp(domain[0], domain[1])
         }
     };
-    let squared_distance = |parameter: f64| {
+    let distance = |parameter: f64| {
         let uv = pcurve_uv(contact_pcurve, parameter)?;
         let candidate = decoded_surface_point_inner_with_budget(
             index,
@@ -1969,22 +1969,22 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             0,
             geometry_budget,
         )?;
-        let distance = (candidate.x - point.x).powi(2)
-            + (candidate.y - point.y).powi(2)
-            + (candidate.z - point.z).powi(2);
+        let distance = candidate.distance(point);
         distance.is_finite().then_some(distance)
     };
     let mut candidates = (0..=COARSE_CONTACT_PCURVE_SEARCH_INTERVALS)
         .filter_map(|index| {
-            let parameter = domain[0]
-                + (domain[1] - domain[0]) * index as f64
-                    / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64;
-            Some((parameter, squared_distance(parameter)?))
+            let parameter = cadmpeg_ir::math::interpolate(
+                domain[0],
+                domain[1],
+                index as f64 / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64,
+            )?;
+            Some((parameter, distance(parameter)?))
         })
         .collect::<Vec<_>>();
     if let Some(seed) = seed.filter(|seed| seed.is_finite()) {
         let parameter = normalize(seed);
-        if let Some(distance) = squared_distance(parameter) {
+        if let Some(distance) = distance(parameter) {
             candidates.push((parameter, distance));
         }
     }
@@ -2001,22 +2001,41 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
             partials.du.z * uv_tangent.u + partials.dv.z * uv_tangent.v,
         );
-        let speed_squared = tangent.dot(tangent);
-        if !speed_squared.is_finite() || speed_squared <= f64::EPSILON {
+        let Some(unit) = tangent.unit_nonzero() else {
             break;
-        }
+        };
+        let scale = tangent.x.abs().max(tangent.y.abs()).max(tangent.z.abs());
+        let scaled_length = (tangent.x / scale)
+            .hypot(tangent.y / scale)
+            .hypot(tangent.z / scale);
         let difference = Vector3::new(
             partials.point.x - point.x,
             partials.point.y - point.y,
             partials.point.z - point.z,
         );
-        let step = difference.dot(tangent) / speed_squared;
-        if !step.is_finite() {
+        let residual_scale = difference
+            .x
+            .abs()
+            .max(difference.y.abs())
+            .max(difference.z.abs());
+        if residual_scale == 0.0 {
             break;
         }
+        let projection = Vector3::new(
+            difference.x / residual_scale,
+            difference.y / residual_scale,
+            difference.z / residual_scale,
+        )
+        .dot(unit);
+        let Some(step) = cadmpeg_ir::math::product_quotient(
+            [residual_scale, projection],
+            [scale, scaled_length],
+        ) else {
+            break;
+        };
         let previous = parameter;
         let next = normalize(parameter - step);
-        let Some(distance) = squared_distance(next) else {
+        let Some(distance) = distance(next) else {
             break;
         };
         if distance >= best_distance {
@@ -2024,7 +2043,9 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         }
         best_distance = distance;
         parameter = next;
-        if (next - previous).abs() <= 64.0 * f64::EPSILON {
+        if (next - previous).abs()
+            <= (64.0 * f64::EPSILON * domain[1] - 64.0 * f64::EPSILON * domain[0]).abs()
+        {
             break;
         }
     }
@@ -3633,6 +3654,15 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     let minor_radius = ellipse_curve.minor_radius().get();
     let x = delta.dot(reference);
     let y = delta.dot(transverse);
+    // The normal offset is constant over the ellipse. Normalize its planar
+    // objective before forming products or ranking candidate parameters.
+    let scale = major_radius.max(minor_radius).max(x.abs()).max(y.abs());
+    let (major_radius, minor_radius, x, y) = (
+        major_radius / scale,
+        minor_radius / scale,
+        x / scale,
+        y / scale,
+    );
     let difference = minor_radius * minor_radius - major_radius * major_radius;
     let coefficients = [
         -minor_radius * y,
@@ -3652,18 +3682,13 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             parameter
                 + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         });
-    let squared_distance = |parameter| {
-        let position =
-            cadmpeg_ir::eval::curve_point_with_budget_solved(geometry, parameter, geometry_budget)?;
-        Some(
-            (position.x - point.x).powi(2)
-                + (position.y - point.y).powi(2)
-                + (position.z - point.z).powi(2),
-        )
+    let distance = |parameter: f64| {
+        geometry_budget.charge().then_some(())?;
+        Some((major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y))
     };
     closest_parameter_candidates(
         parameters
-            .map(|parameter| Some((parameter, squared_distance(parameter)?)))
+            .map(|parameter| Some((parameter, distance(parameter)?)))
             .collect::<Option<Vec<_>>>()?,
         Some(anchor),
     )?
@@ -3900,3 +3925,6 @@ fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
         vector.z * angle.cos() + cross.z * angle.sin() + axis.z * dot * (1.0 - angle.cos()),
     )
 }
+
+#[cfg(test)]
+mod numerical_range_tests;

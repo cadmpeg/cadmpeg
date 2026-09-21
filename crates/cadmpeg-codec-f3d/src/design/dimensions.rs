@@ -4662,7 +4662,7 @@ fn recipe_extension_point_dimension(
                     let (start, end) = (*start, *end);
                     let du = end.u - start.u;
                     let dv = end.v - start.v;
-                    let norm_squared = du * du + dv * dv;
+                    let length = du.hypot(dv);
                     let axis_aligned = if horizontal {
                         dv.abs()
                             <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9 * (1.0 + du.abs())
@@ -4670,7 +4670,10 @@ fn recipe_extension_point_dimension(
                         du.abs()
                             <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9 * (1.0 + dv.abs())
                     };
-                    if norm_squared <= 1.0e-18 || !axis_aligned {
+                    if !length.is_finite()
+                        || length <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
+                        || !axis_aligned
+                    {
                         return false;
                     }
                     if !sketch_points_close(endpoint, start) && !sketch_points_close(endpoint, end)
@@ -4679,10 +4682,13 @@ fn recipe_extension_point_dimension(
                     }
                     let relative_u = detached.u - start.u;
                     let relative_v = detached.v - start.v;
-                    let carrier_error = relative_u.mul_add(dv, -relative_v * du).abs();
+                    let carrier_error = relative_u
+                        .mul_add(dv / length, -relative_v * (du / length))
+                        .abs();
                     let carrier_tolerance = EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
-                        * (1.0 + norm_squared.sqrt() + relative_u.abs().max(relative_v.abs()));
-                    let projection = (relative_u * du + relative_v * dv) / norm_squared;
+                        * (1.0 + length + relative_u.abs().max(relative_v.abs()));
+                    let projection =
+                        (relative_u * (du / length) + relative_v * (dv / length)) / length;
                     carrier_error <= carrier_tolerance
                         && !(-EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
                             ..=1.0 + EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9)
@@ -5295,24 +5301,27 @@ fn exact_counted_dimension_relation(
     let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
     let second_direction =
         Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
-    let first_length = first_direction
-        .u
-        .mul_add(first_direction.u, first_direction.v * first_direction.v)
-        .sqrt();
-    let second_length = second_direction
-        .u
-        .mul_add(second_direction.u, second_direction.v * second_direction.v)
-        .sqrt();
-    if first_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
+    let first_length = first_direction.u.hypot(first_direction.v);
+    let second_length = second_direction.u.hypot(second_direction.v);
+    if !first_length.is_finite()
+        || !second_length.is_finite()
+        || first_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
         || second_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
     {
         return None;
     }
-    let scale = first_length * second_length;
+    let first_direction = Point2::new(
+        first_direction.u / first_length,
+        first_direction.v / first_length,
+    );
+    let second_direction = Point2::new(
+        second_direction.u / second_length,
+        second_direction.v / second_length,
+    );
     let cross = first_direction
         .u
         .mul_add(second_direction.v, -first_direction.v * second_direction.u);
-    if cross.abs() <= scale * EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 {
+    if cross.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 {
         let signed_offset = parallel_line_offset(&first.geometry, &second.geometry)?;
         return Some(
             if signed_offset.abs()
@@ -5333,7 +5342,7 @@ fn exact_counted_dimension_relation(
     let dot = first_direction
         .u
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
-    (dot.abs() <= scale * EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
+    (dot.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
         Definition::Perpendicular {
             first: first.id().clone(),
             second: second.id().clone(),
@@ -6268,3 +6277,6 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod numerical_range_tests;

@@ -1641,7 +1641,7 @@ fn normalize_pcurve_parameter_range(
     let tolerance =
         (scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY).min((0.25 * domain[1] - 0.25 * domain[0]).abs());
     for value in &mut range {
-        if domain.contains(value) {
+        if (domain[0]..=domain[1]).contains(value) {
             continue;
         }
         let lower_distance = (*value - domain[0]).abs();
@@ -2268,3 +2268,6 @@ pub(crate) fn normalize_occt_curve_range(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod numerical_range_tests;
