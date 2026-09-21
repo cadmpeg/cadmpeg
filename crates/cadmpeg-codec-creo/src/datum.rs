@@ -4,7 +4,10 @@
 use cadmpeg_core::bytes::find_from as find;
 
 use crate::scalar;
-use crate::surface::{PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord, SurfaceRow};
+use crate::surface::{
+    positional_cylinder_frames_agree, PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord,
+    SurfaceRow,
+};
 
 const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1.0e-9;
 const EPS_ACTIVE_CYLINDER_MIN: f64 = 1.0e-12;
@@ -266,55 +269,13 @@ fn active_cylinder_frame(
             PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))?;
         if !candidates
             .iter()
-            .any(|existing| active_cylinder_frames_agree(*existing, candidate))
+            .any(|existing| positional_cylinder_frames_agree(*existing, candidate))
         {
             candidates.push(candidate);
         }
     }
     let first = candidates.first().copied()?;
     (candidates.len() == 1).then_some(first)
-}
-
-fn active_cylinder_frames_agree(
-    first: PositionalCylinderFrame,
-    second: PositionalCylinderFrame,
-) -> bool {
-    let scale = first
-        .frame()
-        .origin()
-        .into_iter()
-        .chain(second.frame().origin())
-        .chain([first.radius(), second.radius()])
-        .chain(first.length())
-        .chain(second.length())
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let close =
-        |left: f64, right: f64| (left - right).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
-    first
-        .frame()
-        .origin()
-        .into_iter()
-        .zip(second.frame().origin())
-        .all(|(left, right)| close(left, right))
-        && first
-            .frame()
-            .axis()
-            .into_iter()
-            .zip(second.frame().axis())
-            .all(|(left, right)| close(left, right))
-        && first
-            .frame()
-            .ref_direction()
-            .into_iter()
-            .zip(second.frame().ref_direction())
-            .all(|(left, right)| close(left, right))
-        && close(first.radius(), second.radius())
-        && match (first.length(), second.length()) {
-            (Some(left), Some(right)) => close(left, right),
-            (None, None) => true,
-            _ => false,
-        }
 }
 
 fn positional_plane(
