@@ -3,6 +3,7 @@
 
 use super::EPS_FRAME_COMPONENT;
 use crate::scalar;
+use crate::surface::decode_directrix_lane_axis_aligned_cylinder_frame;
 use crate::surface::decode_local_system_suffix_cylinder_frame;
 use crate::surface::decode_positional_cylinder_frame;
 use crate::surface::named_prototype_records;
@@ -26,6 +27,12 @@ use crate::surface::EPS_CYLINDER_GEOMETRY_MIN;
 use cadmpeg_ir::scalar::PositiveLength;
 
 const EPS_ROUND_RADIUS: f64 = 1.0e-12;
+
+const DIRECTRIX_LANE_CYLINDER_BODY: [u8; 47] = [
+    17, 24, 19, 135, 122, 225, 71, 174, 20, 123, 71, 0, 204, 45, 45, 20, 122, 225, 71, 174, 21, 65,
+    169, 153, 153, 153, 153, 153, 160, 46, 0, 204, 45, 48, 163, 215, 10, 61, 112, 164, 134, 174,
+    20, 122, 225, 71, 174,
+];
 
 fn line_extrusion_parameter_record(
     direction: [f64; 3],
@@ -329,13 +336,11 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     assert!((frame.radius - 1.5).abs() < 1.0e-12);
     assert!((frame.length.expect("axial extent").get() - 1.7).abs() < 1.0e-12);
 
-    let directrix_lane = [
-        17, 24, 19, 135, 122, 225, 71, 174, 20, 123, 71, 0, 204, 45, 45, 20, 122, 225, 71, 174, 21,
-        65, 169, 153, 153, 153, 153, 153, 160, 46, 0, 204, 45, 48, 163, 215, 10, 61, 112, 164, 134,
-        174, 20, 122, 225, 71, 174,
-    ];
-    let frame = decode_positional_cylinder_frame(&directrix_lane, &scalar::ScalarCache::default())
-        .expect("complete directrix-lane axis-aligned cylinder");
+    let frame = decode_positional_cylinder_frame(
+        &DIRECTRIX_LANE_CYLINDER_BODY,
+        &scalar::ScalarCache::default(),
+    )
+    .expect("complete directrix-lane axis-aligned cylinder");
     assert_eq!(frame.frame().origin(), [0.0, 16.64, 1.73]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, -1.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
@@ -497,6 +502,18 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     assert!(
         decode_positional_cylinder_frame(&inconsistent, &scalar::ScalarCache::default()).is_none()
     );
+}
+
+#[test]
+fn directrix_lane_axis_aligned_cylinder_requires_a_positive_leading_scalar() {
+    let cache = scalar::ScalarCache::default();
+    let mut zero = DIRECTRIX_LANE_CYLINDER_BODY.to_vec();
+    zero.splice(3..10, [0x18]);
+    assert!(decode_directrix_lane_axis_aligned_cylinder_frame(&zero, &cache).is_none());
+
+    let mut negative = DIRECTRIX_LANE_CYLINDER_BODY.to_vec();
+    negative.splice(3..10, [0xc8, 0xd6, 0xa3, 0x0c, 0, 0, 0]);
+    assert!(decode_directrix_lane_axis_aligned_cylinder_frame(&negative, &cache).is_none());
 }
 
 #[test]
