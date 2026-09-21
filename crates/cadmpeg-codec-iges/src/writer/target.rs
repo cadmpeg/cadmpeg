@@ -193,3 +193,6 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         bytes: data.to_vec(),
     })
 }
+
+#[cfg(test)]
+mod tests;
