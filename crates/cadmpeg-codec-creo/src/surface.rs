@@ -4457,7 +4457,6 @@ fn inline_surface_carrier(
     match kind {
         SurfaceKind::Cylinder => {
             let radius = suffix[0];
-            (radius.is_finite() && radius > 0.0).then_some(())?;
             for coordinate in 0..3 {
                 if coordinate != axis_index {
                     origin[coordinate] = unique_inline_center(
@@ -4575,7 +4574,6 @@ fn inline_surface_suffix_carrier(
     match kind {
         SurfaceKind::Cylinder => {
             let radius = suffix[0];
-            (radius.is_finite() && radius > 0.0).then_some(())?;
             Some(InlineSurfaceCarrier::Cylinder {
                 frame: PositionalCylinderFrame::new(origin, axis, ref_direction, radius, None)?,
                 split_bounds: None,
@@ -6135,7 +6133,6 @@ fn decode_referenced_planar_envelope_cylinder_frame(
         radius,
     ];
     values.iter().all(|value| value.is_finite()).then_some(())?;
-    (length > 0.0 && radius > 0.0).then_some(())?;
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     close((second_axial - first_axial).abs(), length).then_some(())?;
@@ -6189,7 +6186,6 @@ fn decode_held_axis_cylinder_frame(
         .fold(1.0, f64::max);
     ((second_axial - first_axial).abs() <= EPS_SURFACE_AGREEMENT * scale).then_some(())?;
     let radius = 0.5 * (second_radial - first_radial).abs();
-    (radius > 0.0).then_some(())?;
     PositionalCylinderFrame::new(
         [
             f64::midpoint(first_radial, second_radial),
@@ -6252,7 +6248,6 @@ fn axial_radial_cylinder_frame(
     radial_center: f64,
     origin_at_first: bool,
 ) -> Option<PositionalCylinderFrame> {
-    (length.is_finite() && length > 0.0).then_some(())?;
     let scale = [
         length,
         first_axial,
@@ -6266,7 +6261,6 @@ fn axial_radial_cylinder_frame(
     (((second_axial - first_axial).abs() - length).abs() <= EPS_SURFACE_AGREEMENT * scale)
         .then_some(())?;
     let radius = (radial_sample - radial_center).abs();
-    (radius > 0.0).then_some(())?;
     let (origin_x, axis_x) = if origin_at_first {
         (first_axial, (second_axial - first_axial).signum())
     } else {
@@ -6307,7 +6301,6 @@ fn decode_local_system_cylinder_frame(
         return None;
     };
     let length = envelope[0];
-    (length.is_finite() && length > 0.0).then_some(())?;
     let scale = envelope
         .iter()
         .chain(slots.iter())
@@ -6369,7 +6362,6 @@ fn decode_zero_support_cylinder_frame(
     let (origin, radius) =
         decode_zero_support_cylinder_origin_radius(body, cursor, ZERO_SUPPORT, cache)?;
     let length = envelope[0];
-    (length.is_finite() && length > 0.0).then_some(())?;
     let scale = envelope
         .iter()
         .chain(origin.iter())
@@ -6911,7 +6903,6 @@ fn cylinder_frame_from_local_system(
     slots: &[f64; 12],
     radius: f64,
 ) -> Option<PositionalCylinderFrame> {
-    (radius.is_finite() && radius > 0.0).then_some(())?;
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
         (magnitude.is_finite() && magnitude > 0.0)
@@ -7093,7 +7084,6 @@ fn axis_aligned_cylinder_from_corners(
     };
     let radius = spans[*radius_index];
     let length = spans[*axis_index];
-    (radius > 0.0 && length > 0.0).then_some(())?;
     let mut origin = second;
     origin[*diameter_index] = f64::midpoint(first[*diameter_index], second[*diameter_index]);
     if matches!(orientation, AxisAlignedCornerOrientation::FirstToSecond) {
