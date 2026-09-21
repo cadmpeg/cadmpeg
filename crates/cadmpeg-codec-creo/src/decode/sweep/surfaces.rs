@@ -67,7 +67,6 @@ pub(in super::super) fn revolved_section_surface(
         let radial = std::array::from_fn(|index| point[index] - on_axis[index]);
         (on_axis, radial)
     };
-    let vector = |values: [f64; 3]| Vector3::from(values);
     let point = |values: [f64; 3]| Point3::from(values);
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
@@ -95,8 +94,8 @@ pub(in super::super) fn revolved_section_surface(
                 return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                         point(on_axis),
-                        vector(axis),
-                        vector(reference),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                         radius,
                     )
                     .ok()?,
@@ -106,8 +105,8 @@ pub(in super::super) fn revolved_section_surface(
                 return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                         point(on_axis),
-                        vector(axis),
-                        vector(reference),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                     )
                     .ok()?,
                 )));
@@ -121,8 +120,8 @@ pub(in super::super) fn revolved_section_surface(
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
                     point(on_axis),
-                    vector(cone_axis),
-                    vector(reference),
+                    Vector3::from(cone_axis),
+                    Vector3::from(reference),
                     radius,
                     1.0,
                     radial_rate.abs().atan2(axial_rate.abs()),
@@ -149,8 +148,8 @@ pub(in super::super) fn revolved_section_surface(
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                         point(center),
-                        vector(axis),
-                        vector(reference),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                         radius.get(),
                     )
                     .ok()?,
@@ -159,8 +158,8 @@ pub(in super::super) fn revolved_section_surface(
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
                         point(on_axis),
-                        vector(axis),
-                        vector(reference),
+                        Vector3::from(axis),
+                        Vector3::from(reference),
                         major_radius,
                         radius.get(),
                     )
