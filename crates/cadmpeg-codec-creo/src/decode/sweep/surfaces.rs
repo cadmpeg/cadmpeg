@@ -210,8 +210,8 @@ pub(in super::super) fn placed_section_geometry_curve(
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     Point3::from(center),
-                    Vector3::from(transform.normal()),
-                    Vector3::from(transform.u_axis()),
+                    transform.normal_vector(),
+                    transform.u_axis_vector(),
                     radius.get(),
                 )
                 .ok()?,

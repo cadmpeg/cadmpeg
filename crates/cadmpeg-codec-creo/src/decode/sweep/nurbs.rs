@@ -59,8 +59,8 @@ pub(in super::super) fn extruded_geometry_surface(
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::from(center),
-                    Vector3::from(transform.normal()),
-                    Vector3::from(transform.u_axis()),
+                    transform.normal_vector(),
+                    transform.u_axis_vector(),
                     radius.get(),
                 )
                 .ok()?,

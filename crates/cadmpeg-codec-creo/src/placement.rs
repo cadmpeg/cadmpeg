@@ -15,6 +15,7 @@ use crate::surface::{
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
 use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale};
+use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeSet;
 
 /// Tolerance of every placement quantity this module reconstructs by arithmetic.
@@ -110,6 +111,16 @@ impl FeatureSectionTransform {
     /// Right-handed normal derived from the section axes.
     pub(crate) fn normal(&self) -> [f64; 3] {
         cross(self.u_axis, self.v_axis)
+    }
+
+    /// Returns the normal as the geometry vector the carrier constructors take.
+    pub(crate) fn normal_vector(&self) -> Vector3 {
+        Vector3::from(self.normal())
+    }
+
+    /// Returns the section u direction as the geometry vector the carrier constructors take.
+    pub(crate) fn u_axis_vector(&self) -> Vector3 {
+        Vector3::from(self.u_axis)
     }
 }
 
