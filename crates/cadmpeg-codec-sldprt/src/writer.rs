@@ -3644,13 +3644,11 @@ pub(super) fn curve_values(
 
 /// Reference direction the compact carrier record states for `geometry`.
 ///
-/// The recursion is bounded by the carrier itself:
-/// `cadmpeg_ir::geometry::PlacedSurface::try_new` refuses a chain past
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING), so
-/// the walk is at most that many levels deep. Both callers pass the same
-/// carrier to `surface_values`, which refuses every transformed surface, so a
-/// transformed carrier leaves the file through `CodecError::NotImplemented`
-/// whatever direction this returns.
+/// A transformed carrier states the default direction and no basis is read.
+/// Both callers pass the same carrier to `surface_values`, which refuses every
+/// transformed surface, so a transformed carrier leaves the writer through
+/// `CodecError::NotImplemented` and the direction stated here reaches no
+/// record.
 pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     const DEFAULT_REFERENCE: cadmpeg_ir::math::Vector3 = cadmpeg_ir::math::Vector3 {
         x: 1.0,
@@ -3678,9 +3676,9 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
             let ref_direction = sphere_surface.ref_direction();
             *ref_direction
         }
-        SolvedSurfaceGeometry::Transformed(placed) => surface_reference(placed.basis()),
         SolvedSurfaceGeometry::Nurbs(_)
         | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Unknown { .. } => DEFAULT_REFERENCE,
     }
 }
