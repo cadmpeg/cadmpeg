@@ -14,6 +14,53 @@ mod canon;
 pub mod catalogue;
 mod replay;
 
+/// Deepest container chain one native record field may hold.
+///
+/// [`NativeRecord::new`] and [`NativeRecord::from_identity`] take a
+/// caller-owned `Map`, so a field tree is not limited by the parse that would
+/// otherwise have produced it. Reading one back descends it:
+/// `serde_json::from_value` carries no recursion counter, and [`replay::emit`]
+/// starts one parse per container. Both refuse a field nested past this bound.
+/// It is twice the 128 containers a `serde_json` text parse admits, so every
+/// field a CADIR document can state is read back.
+const MAX_NATIVE_NESTING_DEPTH: usize = 256;
+
+/// States whether `value` holds a container chain longer than `limit`.
+///
+/// The pending containers live in this function's own vector, so measuring a
+/// value cannot itself overflow the machine stack. Only containers enter it: a
+/// scalar carries no chain, and a key is not a value.
+fn nests_past(value: &Value, limit: usize) -> bool {
+    let mut pending: Vec<(&Value, usize)> = Vec::new();
+    push_container(&mut pending, value, 1);
+    while let Some((value, depth)) = pending.pop() {
+        if depth > limit {
+            return true;
+        }
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    push_container(&mut pending, item, depth + 1);
+                }
+            }
+            Value::Object(entries) => {
+                for entry in entries.values() {
+                    push_container(&mut pending, entry, depth + 1);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+    false
+}
+
+/// Records `value` at `depth` when it is a container.
+fn push_container<'a>(pending: &mut Vec<(&'a Value, usize)>, value: &'a Value, depth: usize) {
+    if matches!(value, Value::Array(_) | Value::Object(_)) {
+        pending.push((value, depth));
+    }
+}
+
 /// One non-empty native arena reported as an exporter loss.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -179,7 +226,22 @@ impl NativeRecord {
     }
 
     /// Deserialize the record into a codec-owned typed record.
+    ///
+    /// `serde_json::from_value` descends the value with no recursion counter,
+    /// so the fields are measured first: a field nested past
+    /// [`MAX_NATIVE_NESTING_DEPTH`] is refused by name instead of driving the
+    /// descent.
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
+        for (name, value) in &self.fields {
+            if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
+                return Err(NativeConvertError::ReadRecord {
+                    id: self.id.clone(),
+                    source: <serde_json::Error as serde::de::Error>::custom(format!(
+                        "field {name} nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
+                    )),
+                });
+            }
+        }
         let mut record = self.fields.clone();
         record.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
         serde_json::from_value(Value::Object(record)).map_err(|source| {
