@@ -138,7 +138,9 @@ impl<'a> NativeRecordPlan<'a> {
             .pcurves
             .len()
             .checked_add(ref_pcurve_count)
-            .ok_or_else(|| CodecError::Malformed("pcurve record count overflows usize".into()))?;
+            .ok_or_else(|| {
+                CodecError::NotImplemented("pcurve record count overflows usize".into())
+            })?;
         let coedge_start = native_record_index(pcurve_start, pcurve_record_count)?;
         let wire_coedge_start = native_record_index(coedge_start, model.coedges.len())?;
         let wire_edge_count = model

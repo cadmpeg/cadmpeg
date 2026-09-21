@@ -852,7 +852,7 @@ pub(super) fn validate_material_assignment_appearances(
                 CodecError::NotImplemented(format!("cannot remove F3D appearance color: {id}"))
             })?;
             if before.base_color.is_none() || color.a() != 1.0 {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::NotImplemented(format!(
                     "F3D Protein color {id} must replace an existing opaque finite RGBA color"
                 )));
             }
@@ -872,7 +872,7 @@ pub(super) fn validate_material_assignment_appearances(
                     _ => false,
                 };
             if !valid {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::NotImplemented(format!(
                     "F3D Protein property {id}.{name} is outside its writable range"
                 )));
             }
@@ -1968,7 +1968,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
         if after.asm_body_key != before.asm_body_key {
             let key = after.asm_body_key.map_or(Ok(-1), |key| {
                 i64::try_from(key).map_err(|_| {
-                    CodecError::malformed(format_args!("F3D ASM body key exceeds i64::MAX: {key}"))
+                    CodecError::NotImplemented(format!("F3D ASM body key exceeds i64::MAX: {key}"))
                 })
             })?;
             edits.asm.insert(after.record_index as usize, key);

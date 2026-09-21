@@ -3285,23 +3285,6 @@ fn encode_native_extrusion(
         })?,
         parameter_interval,
     )?;
-    if [
-        parameter_interval[0],
-        parameter_interval[1],
-        direction.x,
-        direction.y,
-        direction.z,
-        native_position.x,
-        native_position.y,
-        native_position.z,
-    ]
-    .into_iter()
-    .any(|component| !component.is_finite())
-    {
-        return Err(CodecError::Malformed(
-            "source-less extrusion fields must be finite".into(),
-        ));
-    }
     let direction = [
         direction.x / LEN_TO_MM,
         direction.y / LEN_TO_MM,
@@ -3395,7 +3378,7 @@ fn native_radius_function_pcurve_block(
             nurbs.weights(),
             nurbs.periodic(),
         )
-        .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
     };
     native_nurbs_pcurve_block(bytes, &native)
 }
@@ -3407,7 +3390,7 @@ fn native_variable_blend_value(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{VariableBlendTerminal, VariableBlendValuePayload};
     if depth > 32 {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
@@ -4443,7 +4426,7 @@ fn native_interval_curve(
 ) -> Result<NurbsCurve, CodecError> {
     if !parameter_range.into_iter().all(f64::is_finite) || parameter_range[0] >= parameter_range[1]
     {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "source-less F3D interval curve requires a finite ordered range".into(),
         ));
     }
@@ -4471,7 +4454,7 @@ fn native_interval_curve(
                 None,
                 false,
             )
-            .map_err(|error| CodecError::Malformed(error.to_string()))
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -4516,20 +4499,6 @@ fn native_conic_interval_curve(
     minor_radius: f64,
     parameter_range: [f64; 2],
 ) -> Result<NurbsCurve, CodecError> {
-    if !center.is_finite()
-        || !axis.is_finite()
-        || !major_direction.is_finite()
-        || !major_radius.is_finite()
-        || !minor_radius.is_finite()
-        || axis.norm() == 0.0
-        || major_direction.norm() == 0.0
-        || major_radius <= 0.0
-        || minor_radius <= 0.0
-    {
-        return Err(CodecError::Malformed(
-            "source-less F3D conic interval requires finite nondegenerate geometry".into(),
-        ));
-    }
     let axis_norm = axis.norm();
     let axis = axis.scale(1.0 / axis_norm);
     let major_norm = major_direction.norm();
@@ -4537,7 +4506,7 @@ fn native_conic_interval_curve(
     let minor_direction = axis.cross(major_direction);
     let minor_norm = minor_direction.norm();
     if !minor_norm.is_finite() || minor_norm == 0.0 {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "source-less F3D conic axis and major direction must not be parallel".into(),
         ));
     }
@@ -4588,7 +4557,7 @@ fn native_conic_interval_curve(
         let middle = (start + end) * 0.5;
         let weight = (step * 0.5).cos();
         if !weight.is_finite() || weight <= 0.0 {
-            return Err(CodecError::Malformed(
+            return Err(CodecError::NotImplemented(
                 "source-less F3D conic interval has an invalid rational span".into(),
             ));
         }
@@ -4608,12 +4577,13 @@ fn native_conic_interval_curve(
         }
     }
     NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false)
-        .map_err(|error| CodecError::Malformed(error.to_string()))
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
 #[cfg(test)]
 mod native_interval_curve_tests {
     use super::{native_interval_curve, native_spline_field_curve};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -4672,6 +4642,7 @@ mod native_interval_curve_tests {
 
         let error =
             native_interval_curve(&circle, [1.0, 1.0]).expect_err("a range that states no span");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(
             error.to_string().contains("finite ordered range"),
             "{error}"
@@ -5860,7 +5831,7 @@ fn native_support_pcurve_for_range(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let radius = cylinder_surface.radius().get();
             if radius <= f64::EPSILON {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "intcurve support has an invalid cone parameter scale".into(),
                 ));
             }
@@ -5879,7 +5850,7 @@ fn native_support_pcurve_for_range(
             let direction = if sine * cosine < 0.0 { -1.0 } else { 1.0 };
             let axial_scale = direction * radius * cosine;
             if !axial_scale.is_finite() || axial_scale.abs() <= f64::EPSILON {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "intcurve support has an invalid cone axial parameter scale".into(),
                 ));
             }
@@ -5898,7 +5869,7 @@ fn native_support_pcurve_for_range(
         poles,
         native.periodic(),
     )
-    .map_err(|error| CodecError::Malformed(error.to_string()))
+    .map_err(|error| CodecError::NotImplemented(error.to_string()))
 }
 
 #[cfg(test)]
@@ -5957,7 +5928,7 @@ mod pcurve_chart_tests {
                     .expect("finite pcurve output decodes");
             } else {
                 let error = result.expect_err("pcurve evaluation overflows a pole coordinate");
-                assert!(matches!(error, CodecError::Malformed(_)), "{error}");
+                assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
                 assert!(error.to_string().contains("control_points"), "{error}");
                 assert_eq!(output, [0x93, 0x2a]);
             }
@@ -6728,7 +6699,7 @@ pub(super) fn native_ref_pcurve_companion(
     let native_geometry = native_support_pcurve_for_range(support, geometry, range)?;
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
     native_curve_base(bytes, "intcurve")?;
     native_nurbs_curve(bytes, &lifted)?;
     native_nurbs_pcurve_payload(bytes, &native_geometry)?;
@@ -6749,7 +6720,7 @@ fn native_pcurve_geometry(
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
             if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "source-less F3D line pcurve requires an ordered finite range".into(),
                 ));
             }
@@ -6770,7 +6741,7 @@ fn native_pcurve_geometry(
                 false,
             )
             .map(Cow::Owned)
-            .map_err(|error| CodecError::Malformed(error.to_string()))
+            .map_err(|error| CodecError::NotImplemented(error.to_string()))
         }
         PcurveGeometry::Circle(_) => Err(CodecError::NotImplemented(
             "F3D analytic pcurve writing is not supported".into(),

@@ -220,7 +220,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     )
     .expect_err("out-of-range refraction must be refused");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("refraction_index"))
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("refraction_index"))
     );
 
     let (mut structural, _, fidelity) = decoded.into_parts();
