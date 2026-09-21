@@ -36,11 +36,10 @@ use crate::decode::sketch_transfer::recipe::{
 };
 use crate::vecmath::{cross, dot};
 
+/// Positional residual tolerance for reconstructed cylinders.
 const EPS_CYLINDER_POSITION: f64 = 1.0e-8;
+/// General reconstructed cylinder geometry tolerance.
 const EPS_CYLINDER_GEOMETRY: f64 = 1.0e-9;
-
-const EPS_ROUND_EDGE_RELATIVE: f64 = EPS_CYLINDER_GEOMETRY;
-const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = EPS_CYLINDER_POSITION;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in super::super) struct PositionalCylinderTransferSummary {
@@ -68,10 +67,6 @@ enum PerpendicularRoundEdgeFailure {
     NonuniqueRadius,
     CarrierValidationFailure,
 }
-
-const EPS_RADIUS_AGREEMENT: f64 = EPS_CYLINDER_GEOMETRY;
-const EPS_AXIS_ALIGNMENT: f64 = EPS_CYLINDER_GEOMETRY;
-const EPS_LENGTH_NONZERO: f64 = EPS_CYLINDER_GEOMETRY;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
@@ -526,7 +521,7 @@ fn round_edge_cylinder_frame(
         return None;
     }
     let close_to_radius =
-        |value: f64| (value - radius).abs() <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0);
+        |value: f64| (value - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius.max(1.0);
     let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
         let scale = point
             .into_iter()
@@ -534,7 +529,7 @@ fn round_edge_cylinder_frame(
             .map(f64::abs)
             .fold(1.0, f64::max);
         (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
-            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+            <= EPS_CYLINDER_POSITION * scale
     };
     let distance_from_axis = |point: [f64; 3], origin: [f64; 3], axis: [f64; 3]| {
         let relative = std::array::from_fn(|index| point[index] - origin[index]);
@@ -563,7 +558,7 @@ fn round_edge_cylinder_frame(
                 cross(first_normal, second_normal),
                 cross(first_normal, second_normal),
             );
-            if cross_norm_squared <= EPS_ROUND_EDGE_RELATIVE {
+            if cross_norm_squared <= EPS_CYLINDER_GEOMETRY {
                 continue;
             }
             let first_on_first = plane_contains(first, first_support);
@@ -614,7 +609,7 @@ fn round_edge_cylinder_frame(
                         axis,
                         ref_direction,
                         radius,
-                        (axial_span > EPS_ROUND_EDGE_RELATIVE * radius.max(1.0))
+                        (axial_span > EPS_CYLINDER_GEOMETRY * radius.max(1.0))
                             .then_some(axial_span),
                     ) else {
                         continue;
@@ -628,8 +623,8 @@ fn round_edge_cylinder_frame(
                                 frame.frame().origin(),
                                 frame.frame().axis(),
                             );
-                            parallel >= 1.0 - EPS_ROUND_EDGE_RELATIVE
-                                && origin_distance <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0)
+                            parallel >= 1.0 - EPS_CYLINDER_GEOMETRY
+                                && origin_distance <= EPS_CYLINDER_GEOMETRY * radius.max(1.0)
                         },
                     );
                     if !same_line {
@@ -660,13 +655,13 @@ fn unique_tangent_axial_interval_corner_frame(
                     let Some(normal) = normalize(plane.normal) else {
                         return false;
                     };
-                    if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+                    if dot(axis, normal).abs() > EPS_CYLINDER_GEOMETRY {
                         return false;
                     }
                     let distance =
                         (dot(normal, candidate.frame().origin()) - dot(normal, plane.origin)).abs();
                     (distance - candidate.radius()).abs()
-                        <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius().max(1.0)
+                        <= EPS_CYLINDER_POSITION * candidate.radius().max(1.0)
                 })
                 .count();
             (score != 0).then_some((candidate, score))
@@ -690,15 +685,15 @@ fn unique_support_tangent_cylinder_frame(
     let mut witnessed_planes = Vec::new();
     for plane in support_planes {
         let normal = normalize(plane.normal)?;
-        if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+        if dot(axis, normal).abs() > EPS_CYLINDER_GEOMETRY {
             return None;
         }
         let [axis_index] = (0..3)
             .filter(|index| {
-                normal[*index].abs() > 1.0 - EPS_ROUND_EDGE_RELATIVE
+                normal[*index].abs() > 1.0 - EPS_CYLINDER_GEOMETRY
                     && (0..3)
                         .filter(|other| *other != *index)
-                        .all(|other| normal[other].abs() <= EPS_ROUND_EDGE_RELATIVE)
+                        .all(|other| normal[other].abs() <= EPS_CYLINDER_GEOMETRY)
             })
             .collect::<Vec<_>>()
             .as_slice()
@@ -718,7 +713,7 @@ fn unique_support_tangent_cylinder_frame(
                 .max(stored.radius())
                 .max(1.0);
             (coordinate.abs() - stored.frame().origin()[axis_index].abs()).abs()
-                <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+                <= EPS_CYLINDER_POSITION * scale
         })
         .collect::<Vec<_>>();
         if candidates.is_empty() {
@@ -737,7 +732,7 @@ fn unique_support_tangent_cylinder_frame(
                 if !next.iter().any(|known: &[f64; 3]| {
                     known.iter().zip(candidate).all(|(left, right)| {
                         (left - right).abs()
-                            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * left.abs().max(right.abs()).max(1.0)
+                            <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
                     })
                 }) {
                     next.push(candidate);
@@ -756,7 +751,7 @@ fn unique_support_tangent_cylinder_frame(
             let normal = plane.normal;
             let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
             let scale = distance.max(stored.radius()).max(1.0);
-            (distance - stored.radius()).abs() <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+            (distance - stored.radius()).abs() <= EPS_CYLINDER_POSITION * scale
         });
         if !tangent_to_all {
             continue;
@@ -798,7 +793,7 @@ fn perpendicular_round_edge_cylinder_frame(
             .map(f64::abs)
             .fold(1.0, f64::max);
         (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
-            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+            <= EPS_CYLINDER_POSITION * scale
     };
     let mut radii = Vec::new();
     let mut has_perpendicular_support_pair = false;
@@ -816,7 +811,7 @@ fn perpendicular_round_edge_cylinder_frame(
             let Some(second_normal) = normalize(second_support.normal) else {
                 continue;
             };
-            if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+            if dot(first_normal, second_normal).abs() > EPS_CYLINDER_GEOMETRY {
                 continue;
             }
             has_perpendicular_support_pair = true;
@@ -835,14 +830,14 @@ fn perpendicular_round_edge_cylinder_frame(
                 let first_radius = dot(delta, first_plane_normal).abs();
                 let second_radius = dot(delta, second_plane_normal).abs();
                 let scale = first_radius.max(second_radius).max(1.0);
-                if first_radius <= EPS_ROUND_EDGE_RELATIVE * scale
-                    || (first_radius - second_radius).abs() > EPS_ROUND_EDGE_RELATIVE * scale
+                if first_radius <= EPS_CYLINDER_GEOMETRY * scale
+                    || (first_radius - second_radius).abs() > EPS_CYLINDER_GEOMETRY * scale
                 {
                     continue;
                 }
                 has_equal_radius_projections = true;
                 if !radii.iter().any(|radius: &f64| {
-                    (*radius - first_radius).abs() <= EPS_ROUND_EDGE_RELATIVE * scale
+                    (*radius - first_radius).abs() <= EPS_CYLINDER_GEOMETRY * scale
                 }) {
                     radii.push(first_radius);
                 }
@@ -1259,7 +1254,7 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     .then_some(())?;
     let radius = first.radius;
     let radius_scale = radius.max(second.radius).max(1.0);
-    ((second.radius - radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale).then_some(())?;
+    ((second.radius - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale).then_some(())?;
     let scale = first
         .center
         .iter()
@@ -1268,21 +1263,21 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .fold(radius_scale, f64::max);
     let first_axis = normalize(first.axis)?;
     let second_axis = normalize(second.axis)?;
-    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
+    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);
     let length = dot(displacement, displacement).sqrt();
-    (length.is_finite() && length > EPS_LENGTH_NONZERO * scale).then_some(())?;
+    (length.is_finite() && length > EPS_CYLINDER_GEOMETRY * scale).then_some(())?;
     let center_direction = displacement.map(|value| value / length);
-    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT
-        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT)
+    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY
+        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY)
         .then_some(())?;
     let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
         let vector: [f64; 3] =
             std::array::from_fn(|index| circle.start[index] - circle.center[index]);
         let length = dot(vector, vector).sqrt();
-        ((length - radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale
-            && dot(axis, vector).abs() <= EPS_AXIS_ALIGNMENT * radius_scale)
+        ((length - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale
+            && dot(axis, vector).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale)
             .then_some((vector, length))
     };
     let (radial, radial_length) = validated_radial(first, first_axis)?;

@@ -21,17 +21,10 @@ use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
 
+/// General reconstructed counterbore geometry tolerance.
 const EPS_COUNTERBORE_GEOMETRY: f64 = 1.0e-9;
+/// Exact-geometry threshold for degenerate counterbore lengths.
 const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;
-
-const EPS_COUNTERBORE_RADIUS_MATCH: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_COUNTERBORE_ENVELOPE_MATCH: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_RADIUS_AGREEMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_PARAMETER_DELTA: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_GEOMETRY_AGREEMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_LENGTH_NONZERO: f64 = EPS_COUNTERBORE_EXACT_GEOMETRY;
-const EPS_DEPTH_BOUND: f64 = EPS_COUNTERBORE_GEOMETRY;
-const EPS_AXIS_ALIGNMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
 
 fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGeometry>> {
     let mut geometries = BTreeMap::new();
@@ -164,7 +157,7 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
             || counterbore_radius <= bore_radius
             || !generated_radii.iter().any(|radius| {
                 (*radius - counterbore_radius).abs()
-                    <= EPS_COUNTERBORE_RADIUS_MATCH
+                    <= EPS_COUNTERBORE_GEOMETRY
                         * radius.abs().max(counterbore_radius.abs()).max(1.0)
             })
         {
@@ -182,7 +175,7 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
                 candidate.2 - first.2,
             ]
             .iter()
-            .all(|delta| delta.abs() <= EPS_PARAMETER_DELTA)
+            .all(|delta| delta.abs() <= EPS_COUNTERBORE_GEOMETRY)
         })
         .then_some(first)
 }
@@ -593,8 +586,7 @@ fn counterbore_source_envelope_layout(
     axial_depth: Option<f64>,
     scale: f64,
 ) -> Option<CounterboreEnvelopeLayout> {
-    let close =
-        |left: f64, right: f64| (left - right).abs() <= EPS_COUNTERBORE_ENVELOPE_MATCH * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_COUNTERBORE_GEOMETRY * scale;
     let intervals = corners.map(|patch| {
         std::array::from_fn::<_, 3, _>(|axis| {
             [
@@ -698,8 +690,7 @@ fn counterbore_corner_assignment(
         && counterbore_diameter > bore_diameter
         && counterbore_depth > 0.0)
         .then_some(())?;
-    let close =
-        |left: f64, right: f64| (left - right).abs() <= EPS_COUNTERBORE_ENVELOPE_MATCH * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_COUNTERBORE_GEOMETRY * scale;
     let assignments = [
         (
             0,
@@ -788,8 +779,8 @@ pub(in crate::decode) fn counterbore_directed_span(
     .map(f64::abs)
     .fold(1.0, f64::max);
     (length.is_finite()
-        && length > EPS_LENGTH_NONZERO * scale
-        && counterbore_depth <= length + EPS_DEPTH_BOUND * scale)
+        && length > EPS_COUNTERBORE_EXACT_GEOMETRY * scale
+        && counterbore_depth <= length + EPS_COUNTERBORE_GEOMETRY * scale)
         .then_some(())?;
     let direction = delta.map(|value| value / length);
     [counterbore.2, bore.2]
@@ -801,7 +792,7 @@ pub(in crate::decode) fn counterbore_directed_span(
                 .map(|(left, right)| left * right)
                 .sum::<f64>()
                 .abs();
-            (alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT
+            (alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
         })
         .then_some(())?;
     Some((
@@ -881,8 +872,8 @@ fn counterbore_source_boundary_circle(
                 .into_iter()
                 .map(f64::abs)
                 .fold(1.0, f64::max);
-                ((alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT
-                    && distance <= EPS_GEOMETRY_AGREEMENT * scale)
+                ((alignment - 1.0).abs() <= EPS_COUNTERBORE_GEOMETRY
+                    && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
                     .then_some(())?;
                 Some((other, center, axis))
             })
@@ -910,7 +901,7 @@ fn counterbore_source_boundary_circle(
                     .map(|(left, right)| left * right)
                     .sum::<f64>()
                     .abs()
-                    >= 1.0 - EPS_AXIS_ALIGNMENT
+                    >= 1.0 - EPS_COUNTERBORE_GEOMETRY
         })
         .then_some(first)
 }
@@ -1033,7 +1024,7 @@ fn complete_cylinder_source_carrier(
     let axis = cylinder.axis();
     let ref_direction = cylinder.ref_direction();
     let candidate = cylinder.radius().get();
-    ((candidate - radius).abs() <= EPS_RADIUS_AGREEMENT
+    ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY
         && carriers.iter().all(|candidate| *candidate == first))
     .then_some(HoleCylinder {
         origin,
