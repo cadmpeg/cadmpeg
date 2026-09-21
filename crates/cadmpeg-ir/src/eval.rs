@@ -2482,7 +2482,7 @@ fn periodic_parameter(
 
 /// Evaluate a 3D curve carrier at parameter `t` on its own parameterization.
 pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Point3> {
-    curve_point_inner(geometry, t, 0).filter(Point3::is_finite)
+    curve_point_inner(geometry, t).filter(Point3::is_finite)
 }
 
 /// Evaluate the exact first derivative of a directly stored curve.
@@ -2490,7 +2490,7 @@ pub fn curve_tangent_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Ve
     if !t.is_finite() {
         return None;
     }
-    curve_tangent_inner(geometry, t, 0).filter(Vector3::is_finite)
+    curve_tangent_inner(geometry, t).filter(Vector3::is_finite)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve.
@@ -2498,7 +2498,7 @@ pub fn curve_second_derivative_solved(geometry: &SolvedCurveGeometry, t: f64) ->
     if !t.is_finite() {
         return None;
     }
-    curve_second_derivative_inner(geometry, t, 0).filter(Vector3::is_finite)
+    curve_second_derivative_inner(geometry, t).filter(Vector3::is_finite)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -2509,15 +2509,9 @@ pub fn curve_point_with_budget_solved(
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Point3> {
-    fn evaluate(
-        geometry: &SolvedCurveGeometry,
-        t: f64,
-        depth: usize,
-        budget: &WorkBudget<'_>,
-    ) -> Option<Point3> {
-        if depth > 256 {
-            return None;
-        }
+    /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+    /// construction; no arm follows an arena id.
+    fn evaluate(geometry: &SolvedCurveGeometry, t: f64, budget: &WorkBudget<'_>) -> Option<Point3> {
         match geometry {
             SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
@@ -2531,14 +2525,14 @@ pub fn curve_point_with_budget_solved(
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), t, depth + 1, budget)
+                evaluate(placed.basis(), t, budget)
                     .and_then(|point| placed.transform().apply_point(point))
             }
             _ => curve_point_solved(geometry, t),
         }
     }
 
-    evaluate(geometry, t, 0, budget)
+    evaluate(geometry, t, budget)
 }
 
 /// Evaluate the exact first derivative of a directly stored curve within a
@@ -2548,15 +2542,13 @@ pub fn curve_tangent_with_budget_solved(
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Vector3> {
+    /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+    /// construction; no arm follows an arena id.
     fn evaluate(
         geometry: &SolvedCurveGeometry,
         t: f64,
-        depth: usize,
         budget: &WorkBudget<'_>,
     ) -> Option<Vector3> {
-        if depth > 256 {
-            return None;
-        }
         match geometry {
             SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
@@ -2570,14 +2562,14 @@ pub fn curve_tangent_with_budget_solved(
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), t, depth + 1, budget)
+                evaluate(placed.basis(), t, budget)
                     .and_then(|tangent| placed.transform().apply_vector(tangent))
             }
             _ => curve_tangent_solved(geometry, t),
         }
     }
 
-    evaluate(geometry, t, 0, budget)
+    evaluate(geometry, t, budget)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve within a
@@ -2587,15 +2579,13 @@ pub fn curve_second_derivative_with_budget_solved(
     t: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Vector3> {
+    /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+    /// construction; no arm follows an arena id.
     fn evaluate(
         geometry: &SolvedCurveGeometry,
         t: f64,
-        depth: usize,
         budget: &WorkBudget<'_>,
     ) -> Option<Vector3> {
-        if depth > 256 {
-            return None;
-        }
         match geometry {
             SolvedCurveGeometry::Nurbs(nurbs) => {
                 budget
@@ -2609,14 +2599,14 @@ pub fn curve_second_derivative_with_budget_solved(
             }
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), t, depth + 1, budget)
+                evaluate(placed.basis(), t, budget)
                     .and_then(|derivative| placed.transform().apply_vector(derivative))
             }
             _ => curve_second_derivative_solved(geometry, t),
         }
     }
 
-    evaluate(geometry, t, 0, budget)
+    evaluate(geometry, t, budget)
 }
 
 fn nurbs_curve_evaluation_cost(curve: &NurbsCurve) -> Option<usize> {
@@ -2631,10 +2621,9 @@ fn nurbs_curve_derivative_evaluation_cost(
     nurbs_curve_evaluation_cost(curve)?.checked_mul(basis_levels)
 }
 
-fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
-    if depth > 256 {
-        return None;
-    }
+/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+/// construction; no arm follows an arena id.
+fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => Some(*line_curve.direction().as_raw()),
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -2698,24 +2687,17 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             let (points, parameters) = polyline_samples(polyline);
             polyline_tangent(&points, &parameters, t)
         }
-        SolvedCurveGeometry::Transformed(placed) => {
-            curve_tangent_inner(placed.basis(), t, depth + 1)
-                .and_then(|tangent| placed.transform().apply_vector(tangent))
-        }
+        SolvedCurveGeometry::Transformed(placed) => curve_tangent_inner(placed.basis(), t)
+            .and_then(|tangent| placed.transform().apply_vector(tangent)),
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
         SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
-fn curve_second_derivative_inner(
-    geometry: &SolvedCurveGeometry,
-    t: f64,
-    depth: usize,
-) -> Option<Vector3> {
-    if depth > 256 {
-        return None;
-    }
+/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+/// construction; no arm follows an arena id.
+fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
         SolvedCurveGeometry::Line(_) => Some(zero),
@@ -2774,7 +2756,7 @@ fn curve_second_derivative_inner(
             polyline_tangent(&points, &parameters, t).map(|_| zero)
         }
         SolvedCurveGeometry::Transformed(placed) => {
-            curve_second_derivative_inner(placed.basis(), t, depth + 1)
+            curve_second_derivative_inner(placed.basis(), t)
                 .and_then(|derivative| placed.transform().apply_vector(derivative))
         }
         SolvedCurveGeometry::Degenerate(_) => None,
@@ -3154,13 +3136,12 @@ fn record_u_interval(record_bounds: Option<crate::geometry::RecordBounds>) -> Op
     Some([start, end])
 }
 
-fn is_line_geometry(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
-    if depth > 256 {
-        return false;
-    }
+/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+/// construction; no arm follows an arena id.
+fn is_line_geometry(geometry: &SolvedCurveGeometry) -> bool {
     match geometry {
         SolvedCurveGeometry::Line(_) => true,
-        SolvedCurveGeometry::Transformed(placed) => is_line_geometry(placed.basis(), depth + 1),
+        SolvedCurveGeometry::Transformed(placed) => is_line_geometry(placed.basis()),
         _ => false,
     }
 }
@@ -3229,11 +3210,7 @@ fn construction_curve_parameter(
         };
     };
     let surface_width = surface_end - surface_start;
-    if !curve
-        .geometry
-        .solved()
-        .is_some_and(|geometry| is_line_geometry(geometry, 0))
-    {
+    if !curve.geometry.solved().is_some_and(is_line_geometry) {
         return if reversed {
             Some((-parameter, -surface_derivative))
         } else {
@@ -4057,10 +4034,9 @@ fn polyline_parameter_near_point(
         .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
 }
 
-fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Option<Point3> {
-    if depth > 256 {
-        return None;
-    }
+/// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
+/// construction; no arm follows an arena id.
+fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Point3> {
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
             let origin = line_curve.origin().get();
@@ -4145,7 +4121,7 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             let (points, parameters) = polyline_samples(polyline);
             polyline_point(&points, &parameters, t)
         }
-        SolvedCurveGeometry::Transformed(placed) => curve_point_inner(placed.basis(), t, depth + 1)
+        SolvedCurveGeometry::Transformed(placed) => curve_point_inner(placed.basis(), t)
             .and_then(|point| placed.transform().apply_point(point)),
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => None,
     }
@@ -4155,31 +4131,21 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 pub fn surface_point_solved(geometry: &SolvedSurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
-    surface_second_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
+    surface_second_partials_solved(geometry, u, v).map(|partials| partials.point)
 }
 
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
 /// slice. Analytic surfaces are constant-cost; transformed carriers charge
 /// each transform layer and NURBS carriers charge their local basis work.
+///
+/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
+/// construction; no arm follows an arena id.
 pub fn surface_point_with_budget_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Point3> {
-    surface_point_with_budget_inner(geometry, u, v, 0, budget)
-}
-
-fn surface_point_with_budget_inner(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-    depth: usize,
-    budget: &WorkBudget<'_>,
-) -> Option<Point3> {
-    if depth > 256 {
-        return None;
-    }
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
@@ -4269,7 +4235,7 @@ fn surface_point_with_budget_inner(
         SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
         SolvedSurfaceGeometry::Transformed(placed) => {
             budget.charge().then_some(())?;
-            surface_point_with_budget_inner(placed.basis(), u, v, depth + 1, budget)
+            surface_point_with_budget_solved(placed.basis(), u, v, budget)
                 .and_then(|point| placed.transform().apply_point(point))
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
@@ -4463,7 +4429,7 @@ pub fn surface_partials_solved(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
-    surface_second_partials_inner(geometry, u, v, 0).map(|partials| SurfacePartials {
+    surface_second_partials_solved(geometry, u, v).map(|partials| SurfacePartials {
         point: partials.point,
         du: partials.du,
         dv: partials.dv,
@@ -4472,23 +4438,14 @@ pub fn surface_partials_solved(
 
 /// Evaluate a directly stored surface and its exact first and second partial
 /// derivatives.
+///
+/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
+/// construction; no arm follows an arena id.
 pub fn surface_second_partials_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
-    surface_second_partials_inner(geometry, u, v, 0)
-}
-
-fn surface_second_partials_inner(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-    depth: usize,
-) -> Option<SurfaceSecondPartials> {
-    if depth > 256 {
-        return None;
-    }
     let zero = Vector3::new(0.0, 0.0, 0.0);
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
@@ -4666,7 +4623,7 @@ fn surface_second_partials_inner(
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
         SolvedSurfaceGeometry::Transformed(placed) => {
-            surface_second_partials_inner(placed.basis(), u, v, depth + 1).and_then(|partials| {
+            surface_second_partials_solved(placed.basis(), u, v).and_then(|partials| {
                 transform_surface_second_partials(partials, *placed.transform())
             })
         }
@@ -6185,23 +6142,21 @@ fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
         && partials.dvv.is_finite()
 }
 
+/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
+/// construction; no arm follows an arena id.
 fn model_surface_point_with_budget_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-    depth: usize,
 ) -> Option<Point3> {
-    if depth > 256 {
-        return None;
-    }
     match (geometry, budget) {
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
             nurbs_surface_point_with_budget(nurbs, u, v, budget)
         }
         (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
             budget.charge().then_some(())?;
-            model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget), depth + 1)
+            model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget))
                 .and_then(|point| placed.transform().apply_point(point))
         }
         _ => surface_point_solved(geometry, u, v),
@@ -6214,23 +6169,22 @@ fn surface_partials_with_budget_solved(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfacePartials> {
+    /// The descent is bounded by
+    /// [`PlacedSurface`](crate::geometry::PlacedSurface) construction; no arm
+    /// follows an arena id.
     fn evaluate(
         geometry: &SolvedSurfaceGeometry,
         u: f64,
         v: f64,
-        depth: usize,
         budget: &WorkBudget<'_>,
     ) -> Option<SurfacePartials> {
-        if depth > 256 {
-            return None;
-        }
         match geometry {
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_partials_with_budget(nurbs, u, v, budget)
             }
             SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), u, v, depth + 1, budget).and_then(|partials| {
+                evaluate(placed.basis(), u, v, budget).and_then(|partials| {
                     let transform = placed.transform();
                     Some(SurfacePartials {
                         point: transform.apply_point(partials.point)?,
@@ -6244,7 +6198,7 @@ fn surface_partials_with_budget_solved(
     }
 
     match (geometry, budget) {
-        (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
+        (_, Some(budget)) => evaluate(geometry, u, v, budget),
         _ => surface_partials_solved(geometry, u, v),
     }
 }
@@ -6255,23 +6209,22 @@ fn surface_second_partials_with_budget_solved(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
+    /// The descent is bounded by
+    /// [`PlacedSurface`](crate::geometry::PlacedSurface) construction; no arm
+    /// follows an arena id.
     fn evaluate(
         geometry: &SolvedSurfaceGeometry,
         u: f64,
         v: f64,
-        depth: usize,
         budget: &WorkBudget<'_>,
     ) -> Option<SurfaceSecondPartials> {
-        if depth > 256 {
-            return None;
-        }
         match geometry {
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
             }
             SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), u, v, depth + 1, budget).and_then(|partials| {
+                evaluate(placed.basis(), u, v, budget).and_then(|partials| {
                     transform_surface_second_partials(partials, *placed.transform())
                 })
             }
@@ -6280,7 +6233,7 @@ fn surface_second_partials_with_budget_solved(
     }
 
     match (geometry, budget) {
-        (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
+        (_, Some(budget)) => evaluate(geometry, u, v, budget),
         _ => surface_second_partials_solved(geometry, u, v),
     }
 }
@@ -7797,7 +7750,7 @@ fn model_surface_point_with_budget(
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<Point3> {
     match geometry.solved() {
-        Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget, 0),
+        Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget),
         None => model_surface_point(ir, geometry, u, v),
     }
 }
