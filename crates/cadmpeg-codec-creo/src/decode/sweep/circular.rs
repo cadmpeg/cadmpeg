@@ -23,7 +23,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
@@ -245,8 +245,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                             transform.origin()[1] + offset * transform.normal()[1],
                             transform.origin()[2] + offset * transform.normal()[2],
                         ),
-                        Vector3::from(transform.normal()),
-                        Vector3::from(transform.u_axis()),
+                        transform.normal_vector(),
+                        transform.u_axis_vector(),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )),
@@ -261,8 +261,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                             center[1] + offset * transform.normal()[1],
                             center[2] + offset * transform.normal()[2],
                         ),
-                        Vector3::from(transform.normal()),
-                        Vector3::from(transform.u_axis()),
+                        transform.normal_vector(),
+                        transform.u_axis_vector(),
                         radius,
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -359,8 +359,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
                     Point3::from(center),
-                    Vector3::from(transform.normal()),
-                    Vector3::from(transform.u_axis()),
+                    transform.normal_vector(),
+                    transform.u_axis_vector(),
                     radius,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
