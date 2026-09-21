@@ -248,4 +248,9 @@ fn numerical_followup_zero_radius_cone_retains_rotated_apex_plane() {
         2
     );
     assert!(super::apex_plane_cone_generator_candidates(plane(0.001), cone).is_empty());
+    let far_plane = CarrierEquation::Plane(PlaneEquation {
+        origin: [-1.7e308, -1.7e308, 1.7e308],
+        normal: [1., 1., 1.],
+    });
+    assert!(super::apex_plane_cone_generator_candidates(far_plane, cone).is_empty());
 }

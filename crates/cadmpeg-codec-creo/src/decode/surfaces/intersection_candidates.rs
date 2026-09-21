@@ -436,13 +436,14 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     let scale = cone.radius().max((cone.radius() / slope).abs());
     // An apex-based cone has no reference radius. Retain only the arithmetic
     // error bound of the plane dot product when its geometric scale is zero.
-    let roundoff = EPS_APEX_PLANE_ROUNDOFF
-        * normal
-            .into_iter()
-            .zip(plane_offset)
-            .map(|(a, b)| (a * b).abs())
-            .sum::<f64>();
-    if plane_distance.abs() > (EPS_GEOMETRY_AGREEMENT * scale).max(roundoff) {
+    let roundoff = normal
+        .into_iter()
+        .zip(plane_offset)
+        .map(|(a, b)| EPS_APEX_PLANE_ROUNDOFF * (a * b).abs())
+        .sum::<f64>();
+    if !plane_distance.is_finite()
+        || plane_distance.abs() > (EPS_GEOMETRY_AGREEMENT * scale).max(roundoff)
+    {
         return Vec::new();
     }
     let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal));
