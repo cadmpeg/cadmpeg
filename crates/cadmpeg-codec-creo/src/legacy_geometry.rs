@@ -2,6 +2,7 @@
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
 use crate::legacy::value_index;
+use cadmpeg_core::decode::index_from_u32;
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -9,6 +10,10 @@ use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persisten
 use crate::surface::{self, SurfaceKind, SurfaceRow};
 
 /// A complete model-space carrier from one legacy analytic surface prototype.
+///
+/// Every stored coordinate and dimension is finite: [`crate::legacy::Real`] is
+/// admitted from its stored IEEE-754 bits only when those bits state a finite
+/// value, and a legacy record holding one non-finite real is withheld whole.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum LegacySurfaceGeometry {
     /// A plane from a complete row-major local system.
@@ -481,7 +486,7 @@ fn surface_carrier(
             axis: third,
             ref_direction: first,
             radius: real_scalar(reals, primitive.offset, "radius")
-                .filter(|radius| radius.is_finite() && *radius > 0.0)?,
+                .filter(|radius| *radius > 0.0)?,
         },
         AnalyticFamily::Cone => {
             // The legacy record signs the half angle: the magnitude is the half angle and the
@@ -507,10 +512,10 @@ fn surface_carrier(
             }
         }
         AnalyticFamily::TorusOrSphere => {
-            let major_radius = real_scalar(reals, primitive.offset, "radius1")
-                .filter(|radius| radius.is_finite() && *radius >= 0.0)?;
-            let minor_radius = real_scalar(reals, primitive.offset, "radius2")
-                .filter(|radius| radius.is_finite() && *radius > 0.0)?;
+            let major_radius =
+                real_scalar(reals, primitive.offset, "radius1").filter(|radius| *radius >= 0.0)?;
+            let minor_radius =
+                real_scalar(reals, primitive.offset, "radius2").filter(|radius| *radius > 0.0)?;
             if major_radius == 0.0 {
                 LegacySurfaceGeometry::Sphere {
                     center: origin,
@@ -589,23 +594,21 @@ fn real_scalar_array(records: &RealFieldIndex<'_>, parent: usize, name: &str) ->
     real_array_values(record)
 }
 
+/// Expand one real array's runs into its elements, in element order.
+///
+/// The array states a run-count sum equal to its extent product, so the result
+/// holds one element per declared array element.
 fn real_array_values(record: &RealRecord) -> Option<Vec<f64>> {
     let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let dimensions = array.dimensions();
-    let runs = array.runs();
-    let expected = dimensions.iter().try_fold(1usize, |product, dimension| {
-        product.checked_mul(usize::try_from(*dimension).ok()?)
-    })?;
-    let mut values = Vec::with_capacity(expected);
-    for run in runs {
-        let value = run.value.value();
-        value.is_finite().then_some(())?;
-        let count = usize::try_from(run.count).ok()?;
-        values.extend(std::iter::repeat_n(value, count));
-    }
-    Some(values)
+    Some(
+        array
+            .runs()
+            .iter()
+            .flat_map(|run| std::iter::repeat_n(run.value.value(), index_from_u32(run.count)))
+            .collect(),
+    )
 }
 
 fn object_id_index(objects: &[ObjectRecord]) -> ObjectIdIndex<'_> {
@@ -672,21 +675,13 @@ fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Optio
     }
 }
 
+/// The twelve row-major slots of a `[4][3]` local-system real array.
 fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
     let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let dimensions = array.dimensions();
-    let runs = array.runs();
-    (dimensions == [4, 3]).then_some(())?;
-    let mut slots = Vec::with_capacity(12);
-    for run in runs {
-        let count = usize::try_from(run.count).ok()?;
-        for _ in 0..count {
-            slots.push(run.value.value());
-        }
-    }
-    slots.try_into().ok()
+    (array.dimensions() == [4, 3]).then_some(())?;
+    real_array_values(record)?.try_into().ok()
 }
 
 #[cfg(test)]
@@ -1060,6 +1055,32 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
             panic!("the fixture states a persistence scope past its own end");
         };
+        let result = scan(&persistence);
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn a_nonfinite_local_system_slot_withholds_the_real_record_and_the_carrier() {
+        let data = String::from_utf8(fixture(2.0, false))
+            .expect("ASCII fixture")
+            .replace(
+                "$3FF,0,0,0,3FF,0,0,0,3FF,0,0,0",
+                "$3FF,0,0,0,3FF,0,0,0,3FF,7FF,0,0",
+            )
+            .into_bytes();
+        let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
+            panic!("the fixture states a persistence scope past its own end");
+        };
+
+        assert!(persistence
+            .real_values
+            .rows
+            .iter()
+            .all(|record| record.name != "local_sys"));
+        assert_eq!(persistence.real_values.unresolved_count, 1);
+
         let result = scan(&persistence);
 
         assert_eq!(result.rows.len(), 1);
