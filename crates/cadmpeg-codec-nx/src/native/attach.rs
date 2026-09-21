@@ -86,7 +86,6 @@ use crate::native::om::display_color::{
     RmDisplayColorAssignment, RmDisplayColorAssignmentEncoding,
 };
 use crate::native::segments::BooleanOffsetStoreResolution;
-use crate::native::vector::{cross_vector, dot_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
@@ -5911,7 +5910,7 @@ fn block_placement(
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
         let existing = bands
             .iter_mut()
-            .find(|band| (1.0 - dot_vector(band.normal, normal)).abs() <= angular_tolerance);
+            .find(|band| (1.0 - band.normal.dot(normal)).abs() <= angular_tolerance);
         if let Some(band) = existing {
             band.offsets.push(offset);
         } else {
@@ -5924,7 +5923,7 @@ fn block_placement(
     if bands.len() != 3
         || (0..3).any(|first| {
             (first + 1..3).any(|second| {
-                dot_vector(bands[first].normal, bands[second].normal).abs() > angular_tolerance
+                bands[first].normal.dot(bands[second].normal).abs() > angular_tolerance
             })
         })
     {
@@ -5985,10 +5984,11 @@ fn block_placement(
         return None;
     };
     let mut ordered = permutation.map(|index| bands[index]);
-    if dot_vector(
-        cross_vector(ordered[0].normal, ordered[1].normal),
-        ordered[2].normal,
-    ) < 0.0
+    if ordered[0]
+        .normal
+        .cross(ordered[1].normal)
+        .dot(ordered[2].normal)
+        < 0.0
     {
         let third = &mut ordered[2];
         third.normal = Vector3::new(-third.normal.x, -third.normal.y, -third.normal.z);
@@ -7411,7 +7411,7 @@ fn circular_loop_geometry(
         let axis = canonical_axis(*axis, angular_tolerance)?;
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
             if (radius - previous_radius).abs() > linear_tolerance
-                || (1.0 - dot_vector(axis, previous_axis).abs()) > angular_tolerance
+                || (1.0 - axis.dot(previous_axis).abs()) > angular_tolerance
                 || Vector3::new(
                     center.x - previous_center.x,
                     center.y - previous_center.y,
@@ -7487,7 +7487,7 @@ fn cylindrical_face_witnesses(
         let axis = cylinder_surface.axis();
         let radius = cylinder_surface.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
-        let axial_offset = dot_vector(Vector3::new(origin.x, origin.y, origin.z), axis);
+        let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
         let line_origin = Point3::new(
             origin.x - axial_offset * axis.x,
             origin.y - axial_offset * axis.y,
@@ -7508,21 +7508,19 @@ fn cylindrical_face_witnesses(
                 angular_tolerance,
             )?;
             if (circle_radius - radius).abs() > linear_tolerance
-                || (1.0 - dot_vector(axis, circle_axis).abs()) > angular_tolerance
-                || cross_vector(
-                    Vector3::new(
-                        center.x - origin.x,
-                        center.y - origin.y,
-                        center.z - origin.z,
-                    ),
-                    axis,
+                || (1.0 - axis.dot(circle_axis).abs()) > angular_tolerance
+                || Vector3::new(
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
                 )
+                .cross(axis)
                 .norm()
                     > linear_tolerance
             {
                 return None;
             }
-            let station = dot_vector(Vector3::new(center.x, center.y, center.z), axis);
+            let station = Vector3::new(center.x, center.y, center.z).dot(axis);
             if !station.is_finite() {
                 return None;
             }
@@ -7602,15 +7600,14 @@ fn plane_annulus_witness(
         let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
             continue;
         };
-        if (1.0 - dot_vector(normal, axis).abs()) > angular_tolerance
-            || (dot_vector(
-                Vector3::new(
-                    origin.x - line_origin.x,
-                    origin.y - line_origin.y,
-                    origin.z - line_origin.z,
-                ),
-                axis,
-            ) - station)
+        if (1.0 - normal.dot(axis).abs()) > angular_tolerance
+            || (Vector3::new(
+                origin.x - line_origin.x,
+                origin.y - line_origin.y,
+                origin.z - line_origin.z,
+            )
+            .dot(axis)
+                - station)
                 .abs()
                 > linear_tolerance
         {
@@ -7630,28 +7627,24 @@ fn plane_annulus_witness(
                 valid = false;
                 break;
             };
-            if (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
-                || (dot_vector(
-                    Vector3::new(
-                        center.x - origin.x,
-                        center.y - origin.y,
-                        center.z - origin.z,
-                    ),
-                    normal,
-                ))
+            if (1.0 - circle_axis.dot(normal).abs()) > angular_tolerance
+                || (Vector3::new(
+                    center.x - origin.x,
+                    center.y - origin.y,
+                    center.z - origin.z,
+                )
+                .dot(normal))
                 .abs()
                     > linear_tolerance
-                || cross_vector(
-                    Vector3::new(
-                        center.x - line_origin.x,
-                        center.y - line_origin.y,
-                        center.z - line_origin.z,
-                    ),
-                    axis,
+                || Vector3::new(
+                    center.x - line_origin.x,
+                    center.y - line_origin.y,
+                    center.z - line_origin.z,
                 )
+                .cross(axis)
                 .norm()
                     > linear_tolerance
-                || (dot_vector(Vector3::new(center.x, center.y, center.z), axis) - station).abs()
+                || (Vector3::new(center.x, center.y, center.z).dot(axis) - station).abs()
                     > linear_tolerance
             {
                 valid = false;
@@ -7703,15 +7696,13 @@ fn counterbore_cylinders(
                 (second, first)
             };
             if large.radius - small.radius <= linear_tolerance
-                || (1.0 - dot_vector(small.axis, large.axis).abs()) > angular_tolerance
-                || cross_vector(
-                    Vector3::new(
-                        large.line_origin.x - small.line_origin.x,
-                        large.line_origin.y - small.line_origin.y,
-                        large.line_origin.z - small.line_origin.z,
-                    ),
-                    small.axis,
+                || (1.0 - small.axis.dot(large.axis).abs()) > angular_tolerance
+                || Vector3::new(
+                    large.line_origin.x - small.line_origin.x,
+                    large.line_origin.y - small.line_origin.y,
+                    large.line_origin.z - small.line_origin.z,
                 )
+                .cross(small.axis)
                 .norm()
                     > linear_tolerance
             {
@@ -7851,25 +7842,19 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
                 continue;
             };
             if (circle_radius - cylinder.radius).abs() > linear_tolerance
-                || (1.0 - dot_vector(circle_axis, normal).abs()) > angular_tolerance
-                || (1.0 - dot_vector(normal, cylinder.axis).abs()) > angular_tolerance
-                || cross_vector(
-                    Vector3::new(
-                        center.x - cylinder.line_origin.x,
-                        center.y - cylinder.line_origin.y,
-                        center.z - cylinder.line_origin.z,
-                    ),
-                    cylinder.axis,
+                || (1.0 - circle_axis.dot(normal).abs()) > angular_tolerance
+                || (1.0 - normal.dot(cylinder.axis).abs()) > angular_tolerance
+                || Vector3::new(
+                    center.x - cylinder.line_origin.x,
+                    center.y - cylinder.line_origin.y,
+                    center.z - cylinder.line_origin.z,
                 )
+                .cross(cylinder.axis)
                 .norm()
                     > linear_tolerance
-                || (dot_vector(Vector3::new(center.x, center.y, center.z), cylinder.axis)
-                    - *station)
-                    .abs()
+                || (Vector3::new(center.x, center.y, center.z).dot(cylinder.axis) - *station).abs()
                     > linear_tolerance
-                || (dot_vector(Vector3::new(origin.x, origin.y, origin.z), cylinder.axis)
-                    - *station)
-                    .abs()
+                || (Vector3::new(origin.x, origin.y, origin.z).dot(cylinder.axis) - *station).abs()
                     > linear_tolerance
             {
                 continue;

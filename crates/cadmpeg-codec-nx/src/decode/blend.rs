@@ -10,7 +10,6 @@ use super::offset::{
     refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
-use crate::native::vector::{cross_vector, dot_vector};
 use cadmpeg_core::decode::alloc_filled;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
@@ -949,7 +948,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         )?;
         let alpha = signed_angle(first, second, tangent);
         let radial = rodrigues_rotate(first, tangent, parameters.v * alpha);
-        let section_tangent = cross_vector(tangent, radial);
+        let section_tangent = tangent.cross(radial);
         let dv = Vector3::new(
             radius * alpha * section_tangent.x,
             radius * alpha * section_tangent.y,
@@ -1335,7 +1334,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
         return None;
     }
     let tangent = Vector3::new(velocity.x / speed, velocity.y / speed, velocity.z / speed);
-    let tangential_acceleration = dot_vector(tangent, acceleration);
+    let tangential_acceleration = tangent.dot(acceleration);
     let tangent_derivative = Vector3::new(
         (acceleration.x - tangential_acceleration * tangent.x) / speed,
         (acceleration.y - tangential_acceleration * tangent.y) / speed,
@@ -1355,15 +1354,12 @@ fn blend_surface_u_derivative_with_index_and_budget(
     let (second, second_derivative) =
         contact_context.direction_derivative(&supports[1], geometry_budget)?;
 
-    let cross = cross_vector(first, second);
-    let cosine = dot_vector(first, second);
-    let sine = dot_vector(cross, tangent);
-    let cosine_derivative =
-        dot_vector(first_derivative, second) + dot_vector(first, second_derivative);
-    let cross_derivative =
-        cross_vector(first_derivative, second) + cross_vector(first, second_derivative);
-    let sine_derivative =
-        dot_vector(cross_derivative, tangent) + dot_vector(cross, tangent_derivative);
+    let cross = first.cross(second);
+    let cosine = first.dot(second);
+    let sine = cross.dot(tangent);
+    let cosine_derivative = first_derivative.dot(second) + first.dot(second_derivative);
+    let cross_derivative = first_derivative.cross(second) + first.cross(second_derivative);
+    let sine_derivative = cross_derivative.dot(tangent) + cross.dot(tangent_derivative);
     let angle_denominator = cosine * cosine + sine * sine;
     if !angle_denominator.is_finite() || angle_denominator == 0.0 {
         return None;
@@ -1375,12 +1371,12 @@ fn blend_surface_u_derivative_with_index_and_budget(
     let theta_derivative = v * alpha_derivative;
     let theta_cosine = theta.cos();
     let theta_sine = theta.sin();
-    let tangent_cross_first = cross_vector(tangent, first);
+    let tangent_cross_first = tangent.cross(first);
     let tangent_cross_first_derivative =
-        cross_vector(tangent_derivative, first) + cross_vector(tangent, first_derivative);
-    let tangent_dot_first = dot_vector(tangent, first);
+        tangent_derivative.cross(first) + tangent.cross(first_derivative);
+    let tangent_dot_first = tangent.dot(first);
     let tangent_dot_first_derivative =
-        dot_vector(tangent_derivative, first) + dot_vector(tangent, first_derivative);
+        tangent_derivative.dot(first) + tangent.dot(first_derivative);
     let radial_component = |first: f64,
                             first_derivative: f64,
                             tangent_cross_first: f64,
@@ -1484,7 +1480,7 @@ impl BlendContactDerivativeContext<'_> {
             contact_derivative.y - self.center_derivative.y,
             contact_derivative.z - self.center_derivative.z,
         );
-        let radial_derivative = dot_vector(direction, offset_derivative);
+        let radial_derivative = direction.dot(offset_derivative);
         let direction_derivative = Vector3::new(
             (offset_derivative.x - radial_derivative * direction.x) / magnitude,
             (offset_derivative.y - radial_derivative * direction.y) / magnitude,
@@ -2005,7 +2001,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
             partials.du.z * uv_tangent.u + partials.dv.z * uv_tangent.v,
         );
-        let speed_squared = dot_vector(tangent, tangent);
+        let speed_squared = tangent.dot(tangent);
         if !speed_squared.is_finite() || speed_squared <= f64::EPSILON {
             break;
         }
@@ -2014,7 +2010,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             partials.point.y - point.y,
             partials.point.z - point.z,
         );
-        let step = dot_vector(difference, tangent) / speed_squared;
+        let step = difference.dot(tangent) / speed_squared;
         if !step.is_finite() {
             break;
         }
@@ -3127,7 +3123,7 @@ pub(super) fn analytic_surface_offset(
                 offset_origin.y - support_origin.y,
                 offset_origin.z - support_origin.z,
             );
-            let distance = dot_vector(delta, *support_normal);
+            let distance = delta.dot(*support_normal);
             let residual = Vector3::new(
                 delta.x - distance * support_normal.x,
                 delta.y - distance * support_normal.y,
@@ -3145,7 +3141,7 @@ pub(super) fn analytic_surface_offset(
             .into_iter()
             .fold(1.0_f64, |scale, value| scale.max(value.abs()));
             let tolerance = 64.0 * f64::EPSILON * scale;
-            (dot_vector(residual, residual) <= tolerance * tolerance).then_some(distance)
+            (residual.dot(residual) <= tolerance * tolerance).then_some(distance)
         }
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -3196,7 +3192,7 @@ pub(super) fn analytic_surface_offset(
                 offset_origin.y - support_origin.y,
                 offset_origin.z - support_origin.z,
             );
-            let axial_delta = dot_vector(delta, *support_axis);
+            let axial_delta = delta.dot(*support_axis);
             let residual = Vector3::new(
                 delta.x - axial_delta * support_axis.x,
                 delta.y - axial_delta * support_axis.y,
@@ -3223,7 +3219,7 @@ pub(super) fn analytic_surface_offset(
             .fold(1.0_f64, |scale, value| scale.max(value.abs()));
             let tolerance = 64.0 * f64::EPSILON * scale;
             (distance.is_finite()
-                && dot_vector(residual, residual) <= tolerance * tolerance
+                && residual.dot(residual) <= tolerance * tolerance
                 && tangent_residual.abs() <= tolerance)
                 .then_some(distance)
         }
@@ -3622,9 +3618,9 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         }
         _ => return None,
     };
-    let transverse = cross_vector(axis, reference);
+    let transverse = axis.cross(reference);
     let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
-    let phase = dot_vector(delta, transverse).atan2(dot_vector(delta, reference));
+    let phase = delta.dot(transverse).atan2(delta.dot(reference));
     phase.is_finite().then_some(())?;
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
@@ -3635,8 +3631,8 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     let anchor = seed.unwrap_or(phase);
     let major_radius = ellipse_curve.major_radius().get();
     let minor_radius = ellipse_curve.minor_radius().get();
-    let x = dot_vector(delta, reference);
-    let y = dot_vector(delta, transverse);
+    let x = delta.dot(reference);
+    let y = delta.dot(transverse);
     let difference = minor_radius * minor_radius - major_radius * major_radius;
     let coefficients = [
         -minor_radius * y,
@@ -3892,12 +3888,12 @@ fn closest_nurbs_curve_parameter_with_budget(
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
-    dot_vector(cross_vector(first, second), axis).atan2(dot_vector(first, second))
+    first.cross(second).dot(axis).atan2(first.dot(second))
 }
 
 fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
-    let cross = cross_vector(axis, vector);
-    let dot = dot_vector(axis, vector);
+    let cross = axis.cross(vector);
+    let dot = axis.dot(vector);
     Vector3::new(
         vector.x * angle.cos() + cross.x * angle.sin() + axis.x * dot * (1.0 - angle.cos()),
         vector.y * angle.cos() + cross.y * angle.sin() + axis.y * dot * (1.0 - angle.cos()),

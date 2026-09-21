@@ -25,7 +25,6 @@ use super::support_uv::{
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
 use crate::framing::node_kind::NodeKind;
-use crate::native::vector::dot_vector;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
@@ -694,7 +693,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
                         uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
                     ))?;
-                    Some(dot_vector(curve_tangent, tangent))
+                    Some(curve_tangent.dot(tangent))
                 };
                 match (alignment(pcurve)?, alignment(&reversed)?) {
                     (forward_alignment, reversed_alignment)

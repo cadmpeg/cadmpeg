@@ -10,7 +10,6 @@ use super::geometry_work::GeometryWorkBudget;
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
-use crate::native::vector::{cross_vector, dot_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
@@ -282,10 +281,7 @@ fn offset_candidate_sample_error(
     let u = u0 + (u1 - u0) * 0.5;
     let v = v0 + (v1 - v0) * 0.5;
     let support_partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
-    let normal = oriented_nurbs_normal(
-        support,
-        cross_vector(support_partials.du, support_partials.dv),
-    )?;
+    let normal = oriented_nurbs_normal(support, support_partials.du.cross(support_partials.dv))?;
     let candidate_point =
         cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
     let expected = Point3::new(
@@ -611,7 +607,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let candidate_point =
             cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
         let partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
-        let normal_vector = cross_vector(partials.du, partials.dv);
+        let normal_vector = partials.du.cross(partials.dv);
         let normal_size = normal_vector.norm();
         let half_u = (u1 - u0) * 0.5;
         let half_v = (v1 - v0) * 0.5;
@@ -779,12 +775,12 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     };
     let u_direction = difference(point(1, 0), point(0, 0));
     let v_direction = difference(point(0, 1), point(0, 0));
-    let normal = oriented_nurbs_normal(surface, cross_vector(u_direction, v_direction))?;
+    let normal = oriented_nurbs_normal(surface, u_direction.cross(v_direction))?;
 
     let positive_collinear = |increment: Vector3, direction: Vector3| {
         increment.is_finite()
-            && cross_vector(increment, direction) == Vector3::new(0.0, 0.0, 0.0)
-            && dot_vector(increment, direction) > 0.0
+            && increment.cross(direction) == Vector3::new(0.0, 0.0, 0.0)
+            && increment.dot(direction) > 0.0
     };
     for u in 0..u_count - 1 {
         let denominator = surface.u_knots()[u + u_degree + 1] - surface.u_knots()[u + 1];
@@ -1711,7 +1707,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         let scale = (0..4)
             .map(|index| (predictor[index] - current[index]) * tangent[index])
             .sum::<f64>();
-        if !scale.is_finite() || scale == 0.0 || dot_vector(spatial_tangent, chord) * scale <= 0.0 {
+        if !scale.is_finite() || scale == 0.0 || spatial_tangent.dot(chord) * scale <= 0.0 {
             return None;
         }
         let corrected = correct_intersection_parameters(
@@ -1936,7 +1932,7 @@ fn intersection_parameter_tangent(
             derivatives[side][0].y * u + derivatives[side][1].y * v,
             derivatives[side][0].z * u + derivatives[side][1].z * v,
         ))?;
-        if dot_vector(mapped, chord) < 1.0 - EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8 {
+        if mapped.dot(chord) < 1.0 - EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8 {
             return None;
         }
         tangent[side * 2] = u;
