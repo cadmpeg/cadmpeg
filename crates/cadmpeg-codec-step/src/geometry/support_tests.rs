@@ -68,6 +68,36 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
 }
 
 #[test]
+fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
+    use super::surface;
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    let cone = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        5.0,
+        1.0,
+        -0.715_584_993_317_674_8,
+    )
+    .unwrap();
+    let mut emitter = crate::writer::Emitter::new();
+    assert!(surface(&mut emitter, &SolvedSurfaceGeometry::Cone(cone)).is_some());
+    let lines = emitter.into_lines();
+    let emitted = lines
+        .iter()
+        .find(|line| line.contains("CONICAL_SURFACE("))
+        .expect("the cone emits a CONICAL_SURFACE carrier");
+    assert!(emitted.ends_with(&format!(
+        ",{},{});",
+        crate::writer::real(5.0),
+        crate::writer::real(-0.715_584_993_317_674_8)
+    )));
+    assert!(lines
+        .iter()
+        .any(|line| line.contains("DIRECTION('',(0.,0.,1.))")));
+}
+
+#[test]
 fn small_shears_are_not_similarities() {
     use super::{Transform, Transform2};
     for a in [1e-10, 1., 1e200] {

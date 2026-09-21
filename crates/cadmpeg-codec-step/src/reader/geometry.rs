@@ -1365,6 +1365,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     .map(SolvedSurfaceGeometry::Cylinder)
                     .map(SurfaceGeometry::Solved)
                 }),
+            // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
+            // Every finite value comes through, because the IR cone uses the
+            // chart STEP states and reproduces the surface the record names at
+            // any slope. Each arm of this match refuses what its IR carrier
+            // refuses and nothing more: the cone radius stops at
+            // `NonNegativeLength`, which is the entity's own `radius >= 0`, and
+            // the toroidal arm below serves `TOROIDAL_SURFACE` and
+            // `DEGENERATE_TOROIDAL_SURFACE` without separating their radius
+            // rules. A refused carrier withholds the one surface with a
+            // `DecodeWarning` note and leaves the rest of the decode standing.
             LeafSurfaceEntity::Conical => placement
                 .zip(named_parameter(record, "CONICAL_SURFACE", 2).and_then(Value::number))
                 .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))

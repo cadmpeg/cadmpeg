@@ -386,6 +386,16 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
             let pl = placement(e, origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(radius)))
         }
+        // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`. The
+        // half angle goes out as it stands, which is the only branch that keeps
+        // both the surface and its chart. `abs()`, which normalizes the signed
+        // sphere and torus radii below, moves the cone: the cross-section radius
+        // at axial distance `v` is `radius + v * tan(half_angle)`, so a sphere of
+        // radius `-r` and a torus of minor radius `-m` hold their point sets
+        // while a cone of half angle `-a` does not. `(half_angle, axis)` and
+        // `(-half_angle, -axis)` do hold the same locus, under the parameter
+        // change `(u, v) -> (-u, -v)`, but `emit_pcurve` writes each IR pcurve
+        // against the surface this arm emits, in that chart.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
