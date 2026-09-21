@@ -229,12 +229,10 @@ pub(super) fn swept_nurbs(
     if !(v_start.is_finite() && v_end.is_finite()) || v_end <= v_start {
         return None;
     }
-    let n = profile.control_points().len();
+    let n = profile.pole_count();
+    let profile_weights = profile.weights();
     let mut control = Vec::with_capacity(n * 2);
-    let mut weights = profile
-        .weights()
-        .is_some()
-        .then(|| Vec::with_capacity(n * 2));
+    let mut weights = profile_weights.as_ref().map(|_| Vec::with_capacity(n * 2));
     for (i, pole) in profile.control_points().iter().enumerate() {
         for v in [v_start, v_end] {
             control.push(Point3::new(
@@ -242,7 +240,7 @@ pub(super) fn swept_nurbs(
                 pole.y + v * direction.y,
                 pole.z + v * direction.z,
             ));
-            if let (Some(out), Some(w)) = (&mut weights, profile.weights()) {
+            if let (Some(out), Some(w)) = (&mut weights, profile_weights.as_ref()) {
                 out.push(w[i]);
             }
         }
