@@ -2,8 +2,8 @@ use cadmpeg_test_support::edit;
 
 use crate::features::FeatureOperation;
 use crate::features::{
-    BinderTarget, BodySelection, CombineOperands, Feature, FeatureDefinition, FeatureId,
-    FuzzyTolerance, GeometryImportPath, LoftPointSection, NonEmptyMembers, PathRef,
+    BinderTarget, BodyMembers, BodySelection, CombineOperands, Feature, FeatureDefinition,
+    FeatureId, FuzzyTolerance, GeometryImportPath, LoftPointSection, NonEmptyMembers, PathRef,
     PlanarProfileRef, ProfileRef, SectionOperands, SelectionMembers, SewBodySelection,
     SplitFacePlanes, ThreePointSelection, TreeChildren, TrimBodyOperands, VertexSelection,
 };
@@ -73,6 +73,48 @@ fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
         .try_edit(|first, second| *second = first.clone())
         .is_err());
     assert_eq!(operands, before);
+}
+
+#[test]
+fn historical_body_overlap_spans_direct_and_paired_member_selections() {
+    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
+
+    let state =
+        FeatureInputTopologyId::mint("test:model:entity#test:input").expect("valid identity");
+    let target = BodySelection::historical(
+        state.clone(),
+        vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
+        "target".into(),
+    )
+    .unwrap();
+    let overlapping = BodySelection::HistoricalSet {
+        state: state.clone(),
+        members: BodyMembers::try_from_rows(vec![
+            crate::features::BodyMember::new(
+                HistoricalBodyId::mint("test:body:2").expect("valid identity"),
+                cadmpeg_core::text::NonBlankString::new("tool-a")
+                    .expect("valid historical body selection row"),
+            ),
+            crate::features::BodyMember::new(
+                HistoricalBodyId::mint("test:body:4").expect("valid identity"),
+                cadmpeg_core::text::NonBlankString::new("tool-b")
+                    .expect("valid historical body selection row"),
+            ),
+        ])
+        .expect("valid historical body selection rows"),
+    };
+    let disjoint = BodySelection::HistoricalSet {
+        state,
+        members: BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(
+            HistoricalBodyId::mint("test:body:5").expect("valid identity"),
+            cadmpeg_core::text::NonBlankString::new("tool")
+                .expect("valid historical body selection row"),
+        )])
+        .expect("valid historical body selection rows"),
+    };
+
+    assert!(SectionOperands::new(target.clone(), overlapping).is_err());
+    assert!(SectionOperands::new(target, disjoint).is_ok());
 }
 
 #[test]
