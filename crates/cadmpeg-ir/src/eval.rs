@@ -6712,7 +6712,7 @@ fn model_surface_point_by_id_inner(
                 }
             }
             _ if procedural.is_some() => {
-                model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget, 0).map(
+                model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget).map(
                     |point| SurfaceEvaluation {
                         point,
                         oriented_normal: None,
@@ -7795,10 +7795,9 @@ fn model_surface_point_with_budget(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-    depth: usize,
 ) -> Option<Point3> {
     match geometry.solved() {
-        Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget, depth),
+        Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget, 0),
         None => model_surface_point(ir, geometry, u, v),
     }
 }
