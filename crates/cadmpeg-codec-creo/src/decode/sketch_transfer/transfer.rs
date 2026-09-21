@@ -60,7 +60,7 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::{
     FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{Sketch, SketchConstraint, SketchEntity, SketchGeometry};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -100,8 +100,8 @@ pub(in super::super) fn transfer_sketches(
         let placement = match transform {
             Some(transform) => cadmpeg_ir::sketches::SketchPlacement::try_resolved(
                 Point3::from(transform.origin()),
-                Vector3::from(transform.normal()),
-                Vector3::from(transform.u_axis()),
+                transform.normal_vector(),
+                transform.u_axis_vector(),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
             None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
