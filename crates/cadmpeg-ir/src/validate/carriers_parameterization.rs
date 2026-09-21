@@ -1003,10 +1003,35 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
     value >= lower - tolerance && value <= upper + tolerance
 }
 
+/// Whether a carrier that states no parameter domain is defective.
+///
+/// [`pcurve_parameter_domain`](super::pcurve_parameter_domain) answers `None`
+/// for two different reasons, and only one of them is a defect. An analytic
+/// carrier has no bounded domain because it has none to state. A NURBS carrier
+/// always has one, so a `None` there means the knot vector cannot yield an
+/// evaluable interval and any declared use range over it is unusable.
+///
+/// The three nesting carriers keep their basis's answer. A placement and an
+/// offset keep the basis's parameterization outright. A trim reaches this
+/// question only with equal endpoints, where it states no interval of its own
+/// and the basis's parameterization governs — the same fallback
+/// `pcurve_parameter_domain` takes. So an unusable NURBS is reported under any
+/// mixture of wrappers exactly as it is reported bare.
+///
+/// The match is exhaustive, so a new pcurve variant states its answer here.
+/// The recursion is bounded by the carrier: each pcurve nesting constructor
+/// refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING).
 fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
     match geometry {
         PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
         PcurveGeometry::Transformed(placed) => pcurve_requires_bounded_domain(placed.basis()),
+        PcurveGeometry::Trimmed(trimmed_pcurve) => {
+            pcurve_requires_bounded_domain(trimmed_pcurve.basis())
+        }
+        PcurveGeometry::Offset(offset_pcurve) => {
+            pcurve_requires_bounded_domain(offset_pcurve.basis())
+        }
         PcurveGeometry::Line(_) => false,
         PcurveGeometry::SphericalGreatCircle(_) => false,
         PcurveGeometry::Circle(_) => false,
@@ -1015,8 +1040,6 @@ fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
         PcurveGeometry::Parabola(_) => false,
         PcurveGeometry::Hyperbola(_) => false,
         PcurveGeometry::Hyperbolic(_) => false,
-        PcurveGeometry::Trimmed(_) => false,
-        PcurveGeometry::Offset(_) => false,
         PcurveGeometry::PolarHarmonic(_) => false,
     }
 }

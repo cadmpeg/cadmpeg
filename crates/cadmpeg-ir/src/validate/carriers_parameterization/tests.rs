@@ -286,3 +286,77 @@ fn a_coedge_range_outside_an_offset_pcurve_basis_domain_is_out_of_domain() {
         [0.0, 2.0]
     )));
 }
+
+/// A NURBS pcurve whose knot vector states no evaluable interval: the
+/// degree-th knot and the pole-count-th knot are equal, so
+/// `nurbs_pcurve_parameter_domain` answers `None`.
+fn undomained_nurbs_pcurve_leaf() -> PcurveGeometry {
+    PcurveGeometry::Nurbs {
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 0.0, 0.0],
+            vec![
+                crate::math::Point2::new(0.0, 0.0),
+                crate::math::Point2::new(1.0, 1.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    }
+}
+
+fn line_pcurve_leaf() -> PcurveGeometry {
+    PcurveGeometry::Line(
+        crate::geometry::pcurve::LinePcurve::try_new(
+            crate::math::Point2::new(0.0, 0.0),
+            crate::math::Point2::new(1.0, 1.0),
+        )
+        .unwrap(),
+    )
+}
+
+fn degenerate_trim_over(basis: PcurveGeometry) -> PcurveGeometry {
+    PcurveGeometry::Trimmed(
+        crate::geometry::pcurve::TrimmedPcurve::try_new([0.5, 0.5], true, Box::new(basis)).unwrap(),
+    )
+}
+
+fn offset_over(basis: PcurveGeometry) -> PcurveGeometry {
+    PcurveGeometry::Offset(
+        crate::geometry::pcurve::OffsetPcurve::try_new(0.5, Box::new(basis)).unwrap(),
+    )
+}
+
+#[test]
+fn a_bare_nurbs_pcurve_with_no_domain_requires_one() {
+    assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        undomained_nurbs_pcurve_leaf(),
+        [0.0, 1.0]
+    )));
+}
+
+#[test]
+fn a_trim_and_an_offset_inherit_the_basis_bounded_domain_requirement() {
+    // The basis states no domain and must: the same NURBS reported bare is
+    // reported under a degenerate trim and under an offset.
+    assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        degenerate_trim_over(undomained_nurbs_pcurve_leaf()),
+        [0.0, 1.0]
+    )));
+    assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        offset_over(undomained_nurbs_pcurve_leaf()),
+        [0.0, 1.0]
+    )));
+
+    // A line states no domain and needs none, so neither wrapper over it
+    // requires one.
+    assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        degenerate_trim_over(line_pcurve_leaf()),
+        [0.0, 1.0]
+    )));
+    assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+        offset_over(line_pcurve_leaf()),
+        [0.0, 1.0]
+    )));
+}
