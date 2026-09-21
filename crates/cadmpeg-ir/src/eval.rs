@@ -7375,37 +7375,6 @@ fn pcurve_uv_differential_inner(
     if depth > 256 {
         return None;
     }
-    if let PcurveGeometry::Offset(offset_pcurve) = geometry {
-        let distance = offset_pcurve.distance();
-        let basis = offset_pcurve.basis();
-        let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
-        let tangent = basis.tangent?;
-        let speed = tangent.u.hypot(tangent.v);
-        if !speed.is_finite() || speed == 0.0 {
-            return None;
-        }
-        let unit = Point2::new(tangent.u / speed, tangent.v / speed);
-        let point = Point2::new(
-            basis.point.u - distance * unit.v,
-            basis.point.v + distance * unit.u,
-        );
-        let tangent = basis.acceleration.map(|acceleration| {
-            let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
-            let unit_derivative = Point2::new(
-                (acceleration.u - tangential_acceleration * unit.u) / speed,
-                (acceleration.v - tangential_acceleration * unit.v) / speed,
-            );
-            Point2::new(
-                tangent.u - distance * unit_derivative.v,
-                tangent.v + distance * unit_derivative.u,
-            )
-        });
-        return Some(PcurveDifferential {
-            point,
-            tangent: tangent.filter(Point2::is_finite),
-            acceleration: None,
-        });
-    }
     let pair = match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -7668,7 +7637,37 @@ fn pcurve_uv_differential_inner(
             let basis = trimmed_pcurve.basis();
             return pcurve_uv_differential_inner(basis, t, depth + 1);
         }
-        PcurveGeometry::Offset(_) => return None,
+        PcurveGeometry::Offset(offset_pcurve) => {
+            let distance = offset_pcurve.distance();
+            let basis = offset_pcurve.basis();
+            let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+            let tangent = basis.tangent?;
+            let speed = tangent.u.hypot(tangent.v);
+            if !speed.is_finite() || speed == 0.0 {
+                return None;
+            }
+            let unit = Point2::new(tangent.u / speed, tangent.v / speed);
+            let point = Point2::new(
+                basis.point.u - distance * unit.v,
+                basis.point.v + distance * unit.u,
+            );
+            let tangent = basis.acceleration.map(|acceleration| {
+                let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
+                let unit_derivative = Point2::new(
+                    (acceleration.u - tangential_acceleration * unit.u) / speed,
+                    (acceleration.v - tangential_acceleration * unit.v) / speed,
+                );
+                Point2::new(
+                    tangent.u - distance * unit_derivative.v,
+                    tangent.v + distance * unit_derivative.u,
+                )
+            });
+            return Some(PcurveDifferential {
+                point,
+                tangent: tangent.filter(Point2::is_finite),
+                acceleration: None,
+            });
+        }
     };
     if !pair.0.is_finite() {
         return None;
