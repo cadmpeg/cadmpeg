@@ -5,7 +5,6 @@ use super::*;
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-use cadmpeg_ir::math::Point2;
 
 fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
@@ -29,7 +28,6 @@ fn numerical_0922_wide_domain_keeps_distinct_roots() {
         INVERSE_FIT_TOLERANCE,
         [-1e308, 1e308],
     );
-    println!("SW wide finite domain with two exact roots: {r:?}");
     assert!(matches!(r, InverseResolution::Ambiguous));
 }
 #[test]
