@@ -3,8 +3,8 @@
 //! fixtures.
 //!
 //! `corpus/freecad_fcstd/fixtures/*.FCStd` are the frozen inputs. This harness
-//! never writes them. `UPDATE_GOLDEN=1` rewrites `tests/golden/decode/` and
-//! `tests/golden/inspect/`, and nothing else.
+//! never writes them. `UPDATE_GOLDEN=1` rewrites the goldens under
+//! `tests/golden/` whose own comparison fails, and nothing else.
 //!
 //! `tests/golden/inspect/` pins the container summary and
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
@@ -314,6 +314,10 @@ fn lines_agree(left: &str, right: &str) -> bool {
 }
 
 /// Compares every fixture's STEP export against `tests/golden/step/`.
+///
+/// Under `update` a golden this comparison rejects is rewritten; one it accepts
+/// keeps its committed text, because these exports carry numbers the comparison
+/// holds only to a tolerance and a verbatim rewrite moves their last place.
 fn check_step_branch(update: bool) -> Vec<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/step");
     let mut failures = Vec::new();
@@ -322,24 +326,24 @@ fn check_step_branch(update: bool) -> Vec<String> {
         let actual = step_snapshot(&bytes);
         let path = dir.join(format!("{name}.step"));
         produced.insert(format!("{name}.step"));
-        if update {
-            std::fs::write(&path, actual.as_bytes())
-                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-            continue;
-        }
-        match std::fs::read_to_string(&path) {
-            Ok(expected) => {
-                if let Err(mismatch) = step_texts_agree(&expected, &actual) {
-                    failures.push(format!(
-                        "fixture `{name}`: STEP export diverged from {}\n    {mismatch}",
-                        path.display()
-                    ));
-                }
-            }
-            Err(error) => failures.push(format!(
+        let failure = match std::fs::read_to_string(&path) {
+            Ok(expected) => step_texts_agree(&expected, &actual).err().map(|mismatch| {
+                format!(
+                    "fixture `{name}`: STEP export diverged from {}\n    {mismatch}",
+                    path.display()
+                )
+            }),
+            Err(error) => Some(format!(
                 "fixture `{name}`: cannot read {} ({error}); regenerate with `{REGENERATE}`",
                 path.display()
             )),
+        };
+        let Some(failure) = failure else { continue };
+        if update {
+            std::fs::write(&path, actual.as_bytes())
+                .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+        } else {
+            failures.push(failure);
         }
     }
     for orphan in std::fs::read_dir(&dir)

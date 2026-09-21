@@ -4,7 +4,9 @@
 //! `tests/golden/fixtures/*.f3d` are frozen inputs, and every snapshot here is
 //! produced from the committed bytes. Regenerate the artifacts with
 //! `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden` and review the
-//! diff. Fixture regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
+//! diff. A regeneration writes only the artifacts their own comparison
+//! rejects, so one over a clean tree leaves the tree clean. Fixture
+//! regeneration is separate: `UPDATE_GOLDEN_FIXTURES=1`.
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -520,50 +522,56 @@ fn first_byte_diff(expected: &[u8], actual: &[u8]) -> String {
     )
 }
 
+/// Writes one golden, creating its branch directory.
+///
+/// Reached only where a comparison rejected the committed golden, so a
+/// regeneration over a clean tree writes nothing.
+fn write_golden(path: &Path, bytes: &[u8]) {
+    std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
+        .expect("create golden dir");
+    std::fs::write(path, bytes).unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+}
+
 fn compare_text(update: bool, path: &Path, actual: &str, failures: &mut Vec<String>) {
-    if update {
-        std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-            .expect("create golden dir");
-        std::fs::write(path, actual.as_bytes())
-            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-        return;
-    }
-    match std::fs::read_to_string(path) {
+    let failure = match std::fs::read_to_string(path) {
         Ok(expected) => {
             let expected = expected.replace("\r\n", "\n");
             let actual = actual.replace("\r\n", "\n");
-            if let Err(mismatch) = snapshots_agree(&expected, &actual) {
-                failures.push(format!("{}: diverged {mismatch}", path.display()));
-            }
+            snapshots_agree(&expected, &actual)
+                .err()
+                .map(|mismatch| format!("{}: diverged {mismatch}", path.display()))
         }
-        Err(error) => failures.push(format!(
+        Err(error) => Some(format!(
             "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
             path.display()
         )),
+    };
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual.as_bytes());
+    } else {
+        failures.push(failure);
     }
 }
 
 fn compare_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-    if update {
-        std::fs::create_dir_all(path.parent().expect("golden path has a parent"))
-            .expect("create golden dir");
-        std::fs::write(path, actual)
-            .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-        return;
-    }
-    match std::fs::read(path) {
-        Ok(expected) if expected == actual => {}
-        Ok(expected) => {
-            failures.push(format!(
-                "{}: {}",
-                path.display(),
-                first_byte_diff(&expected, actual)
-            ));
-        }
-        Err(error) => failures.push(format!(
+    let failure = match std::fs::read(path) {
+        Ok(expected) if expected == actual => None,
+        Ok(expected) => Some(format!(
+            "{}: {}",
+            path.display(),
+            first_byte_diff(&expected, actual)
+        )),
+        Err(error) => Some(format!(
             "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
             path.display()
         )),
+    };
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual);
+    } else {
+        failures.push(failure);
     }
 }
 
@@ -591,32 +599,30 @@ fn generated_container_snapshot(bytes: &[u8]) -> String {
 /// Compares produced bytes against a golden container by the document each
 /// decodes to, tolerating last-place disagreement in decoded numbers.
 fn compare_decoded_bytes(update: bool, path: &Path, actual: &[u8], failures: &mut Vec<String>) {
-    if update {
-        compare_bytes(update, path, actual, failures);
-        return;
-    }
-    let expected = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            failures.push(format!(
-                "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
-                path.display()
-            ));
-            return;
-        }
+    let failure = match std::fs::read(path) {
+        Ok(expected) if expected == actual => None,
+        Ok(expected) => snapshots_agree(
+            &generated_container_snapshot(&expected),
+            &generated_container_snapshot(actual),
+        )
+        .err()
+        .map(|mismatch| {
+            format!(
+                "{}: the produced container decodes differently: {mismatch}\n    {}",
+                path.display(),
+                first_byte_diff(&expected, actual)
+            )
+        }),
+        Err(error) => Some(format!(
+            "{}: cannot read golden ({error}); regenerate with `UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-f3d golden`",
+            path.display()
+        )),
     };
-    if expected == actual {
-        return;
-    }
-    if let Err(mismatch) = snapshots_agree(
-        &generated_container_snapshot(&expected),
-        &generated_container_snapshot(actual),
-    ) {
-        failures.push(format!(
-            "{}: the produced container decodes differently: {mismatch}\n    {}",
-            path.display(),
-            first_byte_diff(&expected, actual)
-        ));
+    let Some(failure) = failure else { return };
+    if update {
+        write_golden(path, actual);
+    } else {
+        failures.push(failure);
     }
 }
 
