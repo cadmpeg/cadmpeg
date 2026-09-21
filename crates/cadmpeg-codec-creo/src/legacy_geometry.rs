@@ -317,30 +317,17 @@ fn curve_pcurve(
     let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let dimensions = array.dimensions();
-    let runs = array.runs();
-    let [sample_count, lane_width] = dimensions else {
+    let [sample_count, lane_width] = array.dimensions() else {
         return None;
     };
     if *lane_width != 4 || *sample_count < 2 {
         return None;
     }
-    let sample_count = usize::try_from(*sample_count).ok()?;
-    let expected_elements = sample_count.checked_mul(4)?;
-    let mut values = Vec::new();
-    for run in runs {
-        let count = usize::try_from(run.count).ok()?;
-        let value = run.value.value();
-        value.is_finite().then_some(())?;
-        for _ in 0..count {
-            values.push(value);
-        }
-    }
-    let first: [f64; 4] = values.get(..4)?.try_into().ok()?;
-    let last: [f64; 4] = values
-        .get((sample_count - 1).checked_mul(4)?..expected_elements)?
-        .try_into()
-        .ok()?;
+    // One element per declared element, so the four-element window at each end
+    // of the expansion is the first and the last of the `sample_count` samples.
+    let values = real_array_values(record)?;
+    let first = *values.first_chunk::<4>()?;
+    let last = *values.last_chunk::<4>()?;
     Some(PcurveEndpoints {
         curve_id: topology.id,
         faces: topology.faces,
@@ -668,20 +655,22 @@ fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> 
     }
 }
 
+/// Expand one integer array's runs into its elements, in element order.
+///
+/// The array states a run-count sum equal to its extent product, so the result
+/// holds one element per declared array element.
 fn integer_array(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<i32>> {
     let record = integer_record(records, parent, name)?;
     let NumericPayload::Array(array) = &record.payload else {
         return None;
     };
-    let runs = array.runs();
-    let mut values = Vec::new();
-    for run in runs {
-        let count = usize::try_from(run.count).ok()?;
-        for _ in 0..count {
-            values.push(run.value);
-        }
-    }
-    Some(values)
+    Some(
+        array
+            .runs()
+            .iter()
+            .flat_map(|run| std::iter::repeat_n(run.value, index_from_u32(run.count)))
+            .collect(),
+    )
 }
 
 fn real_record<'a>(
