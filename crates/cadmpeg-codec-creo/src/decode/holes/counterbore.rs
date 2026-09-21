@@ -503,12 +503,8 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;
     let axis = normalize(frame.normal?)?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-            origin[0], origin[1], origin[2],
-        ))?,
-        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-            axis[0], axis[1], axis[2],
-        ))?,
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(axis))?,
     })
 }
 
@@ -762,8 +758,8 @@ fn counterbore_corner_assignment(
     Some(CounterboreCornerAssignment {
         bore_source: *bore_source,
         bore: *bore,
-        position: Point3::new(position[0], position[1], position[2]),
-        direction: Vector3::new(direction[0], direction[1], direction[2]),
+        position: Point3::from(position),
+        direction: Vector3::from(direction),
         length,
     })
 }
@@ -811,7 +807,7 @@ pub(in crate::decode) fn counterbore_directed_span(
     Some((
         counterbore.0,
         counterbore.1,
-        Vector3::new(direction[0], direction[1], direction[2]),
+        Vector3::from(direction),
         LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
@@ -998,7 +994,7 @@ fn counterbore_source_corner_patch_geometries(
     let geometry = |radius| HoleCylinder {
         origin: assignment.position,
         axis: assignment.direction,
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        ref_direction: Vector3::from(ref_direction),
         radius,
     };
     let radius_for = |source_index| {

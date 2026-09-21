@@ -266,16 +266,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             transform.origin()[1] + offset * transform.normal()[1],
                             transform.origin()[2] + offset * transform.normal()[2],
                         ),
-                        Vector3::new(
-                            transform.normal()[0],
-                            transform.normal()[1],
-                            transform.normal()[2],
-                        ),
-                        Vector3::new(
-                            transform.u_axis()[0],
-                            transform.u_axis()[1],
-                            transform.u_axis()[2],
-                        ),
+                        Vector3::from(transform.normal()),
+                        Vector3::from(transform.u_axis()),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )),
@@ -390,7 +382,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                         placed_start[1] + offset * transform.normal()[1],
                                         placed_start[2] + offset * transform.normal()[2],
                                     ),
-                                    Vector3::new(direction[0], direction[1], direction[2]),
+                                    Vector3::from(direction),
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                             ))
@@ -411,11 +403,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                         axis_sign * transform.normal()[1],
                                         axis_sign * transform.normal()[2],
                                     ),
-                                    Vector3::new(
-                                        transform.u_axis()[0],
-                                        transform.u_axis()[1],
-                                        transform.u_axis()[2],
-                                    ),
+                                    Vector3::from(transform.u_axis()),
                                     radius.get(),
                                 )
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -509,11 +497,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 origin[1] + span.lower * transform.normal()[1],
                                 origin[2] + span.lower * transform.normal()[2],
                             ),
-                            Vector3::new(
-                                transform.normal()[0],
-                                transform.normal()[1],
-                                transform.normal()[2],
-                            ),
+                            Vector3::from(transform.normal()),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     )),

@@ -241,8 +241,8 @@ fn transfer_reference_lines(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(line.start[0], line.start[1], line.start[2]),
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Point3::from(line.start),
+                    Vector3::from(direction),
                 )
                 .map_err(CodecError::malformed)?,
             )),
@@ -311,9 +311,9 @@ fn transfer_reference_circles(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    Point3::new(circle.center[0], circle.center[1], circle.center[2]),
-                    Vector3::new(circle.axis[0], circle.axis[1], circle.axis[2]),
-                    Vector3::new(reference[0], reference[1], reference[2]),
+                    Point3::from(circle.center),
+                    Vector3::from(circle.axis),
+                    Vector3::from(reference),
                     circle.radius,
                 )
                 .map_err(CodecError::malformed)?,
@@ -381,13 +381,9 @@ fn transfer_reference_ellipses(
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    Point3::new(ellipse.center[0], ellipse.center[1], ellipse.center[2]),
-                    Vector3::new(ellipse.axis[0], ellipse.axis[1], ellipse.axis[2]),
-                    Vector3::new(
-                        ellipse.major_direction[0],
-                        ellipse.major_direction[1],
-                        ellipse.major_direction[2],
-                    ),
+                    Point3::from(ellipse.center),
+                    Vector3::from(ellipse.axis),
+                    Vector3::from(ellipse.major_direction),
                     ellipse.major_radius,
                     ellipse.minor_radius,
                 )
@@ -431,20 +427,14 @@ fn transfer_display_tessellations(
             Tessellation::new(
                 id,
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    strip
-                        .positions
-                        .iter()
-                        .map(|point| Point3::new(point[0], point[1], point[2]))
-                        .collect(),
+                    strip.positions.iter().copied().map(Point3::from).collect(),
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
-                    strip.normals.as_ref().map(|normals| {
-                        normals
-                            .iter()
-                            .map(|normal| Vector3::new(normal[0], normal[1], normal[2]))
-                            .collect()
-                    }),
+                    strip
+                        .normals
+                        .as_ref()
+                        .map(|normals| normals.iter().copied().map(Vector3::from).collect()),
                     &strip.strip_lengths,
                 )
                 .map_err(|error| {
@@ -491,10 +481,8 @@ fn transfer_datum_plane_surfaces(
                         normal[1] * plane.plane.offset,
                         normal[2] * plane.plane.offset,
                     ),
-                    Vector3::new(normal[0], normal[1], normal[2]),
-                    cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                        normal[0], normal[1], normal[2],
-                    )),
+                    Vector3::from(normal),
+                    cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
                 )
                 .map_err(CodecError::malformed)?,
             )),
@@ -557,9 +545,9 @@ fn transfer_placed_plane_surfaces_into_ir(
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                    Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                    Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                    Point3::from(plane.origin),
+                    Vector3::from(plane.normal),
+                    Vector3::from(u_axis),
                 )
                 .map_err(CodecError::malformed)?,
             )),

@@ -142,9 +142,9 @@ pub(in crate::decode) fn cylinder_from_single_cap_outline(cap: CapOutline) -> Op
     let mut ref_direction = [0.0; 3];
     ref_direction[aligned_axis.complement()[0].index()] = 1.0;
     Some(HoleCylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        origin: Point3::from(center),
+        axis: Vector3::from(axis),
+        ref_direction: Vector3::from(ref_direction),
         radius,
     })
 }
@@ -179,9 +179,9 @@ pub(in crate::decode) fn hole_cylinder_from_cap_outlines(
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
     Some(HoleCylinder {
-        origin: Point3::new(centers[0][0], centers[0][1], centers[0][2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        origin: Point3::from(centers[0]),
+        axis: Vector3::from(axis),
+        ref_direction: Vector3::from(ref_direction),
         radius: radii[0],
     })
 }
@@ -242,9 +242,9 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     ref_direction[radial[0]] = 1.0;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(center[0], center[1], center[2]),
-            Vector3::new(axis[0], axis[1], axis[2]),
-            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            Point3::from(center),
+            Vector3::from(axis),
+            Vector3::from(ref_direction),
             0.5 * spans[0],
         )
         .ok()?,

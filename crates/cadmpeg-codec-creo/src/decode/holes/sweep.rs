@@ -270,9 +270,9 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
     Some(HoleCylinder {
-        origin: Point3::new(center[0], center[1], center[2]),
-        axis: Vector3::new(axis[0], axis[1], axis[2]),
-        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        origin: Point3::from(center),
+        axis: Vector3::from(axis),
+        ref_direction: Vector3::from(ref_direction),
         radius,
     })
 }
@@ -384,18 +384,14 @@ pub(in crate::decode) fn circular_sweep_feature_definition(
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         profile,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-            sweep.direction[0],
-            sweep.direction[1],
-            sweep.direction[2],
-        ))
-        .map_or(
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-            |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector,
-                source: None,
-            },
-        ),
+        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(sweep.direction))
+            .map_or(
+                cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                    vector,
+                    source: None,
+                },
+            ),
         start: cadmpeg_ir::features::ExtrudeStart::default(),
         extent: sweep.extent.clone(),
         op,

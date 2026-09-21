@@ -395,9 +395,9 @@ pub(super) fn transfer_fc05_cap_circles(
         let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, circle.curve_id);
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(center[0], center[1], center[2]),
-                Vector3::new(axis[0], axis[1], axis[2]),
-                Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                Point3::from(center),
+                Vector3::from(axis),
+                Vector3::from(ref_direction),
                 circle.radius_mm,
             ) else {
                 continue;
@@ -440,9 +440,9 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(surface_origin[0], surface_origin[1], surface_origin[2]),
-            Vector3::new(axis[0], axis[1], axis[2]),
-            Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+            Point3::from(surface_origin),
+            Vector3::from(axis),
+            Vector3::from(ref_direction),
             circle.radius_mm,
         ) else {
             continue;

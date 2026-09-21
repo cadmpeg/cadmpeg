@@ -1436,7 +1436,7 @@ pub(in super::super) fn transfer_native_brep(
         ir.model.points.push(
             Point::new(
                 point_id,
-                Point3::new(position[0], position[1], position[2]),
+                Point3::from(*position),
                 Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -2101,17 +2101,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
-            Vector3::new(
-                frame.unit_vector()[0],
-                frame.unit_vector()[1],
-                frame.unit_vector()[2],
-            ),
-            Vector3::new(
-                frame.ref_direction[0],
-                frame.ref_direction[1],
-                frame.ref_direction[2],
-            ),
+            Point3::from(frame.origin),
+            Vector3::from(frame.unit_vector()),
+            Vector3::from(frame.ref_direction),
             pair.radius_mm,
         ) else {
             continue;
@@ -2170,17 +2162,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 continue;
             }
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(center[0], center[1], center[2]),
-                Vector3::new(
-                    frame.unit_vector()[0],
-                    frame.unit_vector()[1],
-                    frame.unit_vector()[2],
-                ),
-                Vector3::new(
-                    frame.ref_direction[0],
-                    frame.ref_direction[1],
-                    frame.ref_direction[2],
-                ),
+                Point3::from(center),
+                Vector3::from(frame.unit_vector()),
+                Vector3::from(frame.ref_direction),
                 pair.radius_mm,
             ) else {
                 continue;

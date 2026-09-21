@@ -331,7 +331,7 @@ pub(in super::super) fn schema_feature_definition(
                                 (
                                     Some(face_selection(entry_surface_id)),
                                     None,
-                                    Some(Vector3::new(direction[0], direction[1], direction[2])),
+                                    Some(Vector3::from(direction)),
                                     None,
                                     Some(extent),
                                     None,
@@ -357,11 +357,7 @@ pub(in super::super) fn schema_feature_definition(
                 (
                     hole.entry_surface_id.map(face_selection),
                     Some(origin),
-                    Some(Vector3::new(
-                        hole.direction[0],
-                        hole.direction[1],
-                        hole.direction[2],
-                    )),
+                    Some(Vector3::from(hole.direction)),
                     Length::new(2.0 * radius),
                     Some(hole.extent),
                     Some(HoleBottom::Flat),
@@ -656,12 +652,8 @@ pub(in super::super) fn schema_feature_definition(
             preceding_features_establish_body(ir),
         );
         let extent_and_direction = linear_extrusion_extent_and_direction(scan, ir, feature_id);
-        let construction = extent_and_direction.map(|(extent, direction)| {
-            (
-                Some(Vector3::new(direction[0], direction[1], direction[2])),
-                extent,
-            )
-        });
+        let construction = extent_and_direction
+            .map(|(extent, direction)| (Some(Vector3::from(direction)), extent));
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
         let profile = profile.unwrap_or_else(|| {
             ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
@@ -759,9 +751,9 @@ pub(in super::super) fn schema_feature_definition(
                     if dot(normal, u_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL {
                         let origin = [values[9], values[10], values[11]];
                         if let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                            Point3::new(origin[0], origin[1], origin[2]),
-                            Vector3::new(normal[0], normal[1], normal[2]),
-                            Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                            Point3::from(origin),
+                            Vector3::from(normal),
+                            Vector3::from(u_axis),
                         ) {
                             return Ok(IrFeatureDefinition::Operation(
                                 IrFeatureOperation::DatumPlane { frame },
@@ -802,10 +794,10 @@ pub(in super::super) fn schema_feature_definition(
                         && dot(y_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
                     if orthogonal && right_handed {
                         if let Some(frame) = cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                            Point3::new(origin[0], origin[1], origin[2]),
-                            Vector3::new(x_axis[0], x_axis[1], x_axis[2]),
-                            Vector3::new(y_axis[0], y_axis[1], y_axis[2]),
-                            Vector3::new(z_axis[0], z_axis[1], z_axis[2]),
+                            Point3::from(origin),
+                            Vector3::from(x_axis),
+                            Vector3::from(y_axis),
+                            Vector3::from(z_axis),
                         ) {
                             return Ok(IrFeatureDefinition::Operation(
                                 IrFeatureOperation::DatumCoordinateSystem { frame },
@@ -877,10 +869,8 @@ pub(in super::super) fn datum_plane_feature_definition(
             normal[1] * datum.offset,
             normal[2] * datum.offset,
         ),
-        Vector3::new(normal[0], normal[1], normal[2]),
-        cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-            normal[0], normal[1], normal[2],
-        )),
+        Vector3::from(normal),
+        cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
     )
     .map_or_else(
         || {
@@ -898,10 +888,10 @@ fn reconciled_datum_plane_definition(
     surface_id: u32,
 ) -> Option<IrFeatureDefinition> {
     let plane = reconciled_model_plane(&placed_planes(scan), ir, surface_id)?;
-    let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+    let normal = Vector3::from(plane.normal);
     let u_axis = placed_plane_surfaces(scan)
         .get(&surface_id)
-        .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
+        .map(|(_, u_axis, _)| Vector3::from(*u_axis))
         .or_else(|| {
             let model_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
             let surfaces = ir
@@ -925,7 +915,7 @@ fn reconciled_datum_plane_definition(
     Some(IrFeatureDefinition::Operation(
         IrFeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                Point3::from(plane.origin),
                 normal,
                 u_axis,
             )?,

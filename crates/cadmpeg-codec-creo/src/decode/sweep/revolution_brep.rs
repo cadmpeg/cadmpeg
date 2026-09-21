@@ -271,12 +271,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 source_object: None,
             });
             ir.model.points.push(
-                Point::new(
-                    point_id.clone(),
-                    Point3::new(position[0], position[1], position[2]),
-                    None,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                Point::new(point_id.clone(), Point3::from(position), None)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),

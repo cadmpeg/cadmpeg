@@ -1359,7 +1359,7 @@ pub(in crate::decode) fn plane_cone_conic(
             plane.origin[2] + u_parameter * principal_u[2] + v_parameter * principal_v[2],
         )
     };
-    let axis_vector = Vector3::new(normal[0], normal[1], normal[2]);
+    let axis_vector = Vector3::from(normal);
     if quadratic_u.abs() <= EPS_NEAR_ZERO * coefficient_scale {
         if linear_u.abs() <= EPS_NEAR_ZERO * coefficient_scale {
             return None;
@@ -1377,7 +1377,7 @@ pub(in crate::decode) fn plane_cone_conic(
                 cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
                     point(vertex_u, vertex_v),
                     axis_vector,
-                    Vector3::new(direction[0], direction[1], direction[2]),
+                    Vector3::from(direction),
                     opening.abs() / 4.0,
                 )
                 .ok()?,
@@ -1411,7 +1411,7 @@ pub(in crate::decode) fn plane_cone_conic(
                 cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
                     center,
                     axis_vector,
-                    Vector3::new(major_direction[0], major_direction[1], major_direction[2]),
+                    Vector3::from(major_direction),
                     major_radius,
                     minor_radius,
                 )
@@ -1438,7 +1438,7 @@ pub(in crate::decode) fn plane_cone_conic(
             cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
                 center,
                 axis_vector,
-                Vector3::new(major_direction[0], major_direction[1], major_direction[2]),
+                Vector3::from(major_direction),
                 major_radius,
                 minor_radius,
             )

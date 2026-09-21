@@ -9,8 +9,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(origin[0], origin[1], origin[2]),
-            Vector3::new(direction[0], direction[1], direction[2])
+            Point3::from(origin),
+            Vector3::from(direction)
                 .unit()
                 .expect("nonzero fixture direction"),
         )
@@ -137,9 +137,9 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
         };
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(center[0], center[1], center[2]),
-                Vector3::new(axis[0], axis[1], axis[2]),
-                Vector3::new(reference[0], reference[1], reference[2]),
+                Point3::from(center),
+                Vector3::from(axis),
+                Vector3::from(reference),
                 radius,
             )
             .expect("valid CircleCurve fixture"),

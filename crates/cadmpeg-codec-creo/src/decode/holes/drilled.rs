@@ -482,9 +482,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
         })
         .then_some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(first.frame().origin_point())?,
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                axis[0], axis[1], axis[2],
-            ))?,
+            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(axis))?,
         })
 }
 
@@ -609,10 +607,7 @@ impl DrilledHoleEnvelopeLayout {
         }
         let mut direction = [0.0; 3];
         direction[self.axis.index()] = self.axial_delta().signum();
-        (
-            Point3::new(position[0], position[1], position[2]),
-            Vector3::new(direction[0], direction[1], direction[2]),
-        )
+        (Point3::from(position), Vector3::from(direction))
     }
 }
 
