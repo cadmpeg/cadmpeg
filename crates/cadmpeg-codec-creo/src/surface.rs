@@ -1549,13 +1549,7 @@ impl SurfaceParameterRecord {
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let axial_candidates = self.type24_axial_interval_corner_candidates();
         if let Some(first) = axial_candidates.first() {
-            return axial_candidates
-                .iter()
-                .all(|candidate| {
-                    (candidate.radius - first.radius).abs()
-                        <= EPS_CYLINDER_GEOMETRY_RELATIVE * first.radius.max(1.0)
-                })
-                .then_some(first.radius);
+            return Some(first.radius);
         }
         if let Some(envelope) = self.type24_round_edge_envelope() {
             return perpendicular_round_edge_radius(envelope);
