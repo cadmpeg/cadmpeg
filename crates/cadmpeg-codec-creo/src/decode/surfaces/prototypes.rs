@@ -608,6 +608,24 @@ pub(in super::super) fn transfer_positional_spline_replays(
     Ok(transferred)
 }
 
+/// One legacy analytic carrier's stored origin and direction pair, as the
+/// geometry values the IR carrier constructors take.
+///
+/// The five analytic variants name these three arrays differently — the plane
+/// calls its pair the normal and the u axis, the cone its origin the apex —
+/// but each carries the same local-system origin, column two and column zero.
+fn carrier_frame(
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+) -> (Point3, Vector3, Vector3) {
+    (
+        Point3::new(origin[0], origin[1], origin[2]),
+        Vector3::new(axis[0], axis[1], axis[2]),
+        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+    )
+}
+
 /// Transfer one exact surface carrier per unique legacy ASCII carrier record.
 ///
 /// A carrier spline whose lanes the IR carrier refuses states no carrier. The
@@ -648,11 +666,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 normal,
                 u_axis,
             } if row.kind == crate::surface::SurfaceKind::Plane => {
+                let (origin, normal, u_axis) = carrier_frame(*origin, *normal, *u_axis);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        Point3::new(origin[0], origin[1], origin[2]),
-                        Vector3::new(normal[0], normal[1], normal[2]),
-                        Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                        origin, normal, u_axis,
                     ) {
                         Ok(payload) => payload,
                         Err(_) => continue,
@@ -665,11 +682,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 ref_direction,
                 radius,
             } if row.kind == crate::surface::SurfaceKind::Cylinder => {
+                let (origin, axis, ref_direction) = carrier_frame(*origin, *axis, *ref_direction);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        Point3::new(origin[0], origin[1], origin[2]),
-                        Vector3::new(axis[0], axis[1], axis[2]),
-                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        origin,
+                        axis,
+                        ref_direction,
                         *radius,
                     ) {
                         Ok(payload) => payload,
@@ -684,12 +702,8 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 half_angle,
                 ..
             } if row.kind == crate::surface::SurfaceKind::Cone => {
-                let Some(cone) = super::apex_cone(
-                    Point3::new(apex[0], apex[1], apex[2]),
-                    Vector3::new(axis[0], axis[1], axis[2]),
-                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-                    *half_angle,
-                ) else {
+                let (apex, axis, ref_direction) = carrier_frame(*apex, *axis, *ref_direction);
+                let Some(cone) = super::apex_cone(apex, axis, ref_direction, *half_angle) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
@@ -701,11 +715,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 major_radius,
                 minor_radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                let (center, axis, ref_direction) = carrier_frame(*center, *axis, *ref_direction);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        Point3::new(center[0], center[1], center[2]),
-                        Vector3::new(axis[0], axis[1], axis[2]),
-                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        center,
+                        axis,
+                        ref_direction,
                         *major_radius,
                         *minor_radius,
                     ) {
@@ -720,11 +735,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 ref_direction,
                 radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                let (center, axis, ref_direction) = carrier_frame(*center, *axis, *ref_direction);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        Point3::new(center[0], center[1], center[2]),
-                        Vector3::new(axis[0], axis[1], axis[2]),
-                        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                        center,
+                        axis,
+                        ref_direction,
                         *radius,
                     ) {
                         Ok(payload) => payload,
