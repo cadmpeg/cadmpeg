@@ -37,6 +37,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::BTreeSet;
 
 #[test]
@@ -1145,7 +1146,7 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 1.0);
-    assert_eq!(frame.length(), Some(2.0));
+    assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
     let x_first = circle(371, [1.0, 0.0, 0.0], [3.5, 8.0, -6.0], [3.5, 10.0, -4.0]);
@@ -1386,7 +1387,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         frames[1].frame().axis(),
         frames[1].frame().ref_direction(),
         frames[1].radius(),
-        frames[1].length(),
+        frames[1].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
@@ -1406,7 +1407,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         [diagonal, -diagonal, 0.0],
         [0.0, 0.0, 1.0],
         frames[0].radius(),
-        frames[0].length(),
+        frames[0].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame")];
     assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());

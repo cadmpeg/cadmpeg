@@ -7,6 +7,7 @@ use crate::surface::parameter_records;
 use crate::surface::PositionalCylinderFrame;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceParameterRecord;
+use cadmpeg_ir::scalar::PositiveLength;
 #[test]
 fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
     let mut body = vec![0x18];
@@ -213,6 +214,6 @@ fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
     assert!(candidates.iter().all(|candidate| {
         candidate.frame().axis() == [1.0, 0.0, 0.0]
             && candidate.radius == 4.0
-            && candidate.length == Some(6.0)
+            && candidate.length.map(PositiveLength::get) == Some(6.0)
     }));
 }

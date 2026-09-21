@@ -12,6 +12,7 @@ use crate::surface::InlineSurfaceCarrier;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceKind;
 use crate::surface::SurfaceParameterRecord;
+use cadmpeg_ir::scalar::PositiveLength;
 fn push_inline_test_scalar(bytes: &mut Vec<u8>, value: f64) {
     match value as i32 {
         -1 => bytes.push(0x0d),
@@ -119,7 +120,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
 fn inline_non_plane_row(
@@ -233,7 +234,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
     assert_eq!(cylinder_frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(cylinder_frame.radius, 2.0);
-    assert_eq!(cylinder_frame.length, Some(2.0));
+    assert_eq!(cylinder_frame.length.map(PositiveLength::get), Some(2.0));
     assert_eq!(cylinder.boundary, SurfaceBodyBoundary::CompoundClose);
 
     let cone = inline_non_plane_record(
@@ -311,7 +312,7 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(3.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(3.0));
 }
 
 #[test]
@@ -358,7 +359,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 2.0);
-    assert_eq!(frame.length, Some(8.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(8.0));
 }
 
 #[test]
@@ -392,7 +393,7 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 2.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
 #[test]
@@ -424,7 +425,7 @@ fn selector_placeholder_resolves_from_one_radial_extreme() {
     assert_eq!(frame.frame().origin(), [-4.0, -4.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 2.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
 #[test]
@@ -448,7 +449,7 @@ fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(2.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(2.0));
 }
 
 #[test]
@@ -480,7 +481,7 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
 #[test]
@@ -514,7 +515,7 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(4.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 
     let mut degenerate_u_interval = payload;
     degenerate_u_interval[u_high_offset] = 0x0f;
@@ -561,7 +562,7 @@ fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
-    assert_eq!(frame.length, Some(3.0));
+    assert_eq!(frame.length.map(PositiveLength::get), Some(3.0));
 }
 
 #[test]

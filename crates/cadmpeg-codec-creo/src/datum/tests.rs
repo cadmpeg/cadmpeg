@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_test_support::wire;
 
 use crate::test_support::build_prt;
@@ -393,7 +394,7 @@ fn scan_discovers_complete_active_datum_cylinder_carrier() {
     assert_eq!(cylinder.frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(cylinder.frame.radius(), 0.75);
-    assert_eq!(cylinder.frame.length(), Some(34.0));
+    assert_eq!(cylinder.frame.length().map(PositiveLength::get), Some(34.0));
 }
 
 #[test]
@@ -488,7 +489,10 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
         assert_eq!(cylinder.frame.frame().axis(), axis);
         assert_eq!(cylinder.frame.frame().ref_direction(), ref_direction);
         assert_eq!(cylinder.frame.radius(), radius);
-        assert_eq!(cylinder.frame.length(), Some(length));
+        assert_eq!(
+            cylinder.frame.length().map(PositiveLength::get),
+            Some(length)
+        );
     }
 }
 

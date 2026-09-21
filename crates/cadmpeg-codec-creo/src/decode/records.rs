@@ -1400,7 +1400,10 @@ pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylin
             axis: record.frame.frame().axis(),
             ref_direction: record.frame.frame().ref_direction(),
             radius: record.frame.radius(),
-            length: record.frame.length(),
+            length: record
+                .frame
+                .length()
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })
@@ -2027,7 +2030,7 @@ pub(super) fn surface_parameter_records(
                         axis: frame.frame().axis(),
                         ref_direction: frame.frame().ref_direction(),
                         radius: frame.radius(),
-                        length: frame.length(),
+                        length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
                     }
                 }),
                 split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),

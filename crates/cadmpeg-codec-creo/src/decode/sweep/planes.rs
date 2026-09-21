@@ -385,7 +385,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let normal = transform.normal();
     let first = *frames.first()?;
-    let length = first.length().filter(|length| *length > 0.0)?;
+    let length = first.length()?;
     let direction = normalize(first.frame().axis())?;
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
@@ -395,7 +395,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         .all(|frame| {
             frame
                 .length()
-                .is_some_and(|candidate| close(candidate, length))
+                .is_some_and(|candidate| close(candidate.get(), length.get()))
                 && normalize(frame.frame().axis()).is_some_and(|axis| {
                     axis.iter()
                         .zip(direction)
@@ -417,7 +417,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+                    length: cadmpeg_ir::scalar::NonZeroLength::from(length),
                 },
                 draft: None,
             },

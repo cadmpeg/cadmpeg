@@ -10,6 +10,7 @@ pub(crate) mod arrays;
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
 use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
@@ -805,14 +806,15 @@ pub(crate) struct PositionalCylinderFrame {
     frame: PositionalFrame,
     /// Cylinder radius.
     radius: f64,
-    /// Distance between the axial ends, finite and greater than zero.
+    /// Distance between the axial ends.
+    ///
+    /// The type carries the sign and the finiteness of a present extent, so a reader converting
+    /// one to an IR length runs a total conversion and states no refusal arm.
     ///
     /// `None` states a file condition and not a decode gap: the body either carries no axial
     /// extent field, or carries an axial span that its own nonzero tolerance refuses. A reader
-    /// that needs an extent takes one from the surrounding feature or states no geometry; it
-    /// does not re-decide the sign or the finiteness of a stated one, which
-    /// [`PositionalCylinderFrame::new`] owns.
-    length: Option<f64>,
+    /// that needs an extent takes one from the surrounding feature or states no geometry.
+    length: Option<PositiveLength>,
 }
 
 impl PositionalCylinderFrame {
@@ -825,10 +827,11 @@ impl PositionalCylinderFrame {
         length: Option<f64>,
     ) -> Option<Self> {
         let frame = PositionalFrame::new(origin, axis, ref_direction)?;
-        (radius.is_finite()
-            && radius > 0.0
-            && length.is_none_or(|length| length.is_finite() && length > 0.0))
-        .then_some(Self {
+        let length = match length {
+            Some(length) => Some(PositiveLength::new(length)?),
+            None => None,
+        };
+        (radius.is_finite() && radius > 0.0).then_some(Self {
             frame,
             radius,
             length,
@@ -843,7 +846,7 @@ impl PositionalCylinderFrame {
         self.radius
     }
     /// Returns the length.
-    pub(crate) fn length(&self) -> Option<f64> {
+    pub(crate) fn length(&self) -> Option<PositiveLength> {
         self.length
     }
 }
@@ -5545,8 +5548,8 @@ pub(crate) fn positional_cylinder_frames_agree(
         .into_iter()
         .chain(second.frame().origin())
         .chain([first.radius, second.radius])
-        .chain(first.length)
-        .chain(second.length)
+        .chain(first.length.map(PositiveLength::get))
+        .chain(second.length.map(PositiveLength::get))
         .map(f64::abs)
         .fold(1.0, f64::max);
     let close =
@@ -5571,7 +5574,7 @@ pub(crate) fn positional_cylinder_frames_agree(
             .all(|(left, right)| close(left, right))
         && close(first.radius, second.radius)
         && match (first.length, second.length) {
-            (Some(left), Some(right)) => close(left, right),
+            (Some(left), Some(right)) => close(left.get(), right.get()),
             (None, None) => true,
             _ => false,
         }

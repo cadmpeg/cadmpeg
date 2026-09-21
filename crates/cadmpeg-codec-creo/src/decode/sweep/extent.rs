@@ -303,7 +303,7 @@ pub(in super::super) fn bounded_cylinder_span(
 ) -> Option<ExtrusionCarrierSpan> {
     let axis = normalize(frame.frame().axis())?;
     let vector = match frame.length() {
-        Some(length) => axis.map(|component| component * length),
+        Some(length) => axis.map(|component| component * length.get()),
         None => {
             let scale = planes
                 .iter()

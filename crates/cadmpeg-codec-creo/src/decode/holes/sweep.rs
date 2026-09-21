@@ -230,7 +230,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
         )?],
         direction: frame.frame().axis(),
         extent: LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+            length: cadmpeg_ir::scalar::NonZeroLength::from(length),
         },
         geometry: HoleCylinder {
             origin: frame.frame().origin_point(),

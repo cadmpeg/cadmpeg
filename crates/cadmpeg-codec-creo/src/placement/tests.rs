@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::build_prt;
+use cadmpeg_ir::scalar::PositiveLength;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1075,7 +1076,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
             frame.frame().axis(),
             frame.frame().ref_direction(),
             frame.radius(),
-            frame.length(),
+            frame.length().map(PositiveLength::get),
         )
         .expect("valid positional cylinder frame");
     }
@@ -1090,7 +1091,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         [0.1, 0.99_f64.sqrt(), 0.0],
         [0.99_f64.sqrt(), -0.1, 0.0],
         frame.radius(),
-        frame.length(),
+        frame.length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
     let divergent_sources = PlacementSources {
