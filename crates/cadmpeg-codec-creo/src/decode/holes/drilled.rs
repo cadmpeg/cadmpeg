@@ -437,10 +437,10 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let first = *frames.first()?;
-    let axis = normalize(first.axis())?;
+    let axis = normalize(first.frame().axis())?;
     let coordinate_scale = frames
         .iter()
-        .flat_map(crate::surface::PositionalCylinderFrame::origin)
+        .flat_map(|frame| frame.frame().origin())
         .map(f64::abs)
         .fold(1.0, f64::max);
     (diameter.is_finite() && diameter > 0.0).then_some(())?;
@@ -448,7 +448,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     frames
         .iter()
         .all(|frame| {
-            let Some(candidate_axis) = normalize(frame.axis()) else {
+            let Some(candidate_axis) = normalize(frame.frame().axis()) else {
                 return false;
             };
             let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);
@@ -464,7 +464,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
                 return false;
             }
             let delta = std::array::from_fn::<_, 3, _>(|index| {
-                frame.origin()[index] - first.origin()[index]
+                frame.frame().origin()[index] - first.frame().origin()[index]
             });
             let axial_delta = delta
                 .into_iter()
@@ -482,9 +482,9 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
         })
         .then_some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                first.origin()[0],
-                first.origin()[1],
-                first.origin()[2],
+                first.frame().origin()[0],
+                first.frame().origin()[1],
+                first.frame().origin()[2],
             ))?,
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                 axis[0], axis[1], axis[2],

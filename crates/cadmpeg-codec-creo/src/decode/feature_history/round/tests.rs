@@ -57,9 +57,11 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         .positional_frames
         .push(crate::surface::OutlinePlane {
             surface_id: 31,
-            origin: std::array::from_fn(|index| frame.apex()[index] + frame.axis()[index]),
-            normal: frame.axis(),
-            u_axis: frame.ref_direction(),
+            origin: std::array::from_fn(|index| {
+                frame.frame().origin()[index] + frame.frame().axis()[index]
+            }),
+            normal: frame.frame().axis(),
+            u_axis: frame.frame().ref_direction(),
             offset: 31,
         });
     scan.features
@@ -422,9 +424,9 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         },
     )
     .expect("resolved support and envelope cylinder");
-    assert_eq!(frame.origin(), [-8.5, 0.0, -3.0]);
-    assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [-8.5, 0.0, -3.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 0.5);
     assert_eq!(frame.length(), Some(2.0));
     assert!(super::round_support_envelope_cylinder(

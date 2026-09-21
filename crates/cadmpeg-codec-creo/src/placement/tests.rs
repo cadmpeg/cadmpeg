@@ -1068,12 +1068,12 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         else {
             panic!("cylinder frame");
         };
-        let mut origin = frame.origin();
+        let mut origin = frame.frame().origin();
         origin[0] += 1.0e12;
         *frame = PositionalCylinderFrame::new(
             origin,
-            frame.axis(),
-            frame.ref_direction(),
+            frame.frame().axis(),
+            frame.frame().ref_direction(),
             frame.radius(),
             frame.length(),
         )
@@ -1086,7 +1086,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         panic!("second cylinder frame");
     };
     *frame = PositionalCylinderFrame::new(
-        frame.origin(),
+        frame.frame().origin(),
         [0.1, 0.99_f64.sqrt(), 0.0],
         [0.99_f64.sqrt(), -0.1, 0.0],
         frame.radius(),

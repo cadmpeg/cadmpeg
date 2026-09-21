@@ -67,7 +67,7 @@ fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
 
     let selected = unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel])
         .expect("unique tangent origin");
-    assert_eq!(selected.origin(), [-29.8, -5.25, 6.76]);
+    assert_eq!(selected.frame().origin(), [-29.8, -5.25, 6.76]);
 }
 
 #[test]
@@ -641,9 +641,9 @@ fn round_edge_support_frame_selects_one_offset_line() {
     )
     .expect("one offset round-edge cylinder");
 
-    assert_eq!(frame.origin(), [1.2, 0.2, 0.0]);
-    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction(), [-1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [1.2, 0.2, 0.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 0.2);
     assert_eq!(frame.length(), Some(5.0));
 }
@@ -670,11 +670,12 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
     .expect("one endpoint-solved perpendicular round cylinder");
 
     assert!(frame
+        .frame()
         .origin()
         .into_iter()
         .zip([1.2, 0.2, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < EPS_TEST_GEOMETRY));
-    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert!((frame.radius() - 0.2).abs() < EPS_TEST_GEOMETRY);
     assert_eq!(frame.length(), Some(5.0));
 }

@@ -118,12 +118,20 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         }
         let frame = datum.frame;
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
-            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Point3::new(
+                frame.frame().origin()[0],
+                frame.frame().origin()[1],
+                frame.frame().origin()[2],
+            ),
             Vector3::new(
-                frame.ref_direction()[0],
-                frame.ref_direction()[1],
-                frame.ref_direction()[2],
+                frame.frame().axis()[0],
+                frame.frame().axis()[1],
+                frame.frame().axis()[2],
+            ),
+            Vector3::new(
+                frame.frame().ref_direction()[0],
+                frame.frame().ref_direction()[1],
+                frame.frame().ref_direction()[2],
             ),
             frame.radius(),
         ) else {
@@ -629,11 +637,12 @@ fn round_edge_cylinder_frame(
                     };
                     let same_line = candidates.iter().any(
                         |candidate: &crate::surface::PositionalCylinderFrame| {
-                            let parallel = dot(candidate.axis(), frame.axis()).abs();
+                            let parallel =
+                                dot(candidate.frame().axis(), frame.frame().axis()).abs();
                             let origin_distance = distance_from_axis(
-                                candidate.origin(),
-                                frame.origin(),
-                                frame.axis(),
+                                candidate.frame().origin(),
+                                frame.frame().origin(),
+                                frame.frame().axis(),
                             );
                             parallel >= 1.0 - EPS_ROUND_EDGE_RELATIVE
                                 && origin_distance <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0)
@@ -660,7 +669,7 @@ fn unique_tangent_axial_interval_corner_frame(
         .iter()
         .copied()
         .filter_map(|candidate| {
-            let axis = normalize(candidate.axis())?;
+            let axis = normalize(candidate.frame().axis())?;
             let score = support_planes
                 .iter()
                 .filter(|plane| {
@@ -671,7 +680,7 @@ fn unique_tangent_axial_interval_corner_frame(
                         return false;
                     }
                     let distance =
-                        (dot(normal, candidate.origin()) - dot(normal, plane.origin)).abs();
+                        (dot(normal, candidate.frame().origin()) - dot(normal, plane.origin)).abs();
                     (distance - candidate.radius()).abs()
                         <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius().max(1.0)
                 })
@@ -691,8 +700,8 @@ fn unique_support_tangent_cylinder_frame(
     stored: crate::surface::PositionalCylinderFrame,
     support_planes: &[PlaneEquation],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let axis = normalize(stored.axis())?;
-    let mut origins = vec![stored.origin()];
+    let axis = normalize(stored.frame().axis())?;
+    let mut origins = vec![stored.frame().origin()];
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
     for plane in support_planes {
@@ -721,10 +730,10 @@ fn unique_support_tangent_cylinder_frame(
         .filter(|coordinate| {
             let scale = coordinate
                 .abs()
-                .max(stored.origin()[axis_index].abs())
+                .max(stored.frame().origin()[axis_index].abs())
                 .max(stored.radius())
                 .max(1.0);
-            (coordinate.abs() - stored.origin()[axis_index].abs()).abs()
+            (coordinate.abs() - stored.frame().origin()[axis_index].abs()).abs()
                 <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
         })
         .collect::<Vec<_>>();
@@ -770,8 +779,8 @@ fn unique_support_tangent_cylinder_frame(
         }
         let Some(candidate) = crate::surface::PositionalCylinderFrame::new(
             origin,
-            stored.axis(),
-            stored.ref_direction(),
+            stored.frame().axis(),
+            stored.frame().ref_direction(),
             stored.radius(),
             stored.length(),
         ) else {
@@ -1149,12 +1158,20 @@ pub(in super::super) fn transfer_positional_cylinders(
                 {
                     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                         match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
-                            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+                            Point3::new(
+                                frame.frame().origin()[0],
+                                frame.frame().origin()[1],
+                                frame.frame().origin()[2],
+                            ),
                             Vector3::new(
-                                frame.ref_direction()[0],
-                                frame.ref_direction()[1],
-                                frame.ref_direction()[2],
+                                frame.frame().axis()[0],
+                                frame.frame().axis()[1],
+                                frame.frame().axis()[2],
+                            ),
+                            Vector3::new(
+                                frame.frame().ref_direction()[0],
+                                frame.frame().ref_direction()[1],
+                                frame.frame().ref_direction()[2],
                             ),
                             frame.radius(),
                         ) {
@@ -1175,12 +1192,20 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(frame.origin()[0], frame.origin()[1], frame.origin()[2]),
-            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Point3::new(
+                frame.frame().origin()[0],
+                frame.frame().origin()[1],
+                frame.frame().origin()[2],
+            ),
             Vector3::new(
-                frame.ref_direction()[0],
-                frame.ref_direction()[1],
-                frame.ref_direction()[2],
+                frame.frame().axis()[0],
+                frame.frame().axis()[1],
+                frame.frame().axis()[2],
+            ),
+            Vector3::new(
+                frame.frame().ref_direction()[0],
+                frame.frame().ref_direction()[1],
+                frame.frame().ref_direction()[2],
             ),
             frame.radius(),
         ) else {
@@ -1420,12 +1445,20 @@ pub(in super::super) fn transfer_positional_cones(
             continue;
         }
         let Ok(cone_surface) = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(frame.apex()[0], frame.apex()[1], frame.apex()[2]),
-            Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
+            Point3::new(
+                frame.frame().origin()[0],
+                frame.frame().origin()[1],
+                frame.frame().origin()[2],
+            ),
             Vector3::new(
-                frame.ref_direction()[0],
-                frame.ref_direction()[1],
-                frame.ref_direction()[2],
+                frame.frame().axis()[0],
+                frame.frame().axis()[1],
+                frame.frame().axis()[2],
+            ),
+            Vector3::new(
+                frame.frame().ref_direction()[0],
+                frame.frame().ref_direction()[1],
+                frame.frame().ref_direction()[2],
             ),
             0.0,
             1.0,

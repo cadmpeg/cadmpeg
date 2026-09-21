@@ -324,7 +324,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     let transform = crate::placement::FeatureSectionTransform::new(
         7,
         Some(7),
-        frame.origin(),
+        frame.frame().origin(),
         [1.0, 0.0, 0.0],
         [0.0, 0.0, -1.0],
         0,

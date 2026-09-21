@@ -449,9 +449,9 @@ fn positional_cylinder_carrier(
     }
     let frame = record.positional_cylinder_frame()?;
     Some(CarrierEquation::Cylinder(CylinderEquation {
-        origin: frame.origin(),
-        axis: frame.axis(),
-        ref_direction: frame.ref_direction(),
+        origin: frame.frame().origin(),
+        axis: frame.frame().axis(),
+        ref_direction: frame.frame().ref_direction(),
         radius: frame.radius(),
     }))
 }

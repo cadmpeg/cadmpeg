@@ -249,16 +249,16 @@ fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
     let frame = decode_compound_local_system_cylinder_frame(&body, &scalar::ScalarCache::default())
         .expect("complete compound-bounded frame");
     assert_eq!(
-        frame.origin(),
+        frame.frame().origin(),
         [
             -0.000_490_864_005_609_825_7,
             23.393_699_364_519_936,
             -16.052_039_999_999_998
         ]
     );
-    assert_eq!(frame.axis(), [0.0, 0.0, -1.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, -1.0]);
     assert_eq!(
-        frame.ref_direction(),
+        frame.frame().ref_direction(),
         [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
     );
     assert_eq!(frame.radius, 0.606_300_635_480_064_5);

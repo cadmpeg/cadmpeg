@@ -280,9 +280,10 @@ fn active_cylinder_frames_agree(
     second: PositionalCylinderFrame,
 ) -> bool {
     let scale = first
+        .frame()
         .origin()
         .into_iter()
-        .chain(second.origin())
+        .chain(second.frame().origin())
         .chain([first.radius(), second.radius()])
         .chain(first.length())
         .chain(second.length())
@@ -291,19 +292,22 @@ fn active_cylinder_frames_agree(
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_ACTIVE_CYLINDER_RELATIVE * scale;
     first
+        .frame()
         .origin()
         .into_iter()
-        .zip(second.origin())
+        .zip(second.frame().origin())
         .all(|(left, right)| close(left, right))
         && first
+            .frame()
             .axis()
             .into_iter()
-            .zip(second.axis())
+            .zip(second.frame().axis())
             .all(|(left, right)| close(left, right))
         && first
+            .frame()
             .ref_direction()
             .into_iter()
-            .zip(second.ref_direction())
+            .zip(second.frame().ref_direction())
             .all(|(left, right)| close(left, right))
         && close(first.radius(), second.radius())
         && match (first.length(), second.length()) {
