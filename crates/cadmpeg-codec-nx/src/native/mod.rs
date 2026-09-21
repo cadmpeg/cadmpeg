@@ -23,7 +23,6 @@ mod segments;
 pub(crate) mod structure;
 pub(crate) mod substrate;
 pub(crate) mod toggle;
-pub(crate) mod vector;
 
 /// Availability of typed native records during container retention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
