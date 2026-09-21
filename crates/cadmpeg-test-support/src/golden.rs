@@ -452,6 +452,17 @@ fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
 /// Stands in for a digest a snapshot cannot pin across platforms.
 pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geometry>";
 
+/// Key a snapshot writes in place of a native arena tree.
+///
+/// The `FreeCAD` decode snapshot writes it; the `cadmpeg-ir` golden sweep reads
+/// it to tell an elided native subtree apart from a document that fails to read
+/// back. Both sides state the pair here, so neither can drift from the other.
+pub const NATIVE_ELISION_KEY: &str = "__elided";
+
+/// Value [`NATIVE_ELISION_KEY`] carries.
+pub const NATIVE_ELISION_MARKER: &str =
+    "native arena values are omitted; the records are pinned by a digest over their canonical JSON";
+
 /// Replaces every machine-local digest attribute with [`ELIDED_DIGEST`].
 ///
 /// `_local_sha256` digests cover decoded content and are machine-local. Digests

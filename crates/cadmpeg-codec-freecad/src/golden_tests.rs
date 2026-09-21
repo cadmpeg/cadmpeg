@@ -21,7 +21,9 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
-use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{
+    snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+};
 
 use super::FcstdCodec;
 
@@ -147,6 +149,8 @@ fn carries_authoring_path(text: &str) -> bool {
 
 /// The block the decode snapshot writes in place of the native arenas.
 ///
+/// [`NATIVE_ELISION_KEY`] states what the block stands for, and the
+/// `cadmpeg-ir` golden sweep reads that key to recognise an elided document.
 /// `__arena_counts` states each arena's population, which a reviewer reads
 /// directly. `__shape_sha256` covers the records themselves in the canonical
 /// JSON a CADIR document writes for them, so any member of any record moves it,
@@ -160,12 +164,18 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         }
         counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
     }
-    serde_json::json!({
-        "__elided": "native arena values are omitted; structure is pinned by identity",
-        "__arena_counts": counts,
-        "__shape_sha256": cadmpeg_ir::hash::canonical_json_sha256(native)
-            .expect("the native records state canonical JSON"),
-    })
+    let mut block = serde_json::Map::new();
+    block.insert(
+        NATIVE_ELISION_KEY.to_owned(),
+        serde_json::json!(NATIVE_ELISION_MARKER),
+    );
+    block.insert("__arena_counts".to_owned(), counts.into());
+    block.insert(
+        "__shape_sha256".to_owned(),
+        serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(native)
+            .expect("the native records state canonical JSON")),
+    );
+    block.into()
 }
 
 /// Serializes one re-encoded document by archive membership: entry names in

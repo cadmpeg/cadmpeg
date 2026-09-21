@@ -2864,7 +2864,7 @@
           "unknowns": 1
         }
       },
-      "__elided": "native arena values are omitted; structure is pinned by identity",
+      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON",
       "__shape_sha256": "7ad8b900b11dea865f29a35480ff2cff9bb8f8bcf55f903b7dff8c4502685355"
     },
     "source": {
