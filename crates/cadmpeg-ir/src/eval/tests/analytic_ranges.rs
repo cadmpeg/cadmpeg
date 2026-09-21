@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::*;
+use super::super::{
+    circular_arc_partials, curve_point_solved, curve_tangent_solved, minor_circular_arc_point,
+    pcurve_tangent, pcurve_uv, ContactTrackDifferential,
+};
 use crate::geometry::analytic::{CircleCurve, HyperbolaCurve, ParabolaCurve};
 use crate::geometry::pcurve::{HyperbolaPcurve, ParabolaPcurve};
+use crate::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry};
+use crate::math::{Point2, Point3, Vector3};
 const EPS_RELATIVE: f64 = 1024.0 * f64::EPSILON;
 #[test]
 fn numerical_ranges_parabola_point_and_tangent_stay_finite() {

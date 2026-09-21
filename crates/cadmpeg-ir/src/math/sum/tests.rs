@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
+use super::{
+    scaled_finite, ExactSignedSum, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
+    MIN_SIGNIFICAND_EXPONENT,
+};
 
 #[test]
 fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_range() {

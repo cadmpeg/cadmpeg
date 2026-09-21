@@ -83,7 +83,7 @@ pub fn speed_bound<const N: usize>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::speed_bound;
     #[test]
     fn numerical_followup_speed_bound_ignores_common_weight_scale() {
         for w in [1.0, 1e-200, 1e200, 1e308, f64::from_bits(1)] {

@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface inversion regressions.
 
-use super::*;
+use super::{
+    bilinear_surface, nurbs_surface_parameter_near_point, nurbs_surface_parameter_within_tolerance,
+    nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point, NurbsSurface,
+    NurbsSurfaceAxis, NurbsSurfaceLanes, Point2, Point3, WorkBudget,
+};
 
 #[test]
 fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {

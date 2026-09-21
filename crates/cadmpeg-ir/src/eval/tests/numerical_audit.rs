@@ -39,7 +39,11 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
-    use super::super::*;
+    use super::super::{
+        nurbs_curve_point, nurbs_curve_second_derivative, nurbs_curve_tangent,
+        nurbs_surface_isocurve, nurbs_surface_second_partials, SurfaceParameterAxis,
+    };
+    use crate::math::Vector3;
     for weight in [1.0, -1.0, 1.0e200, 1.0e308, 1.0e-200, f64::from_bits(1)] {
         let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
         let knots = [0.0, 0.0, 1.0, 1.0];
@@ -74,7 +78,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
 
 #[test]
 fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
-    use super::super::*;
+    use super::super::{nurbs_surface_isocurve, SurfaceParameterAxis};
     let surface = bilinear_surface(vec![vec![1.0e308, 1.0e-308]; 2], [2.0, 4.0]);
     let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5).unwrap();
     assert_eq!(
@@ -91,7 +95,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
 
 #[test]
 fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
-    use super::super::*;
+    use super::super::{nurbs_curve_point, periodic_parameter};
     let tiny = 1.0e-310;
     let parameter = tiny * 0.5;
     let point = nurbs_curve_point(
@@ -113,7 +117,9 @@ fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
 
 #[test]
 fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
-    use super::super::*;
+    use super::super::{curve_point, curve_tangent};
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use crate::math::Vector3;
     let transform = Transform::affine([
         [1e308, -1e308, 1.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
@@ -151,7 +157,8 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
 
 #[test]
 fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
-    use super::super::*;
+    use super::super::nurbs_pcurve_differential;
+    use crate::math::Point2;
     let result = nurbs_pcurve_differential(
         1,
         &[0.0, 0.0, 1.0, 1.0],
@@ -167,8 +174,10 @@ fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
 
 #[test]
 fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
-    use super::super::*;
+    use super::super::pcurve_uv_differential;
+    use crate::geometry::pcurve::PcurveGeometry;
     use crate::geometry::pcurve::{PolarHarmonicPcurve, SphericalGreatCirclePcurve};
+    use crate::math::Point2;
     for radius in [1e-200, 1.0, 1e200] {
         let curve = PcurveGeometry::PolarHarmonic(
             PolarHarmonicPcurve::try_new(
@@ -199,7 +208,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
 
 #[test]
 fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
-    use super::super::*;
+    use super::super::{scalar_unary_sweep_law_differential, ScalarSweepDifferential};
     for (operator, x, derivative, expected) in [
         ("LN", 1e-310, 1e-310, 1.0),
         ("COT", 1e-200, 1e-200, -1e200),
@@ -229,7 +238,7 @@ fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
 
 #[test]
 fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
-    use super::super::*;
+    use super::super::{polyline_point, polyline_tangent};
     assert_eq!(
         polyline_point(
             &[Point3::new(-1e308, 0.0, 0.0), Point3::new(1e308, 0.0, 0.0)],

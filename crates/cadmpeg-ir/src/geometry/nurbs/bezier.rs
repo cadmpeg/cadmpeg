@@ -221,7 +221,7 @@ pub fn boundaries_within_resolution(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{boundaries_within_resolution, homogeneous_spans};
     #[test]
     fn numerical_followup_bezier_spans_preserve_unclamped_and_discontinuous_curves() {
         let spans = homogeneous_spans(
