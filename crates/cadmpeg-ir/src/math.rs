@@ -222,17 +222,31 @@ impl Point2 {
     }
 }
 
-/// Scale only after splitting the exponent at the finite power-of-two limits.
-///
-/// `2.0_f64.powi(e)` is normal only for `e` in `[-1022, 1023]`. The split
-/// states `exponent` as one factor inside that band plus a remainder, so an
-/// exponent outside the band is the case this function exists for and not an
-/// error: the remainder scales `value` first, then the band factor completes
-/// the scale. Range loss in either factor leaves a non-finite product, which
-/// `is_finite` states.
-pub fn scale_power_of_two(value: f64, exponent: i32) -> Option<f64> {
-    let outer = exponent.clamp(-1022, 1023);
-    let result = (value * 2.0_f64.powi(exponent - outer)) * 2.0_f64.powi(outer);
+/// Multiply a finite value by a power of two, retaining representable subnormals.
+/// Large exponents are applied in normal chunks. Downward chunks leave 53 bits
+/// of exponent headroom so only the final multiplication rounds to subnormal.
+pub fn scale_power_of_two(mut value: f64, mut exponent: i32) -> Option<f64> {
+    if !value.is_finite() {
+        return None;
+    }
+    if value == 0.0 {
+        return Some(value);
+    }
+    while exponent > 1023 {
+        value *= 2.0_f64.powi(1023);
+        if !value.is_finite() {
+            return None;
+        }
+        exponent -= 1023;
+    }
+    while exponent < -1022 {
+        value *= 2.0_f64.powi(-969);
+        if value == 0.0 {
+            return Some(value);
+        }
+        exponent += 969;
+    }
+    let result = value * 2.0_f64.powi(exponent);
     result.is_finite().then_some(result)
 }
 

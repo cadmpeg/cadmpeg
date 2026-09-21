@@ -1599,22 +1599,19 @@ fn line_carrier_matches(
     let Some(unit) = Vector3::new(direction[0], direction[1], 0.0).unit_nonzero() else {
         return false;
     };
-    let Some(span) = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0).unit_nonzero() else {
+    let span = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0);
+    let span_scale = span.x.abs().max(span.y.abs());
+    let Some(span) = span.unit_nonzero() else {
         return false;
     };
     let parallel_error = (unit.x * span.y - unit.y * span.x).abs();
     let from_origin = Vector3::new(start[0] - origin[0], start[1] - origin[1], 0.0);
-    // Coincidence has zero residual; every nonzero offset uses its own scale.
-    let carrier_error = if from_origin.x == 0.0 && from_origin.y == 0.0 {
-        0.0
-    } else {
-        let Some(offset) = from_origin.unit_nonzero() else {
-            return false;
-        };
-        (unit.x * offset.y - unit.y * offset.x).abs()
-    };
+    // Position agreement uses the finite segment scale, which stays unchanged
+    // when the stored origin moves along the same infinite line.
+    let carrier_error = (unit.x * from_origin.y - unit.y * from_origin.x).abs();
     parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
-        && carrier_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
+        && carrier_error.is_finite()
+        && carrier_error / span_scale <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
 }
 
 fn resolve_point(
@@ -2396,6 +2393,23 @@ mod tests {
                 [invalid, 0.0],
                 [0.0, 0.0],
                 [1.0, 0.0],
+            ));
+        }
+    }
+    #[test]
+    fn audit_regression_distant_parallel_segment_is_not_on_carrier() {
+        for origin in [[0., 0.], [1e12, 0.]] {
+            assert!(!super::line_carrier_matches(
+                origin,
+                [1., 0.],
+                [1e12, 1.],
+                [1e12 + 1., 1.]
+            ));
+            assert!(super::line_carrier_matches(
+                origin,
+                [1., 0.],
+                [1e12, 0.],
+                [1e12 + 1., 0.]
             ));
         }
     }

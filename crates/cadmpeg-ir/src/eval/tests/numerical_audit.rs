@@ -246,3 +246,32 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     let tangent = polyline_tangent(&points, &[-1e308, 1e308], 0.0).unwrap();
     assert!((tangent.x / 5e-309 - 1.0).abs() <= 8.0 * f64::EPSILON);
 }
+
+#[test]
+fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let axis = NurbsSurfaceAxis::new(1, vec![1e308, 1e308, 1.1e308, 1.1e308], false);
+    let surface = NurbsSurface::from_lanes(
+        axis.clone(),
+        axis,
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
+                vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let target = Point3::new(0.5, 0.5, 0.);
+    let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(
+        &surface,
+        target,
+        None,
+        &cadmpeg_core::decode::WorkBudget::new(1_000_000),
+    )
+    .unwrap();
+    let point = crate::eval::nurbs_surface_point(&surface, uv.u, uv.v).unwrap();
+    assert!(point.distance(target) <= 64.0 * f64::EPSILON);
+}

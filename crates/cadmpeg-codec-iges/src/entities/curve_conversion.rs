@@ -129,15 +129,34 @@ pub(crate) fn parabolic_arc_nurbs(
         return Ok(None);
     }
     let transverse = axis.cross(major_direction);
+    let product = |a, b| cadmpeg_ir::math::product_quotient([focal_distance, a, b], [1.0]);
+    let (
+        Some(start_major),
+        Some(start_minor),
+        Some(middle_major),
+        Some(middle_minor),
+        Some(end_major),
+        Some(end_minor),
+    ) = (
+        product(start, start),
+        product(2.0, start),
+        product(start, delta),
+        product(1.0, delta),
+        product(end, end),
+        product(2.0, end),
+    )
+    else {
+        return Ok(None);
+    };
     let start_point = vertex
-        .translated(major_direction, focal_distance * start * start)
-        .translated(transverse, 2.0 * focal_distance * start);
+        .translated(major_direction, start_major)
+        .translated(transverse, start_minor);
     let middle_point = start_point
-        .translated(major_direction, focal_distance * start * delta)
-        .translated(transverse, focal_distance * delta);
+        .translated(major_direction, middle_major)
+        .translated(transverse, middle_minor);
     let end_point = vertex
-        .translated(major_direction, focal_distance * end * end)
-        .translated(transverse, 2.0 * focal_distance * end);
+        .translated(major_direction, end_major)
+        .translated(transverse, end_minor);
     if ![start_point, middle_point, end_point]
         .iter()
         .all(Point3::is_finite)

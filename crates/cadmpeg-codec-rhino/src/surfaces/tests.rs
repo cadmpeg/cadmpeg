@@ -1104,3 +1104,22 @@ fn large_nonperiodic_knot_gaps_remain_nonperiodic() {
         5
     ));
 }
+
+#[test]
+fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
+    let bytes = [1e300_f64, 0., 0., 1e-10]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+    let (poles, weights) = read_poles(
+        &mut reader,
+        1,
+        true,
+        3,
+        crate::test_support::millimeter_scale(1e-7),
+    )
+    .unwrap();
+    assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
+    assert_eq!(weights, Some(vec![1e-10]));
+}

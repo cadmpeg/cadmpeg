@@ -1323,3 +1323,12 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
     ));
     assert!(result.report().losses.is_empty());
 }
+
+#[test]
+fn audit_regression_distinct_tiny_pattern_steps_stay_explicit() {
+    assert_eq!(crate::design::uniform_step(&[0., 1e-16, 3e-16]), None);
+    assert_eq!(
+        crate::design::uniform_step(&[0., 1e-16, 2e-16]),
+        Some(1e-16)
+    );
+}

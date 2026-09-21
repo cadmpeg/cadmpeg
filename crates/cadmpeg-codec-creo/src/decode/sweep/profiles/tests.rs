@@ -163,3 +163,12 @@ fn numerical_ranges_profile_arc_tolerance_is_a_length_at_both_ends() {
         ));
     }
 }
+
+#[test]
+fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
+    let line = [[0., 0.], [1000., 0.]];
+    let arc = |center| ([center, 0.], 0.1, 0., std::f64::consts::TAU);
+    assert!(!super::line_arc_intersect(line, arc(1000.5), 0.001));
+    assert!(super::line_arc_intersect(line, arc(1000.1005), 0.001));
+    assert!(super::line_arc_intersect(line, arc(999.5), 0.001));
+}

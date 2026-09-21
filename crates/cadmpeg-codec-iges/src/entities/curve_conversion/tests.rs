@@ -124,3 +124,21 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         );
     }
 }
+
+#[test]
+fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
+    let curve = parabolic_arc_nurbs(
+        Point3::new(0., 0., 0.),
+        Vector3::new(0., 0., 1.),
+        Vector3::new(1., 0., 0.),
+        1e308,
+        [1e-100, 2e-100],
+    )
+    .unwrap()
+    .unwrap();
+    let points = curve.control_points();
+    for (point, expected) in [(&points[0], 2e208), (&points[2], 4e208)] {
+        assert!((point.y / expected - 1.).abs() <= 8. * f64::EPSILON);
+        assert!(point.is_finite());
+    }
+}

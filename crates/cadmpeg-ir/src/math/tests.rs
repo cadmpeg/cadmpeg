@@ -191,3 +191,20 @@ fn a_power_of_two_bound_normalises_without_moving_a_significand() {
         assert_eq!(power_of_two_bound(value), None);
     }
 }
+
+#[test]
+fn audit_regression_power_scaling_preserves_extreme_finite_results() {
+    use super::scale_power_of_two;
+    let minimum = f64::from_bits(1);
+    let maximum_power = 2.0_f64.powi(1023);
+    assert_eq!(scale_power_of_two(minimum, 2097), Some(maximum_power));
+    assert_eq!(scale_power_of_two(maximum_power, -2097), Some(minimum));
+    assert_eq!(scale_power_of_two(1.5, -1074), Some(2.0 * minimum));
+    assert_eq!(scale_power_of_two(1.0, i32::MAX), None);
+    assert_eq!(scale_power_of_two(1.0, i32::MIN), Some(0.0));
+    assert_eq!(
+        scale_power_of_two(-0.0, i32::MAX).unwrap().to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(scale_power_of_two(f64::NAN, 0), None);
+}

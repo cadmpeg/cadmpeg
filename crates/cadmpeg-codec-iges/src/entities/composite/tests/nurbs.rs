@@ -182,3 +182,34 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
     );
     assert!(!text.contains("join"), "{text}");
 }
+
+#[test]
+fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
+    let segment = |x, weight| {
+        NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(x, 0., 0.), Point3::new(x + 1., 0., 0.)],
+            Some(vec![weight, weight]),
+            false,
+        )
+        .unwrap()
+    };
+    let joined = concatenate_nurbs(
+        vec![
+            (segment(0., 1e200), [0., 1.], ()),
+            (segment(1., 1e-200), [0., 1.], ()),
+        ],
+        Some(0.),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        joined.nurbs.control_points(),
+        vec![
+            Point3::new(0., 0., 0.),
+            Point3::new(1., 0., 0.),
+            Point3::new(2., 0., 0.)
+        ]
+    );
+}

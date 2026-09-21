@@ -734,20 +734,15 @@ fn rational_surface_derivative_bounds_with_nets(
     let uv_bounds = derivatives.uv.active_control_bounds(u, v, origin)?;
     let auv = uv_bounds.maximum_position_norm;
     let wuv = uv_bounds.maximum_weight_magnitude;
-    let inverse_weight = weight_floor.recip();
-    let inverse_weight_squared = inverse_weight * inverse_weight;
-    let inverse_weight_cubed = inverse_weight_squared * inverse_weight;
-    let u = au * inverse_weight + a * wu * inverse_weight_squared;
-    let v = av * inverse_weight + a * wv * inverse_weight_squared;
-    let uu = auu * inverse_weight
-        + (a * wuu + 2.0 * au * wu) * inverse_weight_squared
-        + 2.0 * a * wu * wu * inverse_weight_cubed;
-    let uv = auv * inverse_weight
-        + (au * wv + av * wu + a * wuv) * inverse_weight_squared
-        + 2.0 * a * wu * wv * inverse_weight_cubed;
-    let vv = avv * inverse_weight
-        + (a * wvv + 2.0 * av * wv) * inverse_weight_squared
-        + 2.0 * a * wv * wv * inverse_weight_cubed;
+    // Divide homogeneous bounds before combining them. A common weight
+    // multiplier then cancels without overflowing reciprocal powers.
+    let [a, au, av, auu, auv, avv, wu, wv, wuu, wuv, wvv] =
+        [a, au, av, auu, auv, avv, wu, wv, wuu, wuv, wvv].map(|bound| bound / weight_floor);
+    let u = au + a * wu;
+    let v = av + a * wv;
+    let uu = auu + a * wuu + 2.0 * au * wu + 2.0 * a * wu * wu;
+    let uv = auv + au * wv + av * wu + a * wuv + 2.0 * a * wu * wv;
+    let vv = avv + a * wvv + 2.0 * av * wv + 2.0 * a * wv * wv;
     [u, v, uu, uv, vv]
         .iter()
         .all(|bound| bound.is_finite())
@@ -2616,5 +2611,33 @@ mod tests {
         assert!((lifted / 1e308 - 1.).abs() < 4. * f64::EPSILON);
         assert_eq!(super::lift_periodic_parameter(0., 1., 2.), 2.);
         assert_eq!(super::lift_periodic_parameter(0., -1., 2.), -2.);
+    }
+    #[test]
+    fn audit_regression_derivative_bounds_ignore_common_weight_scale() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+        for weight in [1., 1e-120, 1e120] {
+            let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
+            let surface = NurbsSurface::from_lanes(
+                axis.clone(),
+                axis,
+                NurbsSurfaceLanes::new(
+                    vec![
+                        vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
+                        vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
+                    ],
+                    Some(vec![vec![weight, weight], vec![weight, weight]]),
+                ),
+                false,
+            )
+            .unwrap();
+            let net = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface).unwrap();
+            let derivatives = super::RationalSurfaceDerivativeNets::from_net(&net).unwrap();
+            let bounds =
+                super::rational_surface_derivative_bounds_with_nets(&net, &derivatives, 0.5, 0.5)
+                    .unwrap();
+            assert!((bounds.u - 1.).abs() <= 16. * f64::EPSILON);
+            assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
+            assert_eq!([bounds.uu, bounds.uv, bounds.vv], [0., 0., 0.]);
+        }
     }
 }

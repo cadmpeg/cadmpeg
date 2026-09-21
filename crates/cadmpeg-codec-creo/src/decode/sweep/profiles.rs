@@ -646,9 +646,11 @@ pub(in super::super) fn line_arc_intersect(
 ) -> bool {
     let start = Point2::new(line[0][0], line[0][1]);
     let end = Point2::new(line[1][0], line[1][1]);
-    if (end.u - start.u).hypot(end.v - start.v) <= tolerance {
+    let length = (end.u - start.u).hypot(end.v - start.v);
+    if !length.is_finite() || !tolerance.is_finite() || tolerance < 0.0 || length <= tolerance {
         return false;
     }
+    let parameter_tolerance = tolerance / length;
     cadmpeg_ir::math::planar::line_circle_parameters(
         start,
         end,
@@ -657,7 +659,7 @@ pub(in super::super) fn line_arc_intersect(
     )
     .is_some_and(|parameters| {
         parameters.into_iter().any(|t| {
-            (-tolerance..=1.0 + tolerance).contains(&t)
+            (-parameter_tolerance..=1.0 + parameter_tolerance).contains(&t)
                 && point_on_profile_arc(
                     [
                         start.u + t * (end.u - start.u),

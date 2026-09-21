@@ -872,7 +872,7 @@ fn elevate_to_degree(
     if degree > target || curve.periodic() {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
-    let weights = match curve.weights() {
+    let mut weights = match curve.weights() {
         Some(weights) => weights,
         None => alloc_filled(
             curve.control_points().len(),
@@ -887,6 +887,23 @@ fn elevate_to_degree(
         })?,
     };
     let rational = weights.iter().any(|weight| *weight != 1.0);
+    let control_points = curve.control_points();
+    if control_points.iter().zip(&weights).any(|(point, weight)| {
+        [point.x, point.y, point.z].into_iter().any(|coordinate| {
+            let product = coordinate * weight;
+            !product.is_finite() || (product == 0.0 && coordinate != 0.0)
+        })
+    }) {
+        let maximum_weight = weights.iter().copied().map(f64::abs).fold(0.0, f64::max);
+        let exponent = cadmpeg_ir::math::power_of_two_bound(maximum_weight)
+            .ok_or_else(|| error(offset, "polycurve weight scale is invalid"))?;
+        for weight in &mut weights {
+            *weight = cadmpeg_ir::math::scale_power_of_two(*weight, -exponent)
+                .filter(|weight| *weight != 0.0)
+                .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?;
+        }
+    }
+
     let mut points = curve
         .control_points()
         .iter()
@@ -2244,5 +2261,30 @@ mod tests {
         assert_eq!(joined.curve.control_points()[2], Point3::new(2.0, 0.0, 0.0));
         assert_eq!(joined.warnings.len(), 1);
         assert!(joined.warnings[0].contains("gap 2"));
+    }
+    #[test]
+    fn audit_regression_degree_elevation_normalizes_large_common_weights() {
+        let line = |weight| {
+            NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(1e200, 0., 0.), Point3::new(1e200, 1., 0.)],
+                Some(vec![weight, weight]),
+                false,
+            )
+            .unwrap()
+        };
+        for degree in [1, 2] {
+            let normalized = super::elevate_to_degree(&line(1.), degree, 0).unwrap();
+            let rescaled = super::elevate_to_degree(&line(1e200), degree, 0).unwrap();
+            for (a, b) in normalized
+                .control_points()
+                .iter()
+                .zip(rescaled.control_points())
+            {
+                assert!((a.x / b.x - 1.).abs() <= 8. * f64::EPSILON);
+                assert!((a.y - b.y).abs() <= 8. * f64::EPSILON);
+            }
+        }
     }
 }

@@ -301,7 +301,7 @@ pub(super) fn spun_nurbs(
             base.z + along * axis.z,
         );
         let radial = [pole.x - center.x, pole.y - center.y, pole.z - center.z];
-        let radius = (radial[0] * radial[0] + radial[1] * radial[1] + radial[2] * radial[2]).sqrt();
+        let radius = radial[0].hypot(radial[1]).hypot(radial[2]);
         if radius <= f64::EPSILON {
             // Degenerate ring: the pole sits on the axis.
             for k in 0..9 {
@@ -723,5 +723,30 @@ mod tests {
             refusal.take_records().is_empty(),
             "the sink is empty once its records are taken"
         );
+    }
+    #[test]
+    fn audit_regression_spun_profile_retains_large_finite_radius() {
+        let profile = NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point3::new(1e200, 0., 0.), Point3::new(1e200, 0., 1.)],
+            None,
+            false,
+        )
+        .unwrap();
+        let surface = super::spun_nurbs(
+            &profile,
+            Point3::new(0., 0., 0.),
+            Vector3::new(0., 0., 1.),
+            &"audit",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .unwrap();
+        assert!(surface
+            .control_grid()
+            .iter()
+            .flatten()
+            .all(Point3::is_finite));
+        assert_eq!(surface.control_grid()[0][0], Point3::new(1e200, 0., 0.));
     }
 }
