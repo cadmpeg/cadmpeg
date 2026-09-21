@@ -484,12 +484,8 @@ impl HomogeneousSurfaceNet {
                 let position_norm = control[..3]
                     .iter()
                     .zip(origin)
-                    .map(|(coordinate, origin)| {
-                        let coordinate = coordinate - origin * control[3];
-                        coordinate * coordinate
-                    })
-                    .sum::<f64>()
-                    .sqrt();
+                    .map(|(coordinate, origin)| coordinate - origin * control[3])
+                    .fold(0.0_f64, f64::hypot);
                 if !position_norm.is_finite() || !control[3].is_finite() {
                     return None;
                 }
@@ -2615,7 +2611,7 @@ mod tests {
     #[test]
     fn audit_regression_derivative_bounds_ignore_common_weight_scale() {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-        for weight in [1., 1e-120, 1e120] {
+        for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
             let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
             let surface = NurbsSurface::from_lanes(
                 axis.clone(),
