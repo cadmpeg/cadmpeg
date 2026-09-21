@@ -14,6 +14,12 @@
 //! this harness never writes them; `UPDATE_GOLDEN=1` rewrites golden outputs
 //! and nothing else.
 //!
+//! A regeneration writes a golden only where that golden's own comparison
+//! fails. A golden the check accepts keeps its committed bytes, so a run over a
+//! clean tree leaves the tree clean. Without that predicate every golden the
+//! tolerance accepts is rewritten verbatim, and a regeneration of one codec
+//! moves the last place of every other codec's numbers.
+//!
 //! `GOLDEN_STRICT=1` compares golden text byte-exactly instead of through
 //! [`snapshots_agree`]; use it on one machine to confirm a change is exactly
 //! behavior-preserving. Never enable it in CI — cross-platform libm drift
@@ -188,8 +194,8 @@ impl Harness {
 
     /// Compares every branch for every fixture and asserts that none drifted.
     ///
-    /// Set `UPDATE_GOLDEN` to rewrite the golden outputs instead of comparing;
-    /// fixture inputs are never written.
+    /// Set `UPDATE_GOLDEN` to rewrite the goldens this comparison rejects;
+    /// an accepted golden and every fixture input stay as they are.
     ///
     /// # Panics
     ///
@@ -202,7 +208,8 @@ impl Harness {
     /// Compares every branch for every caller-built input.
     ///
     /// Use this when fixtures are constructed in code rather than read from
-    /// `tests/golden/fixtures`. `UPDATE_GOLDEN` rewrites golden outputs only.
+    /// `tests/golden/fixtures`. `UPDATE_GOLDEN` rewrites the rejected goldens
+    /// only.
     ///
     /// A [`Branch::root`] branch writes `{name}.json`
     /// directly under `tests/golden`. Otherwise `{name}.json` lives under
@@ -286,7 +293,9 @@ impl Harness {
     }
 
     /// Compares one branch, returning one failure per drifted or unreadable
-    /// golden plus one per golden with no input behind it.
+    /// golden plus one per golden with no input behind it. Under `update` a
+    /// drifted or unreadable golden is written instead of reported; a golden
+    /// the comparison accepts is left untouched either way.
     fn compare_branch(
         &self,
         branch: &Branch,
@@ -304,25 +313,27 @@ impl Harness {
         for (name, bytes) in inputs {
             let actual = (branch.snapshot)(bytes);
             let path = dir.join(format!("{name}.json"));
-            if update {
-                std::fs::write(&path, actual.as_bytes())
-                    .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
-                continue;
-            }
-            match read_golden(&path) {
-                Ok(expected) => {
-                    if let Err(mismatch) = compare_branch_snapshot(&expected, &actual) {
-                        failures.push(format!(
+            let failure = match read_golden(&path) {
+                Ok(expected) => compare_branch_snapshot(&expected, &actual).err().map(
+                    |mismatch| {
+                        format!(
                             "fixture `{name}`: {kind} diverged from {}\n    {mismatch}",
                             path.display()
-                        ));
-                    }
-                }
-                Err(error) => failures.push(format!(
+                        )
+                    },
+                ),
+                Err(error) => Some(format!(
                     "fixture `{name}`: cannot read {kind} golden {} ({error}); regenerate with `{}`",
                     path.display(),
                     self.regenerate
                 )),
+            };
+            let Some(failure) = failure else { continue };
+            if update {
+                std::fs::write(&path, actual.as_bytes())
+                    .unwrap_or_else(|error| panic!("write {}: {error}", path.display()));
+            } else {
+                failures.push(failure);
             }
         }
         for orphan in stems(&dir, "json")
@@ -467,51 +478,93 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
 
-    use super::{compare_branch_snapshot, first_line_diff, snapshot_text, snapshots_agree};
+    use super::{
+        compare_branch_snapshot, first_line_diff, snapshot_text, snapshots_agree, Branch, Harness,
+    };
     use cadmpeg_ir::compare::FLOAT_TOLERANCE;
 
-    /// Serializes tests that mutate `GOLDEN_STRICT` so parallel workers cannot
-    /// observe a half-applied environment.
-    static GOLDEN_STRICT_LOCK: Mutex<()> = Mutex::new(());
+    /// Serializes tests that mutate an environment key this harness reads, so
+    /// parallel workers cannot observe a half-applied environment.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Sets or clears `GOLDEN_STRICT` for the duration of a test scope.
-    struct GoldenStrictGuard {
+    /// Sets or clears one environment key for the duration of a test scope.
+    struct EnvGuard {
         _lock: MutexGuard<'static, ()>,
+        key: &'static str,
         previous: Option<std::ffi::OsString>,
     }
 
-    impl GoldenStrictGuard {
-        fn set(enabled: bool) -> Self {
-            let lock = GOLDEN_STRICT_LOCK
+    impl EnvGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let lock = ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let previous = std::env::var_os("GOLDEN_STRICT");
+            let previous = std::env::var_os(key);
             // SAFETY: exclusive access to this process env key is held via
-            // `GOLDEN_STRICT_LOCK` for the guard lifetime.
+            // `ENV_LOCK` for the guard lifetime.
             unsafe {
-                if enabled {
-                    std::env::set_var("GOLDEN_STRICT", "1");
-                } else {
-                    std::env::remove_var("GOLDEN_STRICT");
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
                 }
             }
             Self {
                 _lock: lock,
+                key,
                 previous,
             }
         }
     }
 
-    impl Drop for GoldenStrictGuard {
+    impl Drop for EnvGuard {
         fn drop(&mut self) {
             // SAFETY: same exclusive lock as `set`; restores prior value.
             unsafe {
                 match &self.previous {
-                    Some(value) => std::env::set_var("GOLDEN_STRICT", value),
-                    None => std::env::remove_var("GOLDEN_STRICT"),
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
                 }
+            }
+        }
+    }
+
+    /// A crate-shaped golden tree in the temporary directory, removed when the
+    /// scope ends. [`Harness::new`] takes the manifest directory as text, so a
+    /// test can point one at a tree it owns and read back what a regeneration
+    /// wrote.
+    struct TempTree(PathBuf);
+
+    impl TempTree {
+        /// Builds `tests/golden/decode/` under a directory named for this
+        /// process and `name`.
+        fn named(name: &str) -> Self {
+            let root =
+                std::env::temp_dir().join(format!("cadmpeg-golden-{}-{name}", std::process::id()));
+            std::fs::create_dir_all(root.join("tests/golden/decode"))
+                .expect("create the temporary golden tree");
+            Self(root)
+        }
+
+        /// The directory a harness resolves its golden paths against.
+        fn manifest_dir(&self) -> &str {
+            self.0.to_str().expect("the temporary path is UTF-8")
+        }
+
+        /// The `decode` branch golden of one input.
+        fn golden(&self, name: &str) -> PathBuf {
+            self.0
+                .join("tests/golden/decode")
+                .join(format!("{name}.json"))
+        }
+    }
+
+    impl Drop for TempTree {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_dir_all(&self.0) {
+                eprintln!("remove {}: {error}", self.0.display());
             }
         }
     }
@@ -570,14 +623,14 @@ mod tests {
         );
 
         {
-            let _unset = GoldenStrictGuard::set(false);
+            let _unset = EnvGuard::set("GOLDEN_STRICT", None);
             assert!(
                 compare_branch_snapshot(&golden, &snapshot).is_ok(),
                 "default path must tolerate sub-tolerance float drift"
             );
         }
 
-        let _strict = GoldenStrictGuard::set(true);
+        let _strict = EnvGuard::set("GOLDEN_STRICT", Some("1"));
         let error = compare_branch_snapshot(&golden, &snapshot)
             .expect_err("GOLDEN_STRICT must reject byte-unequal text");
         assert!(error.contains("at line 1"), "{error}");
@@ -601,5 +654,80 @@ mod tests {
         let error = snapshots_agree("not json\nsecond\n", "not json\nthird\n")
             .expect_err("unparseable text must still be compared");
         assert!(error.contains("at line 2"), "{error}");
+    }
+
+    /// The text a committed golden holds in the regeneration tests.
+    fn committed_text() -> String {
+        format!("{{\n  \"v\": {LINUX_CONE_V:?}\n}}\n")
+    }
+
+    /// A snapshot that disagrees with [`committed_text`] in the last place of
+    /// one fractional number, which the comparison accepts.
+    fn last_place_snapshot(_bytes: &[u8]) -> String {
+        format!("{{\n  \"v\": {WINDOWS_CONE_V:?}\n}}\n")
+    }
+
+    /// A snapshot that disagrees with [`committed_text`] far above the
+    /// tolerance, which the comparison rejects.
+    fn drifted_snapshot(_bytes: &[u8]) -> String {
+        format!("{{\n  \"v\": {:?}\n}}\n", LINUX_CONE_V * 2.0)
+    }
+
+    /// One nameless input, since these branches ignore the input bytes.
+    fn one_input() -> Vec<(String, Vec<u8>)> {
+        vec![("fixture".to_owned(), Vec::new())]
+    }
+
+    #[test]
+    fn a_regeneration_keeps_a_golden_the_comparison_accepts() {
+        let tree = TempTree::named("accepted");
+        let committed = committed_text();
+        std::fs::write(tree.golden("fixture"), &committed).expect("write the committed golden");
+        let snapshot = last_place_snapshot(&[]);
+        assert_ne!(
+            snapshot, committed,
+            "the texts must differ, or this test proves nothing"
+        );
+
+        let _update = EnvGuard::set("UPDATE_GOLDEN", Some("1"));
+        Harness::new(tree.manifest_dir(), "bin", "regenerate").check_inputs(
+            &one_input(),
+            &[Branch::named("decode", last_place_snapshot)],
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(tree.golden("fixture")).expect("read the golden back"),
+            committed,
+            "a regeneration must leave a golden its own comparison accepts"
+        );
+    }
+
+    #[test]
+    fn a_regeneration_writes_a_golden_the_comparison_rejects() {
+        let tree = TempTree::named("rejected");
+        std::fs::write(tree.golden("fixture"), committed_text())
+            .expect("write the committed golden");
+
+        let _update = EnvGuard::set("UPDATE_GOLDEN", Some("1"));
+        Harness::new(tree.manifest_dir(), "bin", "regenerate")
+            .check_inputs(&one_input(), &[Branch::named("decode", drifted_snapshot)]);
+
+        assert_eq!(
+            std::fs::read_to_string(tree.golden("fixture")).expect("read the golden back"),
+            drifted_snapshot(&[]),
+            "a regeneration must write the golden its own comparison rejects"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "golden(s) drifted")]
+    fn a_check_without_a_regeneration_reports_the_rejected_golden() {
+        let tree = TempTree::named("reported");
+        std::fs::write(tree.golden("fixture"), committed_text())
+            .expect("write the committed golden");
+
+        let _update = EnvGuard::set("UPDATE_GOLDEN", None);
+        Harness::new(tree.manifest_dir(), "bin", "regenerate")
+            .check_inputs(&one_input(), &[Branch::named("decode", drifted_snapshot)]);
     }
 }
