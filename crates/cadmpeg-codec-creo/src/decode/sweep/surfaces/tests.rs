@@ -120,8 +120,10 @@ fn numerical_followup_revolution_refuses_skew_line_specialization() {
     use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
     for radius in [2e-10, 2.] {
         let axis = RevolutionAxis {
-            origin: FinitePoint3::new(Point3::new(0., 0., 0.)).unwrap(),
-            direction: FeatureDirection3::new(Vector3::new(0., 0., 1.)).unwrap(),
+            origin: FinitePoint3::new(Point3::new(0., 0., 0.))
+                .expect("valid finite regression fixture"),
+            direction: FeatureDirection3::new(Vector3::new(0., 0., 1.))
+                .expect("valid finite regression fixture"),
             reference: None,
         };
         let transform = crate::placement::FeatureSectionTransform::new(
@@ -132,18 +134,18 @@ fn numerical_followup_revolution_refuses_skew_line_specialization() {
             [0., 0., 1.],
             0,
         )
-        .unwrap();
+        .expect("valid finite regression fixture");
         let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0., 0.),
             end: Point2::new(radius, radius),
         })
-        .unwrap();
+        .expect("valid finite regression fixture");
         assert!(super::revolved_section_surface(&transform, &line, &axis).is_none());
         let generator = SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0., 0.),
             end: Point2::new(0., radius),
         })
-        .unwrap();
+        .expect("valid finite regression fixture");
         assert!(super::revolved_section_surface(&transform, &generator, &axis).is_some());
     }
 }

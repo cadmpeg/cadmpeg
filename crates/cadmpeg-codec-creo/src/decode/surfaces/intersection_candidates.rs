@@ -8,6 +8,7 @@ use cadmpeg_ir::math::{planar::line_circle_parameters, Point2, Point3, Vector3};
 use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
 use crate::vecmath::{cross, dot};
 
+const EPS_APEX_PLANE_ROUNDOFF: f64 = 8.0 * f64::EPSILON;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_CENTER_ALIGNMENT: f64 = 1.0e-9;
 const EPS_TANGENT_ROOT: f64 = 1.0e-9;
@@ -430,12 +431,18 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
     }
     let apex: [f64; 3] =
         std::array::from_fn(|index| cone.origin()[index] - cone.radius() / slope * axis[index]);
-    let plane_distance = dot(
-        normal,
-        std::array::from_fn(|index| apex[index] - plane.origin[index]),
-    );
+    let plane_offset = std::array::from_fn(|index| apex[index] - plane.origin[index]);
+    let plane_distance = dot(normal, plane_offset);
     let scale = cone.radius().max((cone.radius() / slope).abs());
-    if plane_distance.abs() > EPS_GEOMETRY_AGREEMENT * scale {
+    // An apex-based cone has no reference radius. Retain only the arithmetic
+    // error bound of the plane dot product when its geometric scale is zero.
+    let roundoff = EPS_APEX_PLANE_ROUNDOFF
+        * normal
+            .into_iter()
+            .zip(plane_offset)
+            .map(|(a, b)| (a * b).abs())
+            .sum::<f64>();
+    if plane_distance.abs() > (EPS_GEOMETRY_AGREEMENT * scale).max(roundoff) {
         return Vec::new();
     }
     let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal));
