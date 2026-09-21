@@ -929,6 +929,19 @@ impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
 }
 
 /// Parameter-space trim with a finite ordered interval.
+///
+/// `parameter_range` is stated in the basis's own parameter space and is the
+/// carrier's declared domain: the trimmed pcurve exists on that interval and a
+/// coedge use range over it is checked against it. Equal endpoints state no
+/// interval, and the basis's parameterization governs instead.
+///
+/// The trim reparameterizes nothing, so
+/// [`pcurve_uv`](crate::eval::pcurve_uv) hands `t` to the basis unchanged. It
+/// does so at every `t`, inside the interval and outside it, because pcurve
+/// evaluation is total: it extrapolates past any declared domain, a NURBS
+/// carrier's knot interval included. A declared domain and an evaluable
+/// parameter are two different questions, and this carrier answers only the
+/// first.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TrimmedPcurveWire")]

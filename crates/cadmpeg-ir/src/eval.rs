@@ -1093,12 +1093,22 @@ fn solve_nurbs_surface_parameter(
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
-        let seed_distance = seed.map_or(parameters.u.abs() + parameters.v.abs(), |seed| {
-            (parameters.u - seed.u).hypot(parameters.v - seed.v)
-        });
+        if !distance.is_finite() {
+            continue;
+        }
+        // Quartering before subtraction keeps the tie metric finite even when
+        // parameters span the full finite range. Its common scale preserves order.
+        let seed_distance = seed.map_or(
+            parameters.u.abs() * 0.25 + parameters.v.abs() * 0.25,
+            |seed| {
+                (parameters.u * 0.25 - seed.u * 0.25)
+                    .hypot(parameters.v * 0.25 - seed.v * 0.25)
+            },
+        );
         let same_point = (distance - best_distance).abs()
             <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
-        if distance < best_distance && !same_point
+        if best.is_none()
+            || distance < best_distance && !same_point
             || same_point && seed_distance < best_seed_distance
         {
             best = Some(parameters);
@@ -7291,6 +7301,18 @@ fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
+///
+/// Evaluation is total over the carrier's stated shape and does not consult a
+/// declared domain. A NURBS carrier extrapolates its end span past the knot
+/// interval, a trim hands `t` to its basis outside the trim interval, and a
+/// line and a conic evaluate at every finite `t`. `None` means the carrier
+/// cannot produce a point at all — a non-finite result, or an offset whose
+/// basis has no finite nonzero tangent — never that `t` is out of domain.
+///
+/// Callers that recover a parameter from an unreliable declared interval
+/// depend on this: they seed and step outside the interval and use the
+/// evaluated point as the witness. A caller that wants the domain asks
+/// the carrier for it.
 pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
     pcurve_uv_inner(geometry, t, 0)
 }
