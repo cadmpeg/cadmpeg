@@ -7026,8 +7026,9 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
     } else {
         return None;
     };
-    // The lane's leading value is a positive axial extent the frame does not carry: the corners
-    // are `values[1..7]`, and no later statement reads `values[0]`.
+    // The lane's first scalar is positive. The frame's axial length is the axial corner span over
+    // `values[1..7]`, which that scalar does not always equal, so the frame carries it nowhere and
+    // no later statement reads `values[0]`.
     (values[0] > 0.0).then_some(())?;
     axis_aligned_cylinder_from_corners(
         [values[1], values[2], values[3]],
