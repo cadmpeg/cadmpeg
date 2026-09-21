@@ -9,6 +9,9 @@ use crate::curve::{CurveTopologyRow, PcurveEndpoints};
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence, RealRecord};
 use crate::surface::{self, SurfaceKind, SurfaceRow};
 
+/// Acceptance gate on the handedness of a legacy `local_sys` matrix.
+const EPS_LOCAL_SYSTEM_HANDEDNESS: f64 = 1.0e-9;
+
 /// A complete model-space carrier from one legacy analytic surface prototype.
 ///
 /// Every stored coordinate and dimension is finite: [`crate::legacy::Real`] is
@@ -415,6 +418,29 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
     })
 }
 
+/// Whether the three columns of a `local_sys` matrix are a right-handed orthonormal basis.
+///
+/// A carrier keeps column two as its axis and column zero as its ref direction. Column one is
+/// read only here, where it proves the stored matrix is the right-handed completion of that
+/// pair; a record whose middle column disagrees states no carrier. `handedness` is `NaN` or
+/// `+-inf` only for inputs the three orthonormality conjuncts have already refused.
+fn valid_right_handed_local_system(first: [f64; 3], second: [f64; 3], third: [f64; 3]) -> bool {
+    let cross = [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ];
+    let handedness = cross
+        .into_iter()
+        .zip(third)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    surface::valid_orthonormal_frame_directions(third, first)
+        && surface::valid_orthonormal_frame_directions(third, second)
+        && surface::valid_orthonormal_frame_directions(first, second)
+        && (handedness - 1.0).abs() <= EPS_LOCAL_SYSTEM_HANDEDNESS
+}
+
 fn surface_carrier(
     row_object: &ObjectRecord,
     row: &SurfaceRow,
@@ -473,7 +499,7 @@ fn surface_carrier(
     let first = [slots[0], slots[3], slots[6]];
     let second = [slots[1], slots[4], slots[7]];
     let third = [slots[2], slots[5], slots[8]];
-    surface::valid_right_handed_frame(first, second, third).then_some(())?;
+    valid_right_handed_local_system(first, second, third).then_some(())?;
     let origin = [slots[9], slots[10], slots[11]];
     let geometry = match family {
         AnalyticFamily::Plane => LegacySurfaceGeometry::Plane {
@@ -1080,6 +1106,32 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             .iter()
             .all(|record| record.name != "local_sys"));
         assert_eq!(persistence.real_values.unresolved_count, 1);
+
+        let result = scan(&persistence);
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn a_left_handed_local_system_withholds_the_legacy_carrier() {
+        let data = String::from_utf8(fixture(2.0, false))
+            .expect("ASCII fixture")
+            .replace(
+                "$3FF,0,0,0,3FF,0,0,0,3FF,0,0,0",
+                "$3FF,0,0,0,BFF,0,0,0,3FF,0,0,0",
+            )
+            .into_bytes();
+        let Ok(persistence) = crate::legacy::scan(&data, std::iter::once(0..data.len())) else {
+            panic!("the fixture states a persistence scope past its own end");
+        };
+
+        assert!(persistence
+            .real_values
+            .rows
+            .iter()
+            .any(|record| record.name == "local_sys"));
+        assert_eq!(persistence.real_values.unresolved_count, 0);
 
         let result = scan(&persistence);
 
