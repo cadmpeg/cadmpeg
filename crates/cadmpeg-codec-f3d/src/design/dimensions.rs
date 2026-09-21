@@ -5474,8 +5474,10 @@ pub(super) fn point_lies_on_sketch_geometry(
             close(x, axial)
                 && match bounds {
                     Some([start, end]) => {
-                        parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
-                            && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                        parameter
+                            >= start.min(*end) - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                            && parameter
+                                <= start.max(*end) + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
                     None => true,
                 }
