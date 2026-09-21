@@ -68,8 +68,11 @@ const MAP_MODE_NAMES: &[&str] = &[
 ];
 
 /// An index in the attachment map-mode table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "String", into = "String")]
+///
+/// The wire spelling is the decimal index as a JSON string, which is what
+/// `App::PropertyEnumeration` carries in the source document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct MapModeIndex(u8);
 
 impl MapModeIndex {
@@ -108,9 +111,13 @@ impl std::fmt::Display for MapModeIndex {
     }
 }
 
-impl From<MapModeIndex> for String {
-    fn from(value: MapModeIndex) -> Self {
-        value.to_string()
+impl serde::Serialize for MapModeIndex {
+    /// Writes the [`Display`](std::fmt::Display) spelling as a JSON string.
+    /// `collect_str` hands the serializer the formatting rather than a built
+    /// `String`, so a writer-backed serializer formats the digits straight into
+    /// its output and the value serializer owns one string instead of two.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
     }
 }
 

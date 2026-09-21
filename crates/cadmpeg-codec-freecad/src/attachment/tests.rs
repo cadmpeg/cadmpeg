@@ -193,3 +193,16 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
         assert!(error.to_string().contains("map_mode"));
     }
 }
+
+/// Every admissible index writes the same JSON text through a writer-backed
+/// serializer as through the value serializer: the digits, quoted, unescaped.
+#[test]
+fn map_mode_writes_the_same_text_through_a_writer() {
+    for index in 0..super::MAP_MODE_NAMES.len() {
+        let mode = super::MapModeIndex::try_new(index).expect("valid table index");
+        assert_eq!(
+            serde_json::to_string(&mode).expect("write index"),
+            format!("\"{index}\"")
+        );
+    }
+}
