@@ -262,6 +262,12 @@ construct their curves and endpoints.
 
 **Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder and generated type-24 round-edge endpoint bodies. The first directrix-coordinate positive DICT lattice covers prefixes `4b..a3`.
 
+In the seven-scalar directrix-coordinate lane, the first scalar is positive. It
+usually equals the axial corner span: example pairs include `1.7` and `1.7`,
+and `0.74` and `0.7399999999999998`. It does not always equal that span: one
+example has a first scalar of `1.78` and an axial corner span of `1.68`. Its
+role is not known.
+
 The selector-corner interval family reconstructs its unique axis line, radius,
 and extent from two directrix parameters, two XYZ corners, and the selector
 pair. Its split-selector and one-placeholder variants use the same equation.
