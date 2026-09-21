@@ -1036,9 +1036,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 position.y - point.y,
                 position.z - point.z,
             );
-            if fit_tolerance
-                .is_some_and(|tolerance| dot_vector(residual, residual) <= tolerance * tolerance)
-            {
+            if fit_tolerance.is_some_and(|tolerance| residual.norm() <= tolerance) {
                 return Some(parameters);
             }
             let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
@@ -1167,14 +1165,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
         clamp_surface_parameters(&mut parameters, domain);
     }
 
-    let squared_distance = |position: Point3| {
-        let delta = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
-        dot_vector(delta, delta)
-    };
+    let distance = |position: Point3| Point3::distance(position, point);
     for _ in 0..OFFSET_NEWTON_ITERATIONS {
         let (position, du, dv) = model_surface_point_and_derivatives(
             index,
@@ -1183,7 +1174,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             derivative_domain,
             geometry_budget,
         )?;
-        let current_distance = squared_distance(position);
+        let current_distance = distance(position);
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
@@ -1208,7 +1199,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
                 candidate.v,
                 geometry_budget,
             )?;
-            let candidate_distance = squared_distance(candidate_position);
+            let candidate_distance = distance(candidate_position);
             if candidate_distance.is_finite() && candidate_distance <= current_distance {
                 accepted = Some((candidate, candidate_distance));
                 break;
@@ -1216,7 +1207,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             scale *= 0.5;
         }
         let Some((candidate, _)) = accepted else {
-            if current_distance.sqrt() <= fit_tolerance {
+            if current_distance <= fit_tolerance {
                 break;
             }
             return None;
@@ -1239,8 +1230,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
         parameters.v,
         geometry_budget,
     )?;
-    let distance = squared_distance(position).sqrt();
-    (distance <= fit_tolerance).then_some(parameters)
+    (distance(position) <= fit_tolerance).then_some(parameters)
 }
 
 pub(super) fn coarse_model_surface_parameters(
@@ -1271,9 +1261,7 @@ pub(super) fn coarse_model_surface_parameters(
             ) else {
                 continue;
             };
-            let distance = (candidate.x - point.x).powi(2)
-                + (candidate.y - point.y).powi(2)
-                + (candidate.z - point.z).powi(2);
+            let distance = Point3::distance(candidate, point);
             if distance < best_distance {
                 best = Some(parameters);
                 best_distance = distance;
@@ -1889,11 +1877,7 @@ fn correct_intersection_parameters(
                 .map(|index| (corrected[index] - predictor[index]) * tangent[index])
                 .sum(),
         ];
-        let equality_error = residual[..3]
-            .iter()
-            .map(|value| value * value)
-            .sum::<f64>()
-            .sqrt();
+        let equality_error = residual[..3].iter().copied().fold(0.0_f64, f64::hypot);
         if equality_error <= fit_tolerance * EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E6
             && residual[3].abs()
                 <= EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11 * (1.0 + scale.abs())
@@ -2590,6 +2574,60 @@ mod tests {
         .expect("linear support extension refinement");
         assert!((refined.u - 3.0).abs() <= fit_tolerance);
         assert!((refined.v - 0.25).abs() <= fit_tolerance);
+
+        let remote = Point3::new(3.0, 0.25, 1e200);
+        assert!(offset_surface_parameters_with_tolerance(
+            &ir,
+            &offset,
+            remote,
+            Some(Point2::new(3.0, 0.25)),
+            Some(1e190),
+        )
+        .is_none());
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        assert!(super::coarse_model_surface_parameters(
+            &index,
+            &offset,
+            remote,
+            ([0., 1.], [0., 1.]),
+            &geometry_budget,
+        )
+        .is_some());
+
+        // Move the support to Z=-1 so its unit offset lies at Z=0. A small
+        // off-surface residual is then representable without adding it to 1.
+        let mut near_zero = ir.clone();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) =
+            &mut near_zero.model.surfaces[0].geometry
+        else {
+            panic!("the test support is a NURBS plane");
+        };
+        support
+            .edit_control_points(|point| {
+                point.z = -1.0;
+                Ok(())
+            })
+            .expect("finite translated support");
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
+        let target = Point3::new(3., 0.25, 1e-200);
+        assert!(offset_surface_parameters_with_tolerance(
+            &near_zero,
+            &offset,
+            target,
+            Some(Point2::new(3., 0.25)),
+            Some(1e-210),
+        )
+        .is_none());
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        assert!(refine_offset_surface_parameters_with_index_and_budget(
+            &index,
+            &offset,
+            target,
+            Point2::new(3., 0.25),
+            1e-210,
+            &geometry_budget,
+        )
+        .is_none());
     }
     #[test]
     fn intersection_null_vector_is_invariant_under_row_scaling() {
