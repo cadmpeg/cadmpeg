@@ -671,10 +671,6 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     candidates.next().is_none().then_some(body)
 }
 
-fn parse_body(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyNode> {
-    parse_body_layout(bytes, offset, payload)
-}
-
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyNode> {
     let (payload, _, _) = read_prefix(bytes, offset, BODY_TAG)?;
     parse_body_layout(bytes, offset, payload.checked_sub(6)?)
@@ -771,32 +767,6 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
     parse_face_fields(bytes, offset, payload.checked_sub(6)?)
 }
 
-fn body_schema_bodies(bytes: &[u8], offset: usize) -> Vec<BodyNode> {
-    let end = bytes.len();
-    let mut bodies = Vec::new();
-    let mut z = offset + 2;
-    while z < end {
-        if bytes[z] == b'Z' {
-            let body = parse_body(bytes, z + 1, z + 1);
-            if let Some(body) = body {
-                let has_edit = has_schema_edit(bytes, offset, z);
-                if has_edit {
-                    bodies.push(body);
-                }
-            }
-        }
-        z += 1;
-    }
-    bodies
-}
-
-fn has_schema_edit(bytes: &[u8], offset: usize, terminator: usize) -> bool {
-    bytes.get(offset + 2..terminator).is_some_and(|edit| {
-        edit.iter()
-            .any(|byte| matches!(byte, b'C' | b'D' | b'I' | b'A'))
-    })
-}
-
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
 pub(super) fn scan(bytes: &[u8]) -> Facts {
     let mut facts = Facts::default();
@@ -804,15 +774,15 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
-    for body in body_schema_bodies(bytes, 0) {
-        body_offsets.insert(body.offset);
-        facts.bodies.push(body);
-    }
     let mut has_edit = false;
     for (z, &byte) in bytes.iter().enumerate().skip(2) {
         has_edit |= matches!(byte, b'C' | b'D' | b'I' | b'A');
         if byte != b'Z' || !has_edit {
             continue;
+        }
+        if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
+            body_offsets.insert(body.offset);
+            facts.bodies.push(body);
         }
         if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
             if shell_offsets.insert(shell.offset) {
