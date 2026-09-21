@@ -340,12 +340,7 @@ pub enum SolvedCurveGeometry {
     /// Source-native polyline with an explicit chordal error bound.
     Polyline(PolylineCurve),
     /// Exact affine placement of an inline basis curve.
-    Transformed {
-        /// Unplaced basis geometry with unchanged parameterization.
-        basis: Box<SolvedCurveGeometry>,
-        /// Affine map from basis coordinates to model coordinates.
-        transform: Transform,
-    },
+    Transformed(PlacedCurve),
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.
@@ -359,30 +354,100 @@ pub enum SolvedCurveGeometry {
 }
 
 impl SolvedCurveGeometry {
-    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
-    /// placements.
+    /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
-    /// The walk is iterative, so it answers a chain of any depth without
-    /// recursing.
+    /// [`PlacedCurve`] stores its own depth, so this reads one field and
+    /// building a chain costs one addition per placement.
     #[must_use]
-    pub fn nesting_within_bound(&self) -> bool {
-        let mut current = self;
-        for _ in 0..MAX_GEOMETRY_NESTING {
-            match current {
-                Self::Transformed { basis, .. } => current = basis,
-                Self::Line(_)
-                | Self::Circle(_)
-                | Self::Ellipse(_)
-                | Self::Parabola(_)
-                | Self::Hyperbola(_)
-                | Self::Degenerate(_)
-                | Self::Composite { .. }
-                | Self::Nurbs(_)
-                | Self::Polyline(_)
-                | Self::Unknown { .. } => return true,
-            }
+    pub(crate) const fn nesting_depth(&self) -> usize {
+        match self {
+            Self::Transformed(placed) => placed.depth,
+            Self::Line(_)
+            | Self::Circle(_)
+            | Self::Ellipse(_)
+            | Self::Parabola(_)
+            | Self::Hyperbola(_)
+            | Self::Degenerate(_)
+            | Self::Composite { .. }
+            | Self::Nurbs(_)
+            | Self::Polyline(_)
+            | Self::Unknown { .. } => 0,
         }
-        !matches!(current, Self::Transformed { .. })
+    }
+}
+
+/// Exact affine placement of an inline basis curve.
+///
+/// `try_new` is the only constructor and refuses a chain deeper than
+/// [`MAX_GEOMETRY_NESTING`], so no [`SolvedCurveGeometry`] value nests past the
+/// bound however it was built or read.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PlacedCurveWire")]
+pub struct PlacedCurve {
+    basis: Box<SolvedCurveGeometry>,
+    transform: Transform,
+    #[serde(skip)]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PlacedCurveWire {
+    /// Unplaced basis geometry with unchanged parameterization.
+    basis: Box<SolvedCurveGeometry>,
+    /// Affine map from basis coordinates to model coordinates.
+    transform: Transform,
+}
+
+impl PlacedCurve {
+    /// Place a basis curve, refusing a chain past [`MAX_GEOMETRY_NESTING`].
+    ///
+    /// # Errors
+    ///
+    /// Refuses a basis already at the bound, whose placement would produce a
+    /// carrier one deeper than the IR admits.
+    pub fn try_new(
+        basis: Box<SolvedCurveGeometry>,
+        transform: Transform,
+    ) -> Result<Self, &'static str> {
+        let Some(depth) = basis
+            .nesting_depth()
+            .checked_add(1)
+            .filter(|depth| *depth <= MAX_GEOMETRY_NESTING)
+        else {
+            return Err("PlacedCurve.basis nests past the admitted inline basis depth");
+        };
+        Ok(Self {
+            basis,
+            transform,
+            depth,
+        })
+    }
+
+    /// Return the basis.
+    #[must_use]
+    pub const fn basis(&self) -> &SolvedCurveGeometry {
+        &self.basis
+    }
+
+    /// Return the transform.
+    #[must_use]
+    pub const fn transform(&self) -> &Transform {
+        &self.transform
+    }
+
+    /// Replace the transform. The basis chain, and so the depth, is unchanged.
+    pub const fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+    }
+}
+
+impl TryFrom<PlacedCurveWire> for PlacedCurve {
+    type Error = &'static str;
+    fn try_from(wire: PlacedCurveWire) -> Result<Self, Self::Error> {
+        Self::try_new(wire.basis, wire.transform)
     }
 }
 

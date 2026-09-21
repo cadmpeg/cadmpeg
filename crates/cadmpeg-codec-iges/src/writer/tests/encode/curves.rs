@@ -76,10 +76,13 @@ fn transformed_nurbs_overflow_is_refused_without_changing_the_source() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Nurbs(nurbs)),
-        transform,
-    });
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Nurbs(nurbs)),
+            transform,
+        )
+        .expect("placed curve"),
+    ));
     let before = geometry.clone();
     let error =
         crate::writer::flatten_curve(geometry.solved().expect("solved carrier")).unwrap_err();

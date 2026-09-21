@@ -1874,20 +1874,23 @@ fn transform_curve(
     transform: Transform,
 ) -> Result<CurveGeometry, CodecError> {
     ensure_similarity(transform)?;
-    Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(
-            geometry
-                .clone()
-                .solved()
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(
-                        "carrier has no solved geometry".into(),
-                    )
-                })?
-                .clone(),
-        ),
-        transform,
-    }))
+    Ok(CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(
+                geometry
+                    .clone()
+                    .solved()
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::NotImplemented(
+                            "carrier has no solved geometry".into(),
+                        )
+                    })?
+                    .clone(),
+            ),
+            transform,
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?,
+    )))
 }
 
 fn transform_surface(
@@ -2253,7 +2256,9 @@ pub(crate) fn normalize_occt_curve_range(
                 cadmpeg_ir::math::multiply_divide(end, 0.5, focal_distance)?,
             ])
         }
-        SolvedCurveGeometry::Transformed { basis, .. } => normalize_occt_curve_range(basis, range),
+        SolvedCurveGeometry::Transformed(placed) => {
+            normalize_occt_curve_range(placed.basis(), range)
+        }
         _ => range,
     }
 }

@@ -154,8 +154,8 @@ fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f6
                 }
             })
         }
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            curve_endpoint_seed(basis, upper, fallback)
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_endpoint_seed(placed.basis(), upper, fallback)
         }
         _ => fallback,
     }
@@ -172,8 +172,8 @@ fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) ->
         SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
             nurbs_curve_parameter_domain(nurbs)
         }
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            return edge_parameter_range(basis, start, end);
+        SolvedCurveGeometry::Transformed(placed) => {
+            return edge_parameter_range(placed.basis(), start, end);
         }
         _ => None,
     };
@@ -909,16 +909,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
-            let geometry = SolvedCurveGeometry::Transformed {
-                basis: Box::new(basis),
-                transform,
-            };
-            if !geometry.nesting_within_bound() {
+            let Ok(placed) = cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
+            else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "CURVE_REPLICA #{id} nests past the admitted inline basis depth"
                 )));
                 continue;
-            }
+            };
+            let geometry = SolvedCurveGeometry::Transformed(placed);
             let curve_index = CurveIndex(ir.model.curves.len());
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let procedural = ProceduralCurve::new(
@@ -3724,8 +3722,8 @@ fn parameter_scale(
         // A replica and the constructions that inherit a parent curve's
         // parameterization keep the parent's parameter units even when their
         // model-space dimensions change.
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            parameter_scale(basis, angle_scale, linear_parameter_scale)
+        SolvedCurveGeometry::Transformed(placed) => {
+            parameter_scale(placed.basis(), angle_scale, linear_parameter_scale)
         }
         SolvedCurveGeometry::Parabola(_)
         | SolvedCurveGeometry::Hyperbola(_)
@@ -3857,9 +3855,13 @@ fn curve_parameter_at_point(
             let domain = nurbs_curve_parameter_domain(curve)?;
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
-            basis,
-            transform.try_inverse_affine().ok()?.apply_point(point)?,
+        SolvedCurveGeometry::Transformed(placed) => curve_parameter_at_point(
+            placed.basis(),
+            placed
+                .transform()
+                .try_inverse_affine()
+                .ok()?
+                .apply_point(point)?,
             tolerance,
         ),
         _ => None,
@@ -4880,8 +4882,8 @@ fn directrix_geometry_parameter_scale(
         | SolvedCurveGeometry::Hyperbola(_)
         | SolvedCurveGeometry::Nurbs(_)
         | SolvedCurveGeometry::Polyline(_) => Some(1.0),
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            directrix_geometry_parameter_scale(basis, length_scale, angle_scale)
+        SolvedCurveGeometry::Transformed(placed) => {
+            directrix_geometry_parameter_scale(placed.basis(), length_scale, angle_scale)
         }
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }

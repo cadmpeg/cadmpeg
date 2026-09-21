@@ -1098,12 +1098,11 @@ pub(super) fn curve_geometry_coplanar(
             active.remove(&segment.curve);
             valid
         }),
-        SolvedCurveGeometry::Transformed {
-            basis,
-            transform: map,
-        } => transform.compose(*map).is_ok_and(|transform| {
-            curve_geometry_coplanar(basis, index, transform, plane, resolution, active)
-        }),
+        SolvedCurveGeometry::Transformed(placed) => transform
+            .compose(*placed.transform())
+            .is_ok_and(|transform| {
+                curve_geometry_coplanar(placed.basis(), index, transform, plane, resolution, active)
+            }),
         SolvedCurveGeometry::Unknown { .. } => false,
     }
 }

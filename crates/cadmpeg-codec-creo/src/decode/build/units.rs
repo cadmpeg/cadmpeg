@@ -1575,11 +1575,13 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *polyline = scaled;
         }
-        SolvedCurveGeometry::Transformed {
-            basis, transform, ..
-        } => {
-            scale_curve_geometry(basis, scale)?;
-            scale_transform_translation(transform, scale)?;
+        SolvedCurveGeometry::Transformed(placed) => {
+            let mut basis = placed.basis().clone();
+            scale_curve_geometry(&mut basis, scale)?;
+            let mut transform = *placed.transform();
+            scale_transform_translation(&mut transform, scale)?;
+            *placed = cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
+                .map_err(CodecError::malformed)?;
         }
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {}
     }
@@ -1696,8 +1698,8 @@ fn curve_parameter_scale(geometry: &SolvedCurveGeometry, length_scale_mm: f64) -
         SolvedCurveGeometry::Ellipse(_) => Some(1.0),
         SolvedCurveGeometry::Parabola(_) => Some(1.0),
         SolvedCurveGeometry::Hyperbola(_) => Some(1.0),
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            curve_parameter_scale(basis, length_scale_mm)
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_parameter_scale(placed.basis(), length_scale_mm)
         }
         SolvedCurveGeometry::Nurbs { .. } => None,
         SolvedCurveGeometry::Degenerate(_) => None,

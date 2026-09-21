@@ -12,16 +12,19 @@ fn rejects_transform_that_step_operator_cannot_represent() {
         [0.0, 0.0, 2.0, 0.0],
     ])
     .expect("affine transform");
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform: anisotropic,
-    });
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            anisotropic,
+        )
+        .expect("placed curve"),
+    ));
 
     assert!(!curve_is_supported(&curve));
 }
@@ -38,10 +41,13 @@ fn a_transformed_composite_curve_is_an_omitted_carrier() {
         .expect("nonempty composite segments"),
         self_intersect: None,
     });
-    let transformed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(composite.solved().expect("solved carrier").clone()),
-        transform: Transform::identity(),
-    });
+    let transformed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(composite.solved().expect("solved carrier").clone()),
+            Transform::identity(),
+        )
+        .expect("placed curve"),
+    ));
 
     let mut emitter = crate::writer::Emitter::new();
     assert!(curve(&mut emitter, transformed.solved().expect("solved carrier")).is_none());
@@ -151,10 +157,10 @@ fn placed_line(placements: usize) -> CurveGeometry {
         .expect("a unit-direction line"),
     );
     for _ in 0..placements {
-        geometry = SolvedCurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: Transform::identity(),
-        };
+        geometry = SolvedCurveGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(geometry), Transform::identity())
+                .expect("placed curve"),
+        );
     }
     CurveGeometry::Solved(geometry)
 }

@@ -588,7 +588,7 @@ pub(super) fn try_decode_geometry(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)) => {}
                 CurveGeometry::Procedural { .. } => {}
                 CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => {}
-                CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {}
+                CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {}
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {}
             }
             let id: CurveId = scope.id(&cadmpeg_ir::identity_component!("crv"), ci);

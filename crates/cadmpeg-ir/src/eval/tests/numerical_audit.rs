@@ -120,19 +120,22 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Nurbs(
-            crate::geometry::nurbs::NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 2.0, 3.0)],
-                None,
-                false,
-            )
-            .unwrap(),
-        )),
-        transform,
-    });
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Nurbs(
+                crate::geometry::nurbs::NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 2.0, 3.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed curve"),
+    ));
     assert_eq!(curve_point(&curve, 1.0), Some(Point3::new(3.0, 2.0, 3.0)));
     assert_eq!(
         curve_tangent(&curve, 1.0),

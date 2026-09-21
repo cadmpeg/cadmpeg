@@ -362,7 +362,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_)) => 6,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => 7,
         CurveGeometry::Procedural { .. } => 8,
-        CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => 8,
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => 8,
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(_)) => 9,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => 10,
     }

@@ -748,7 +748,9 @@ fn curve_geometry_is_typed_nonlinear(geometry: &SolvedCurveGeometry) -> bool {
         SolvedCurveGeometry::Ellipse(_) => true,
         SolvedCurveGeometry::Parabola(_) => true,
         SolvedCurveGeometry::Hyperbola(_) => true,
-        SolvedCurveGeometry::Transformed { basis, .. } => curve_geometry_is_typed_nonlinear(basis),
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_geometry_is_typed_nonlinear(placed.basis())
+        }
         _ => false,
     }
 }

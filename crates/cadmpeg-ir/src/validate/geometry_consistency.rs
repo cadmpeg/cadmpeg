@@ -59,15 +59,6 @@ pub(super) fn check_geometry_nesting(ir: &CadIr, findings: &mut Vec<Finding>) {
             entity: Some(id.to_owned()),
         });
     };
-    for curve in &ir.model.curves {
-        if curve
-            .geometry
-            .solved()
-            .is_some_and(|geometry| !geometry.nesting_within_bound())
-        {
-            refuse("curve", curve.id.as_str());
-        }
-    }
     for pcurve in &ir.model.pcurves {
         if !pcurve.geometry.nesting_within_bound() {
             refuse("pcurve", pcurve.id.as_str());

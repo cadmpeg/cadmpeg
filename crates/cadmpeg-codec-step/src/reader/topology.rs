@@ -4175,8 +4175,8 @@ fn curve_selection_parameter_domain_from_geometry(
             let upper = *parameters.last()?;
             (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
         }
-        SolvedCurveGeometry::Transformed { basis, .. } => {
-            curve_selection_parameter_domain_from_geometry(basis)
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_selection_parameter_domain_from_geometry(placed.basis())
         }
         SolvedCurveGeometry::Line(_)
         | SolvedCurveGeometry::Parabola(_)

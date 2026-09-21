@@ -1067,7 +1067,7 @@ pub(super) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
         SolvedCurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         SolvedCurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
         SolvedCurveGeometry::Polyline(_) => "POLYLINE",
-        SolvedCurveGeometry::Transformed { basis, .. } => curve_tag(basis),
+        SolvedCurveGeometry::Transformed(placed) => curve_tag(placed.basis()),
         SolvedCurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }

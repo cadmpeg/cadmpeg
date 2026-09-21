@@ -2522,9 +2522,10 @@ pub fn curve_point_with_budget_solved(
                 budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_point_solved(geometry, t)
             }
-            SolvedCurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(basis, t, depth + 1, budget).and_then(|point| transform.apply_point(point))
+                evaluate(placed.basis(), t, depth + 1, budget)
+                    .and_then(|point| placed.transform().apply_point(point))
             }
             _ => curve_point_solved(geometry, t),
         }
@@ -2560,10 +2561,10 @@ pub fn curve_tangent_with_budget_solved(
                 budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_tangent_solved(geometry, t)
             }
-            SolvedCurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(basis, t, depth + 1, budget)
-                    .and_then(|tangent| transform.apply_vector(tangent))
+                evaluate(placed.basis(), t, depth + 1, budget)
+                    .and_then(|tangent| placed.transform().apply_vector(tangent))
             }
             _ => curve_tangent_solved(geometry, t),
         }
@@ -2599,10 +2600,10 @@ pub fn curve_second_derivative_with_budget_solved(
                 budget.charge_by(polyline.point_count()).then_some(())?;
                 curve_second_derivative_solved(geometry, t)
             }
-            SolvedCurveGeometry::Transformed { basis, transform } => {
+            SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(basis, t, depth + 1, budget)
-                    .and_then(|derivative| transform.apply_vector(derivative))
+                evaluate(placed.basis(), t, depth + 1, budget)
+                    .and_then(|derivative| placed.transform().apply_vector(derivative))
             }
             _ => curve_second_derivative_solved(geometry, t),
         }
@@ -2690,9 +2691,9 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> 
             let (points, parameters) = polyline_samples(polyline);
             polyline_tangent(&points, &parameters, t)
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            curve_tangent_inner(basis, t, depth + 1)
-                .and_then(|tangent| transform.apply_vector(tangent))
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_tangent_inner(placed.basis(), t, depth + 1)
+                .and_then(|tangent| placed.transform().apply_vector(tangent))
         }
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
@@ -2765,9 +2766,9 @@ fn curve_second_derivative_inner(
             let (points, parameters) = polyline_samples(polyline);
             polyline_tangent(&points, &parameters, t).map(|_| zero)
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            curve_second_derivative_inner(basis, t, depth + 1)
-                .and_then(|derivative| transform.apply_vector(derivative))
+        SolvedCurveGeometry::Transformed(placed) => {
+            curve_second_derivative_inner(placed.basis(), t, depth + 1)
+                .and_then(|derivative| placed.transform().apply_vector(derivative))
         }
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
@@ -3152,7 +3153,7 @@ fn is_line_geometry(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
     }
     match geometry {
         SolvedCurveGeometry::Line(_) => true,
-        SolvedCurveGeometry::Transformed { basis, .. } => is_line_geometry(basis, depth + 1),
+        SolvedCurveGeometry::Transformed(placed) => is_line_geometry(placed.basis(), depth + 1),
         _ => false,
     }
 }
@@ -3958,13 +3959,13 @@ fn direct_curve_parameter_near_point(
             let (points, parameters) = polyline_samples(polyline);
             polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
+        SolvedCurveGeometry::Transformed(placed) => {
+            let (basis_point, tolerance_scale) = inverse_affine_point(*placed.transform(), point)?;
             let basis_tolerance = tolerance * tolerance_scale;
             if !basis_tolerance.is_finite() {
                 return None;
             }
-            direct_curve_parameter_near_point(basis, basis_point, seed, basis_tolerance)?
+            direct_curve_parameter_near_point(placed.basis(), basis_point, seed, basis_tolerance)?
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
             let stored = degenerate_curve.point().get();
@@ -4137,9 +4138,8 @@ fn curve_point_inner(geometry: &SolvedCurveGeometry, t: f64, depth: usize) -> Op
             let (points, parameters) = polyline_samples(polyline);
             polyline_point(&points, &parameters, t)
         }
-        SolvedCurveGeometry::Transformed { basis, transform } => {
-            curve_point_inner(basis, t, depth + 1).and_then(|point| transform.apply_point(point))
-        }
+        SolvedCurveGeometry::Transformed(placed) => curve_point_inner(placed.basis(), t, depth + 1)
+            .and_then(|point| placed.transform().apply_point(point)),
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
