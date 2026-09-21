@@ -3009,14 +3009,25 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
     }
 }
 
+/// Recursion budget of the binary geometry parsers.
+///
+/// A binary geometry record states its basis or directrix inline, so one input
+/// byte can add a parse frame and an input of ordinary size can nest deeper
+/// than the stack holds. The three `parse_binary_*` functions share this budget
+/// across their mutual recursion, and it bounds the parser only: the native
+/// `TextSurface`, `TextCurve` and `TextCurve2d` trees it builds are not neutral
+/// carriers. `MAX_GEOMETRY_NESTING` bounds the neutral chain separately, in the
+/// carrier constructors `topology_transfer` calls.
+const MAX_BINARY_PARSE_DEPTH: usize = 256;
+
 fn parse_binary_surface(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
-    if depth > 256 {
-        return Err(CodecError::Malformed(
-            "binary surface nesting exceeds 256".into(),
-        ));
+    if depth > MAX_BINARY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "binary surface nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+        )));
     }
     Ok(match cursor.u8("binary surface kind")? {
         1 => {
@@ -3213,10 +3224,10 @@ fn parse_binary_curve(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
-    if depth > 256 {
-        return Err(CodecError::Malformed(
-            "binary 3D curve nesting exceeds 256".into(),
-        ));
+    if depth > MAX_BINARY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "binary 3D curve nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+        )));
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
         1 => TextCurve::Line {
@@ -3350,10 +3361,10 @@ fn parse_binary_curve2d(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
-    if depth > 256 {
-        return Err(CodecError::Malformed(
-            "binary parameter-curve nesting exceeds 256".into(),
-        ));
+    if depth > MAX_BINARY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "binary parameter-curve nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+        )));
     }
     let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
         Ok(Point2::new(cursor.f64(label)?, cursor.f64(label)?))
