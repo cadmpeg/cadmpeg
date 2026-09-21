@@ -7311,16 +7311,12 @@ fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
 /// evaluated point as the witness. A caller that wants the domain asks
 /// the carrier for it.
 pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
-    pcurve_uv_inner(geometry, t, 0)
+    pcurve_uv_differential(geometry, t).map(|differential| differential.point)
 }
 
 /// Evaluate the exact first derivative of a directly stored pcurve.
 pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
-    pcurve_uv_differential_inner(geometry, t, 0)?.tangent
-}
-
-fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
-    pcurve_uv_differential_inner(geometry, t, depth).map(|differential| differential.point)
+    pcurve_uv_differential(geometry, t)?.tangent
 }
 
 // Differentiate atan2 without squaring coordinates in the finite f64 range.
@@ -7367,14 +7363,16 @@ fn polar_angle_differential(
     Some((point.v.atan2(point.u), first, second))
 }
 
-fn pcurve_uv_differential_inner(
-    geometry: &PcurveGeometry,
-    t: f64,
-    depth: usize,
-) -> Option<PcurveDifferential> {
-    if depth > 256 {
-        return None;
-    }
+/// Evaluate a pcurve carrier's point and its first two derivatives at `t`.
+///
+/// The recursion needs no depth budget. It descends only through
+/// [`PlacedPcurve`](crate::geometry::pcurve::PlacedPcurve),
+/// [`TrimmedPcurve`](crate::geometry::pcurve::TrimmedPcurve) and
+/// [`OffsetPcurve`](crate::geometry::pcurve::OffsetPcurve), each holding one
+/// inline `Box<PcurveGeometry>` behind a `try_new` that refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING). No arm
+/// follows an arena id, so the value handed in bounds the descent.
+fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDifferential> {
     let pair = match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -7618,7 +7616,7 @@ fn pcurve_uv_differential_inner(
         }
         PcurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
-            let basis = pcurve_uv_differential_inner(placed.basis(), t, depth + 1)?;
+            let basis = pcurve_uv_differential(placed.basis(), t)?;
             let point = transform.apply_point(basis.point);
             let tangent = basis.tangent.map(|tangent| transform.apply_vector(tangent));
             let acceleration = basis
@@ -7635,12 +7633,12 @@ fn pcurve_uv_differential_inner(
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
-            return pcurve_uv_differential_inner(basis, t, depth + 1);
+            return pcurve_uv_differential(basis, t);
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+            let basis = pcurve_uv_differential(basis, t)?;
             let tangent = basis.tangent?;
             let speed = tangent.u.hypot(tangent.v);
             if !speed.is_finite() || speed == 0.0 {

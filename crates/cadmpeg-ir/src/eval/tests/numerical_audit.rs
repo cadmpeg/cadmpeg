@@ -181,7 +181,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             )
             .unwrap(),
         );
-        let result = pcurve_uv_differential_inner(&curve, 0.5, 0).unwrap();
+        let result = pcurve_uv_differential(&curve, 0.5).unwrap();
         assert!((result.point.u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
@@ -189,7 +189,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let curve = PcurveGeometry::SphericalGreatCircle(
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
-    let result = pcurve_uv_differential_inner(&curve, 0.5, 0).unwrap();
+    let result = pcurve_uv_differential(&curve, 0.5).unwrap();
     let (sin, cos) = 0.5_f64.sin_cos();
     let expected_first = -sin / (1e200 * cos * cos);
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
