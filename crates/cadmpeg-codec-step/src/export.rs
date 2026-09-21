@@ -3790,6 +3790,32 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        // ISO 10303-42 `conical_surface` WR2 holds `semi_angle` in `(0, pi/2)`.
+        // `geometry::surface` emits the IR half angle verbatim, so a half angle
+        // outside that interval leaves the emitted record outside WR2. This
+        // note carries that to the caller and to `--reject-lossy=export`.
+        let out_of_domain_cone_semi_angles = self
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+                if {
+                    let half_angle = cone_surface.half_angle().get();
+                    half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2
+                })
+            })
+            .count();
+        if out_of_domain_cone_semi_angles > 0 {
+            self.loss(
+                StepLossCode::ConeSemiAngleOutOfDomain,
+                format!(
+                    "{out_of_domain_cone_semi_angles} conical surface(s) were written with a \
+                     semi-angle outside the STEP conical_surface domain (0 < semi_angle < pi/2)"
+                ),
+            );
+        }
         if !self.curveless_edges.is_empty() {
             self.loss(
                 StepLossCode::CurvelessEdgeOmitted,

@@ -191,6 +191,8 @@ pub(crate) enum StepLossCode {
     AnalyticSurfaceNormalized,
     /// Elliptical cone surfaces were reduced to circular `CONICAL_SURFACE`.
     EllipticalConeReduced,
+    /// `CONICAL_SURFACE` records carry a semi-angle outside ISO 10303-42 `WR2`.
+    ConeSemiAngleOutOfDomain,
     /// Edges have no typed 3D curve or carry an unsupported transform.
     CurvelessEdgeOmitted,
     /// Faces rest on an unknown or STEP-unsupported surface.
@@ -398,6 +400,7 @@ impl StepLossCode {
         Self::TopologyUnreachableFromRegion,
         Self::AnalyticSurfaceNormalized,
         Self::EllipticalConeReduced,
+        Self::ConeSemiAngleOutOfDomain,
         Self::CurvelessEdgeOmitted,
         Self::UnknownSurfaceFaceOmitted,
         Self::GeometryCarrierNotWritten,
@@ -563,6 +566,7 @@ impl StepLossCode {
             Self::TopologyUnreachableFromRegion => "topology.unreachable-from-region",
             Self::AnalyticSurfaceNormalized => "geometry.analytic-surface-normalized",
             Self::EllipticalConeReduced => "geometry.elliptical-cone-reduced",
+            Self::ConeSemiAngleOutOfDomain => "geometry.cone-semi-angle-out-of-domain",
             Self::CurvelessEdgeOmitted => "geometry.curveless-edge-omitted",
             Self::UnknownSurfaceFaceOmitted => "geometry.unknown-surface-face-omitted",
             Self::GeometryCarrierNotWritten => "geometry.carrier-not-written",
@@ -807,7 +811,9 @@ impl StepLossCode {
             Self::TessellationRequiresAp242
             | Self::TessellationInvalidCardinality
             | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
-            Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
+            Self::AnalyticSurfaceNormalized | Self::ConeSemiAngleOutOfDomain => {
+                LossTaxonomy::AnalyticSurfaceNormalized
+            }
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
             Self::UnknownSurfaceFaceOmitted => LossTaxonomy::UnknownSurfaceFaceOmitted,
@@ -943,6 +949,7 @@ mod tests {
                 "topology.unreachable-from-region",
                 "geometry.analytic-surface-normalized",
                 "geometry.elliptical-cone-reduced",
+                "geometry.cone-semi-angle-out-of-domain",
                 "geometry.curveless-edge-omitted",
                 "geometry.unknown-surface-face-omitted",
                 "geometry.carrier-not-written",
