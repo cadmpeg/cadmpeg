@@ -15,8 +15,8 @@ impl<T> PerNode<T> {
 }
 
 /// One indexed display triangulation with aligned optional node attributes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "TextTriangulationWire", into = "TextTriangulationWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "TextTriangulationWire")]
 pub(crate) struct TextTriangulation {
     /// Chordal deflection.
     pub(crate) deflection: f64,
@@ -83,13 +83,54 @@ impl TextTriangulation {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct TextTriangulationWire {
     deflection: f64,
     nodes: Vec<Point3>,
     uv_nodes: Option<Vec<Point2>>,
     triangles: Vec<[u32; 3]>,
     normals: Option<Vec<Vector3>>,
+}
+
+/// The retained wire shape, borrowed from the triangulation it states.
+///
+/// Reading owns the node, attribute and triangle tables it builds; writing
+/// states them once and copies nothing.
+#[derive(Serialize)]
+struct TextTriangulationOut<'a> {
+    deflection: f64,
+    nodes: &'a [Point3],
+    uv_nodes: Option<&'a [Point2]>,
+    triangles: OneBasedTriangles<'a>,
+    normals: Option<&'a [Vector3]>,
+}
+
+/// Triangle node indices written one-based, as the wire states them.
+struct OneBasedTriangles<'a>(&'a [[u32; 3]]);
+
+impl Serialize for OneBasedTriangles<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // `try_new` refuses a zero index and stores `index - 1`, so a stored
+        // index is at most `u32::MAX - 1` and the restated index fits.
+        serializer.collect_seq(
+            self.0
+                .iter()
+                .map(|triangle| triangle.map(|index| index + 1)),
+        )
+    }
+}
+
+impl Serialize for TextTriangulation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TextTriangulationOut {
+            deflection: self.deflection,
+            nodes: &self.nodes,
+            uv_nodes: self.uv_nodes.as_ref().map(|values| values.0.as_slice()),
+            triangles: OneBasedTriangles(&self.triangles),
+            normals: self.normals.as_ref().map(|values| values.0.as_slice()),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TryFrom<TextTriangulationWire> for TextTriangulation {
@@ -102,22 +143,6 @@ impl TryFrom<TextTriangulationWire> for TextTriangulation {
             wire.triangles,
             wire.normals,
         )
-    }
-}
-
-impl From<TextTriangulation> for TextTriangulationWire {
-    fn from(value: TextTriangulation) -> Self {
-        Self {
-            deflection: value.deflection,
-            nodes: value.nodes,
-            uv_nodes: value.uv_nodes.map(|values| values.0),
-            triangles: value
-                .triangles
-                .into_iter()
-                .map(|triangle| triangle.map(|index| index + 1))
-                .collect(),
-            normals: value.normals.map(|values| values.0),
-        }
     }
 }
 
@@ -139,6 +164,51 @@ mod tests {
             };
             assert!(TextTriangulation::try_from(wire).is_err());
         }
+    }
+
+    #[test]
+    fn writes_one_based_triangles_beside_the_aligned_node_attributes() {
+        let value = TextTriangulation::try_new(
+            0.5,
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            Some(vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+            ]),
+            vec![[1, 2, 3], [3, 2, 1]],
+            Some(vec![
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(value.triangles(), [[0, 1, 2], [2, 1, 0]]);
+        let wire = serde_json::json!({
+            "deflection": 0.5,
+            "nodes": [
+                {"x": 0.0, "y": 0.0, "z": 0.0},
+                {"x": 1.0, "y": 0.0, "z": 0.0},
+                {"x": 0.0, "y": 1.0, "z": 0.0}
+            ],
+            "uv_nodes": [{"u": 0.0, "v": 0.0}, {"u": 1.0, "v": 0.0}, {"u": 0.0, "v": 1.0}],
+            "triangles": [[1, 2, 3], [3, 2, 1]],
+            "normals": [
+                {"x": 0.0, "y": 0.0, "z": 1.0},
+                {"x": 1.0, "y": 0.0, "z": 0.0},
+                {"x": 0.0, "y": 1.0, "z": 0.0}
+            ]
+        });
+        assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<TextTriangulation>(wire).unwrap(),
+            value
+        );
     }
 
     #[test]
