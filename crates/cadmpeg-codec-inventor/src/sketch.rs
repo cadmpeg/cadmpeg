@@ -1608,7 +1608,21 @@ fn line_carrier_matches(
     let from_origin = Vector3::new(start[0] - origin[0], start[1] - origin[1], 0.0);
     // Position agreement uses the finite segment scale, which stays unchanged
     // when the stored origin moves along the same infinite line.
-    let carrier_error = (unit.x * from_origin.y - unit.y * from_origin.x).abs();
+    // Preserve the stored direction ratio when measuring position: rounding a
+    // unit direction can rotate a distant incident point away from the line.
+    let Some(exponent) =
+        cadmpeg_ir::math::power_of_two_bound(direction[0].abs().max(direction[1].abs()))
+    else {
+        return false;
+    };
+    let [Some(dx), Some(dy)] =
+        direction.map(|value| cadmpeg_ir::math::scale_power_of_two(value, -exponent))
+    else {
+        return false;
+    };
+    let right = dy * from_origin.x;
+    let determinant = dx.mul_add(from_origin.y, -right) - dy.mul_add(from_origin.x, -right);
+    let carrier_error = determinant.abs() / dx.hypot(dy);
     parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
         && carrier_error.is_finite()
         && carrier_error / span_scale <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
@@ -2412,5 +2426,20 @@ mod tests {
                 [1e12 + 1., 0.]
             ));
         }
+    }
+    #[test]
+    fn audit_regression_distant_oblique_point_keeps_stored_direction_ratio() {
+        assert!(super::line_carrier_matches(
+            [0., 0.],
+            [1., 12.],
+            [1e12, 12e12],
+            [1e12 + 1., 12e12 + 12.]
+        ));
+        assert!(!super::line_carrier_matches(
+            [0., 0.],
+            [1., 12.],
+            [1e12, 12e12 + 1.],
+            [1e12 + 1., 12e12 + 13.]
+        ));
     }
 }

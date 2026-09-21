@@ -1100,10 +1100,7 @@ fn solve_nurbs_surface_parameter(
         // parameters span the full finite range. Its common scale preserves order.
         let seed_distance = seed.map_or(
             parameters.u.abs() * 0.25 + parameters.v.abs() * 0.25,
-            |seed| {
-                (parameters.u * 0.25 - seed.u * 0.25)
-                    .hypot(parameters.v * 0.25 - seed.v * 0.25)
-            },
+            |seed| (parameters.u * 0.25 - seed.u * 0.25).hypot(parameters.v * 0.25 - seed.v * 0.25),
         );
         let same_point = (distance - best_distance).abs()
             <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
