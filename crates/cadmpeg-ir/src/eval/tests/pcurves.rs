@@ -2,7 +2,7 @@
 
 use crate::eval::pcurve_tangent;
 use crate::eval::pcurve_uv;
-use crate::eval::pcurve_uv_differential_inner;
+use crate::eval::pcurve_uv_differential;
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::math::Point2;
 use crate::transform::Transform2;
@@ -146,7 +146,7 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
     assert_eq!(pcurve_uv(&geometry, 2.0), Some(Point2::new(2.0, 26.0)));
     assert_eq!(pcurve_tangent(&geometry, 2.0), Some(Point2::new(-2.0, 4.0)));
     let differential =
-        pcurve_uv_differential_inner(&geometry, 2.0, 0).expect("transformed pcurve differential");
+        pcurve_uv_differential(&geometry, 2.0).expect("transformed pcurve differential");
     assert_eq!(differential.acceleration, Some(Point2::new(0.0, 2.0)));
 }
 
