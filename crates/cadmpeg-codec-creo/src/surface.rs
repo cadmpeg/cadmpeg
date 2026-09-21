@@ -756,8 +756,12 @@ impl TabulatedCylinderFrame {
     }
 }
 
+/// Model-space origin with an orthonormal direction pair.
+///
+/// The dimensioned carriers hold one of these and add their own scalars. The origin is the
+/// apex of a cone and the center of a torus or sphere.
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct PositionalFrame {
+pub(crate) struct PositionalFrame {
     origin: [f64; 3],
     axis: [f64; 3],
     ref_direction: [f64; 3],
@@ -778,13 +782,16 @@ impl PositionalFrame {
         })
     }
 
-    fn origin(&self) -> [f64; 3] {
+    /// Returns the origin.
+    pub(crate) fn origin(&self) -> [f64; 3] {
         self.origin
     }
-    fn axis(&self) -> [f64; 3] {
+    /// Returns the axis.
+    pub(crate) fn axis(&self) -> [f64; 3] {
         self.axis
     }
-    fn ref_direction(&self) -> [f64; 3] {
+    /// Returns the ref direction.
+    pub(crate) fn ref_direction(&self) -> [f64; 3] {
         self.ref_direction
     }
 }
@@ -818,17 +825,9 @@ impl PositionalCylinderFrame {
             length,
         })
     }
-    /// Returns the origin.
-    pub(crate) fn origin(&self) -> [f64; 3] {
-        self.frame.origin()
-    }
-    /// Returns the axis.
-    pub(crate) fn axis(&self) -> [f64; 3] {
-        self.frame.axis()
-    }
-    /// Returns the ref direction.
-    pub(crate) fn ref_direction(&self) -> [f64; 3] {
-        self.frame.ref_direction()
+    /// Returns the frame.
+    pub(crate) fn frame(&self) -> &PositionalFrame {
+        &self.frame
     }
     /// Returns the radius.
     pub(crate) fn radius(&self) -> f64 {
@@ -859,17 +858,9 @@ impl PositionalConeFrame {
         let frame = PositionalFrame::new(apex, axis, ref_direction)?;
         valid_apex_cone_half_angle(half_angle).then_some(Self { frame, half_angle })
     }
-    /// Returns the apex.
-    pub(crate) fn apex(&self) -> [f64; 3] {
-        self.frame.origin()
-    }
-    /// Returns the axis.
-    pub(crate) fn axis(&self) -> [f64; 3] {
-        self.frame.axis()
-    }
-    /// Returns the ref direction.
-    pub(crate) fn ref_direction(&self) -> [f64; 3] {
-        self.frame.ref_direction()
+    /// Returns the frame, whose origin is the apex.
+    pub(crate) fn frame(&self) -> &PositionalFrame {
+        &self.frame
     }
     /// Returns the half angle.
     pub(crate) fn half_angle(&self) -> f64 {
@@ -907,17 +898,9 @@ impl PositionalTorusFrame {
                 minor_radius,
             })
     }
-    /// Returns the center.
-    pub(crate) fn center(&self) -> [f64; 3] {
-        self.frame.origin()
-    }
-    /// Returns the axis.
-    pub(crate) fn axis(&self) -> [f64; 3] {
-        self.frame.axis()
-    }
-    /// Returns the ref direction.
-    pub(crate) fn ref_direction(&self) -> [f64; 3] {
-        self.frame.ref_direction()
+    /// Returns the frame, whose origin is the center.
+    pub(crate) fn frame(&self) -> &PositionalFrame {
+        &self.frame
     }
     /// Returns the major radius.
     pub(crate) fn major_radius(&self) -> f64 {
@@ -4167,15 +4150,17 @@ fn inline_suffix_witness_agrees(
                         return false;
                     };
                     let axis_dot = witness
+                        .frame()
                         .axis()
                         .into_iter()
-                        .zip(candidate.axis())
+                        .zip(candidate.frame().axis())
                         .map(|(left, right)| left * right)
                         .sum::<f64>();
                     witness
+                        .frame()
                         .origin()
                         .into_iter()
-                        .zip(candidate.origin())
+                        .zip(candidate.frame().origin())
                         .all(|(left, right)| inline_close(left, right))
                         && inline_close(witness.radius, candidate.radius)
                         && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
@@ -4188,9 +4173,10 @@ fn inline_suffix_witness_agrees(
                 return false;
             };
             let axis_dot = witness
+                .frame()
                 .axis()
                 .into_iter()
-                .zip(candidate.axis())
+                .zip(candidate.frame().axis())
                 .map(|(left, right)| left * right)
                 .sum::<f64>();
             inline_close(witness.half_angle, candidate.half_angle)
@@ -5545,9 +5531,10 @@ pub(crate) fn positional_cylinder_frames_agree(
     second: PositionalCylinderFrame,
 ) -> bool {
     let scale = first
+        .frame()
         .origin()
         .into_iter()
-        .chain(second.origin())
+        .chain(second.frame().origin())
         .chain([first.radius, second.radius])
         .chain(first.length)
         .chain(second.length)
@@ -5556,19 +5543,22 @@ pub(crate) fn positional_cylinder_frames_agree(
     let close =
         |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
     first
+        .frame()
         .origin()
         .into_iter()
-        .zip(second.origin())
+        .zip(second.frame().origin())
         .all(|(left, right)| close(left, right))
         && first
+            .frame()
             .axis()
             .into_iter()
-            .zip(second.axis())
+            .zip(second.frame().axis())
             .all(|(left, right)| close(left, right))
         && first
+            .frame()
             .ref_direction()
             .into_iter()
-            .zip(second.ref_direction())
+            .zip(second.frame().ref_direction())
             .all(|(left, right)| close(left, right))
         && close(first.radius, second.radius)
         && match (first.length, second.length) {

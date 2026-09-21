@@ -1141,9 +1141,9 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     let second = circle(368, [0.0, 0.0, -1.0], [5.5, 10.0, -4.0], [3.5, 8.0, -4.0]);
     let frame =
         reference_cap_bound_round_frame(envelope, &[&first, &second]).expect("opposite Z caps");
-    assert_eq!(frame.origin(), [4.5, 9.0, -6.0]);
-    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [4.5, 9.0, -6.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius(), 1.0);
     assert_eq!(frame.length(), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
@@ -1370,21 +1370,21 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
 
     let mut inconsistent = frames;
     inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
-        frames[1].origin(),
-        frames[1].axis(),
-        frames[1].ref_direction(),
+        frames[1].frame().origin(),
+        frames[1].frame().axis(),
+        frames[1].frame().ref_direction(),
         frames[1].radius(),
         Some(33.0),
     )
     .expect("valid positional cylinder frame");
     assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
     inconsistent = frames;
-    let mut origin = frames[1].origin();
+    let mut origin = frames[1].frame().origin();
     origin[1] = 5.0;
     inconsistent[1] = crate::surface::PositionalCylinderFrame::new(
         origin,
-        frames[1].axis(),
-        frames[1].ref_direction(),
+        frames[1].frame().axis(),
+        frames[1].frame().ref_direction(),
         frames[1].radius(),
         frames[1].length(),
     )
@@ -1610,9 +1610,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         panic!("cylinder frame");
     };
     *frame = crate::surface::PositionalCylinderFrame::new(
-        frame.origin(),
-        frame.axis(),
-        frame.ref_direction(),
+        frame.frame().origin(),
+        frame.frame().axis(),
+        frame.frame().ref_direction(),
         frame.radius(),
         None,
     )
@@ -1651,9 +1651,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         panic!("cylinder frame");
     };
     *frame = crate::surface::PositionalCylinderFrame::new(
-        frame.origin(),
-        frame.axis(),
-        frame.ref_direction(),
+        frame.frame().origin(),
+        frame.frame().axis(),
+        frame.frame().ref_direction(),
         frame.radius(),
         Some(8.0),
     )
@@ -1766,9 +1766,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         panic!("cylinder frame");
     };
     *frame = crate::surface::PositionalCylinderFrame::new(
-        frame.origin(),
-        frame.axis(),
-        frame.ref_direction(),
+        frame.frame().origin(),
+        frame.frame().axis(),
+        frame.frame().ref_direction(),
         frame.radius(),
         Some(7.0),
     )
@@ -1781,9 +1781,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         panic!("cylinder frame");
     };
     *frame = crate::surface::PositionalCylinderFrame::new(
-        frame.origin(),
-        frame.axis(),
-        frame.ref_direction(),
+        frame.frame().origin(),
+        frame.frame().axis(),
+        frame.frame().ref_direction(),
         frame.radius(),
         Some(8.0),
     )

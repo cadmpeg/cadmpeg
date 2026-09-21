@@ -1001,9 +1001,9 @@ fn chamfer_cone_equation(
         .and_then(|record| record.positional_cone_frame())
     {
         return ConeEquation::new(
-            frame.apex(),
-            frame.axis(),
-            frame.ref_direction(),
+            frame.frame().origin(),
+            frame.frame().axis(),
+            frame.frame().ref_direction(),
             0.0,
             1.0,
             frame.half_angle(),

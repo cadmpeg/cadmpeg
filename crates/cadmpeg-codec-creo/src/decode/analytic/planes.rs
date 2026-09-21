@@ -912,12 +912,12 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
         return legacy;
     };
     if (frame.radius() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
-        || dot(frame.axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
+        || dot(frame.frame().axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
     {
         return legacy;
     }
     let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
-    let mut reference_origin = frame.origin();
+    let mut reference_origin = frame.frame().origin();
     if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
     {
         reference_origin[axis_index] = legacy.origin[axis_index];
@@ -1057,9 +1057,9 @@ fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, Ca
             Some((
                 row.id,
                 CarrierEquation::Cylinder(super::equations::CylinderEquation {
-                    origin: frame.origin(),
-                    axis: frame.axis(),
-                    ref_direction: frame.ref_direction(),
+                    origin: frame.frame().origin(),
+                    axis: frame.frame().axis(),
+                    ref_direction: frame.frame().ref_direction(),
                     radius: frame.radius(),
                 }),
             ))

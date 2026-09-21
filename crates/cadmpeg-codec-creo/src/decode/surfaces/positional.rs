@@ -208,16 +208,27 @@ pub(in super::super) fn transfer_positional_tori(
         else {
             continue;
         };
+        let center = Point3::new(
+            frame.frame().origin()[0],
+            frame.frame().origin()[1],
+            frame.frame().origin()[2],
+        );
+        let axis = Vector3::new(
+            frame.frame().axis()[0],
+            frame.frame().axis()[1],
+            frame.frame().axis()[2],
+        );
+        let ref_direction = Vector3::new(
+            frame.frame().ref_direction()[0],
+            frame.frame().ref_direction()[1],
+            frame.frame().ref_direction()[2],
+        );
         let geometry = if frame.major_radius() == 0.0 {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
-                    Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                    Vector3::new(
-                        frame.ref_direction()[0],
-                        frame.ref_direction()[1],
-                        frame.ref_direction()[2],
-                    ),
+                    center,
+                    axis,
+                    ref_direction,
                     frame.minor_radius(),
                 ) {
                     Ok(payload) => payload,
@@ -227,13 +238,9 @@ pub(in super::super) fn transfer_positional_tori(
         } else {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    Point3::new(frame.center()[0], frame.center()[1], frame.center()[2]),
-                    Vector3::new(frame.axis()[0], frame.axis()[1], frame.axis()[2]),
-                    Vector3::new(
-                        frame.ref_direction()[0],
-                        frame.ref_direction()[1],
-                        frame.ref_direction()[2],
-                    ),
+                    center,
+                    axis,
+                    ref_direction,
                     frame.major_radius(),
                     frame.minor_radius(),
                 ) {

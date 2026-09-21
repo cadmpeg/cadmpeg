@@ -429,9 +429,9 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     continue;
                 };
                 let Some(cone) = apex_cone(
-                    frame.apex(),
-                    frame.axis(),
-                    frame.ref_direction(),
+                    frame.frame().origin(),
+                    frame.frame().axis(),
+                    frame.frame().ref_direction(),
                     frame.half_angle(),
                 ) else {
                     continue;

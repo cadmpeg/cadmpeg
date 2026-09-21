@@ -178,9 +178,12 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     let frame = record
         .positional_cylinder_frame()
         .expect("complete square-radial carrier");
-    assert_eq!(frame.origin(), [-94.5, -93.837_702_082_688_25, -7.5]);
-    assert_eq!(frame.axis(), [0.0, -1.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(
+        frame.frame().origin(),
+        [-94.5, -93.837_702_082_688_25, -7.5]
+    );
+    assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 4.5);
     assert!((frame.length.expect("required invariant") - 6.872_998_848_194_527).abs() < 1.0e-12);
 
@@ -196,12 +199,13 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .positional_cylinder_frame()
         .expect("control-terminated square-radial carrier");
     assert!(frame
+        .frame()
         .origin()
         .into_iter()
         .zip([-27.643_2, -14.0, 43.0])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert!((frame.radius - 5.0).abs() < 1.0e-12);
     assert!((frame.length.expect("required invariant") - 21.643_2).abs() < 1.0e-12);
 
@@ -226,12 +230,13 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .positional_cylinder_frame()
         .expect("complete six-slot square-radial carrier");
     assert!(frame
+        .frame()
         .origin()
         .into_iter()
         .zip([-29.9, -7.4, -3.2])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert!((frame.radius - 0.1).abs() < 1.0e-12);
     assert!((frame.length.expect("required invariant") - 6.4).abs() < 1.0e-12);
 
@@ -247,12 +252,13 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .positional_cylinder_frame()
         .expect("complete nine-slot square-radial carrier");
     assert!(frame
+        .frame()
         .origin()
         .into_iter()
         .zip([-9.5, 8.0, 5.5])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert_eq!(frame.axis(), [0.0, 1.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius, 0.5);
     assert_eq!(frame.length, Some(40.0));
 
@@ -267,12 +273,12 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     let frame = single_diameter
         .positional_cylinder_frame()
         .expect("complete single-diameter carrier");
-    assert_eq!(frame.origin(), [-192.5, -4.0, 27.5]);
+    assert_eq!(frame.frame().origin(), [-192.5, -4.0, 27.5]);
     assert_eq!(
-        frame.axis(),
+        frame.frame().axis(),
         [2.0 / 5.0_f64.sqrt(), 0.0, 1.0 / 5.0_f64.sqrt()]
     );
-    assert_eq!(frame.ref_direction(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
     assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1.0e-12);
 
@@ -301,11 +307,11 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     let frame = unbounded
         .positional_cylinder_frame()
         .expect("complete zero-axial square-radial carrier");
-    assert!((frame.origin()[0] - 29.8).abs() < EPS_FRAME_COMPONENT);
-    assert!((frame.origin()[1] - 5.6).abs() < EPS_FRAME_COMPONENT);
-    assert!((frame.origin()[2] - 7.9).abs() < EPS_FRAME_COMPONENT);
-    assert_eq!(frame.axis(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [0.0, -1.0, 0.0]);
+    assert!((frame.frame().origin()[0] - 29.8).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.frame().origin()[1] - 5.6).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.frame().origin()[2] - 7.9).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [0.0, -1.0, 0.0]);
     assert!((frame.radius - 0.1).abs() < 1.0e-12);
     assert_eq!(frame.length, None);
 
@@ -329,14 +335,14 @@ fn decodes_negative_a7_repeated_diameter_round_envelope() {
         .positional_cylinder_frame()
         .expect("complete signed-DICT repeated-diameter carrier");
 
-    assert_eq!(frame.origin(), [-42.3, 1.25, 0.0]);
-    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().origin(), [-42.3, 1.25, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert!((frame.radius - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
     assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
-    assert!((frame.axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
-    assert!((frame.axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
-    assert_eq!(frame.axis()[2], 0.0);
+    assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.frame().axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.frame().axis()[2], 0.0);
 }
 
 #[test]
@@ -357,16 +363,16 @@ fn decodes_prefixed_repeated_diameter_round_envelope() {
         .positional_cylinder_frame()
         .expect("complete prefixed repeated-diameter carrier");
 
-    assert_eq!(frame.origin()[0], -42.3);
-    assert!((frame.origin()[1] + 1.75).abs() < EPS_FRAME_COMPONENT);
-    assert_eq!(frame.origin()[2], 0.0);
-    assert_eq!(frame.ref_direction(), [0.0, 0.0, 1.0]);
+    assert_eq!(frame.frame().origin()[0], -42.3);
+    assert!((frame.frame().origin()[1] + 1.75).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.frame().origin()[2], 0.0);
+    assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert!((frame.radius - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
     assert!((frame.length.expect("required invariant") - length).abs() < 1.0e-12);
-    assert!((frame.axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
-    assert!((frame.axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
-    assert_eq!(frame.axis()[2], 0.0);
+    assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
+    assert!((frame.frame().axis()[1] - 0.5 / length).abs() < EPS_FRAME_COMPONENT);
+    assert_eq!(frame.frame().axis()[2], 0.0);
 
     let mut wrong_prefix = body;
     wrong_prefix[1] = 0xbb;
@@ -399,9 +405,9 @@ fn decodes_held_coordinate_type24_round_envelope() {
         .positional_cylinder_frame()
         .expect("complete held-coordinate round carrier");
 
-    assert_eq!(frame.origin(), [34.0, 5.0, 10.0]);
-    assert_eq!(frame.axis(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.ref_direction(), [0.0, 1.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [34.0, 5.0, 10.0]);
+    assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
+    assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
     assert_eq!(frame.length, Some(4.0));
     assert_eq!(base_record.type24_round_radius(), Some(1.0));
