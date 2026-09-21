@@ -6503,68 +6503,33 @@ fn decode_signed_axis_aligned_cylinder_frame(
     let (auxiliary, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
     auxiliary.is_finite().then_some(())?;
     cursor = next;
-    let mut corners = [[0.0; 3]; 2];
-    for coordinate in corners.iter_mut().flatten() {
+    let mut corner_pair = [[0.0; 3]; 2];
+    for coordinate in corner_pair.iter_mut().flatten() {
         let (value, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
         value.is_finite().then_some(())?;
         *coordinate = value;
         cursor = next;
     }
-    let reversed = if cursor == body.len() {
-        false
+    let orientation = if cursor == body.len() {
+        AxisAlignedCornerOrientation::SecondToFirst
     } else if body.get(cursor..) == Some(&[0xf7, 0x17]) {
-        true
+        AxisAlignedCornerOrientation::FirstToSecond
     } else {
         return None;
     };
-    let scale = corners
-        .iter()
-        .flatten()
-        .chain([signed_length, auxiliary].iter())
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
+    let corners = AxisAlignedCorners::new(corner_pair[0], corner_pair[1], Some(signed_length));
+    // The auxiliary lane stays under the extent in magnitude, so it raises no tolerance scale.
     (auxiliary.abs() < signed_length.abs()).then_some(())?;
-    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let spans =
-        std::array::from_fn::<_, 3, _>(|index| (corners[1][index] - corners[0][index]).abs());
-    let mut axes = crate::decode::axis::Axis::ALL
+    // The lane states the axial extent, so this lane's axis is the one span that witnesses it and
+    // a second witness leaves the axis unstated.
+    let mut witnesses = crate::decode::axis::Axis::ALL
         .into_iter()
-        .filter(|axis| close(spans[axis.index()], signed_length.abs()));
-    let model_axis = axes.next()?;
-    axes.next().is_none().then_some(())?;
-    let axis_index = model_axis.index();
-    let [first_radial, second_radial] = model_axis
-        .complement()
-        .map(crate::decode::axis::Axis::index);
-    let (diameter_index, radius_index) = match (
-        close(spans[first_radial], 2.0 * spans[second_radial]),
-        close(spans[second_radial], 2.0 * spans[first_radial]),
-    ) {
-        (true, false) => (first_radial, second_radial),
-        (false, true) => (second_radial, first_radial),
-        _ => return None,
-    };
-    let radius = spans[radius_index];
-    (radius > EPS_SURFACE_NONZERO * scale).then_some(())?;
-
-    let origin_corner = usize::from(!reversed);
-    let other_corner = 1 - origin_corner;
-    let mut origin = corners[origin_corner];
-    origin[diameter_index] = f64::midpoint(corners[0][diameter_index], corners[1][diameter_index]);
-    origin[radius_index] = corners[1][radius_index];
-    let mut axis = [0.0; 3];
-    axis[axis_index] =
-        (corners[other_corner][axis_index] - corners[origin_corner][axis_index]).signum();
-    let mut ref_direction = [0.0; 3];
-    ref_direction[diameter_index] =
-        (corners[other_corner][diameter_index] - origin[diameter_index]).signum();
-    PositionalCylinderFrame::new(
-        origin,
-        axis,
-        ref_direction,
-        radius,
-        Some(signed_length.abs()),
-    )
+        .filter(|axis| corners.close(corners.spans[axis.index()], signed_length.abs()));
+    let model_axis = witnesses.next()?;
+    witnesses.next().is_none().then_some(())?;
+    let axes = corners.axes(model_axis)?;
+    (corners.spans[axes.radius] > EPS_SURFACE_NONZERO * corners.scale).then_some(())?;
+    corners.frame(axes, orientation, signed_length.abs())
 }
 
 fn decode_signed_axial_radial_cylinder_frame(
@@ -7038,10 +7003,107 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
     )
 }
 
+/// The corner the cylinder axis runs from, out of the two corners a body states.
 #[derive(Clone, Copy)]
 enum AxisAlignedCornerOrientation {
     FirstToSecond,
     SecondToFirst,
+}
+
+/// The model axes of one corner-pair cylinder: the axis the cylinder runs along, the perpendicular
+/// axis whose corner span is the diameter, and the perpendicular axis whose span is the radius.
+#[derive(Clone, Copy)]
+struct AxisAlignedCylinderAxes {
+    axis: usize,
+    diameter: usize,
+    radius: usize,
+}
+
+/// Two axis-aligned corners of a cylinder body, with the corner spans and the magnitude scale that
+/// every step of the corner-to-cylinder derivation reads.
+///
+/// The derivation takes a corner pair to a cylinder in three steps: an axis whose perpendicular
+/// spans hold a diameter and a radius, an agreement tolerance that scales with the body's
+/// magnitudes, and a frame whose origin sits on the diameter midpoint and whose directions run
+/// from one corner to the other. A reader states which axis its lane selects and which extent the
+/// frame carries; the steps below are the same for every reader.
+#[derive(Clone, Copy)]
+struct AxisAlignedCorners {
+    first: [f64; 3],
+    second: [f64; 3],
+    /// Corner-to-corner extent per model axis.
+    spans: [f64; 3],
+    /// The largest magnitude the body states, at least one. Every tolerance scales with it.
+    scale: f64,
+}
+
+impl AxisAlignedCorners {
+    /// Takes the corner pair. `extent` is an axial extent the body states outside the corners; its
+    /// magnitude joins the scale.
+    fn new(first: [f64; 3], second: [f64; 3], extent: Option<f64>) -> Self {
+        Self {
+            first,
+            second,
+            spans: std::array::from_fn(|index| (second[index] - first[index]).abs()),
+            scale: first
+                .iter()
+                .chain(second.iter())
+                .copied()
+                .chain(extent)
+                .map(f64::abs)
+                .fold(1.0, f64::max),
+        }
+    }
+    /// States that two extents agree within the body's scaled agreement tolerance.
+    fn close(&self, left: f64, right: f64) -> bool {
+        (left - right).abs() <= EPS_SURFACE_AGREEMENT * self.scale
+    }
+    /// Splits the two axes perpendicular to `axis` into the diameter axis and the radius axis,
+    /// which the corners state as one span twice the other.
+    fn axes(&self, axis: crate::decode::axis::Axis) -> Option<AxisAlignedCylinderAxes> {
+        let [left, right] = axis.complement().map(crate::decode::axis::Axis::index);
+        let (diameter, radius) = match (
+            self.close(self.spans[left], 2.0 * self.spans[right]),
+            self.close(self.spans[right], 2.0 * self.spans[left]),
+        ) {
+            (true, false) => (left, right),
+            (false, true) => (right, left),
+            _ => return None,
+        };
+        Some(AxisAlignedCylinderAxes {
+            axis: axis.index(),
+            diameter,
+            radius,
+        })
+    }
+    /// Admits the cylinder the corners state on `axes`, running along the axis as `orientation`
+    /// states, with `length` as the frame's axial extent and the radius span as the radius.
+    fn frame(
+        &self,
+        axes: AxisAlignedCylinderAxes,
+        orientation: AxisAlignedCornerOrientation,
+        length: f64,
+    ) -> Option<PositionalCylinderFrame> {
+        let (from, to) = match orientation {
+            AxisAlignedCornerOrientation::FirstToSecond => (self.first, self.second),
+            AxisAlignedCornerOrientation::SecondToFirst => (self.second, self.first),
+        };
+        let mut origin = self.second;
+        origin[axes.axis] = from[axes.axis];
+        origin[axes.diameter] =
+            f64::midpoint(self.first[axes.diameter], self.second[axes.diameter]);
+        let mut axis = [0.0; 3];
+        axis[axes.axis] = (to[axes.axis] - from[axes.axis]).signum();
+        let mut ref_direction = [0.0; 3];
+        ref_direction[axes.diameter] = (to[axes.diameter] - from[axes.diameter]).signum();
+        PositionalCylinderFrame::new(
+            origin,
+            axis,
+            ref_direction,
+            self.spans[axes.radius],
+            Some(length),
+        )
+    }
 }
 
 /// Admits the cylinder frame that two axis-aligned corners describe.
@@ -7049,57 +7111,26 @@ enum AxisAlignedCornerOrientation {
 /// `stored_length` is a body's own axial extent, which the candidate filter uses as a witness of
 /// the axial span within `EPS_SURFACE_AGREEMENT`. Its type states the extent's sign and finiteness,
 /// so a caller reading one admits it once and this function states no refusal of its own. A body
-/// whose lane carries no extent, or carries one the frame does not witness, passes `None`.
+/// whose lane carries no extent, or carries one the frame does not witness, passes `None`. The
+/// frame carries the axial corner span, which the extent only witnesses.
 fn axis_aligned_cylinder_from_corners(
     first: [f64; 3],
     second: [f64; 3],
     stored_length: Option<PositiveLength>,
     orientation: AxisAlignedCornerOrientation,
 ) -> Option<PositionalCylinderFrame> {
-    let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
-    let scale = first
-        .iter()
-        .chain(second.iter())
-        .copied()
-        .chain(stored_length.map(PositiveLength::get))
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
-    let radial_pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
+    let corners = AxisAlignedCorners::new(first, second, stored_length.map(PositiveLength::get));
+    let mut candidates = crate::decode::axis::Axis::ALL
         .into_iter()
-        .filter_map(|(first_radial, second_radial, axis_index)| {
-            let (diameter_index, radius_index) = match (
-                close(spans[first_radial], 2.0 * spans[second_radial]),
-                close(spans[second_radial], 2.0 * spans[first_radial]),
-            ) {
-                (true, false) => (first_radial, second_radial),
-                (false, true) => (second_radial, first_radial),
-                _ => return None,
-            };
+        .filter_map(|axis| {
+            let axes = corners.axes(axis)?;
             stored_length
-                .is_none_or(|length| close(spans[axis_index], length.get()))
-                .then_some((diameter_index, radius_index, axis_index))
-        })
-        .collect::<Vec<_>>();
-    let [(diameter_index, radius_index, axis_index)] = radial_pairs.as_slice() else {
-        return None;
-    };
-    let radius = spans[*radius_index];
-    let length = spans[*axis_index];
-    let mut origin = second;
-    origin[*diameter_index] = f64::midpoint(first[*diameter_index], second[*diameter_index]);
-    if matches!(orientation, AxisAlignedCornerOrientation::FirstToSecond) {
-        origin[*axis_index] = first[*axis_index];
-    }
-    let (from, to) = match orientation {
-        AxisAlignedCornerOrientation::FirstToSecond => (first, second),
-        AxisAlignedCornerOrientation::SecondToFirst => (second, first),
-    };
-    let mut axis = [0.0; 3];
-    axis[*axis_index] = (to[*axis_index] - from[*axis_index]).signum();
-    let mut ref_direction = [0.0; 3];
-    ref_direction[*diameter_index] = (to[*diameter_index] - from[*diameter_index]).signum();
-    PositionalCylinderFrame::new(origin, axis, ref_direction, radius, Some(length))
+                .is_none_or(|length| corners.close(corners.spans[axes.axis], length.get()))
+                .then_some(axes)
+        });
+    let axes = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
+    corners.frame(axes, orientation, corners.spans[axes.axis])
 }
 
 pub(crate) fn decode_tabulated_cylinder_frame(
