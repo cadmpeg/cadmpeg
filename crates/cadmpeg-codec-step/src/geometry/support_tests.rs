@@ -99,7 +99,7 @@ fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
 
 /// The deepest chain of affine placements the writer accepts over one basis
 /// carrier.
-const ACCEPTED_PLACEMENTS: usize = super::MAX_PLACEMENT_NESTING;
+const ACCEPTED_PLACEMENTS: usize = cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING;
 
 fn placed_plane(placements: usize) -> cadmpeg_ir::geometry::SolvedSurfaceGeometry {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
