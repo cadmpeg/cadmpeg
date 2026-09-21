@@ -787,7 +787,7 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
 
     let trimmed = TextSurface::Trimmed {
         parameter_ranges: [[2.0, 3.0], [4.0, 8.0]],
-        basis: Box::new(cone),
+        basis: crate::brep::NestedSurface::try_new(cone).expect("one inline basis is admitted"),
     };
     let affine = surface_parameter_affine(&trimmed);
     assert_eq!(affine.u_scale, 1.0);
