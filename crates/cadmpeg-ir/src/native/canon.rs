@@ -8,10 +8,16 @@
 //! object keys must be distinct, and a `RawValue` payload is read through
 //! one-container replay, so a record nested deeper than the JSON parser's
 //! recursion limit is still admitted.
+//!
+//! The serializer recurses one frame per container of the record it is handed,
+//! and a record field holding a `serde_json::Value` states its own shape, so
+//! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 #![deny(clippy::disallowed_methods)]
 
 use serde::ser::{self, Serialize};
 use serde_json::{Map, Value};
+
+use super::{nests_too_deep_message, MAX_NATIVE_NESTING_DEPTH};
 
 // serde_json's RawValue Serialize protocol. The RawValue owner fixtures check
 // this spelling against the dependency's actual serializer.
@@ -51,9 +57,39 @@ fn tagged(variant: &str, payload: Value) -> Node {
 }
 
 /// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
-pub(super) struct CanonValue;
+pub(super) struct CanonValue {
+    /// Containers this value may still enter.
+    depth: usize,
+}
 
 type Error = serde_json::Error;
+
+impl CanonValue {
+    /// The serializer for one whole typed record.
+    ///
+    /// A record's own object is the container a stored record never holds: it
+    /// keeps the members as fields and measures each field on its own. One
+    /// container beyond the field bound therefore admits exactly a
+    /// [`MAX_NATIVE_NESTING_DEPTH`]-deep field.
+    pub(super) const fn for_record() -> Self {
+        Self {
+            depth: MAX_NATIVE_NESTING_DEPTH + 1,
+        }
+    }
+
+    /// The serializer for a child value that may enter `depth` containers.
+    const fn within(depth: usize) -> Self {
+        Self { depth }
+    }
+
+    /// The budget left after entering one container, or the refusal.
+    fn enter(self) -> Result<usize, Error> {
+        match self.depth.checked_sub(1) {
+            Some(depth) => Ok(depth),
+            None => Err(ser::Error::custom(nests_too_deep_message())),
+        }
+    }
+}
 
 impl ser::Serializer for CanonValue {
     type Ok = Node;
@@ -135,10 +171,14 @@ impl ser::Serializer for CanonValue {
         Ok(Node::Value(Value::String(value.to_owned())))
     }
 
+    /// Bytes render as the JSON array of their values, so they enter a
+    /// container and are counted through [`Self::serialize_seq`].
     fn serialize_bytes(self, value: &[u8]) -> Result<Node, Error> {
-        Ok(Node::Value(Value::Array(
-            value.iter().copied().map(Value::from).collect(),
-        )))
+        let mut bytes = self.serialize_seq(Some(value.len()))?;
+        for byte in value {
+            ser::SerializeSeq::serialize_element(&mut bytes, byte)?;
+        }
+        ser::SerializeSeq::end(bytes)
     }
 
     fn serialize_none(self) -> Result<Node, Error> {
@@ -181,12 +221,16 @@ impl ser::Serializer for CanonValue {
         variant: &'static str,
         value: &T,
     ) -> Result<Node, Error> {
-        let inner = value.serialize(CanonValue)?.into_value();
+        let depth = self.enter()?;
+        let inner = value.serialize(CanonValue::within(depth))?.into_value();
         Ok(tagged(variant, inner))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<CanonSeq, Error> {
-        Ok(CanonSeq { out: Vec::new() })
+        Ok(CanonSeq {
+            out: Vec::new(),
+            depth: self.enter()?,
+        })
     }
 
     fn serialize_tuple(self, len: usize) -> Result<CanonSeq, Error> {
@@ -204,9 +248,10 @@ impl ser::Serializer for CanonValue {
         variant: &'static str,
         len: usize,
     ) -> Result<CanonVariantSeq, Error> {
+        let depth = self.enter()?;
         Ok(CanonVariantSeq {
             variant,
-            seq: self.serialize_seq(Some(len))?,
+            seq: CanonValue::within(depth).serialize_seq(Some(len))?,
         })
     }
 
@@ -214,12 +259,18 @@ impl ser::Serializer for CanonValue {
         Ok(CanonMap {
             entries: Map::new(),
             key: None,
+            depth: self.enter()?,
         })
     }
 
+    /// `RawValue`'s struct protocol carries one JSON value and is no container
+    /// of its own, so the payload replays with this value's whole budget.
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<CanonStruct, Error> {
         if name == RAW_VALUE_STRUCT {
-            Ok(CanonStruct::Raw(None))
+            Ok(CanonStruct::Raw {
+                depth: self.depth,
+                parsed: None,
+            })
         } else {
             self.serialize_map(Some(len)).map(CanonStruct::Object)
         }
@@ -232,9 +283,10 @@ impl ser::Serializer for CanonValue {
         variant: &'static str,
         len: usize,
     ) -> Result<CanonVariantMap, Error> {
+        let depth = self.enter()?;
         Ok(CanonVariantMap {
             variant,
-            map: self.serialize_map(Some(len))?,
+            map: CanonValue::within(depth).serialize_map(Some(len))?,
         })
     }
 }
@@ -242,6 +294,8 @@ impl ser::Serializer for CanonValue {
 /// A sequence collected in visit order.
 pub(super) struct CanonSeq {
     out: Vec<Value>,
+    /// Containers each element may still enter.
+    depth: usize,
 }
 
 impl ser::SerializeSeq for CanonSeq {
@@ -249,7 +303,9 @@ impl ser::SerializeSeq for CanonSeq {
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
-        let element = value.serialize(CanonValue)?.into_value();
+        let element = value
+            .serialize(CanonValue::within(self.depth))?
+            .into_value();
         self.out.push(element);
         Ok(())
     }
@@ -309,13 +365,16 @@ impl ser::SerializeTupleVariant for CanonVariantSeq {
 pub(super) struct CanonMap {
     entries: Map<String, Value>,
     key: Option<String>,
+    /// Containers each member value may still enter.
+    depth: usize,
 }
 
 impl CanonMap {
     fn insert<T: Serialize + ?Sized>(&mut self, key: String, value: &T) -> Result<(), Error> {
+        let depth = self.depth;
         match self.entries.entry(key) {
             serde_json::map::Entry::Vacant(entry) => {
-                let value = value.serialize(CanonValue)?.into_value();
+                let value = value.serialize(CanonValue::within(depth))?.into_value();
                 entry.insert(value);
                 Ok(())
             }
@@ -359,7 +418,12 @@ impl ser::SerializeMap for CanonMap {
 /// Ordinary struct members or one JSON value carried by `RawValue`'s protocol.
 pub(super) enum CanonStruct {
     Object(CanonMap),
-    Raw(Option<Node>),
+    Raw {
+        /// Containers the payload may enter.
+        depth: usize,
+        /// The replayed payload, once its one field has arrived.
+        parsed: Option<Node>,
+    },
 }
 
 impl ser::SerializeStruct for CanonStruct {
@@ -373,7 +437,7 @@ impl ser::SerializeStruct for CanonStruct {
     ) -> Result<(), Error> {
         match self {
             Self::Object(map) => map.insert(key.to_owned(), value),
-            Self::Raw(parsed) => {
+            Self::Raw { depth, parsed } => {
                 if key != RAW_VALUE_STRUCT || parsed.is_some() {
                     return Err(ser::Error::custom(
                         "raw JSON requires exactly one payload field",
@@ -386,7 +450,14 @@ impl ser::SerializeStruct for CanonStruct {
                 };
                 // Replay through the same canonical constructor, so raw objects
                 // obey duplicate-key, number, ordering and depth semantics too.
-                *parsed = Some(super::replay::emit(&json, CanonValue)?);
+                // The replay counts the text's containers and this serializer
+                // counts the containers it is driven through, from the same
+                // remaining budget, so both refuse at the same container.
+                *parsed = Some(super::replay::emit(
+                    &json,
+                    CanonValue::within(*depth),
+                    *depth,
+                )?);
                 Ok(())
             }
         }
@@ -395,8 +466,13 @@ impl ser::SerializeStruct for CanonStruct {
     fn end(self) -> Result<Node, Error> {
         match self {
             Self::Object(map) => ser::SerializeMap::end(map),
-            Self::Raw(Some(parsed)) => Ok(parsed),
-            Self::Raw(None) => Err(ser::Error::custom("raw JSON has no payload field")),
+            Self::Raw {
+                parsed: Some(parsed),
+                ..
+            } => Ok(parsed),
+            Self::Raw { parsed: None, .. } => {
+                Err(ser::Error::custom("raw JSON has no payload field"))
+            }
         }
     }
 }

@@ -12,18 +12,15 @@ use std::fmt;
 use serde::{de, ser};
 use serde_json::value::RawValue;
 
-use super::MAX_NATIVE_NESTING_DEPTH;
+use super::nests_too_deep_message;
 
-/// Emit the JSON value held in `json` into `serializer`.
+/// Emit the JSON value held in `json` into `serializer`, entering at most
+/// `depth` further containers.
 ///
-/// `json` is one native record field, so it may enter
-/// [`MAX_NATIVE_NESTING_DEPTH`] containers.
-pub(super) fn emit<S: ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
-    emit_within(json, serializer, MAX_NATIVE_NESTING_DEPTH)
-}
-
-/// Emit `json`, entering at most `depth` further containers.
-fn emit_within<S: ser::Serializer>(
+/// The counter bounds this function's own recursion, whatever serializer it
+/// drives. A serializer that counts as well is handed the same remainder, so
+/// the two refuse at the same container.
+pub(super) fn emit<S: ser::Serializer>(
     json: &str,
     serializer: S,
     depth: usize,
@@ -37,9 +34,7 @@ fn emit_within<S: ser::Serializer>(
 
 /// The refusal a container past the bound reports.
 fn nests_too_deep<E: de::Error>() -> E {
-    de::Error::custom(format!(
-        "native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
-    ))
+    de::Error::custom(nests_too_deep_message())
 }
 
 fn ser_to_de<S: ser::Error, D: de::Error>(error: S) -> D {
@@ -153,7 +148,7 @@ struct Replay<'a> {
 
 impl ser::Serialize for Replay<'_> {
     fn serialize<S: ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        emit_within(self.json, serializer, self.depth)
+        emit(self.json, serializer, self.depth)
     }
 }
 
@@ -196,8 +191,14 @@ impl<'de> de::Visitor<'de> for Key {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{emit, MAX_NATIVE_NESTING_DEPTH};
+    use super::emit;
+    use crate::native::MAX_NATIVE_NESTING_DEPTH;
     use serde_json::Value;
+
+    /// Replay one whole native record field.
+    fn emit_field<S: serde::ser::Serializer>(json: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        emit(json, serializer, MAX_NATIVE_NESTING_DEPTH)
+    }
 
     const TEXT: &str = concat!(
         r#"{"id":"pin#0","a":[null,true,false,-1,0,1.5,2.0,1e-7,10000000000.0],"#,
@@ -207,14 +208,14 @@ mod tests {
 
     #[test]
     fn emits_the_value_a_parse_would_produce() {
-        let replayed = emit(TEXT, serde_json::value::Serializer).unwrap();
+        let replayed = emit_field(TEXT, serde_json::value::Serializer).unwrap();
         assert_eq!(replayed, serde_json::from_str::<Value>(TEXT).unwrap());
     }
 
     #[test]
     fn compact_emission_reproduces_the_source_text() {
         let mut out = Vec::new();
-        emit(TEXT, &mut serde_json::Serializer::new(&mut out)).unwrap();
+        emit_field(TEXT, &mut serde_json::Serializer::new(&mut out)).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), TEXT);
     }
 
@@ -239,10 +240,10 @@ mod tests {
 
         let admitted = chain(MAX_NATIVE_NESTING_DEPTH);
         let mut out = Vec::new();
-        emit(&admitted, &mut serde_json::Serializer::new(&mut out)).unwrap();
+        emit_field(&admitted, &mut serde_json::Serializer::new(&mut out)).unwrap();
         assert_eq!(String::from_utf8(out).unwrap(), admitted);
 
-        let error = emit(
+        let error = emit_field(
             &chain(MAX_NATIVE_NESTING_DEPTH + 1),
             serde_json::value::Serializer,
         )
