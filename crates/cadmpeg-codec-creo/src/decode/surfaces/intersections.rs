@@ -604,7 +604,7 @@ pub(in super::super) fn carrier_intersection_curve(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{carrier_intersection_curve, CarrierEquation, CurveGeometry, SolvedCurveGeometry};
     use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation, SphereEquation};
 
     fn cylinder(x: f64, radius: f64) -> CarrierEquation {

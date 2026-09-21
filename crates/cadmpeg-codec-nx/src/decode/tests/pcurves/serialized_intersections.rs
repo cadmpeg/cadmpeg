@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized intersection regressions.
 
-use super::*;
+use super::{
+    complete_tolerant_intersection_pcurves_from_serialized_branches, edit,
+    orient_tolerant_intersection_pcurve, AnnotationBuilder, CadIr, Coedge, CoedgeId, Curve,
+    CurveGeometry, CurveId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Pcurve, PcurveGeometry,
+    PcurveId, PcurveUse, Point, Point2, Point3, PointId, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralCurveId, Sense, ShellId, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry, SurfaceId, Vector3, Vertex, VertexId,
+};
 
 #[test]
 fn serialized_surface_curves_select_a_terminal_intersection_branch() {

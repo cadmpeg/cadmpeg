@@ -212,7 +212,7 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{curve_contains_points, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     #[test]
     fn audit_regression_line_membership_ignores_along_line_origin() {

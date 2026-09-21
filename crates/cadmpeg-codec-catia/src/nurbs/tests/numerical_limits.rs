@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::nurbs::*;
-use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use crate::nurbs::{
+    circular_helix_cache, quintic_jet_bspline, reverse_curve_geometry, reverse_knots,
+    reverse_nurbs_curve, reverse_pcurve_geometry, CurveGeometry, LaneRefusals, PcurveGeometry,
+    PcurveNurbs, SolvedCurveGeometry,
+};
+use cadmpeg_ir::geometry::{
+    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    ProceduralCurveDefinition,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 const RELATIVE_ROUNDOFF: f64 = 32.0 * f64::EPSILON;
 
