@@ -1019,23 +1019,20 @@ fn read_poles(
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(pole_offset, "NURBS pole is not finite"));
         }
-        let point = if let Some((target, weight)) = weight {
+        let weight = if let Some((target, weight)) = weight {
             if !weight.is_finite() || weight == 0.0 {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             }
             target.push(weight);
-            [x / weight, y / weight, z / weight]
+            weight
         } else {
-            [x, y, z]
+            1.0
         };
-        points.push(Point3::new(
-            crate::wire::scaled_coordinate(point[0], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-            crate::wire::scaled_coordinate(point[1], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-            crate::wire::scaled_coordinate(point[2], scale)
-                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))?,
-        ));
+        let coordinate = |value| {
+            cadmpeg_ir::math::multiply_divide(value, scale.value(), weight)
+                .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
+        };
+        points.push(Point3::new(coordinate(x)?, coordinate(y)?, coordinate(z)?));
     }
     Ok((points, weights))
 }

@@ -161,7 +161,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let second_norm = second.norm();
         let cosine = (first.dot(second) / (first_norm * second_norm)).clamp(-1.0, 1.0);
         let sweep = cosine.acos();
-        if (sweep - expected_sweep).abs() > TOLERANCE / minor_radius.max(1.0) {
+        if (sweep - expected_sweep).abs() > TOLERANCE / minor_radius {
             return None;
         }
         let normal = first.cross(second);

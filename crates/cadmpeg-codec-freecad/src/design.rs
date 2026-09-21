@@ -6007,7 +6007,7 @@ fn uniform_step(locations: &[f64]) -> Option<f64> {
     let step = *locations.get(1)?;
     locations
         .windows(2)
-        .all(|pair| (pair[1] - pair[0] - step).abs() <= f64::EPSILON * step.abs().max(1.0))
+        .all(|pair| (pair[1] - pair[0] - step).abs() <= f64::EPSILON * step.abs())
         .then_some(step)
 }
 

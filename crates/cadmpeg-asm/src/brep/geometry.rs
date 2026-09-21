@@ -822,9 +822,8 @@ pub(super) fn rational_four_arc_circle(
         return None;
     }
     let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
-        * (curve.knots()[curve.knots().len() - 1] - curve.knots()[0])
-            .abs()
-            .max(1.0);
+        * (curve.knots()[curve.knots().len() - 1] * 0.5 - curve.knots()[0] * 0.5).abs()
+        * 2.0;
     let spans = [
         curve.knots()[0],
         curve.knots()[degree + 1],
@@ -1016,7 +1015,8 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         .iter()
         .filter_map(|curve| match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let (first, last) = (nurbs.knots().first()?, nurbs.knots().last()?);
+                let first = nurbs.knots().get(nurbs.degree() as usize)?;
+                let last = nurbs.knots().get(nurbs.pole_count())?;
                 Some((curve.id.as_str(), [*first, *last]))
             }
             _ => None,
@@ -1029,8 +1029,8 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         let Some([first, last]) = edge.curve().and_then(|curve| domains.get(curve.as_str())) else {
             continue;
         };
-        let tolerance =
-            EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9 * (last - first).abs().max(1.0);
+        let tolerance = (last * 0.5 - first * 0.5).abs()
+            * (2.0 * EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9);
         if start < *first && *first - start <= tolerance {
             start = *first;
         }
@@ -1237,5 +1237,78 @@ mod tests {
             assert!(super::linear_nurbs_spine(&spine(0.4)).is_none());
             assert!(super::linear_nurbs_spine(&spine(0.0)).is_some());
         }
+    }
+    #[test]
+    fn audit_regression_circle_recognition_ignores_knot_units() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        for scale in [1.0, 1e-13] {
+            let knots = [0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.]
+                .map(|knot| knot * scale)
+                .to_vec();
+            let poles = [
+                (1., 0.),
+                (1., 1.),
+                (0., 1.),
+                (-1., 1.),
+                (-1., 0.),
+                (-1., -1.),
+                (0., -1.),
+                (1., -1.),
+                (1., 0.),
+            ]
+            .into_iter()
+            .map(|(x, y)| Point3::new(x, y, 0.))
+            .collect();
+            let weights = (0..9)
+                .map(|i| {
+                    if i % 2 == 0 {
+                        1.
+                    } else {
+                        std::f64::consts::FRAC_1_SQRT_2
+                    }
+                })
+                .collect();
+            let circle = NurbsCurve::from_lanes(2, knots, poles, Some(weights), false).unwrap();
+            let (_, _, _, radius) = super::rational_four_arc_circle(&circle).unwrap();
+            assert!((radius - 1.0).abs() <= 8.0 * f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn audit_regression_edge_clamping_preserves_real_domain_violation() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+        use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+        let id = CurveId::mint("sat:audit:curve#domain").unwrap();
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0., 0., 1e-12, 1e-12],
+            vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+            None,
+            false,
+        )
+        .unwrap();
+        let edge = Edge {
+            id: EdgeId::mint("sat:audit:edge#domain").unwrap(),
+            carrier: EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
+            start: VertexId::mint("sat:audit:vertex#a").unwrap(),
+            end: VertexId::mint("sat:audit:vertex#b").unwrap(),
+            tolerance: None,
+        };
+        let mut out = super::AsmBrep {
+            curves: vec![Curve {
+                id,
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                source_object: None,
+            }],
+            edges: vec![edge],
+            ..Default::default()
+        };
+        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
+        assert_eq!(out.edges[0].param_range(), Some([-1e-10, 5e-13]));
+        out.edges[0].set_param_range(Some([-1e-23, 5e-13])).unwrap();
+        super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
+        assert_eq!(out.edges[0].param_range(), Some([0., 5e-13]));
     }
 }

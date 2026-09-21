@@ -84,8 +84,10 @@ pub(in super::super) fn curve_contains_points(
             points.into_iter().all(|point| {
                 let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
                 let residual = cross(relative, direction);
-                let scale = dot(relative, relative).sqrt().max(1.0);
-                dot(residual, residual).sqrt() <= EPS_ON_CURVE * scale
+                // The origin can move along the same infinite carrier. Its
+                // distance from the witness cannot enlarge the positional gate.
+                let distance = residual[0].hypot(residual[1]).hypot(residual[2]);
+                distance.is_finite() && distance <= EPS_ON_CURVE
             })
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
@@ -206,4 +208,32 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
         return None;
     };
     Some(candidate.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::math::{Point3, Vector3};
+    #[test]
+    fn audit_regression_line_membership_ignores_along_line_origin() {
+        let line = |x| {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    Point3::new(x, 0., 0.),
+                    Vector3::new(1., 0., 0.),
+                )
+                .unwrap(),
+            ))
+        };
+        for origin in [0., 1e8] {
+            assert!(!curve_contains_points(
+                &line(origin),
+                [[1e8, 1., 0.], [1e8 + 1., 1., 0.]]
+            ));
+            assert!(curve_contains_points(
+                &line(origin),
+                [[1e8, 0., 0.], [1e8 + 1., 0., 0.]]
+            ));
+        }
+    }
 }

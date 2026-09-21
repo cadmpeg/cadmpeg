@@ -4106,6 +4106,22 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
                         (transform[pivot][other] + transform[other][pivot]) / (4.0 * axis[pivot]);
                 }
             }
+            // Away from an exact half-turn the skew terms still state the
+            // orientation. The diagonal alone cannot distinguish opposite axes.
+            let skew = [
+                transform[2][1] - transform[1][2],
+                transform[0][2] - transform[2][0],
+                transform[1][0] - transform[0][1],
+            ];
+            if axis
+                .iter()
+                .zip(skew)
+                .map(|(axis, skew)| axis * skew)
+                .sum::<f64>()
+                < 0.0
+            {
+                axis = axis.map(|value| -value);
+            }
             (axis[0], axis[1], axis[2])
         } else {
             let scale = 2.0 * angle.sin();

@@ -59,7 +59,7 @@ pub(in super::super) fn carrier_intersection_curve(
                     normal,
                     std::array::from_fn(|index| cylinder.origin[index] - plane.origin[index]),
                 );
-                let scale = cylinder.radius.max(1.0);
+                let scale = cylinder.radius;
                 if (signed_distance.abs() - cylinder.radius).abs() > EPS_CARRIER_AGREEMENT * scale {
                     return None;
                 }
@@ -122,13 +122,12 @@ pub(in super::super) fn carrier_intersection_curve(
                 normal,
                 std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
             );
-            let radius_squared = sphere
-                .radius
-                .mul_add(sphere.radius, -(signed_distance * signed_distance));
-            let scale = sphere.radius.max(1.0);
-            if radius_squared <= 1e-18 * scale * scale {
+            let relative_distance = (signed_distance / sphere.radius).abs();
+            if !relative_distance.is_finite() || relative_distance >= 1.0 {
                 return None;
             }
+            let radius =
+                sphere.radius * ((1.0 - relative_distance) * (1.0 + relative_distance)).sqrt();
             let center: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - signed_distance * normal[index]);
             let reference = normalize(std::array::from_fn(|index| {
@@ -146,7 +145,7 @@ pub(in super::super) fn carrier_intersection_curve(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(normal[0], normal[1], normal[2]),
                         Vector3::new(reference[0], reference[1], reference[2]),
-                        radius_squared.sqrt(),
+                        radius,
                     )
                     .ok()?,
                 )),
@@ -167,7 +166,7 @@ pub(in super::super) fn carrier_intersection_curve(
                     normal,
                     std::array::from_fn(|index| apex[index] - plane.origin[index]),
                 );
-                let scale = cone.radius().max(1.0);
+                let scale = cone.radius().abs();
                 if plane_distance.abs() <= EPS_CARRIER_AGREEMENT * scale
                     && (alignment.abs() - cone.half_angle().sin()).abs() <= EPS_AXIS_ORTHO
                 {
@@ -248,7 +247,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 axis,
                 std::array::from_fn(|index| plane.origin[index] - torus.center[index]),
             );
-            let scale = torus.minor_radius.max(torus.major_radius).max(1.0);
+            let scale = torus.minor_radius.max(torus.major_radius);
             if (axial.abs() - torus.minor_radius).abs() > EPS_CARRIER_AGREEMENT * scale {
                 return None;
             }
@@ -279,13 +278,13 @@ pub(in super::super) fn carrier_intersection_curve(
             let axial = dot(relative, first_axis);
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
-            let distance = dot(transverse, transverse).sqrt();
+            let distance = transverse[0].hypot(transverse[1]).hypot(transverse[2]);
             if distance <= EPS_DISTANCE_NONZERO {
                 return None;
             }
             let external = first.radius + second.radius;
             let internal = (first.radius - second.radius).abs();
-            let scale = external.max(distance).max(1.0);
+            let scale = external.max(distance);
             let first_fraction = if (distance - external).abs() <= EPS_CARRIER_AGREEMENT * scale {
                 first.radius / distance
             } else if (distance - internal).abs() <= EPS_CARRIER_AGREEMENT * scale {
@@ -315,21 +314,31 @@ pub(in super::super) fn carrier_intersection_curve(
         (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
             let center_delta: [f64; 3] =
                 std::array::from_fn(|index| second.center[index] - first.center[index]);
-            let distance = dot(center_delta, center_delta).sqrt();
-            if distance <= EPS_DISTANCE_NONZERO
-                || distance >= first.radius + second.radius
-                || distance <= (first.radius - second.radius).abs()
+            let distance = center_delta[0]
+                .hypot(center_delta[1])
+                .hypot(center_delta[2]);
+            let scale = distance.max(first.radius).max(second.radius);
+            let first_radius = first.radius / scale;
+            let second_radius = second.radius / scale;
+            let separation = distance / scale;
+            if !distance.is_finite()
+                || separation <= 0.0
+                || separation >= first_radius + second_radius
+                || separation <= (first_radius - second_radius).abs()
             {
                 return None;
             }
             let axis = center_delta.map(|value| value / distance);
-            let axial = (distance * distance + first.radius * first.radius
-                - second.radius * second.radius)
-                / (2.0 * distance);
-            let radius_squared = first.radius.mul_add(first.radius, -(axial * axial));
-            if radius_squared <= 1e-18 {
+            let relative_axial = 0.5
+                * (separation
+                    + ((first_radius - second_radius) / separation)
+                        * (first_radius + second_radius));
+            let axial = relative_axial * scale;
+            let radius_ratio = (relative_axial / first_radius).abs();
+            if !radius_ratio.is_finite() || radius_ratio >= 1.0 {
                 return None;
             }
+            let radius = first.radius * ((1.0 - radius_ratio) * (1.0 + radius_ratio)).sqrt();
             let center: [f64; 3] =
                 std::array::from_fn(|index| first.center[index] + axial * axis[index]);
             let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
@@ -341,7 +350,7 @@ pub(in super::super) fn carrier_intersection_curve(
                         Point3::new(center[0], center[1], center[2]),
                         Vector3::new(axis[0], axis[1], axis[2]),
                         reference,
-                        radius_squared.sqrt(),
+                        radius,
                     )
                     .ok()?,
                 )),
@@ -356,8 +365,9 @@ pub(in super::super) fn carrier_intersection_curve(
             let axial = dot(relative, axis);
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * axis[index]);
-            let scale = sphere.radius.max(cylinder.radius).max(1.0);
-            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale
+            let scale = sphere.radius.max(cylinder.radius);
+            if transverse[0].hypot(transverse[1]).hypot(transverse[2])
+                > EPS_TRANSVERSE_RESIDUAL * scale
                 || (sphere.radius - cylinder.radius).abs() > EPS_RADIUS_AGREEMENT * scale
             {
                 return None;
@@ -391,9 +401,10 @@ pub(in super::super) fn carrier_intersection_curve(
             let scale = torus
                 .major_radius
                 .max(torus.minor_radius)
-                .max(cylinder.radius)
-                .max(1.0);
-            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
+                .max(cylinder.radius);
+            if transverse[0].hypot(transverse[1]).hypot(transverse[2])
+                > EPS_TRANSVERSE_RESIDUAL * scale
+            {
                 return None;
             }
             let outer_radius = torus.major_radius + torus.minor_radius;
@@ -429,8 +440,10 @@ pub(in super::super) fn carrier_intersection_curve(
             let axial = dot(relative, cone_axis);
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * cone_axis[index]);
-            let scale = cone.radius().max(sphere.radius).max(1.0);
-            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
+            let scale = cone.radius().max(sphere.radius);
+            if transverse[0].hypot(transverse[1]).hypot(transverse[2])
+                > EPS_TRANSVERSE_RESIDUAL * scale
+            {
                 return None;
             }
             let slope = cone.half_angle().tan();
@@ -442,10 +455,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let constant =
                 cone.radius() * cone.radius() + axial * axial - sphere.radius * sphere.radius;
             let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-            let discriminant_scale = linear
-                .abs()
-                .max((4.0 * quadratic * constant).abs().sqrt())
-                .max(1.0);
+            let discriminant_scale = linear.abs().max((4.0 * quadratic * constant).abs().sqrt());
             if discriminant.abs()
                 > EPS_DISCRIMINANT_RESIDUAL * discriminant_scale * discriminant_scale
             {
@@ -484,9 +494,10 @@ pub(in super::super) fn carrier_intersection_curve(
             let scale = torus
                 .major_radius
                 .max(torus.minor_radius)
-                .max(sphere.radius)
-                .max(1.0);
-            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
+                .max(sphere.radius);
+            if transverse[0].hypot(transverse[1]).hypot(transverse[2])
+                > EPS_TRANSVERSE_RESIDUAL * scale
+            {
                 return None;
             }
             let meridian_distance = torus.major_radius.hypot(axial);
@@ -540,9 +551,10 @@ pub(in super::super) fn carrier_intersection_curve(
                 .major_radius
                 .max(first.minor_radius)
                 .max(second.major_radius)
-                .max(second.minor_radius)
-                .max(1.0);
-            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
+                .max(second.minor_radius);
+            if transverse[0].hypot(transverse[1]).hypot(transverse[2])
+                > EPS_TRANSVERSE_RESIDUAL * scale
+            {
                 return None;
             }
             let radial_delta = second.major_radius - first.major_radius;
@@ -589,6 +601,66 @@ pub(in super::super) fn carrier_intersection_curve(
         )
         | (CarrierEquation::Cylinder(_) | CarrierEquation::Torus(_), CarrierEquation::Cone(_)) => {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation, SphereEquation};
+
+    fn cylinder(x: f64, radius: f64) -> CarrierEquation {
+        CarrierEquation::Cylinder(CylinderEquation {
+            origin: [x, 0., 0.],
+            axis: [0., 0., 1.],
+            ref_direction: [1., 0., 0.],
+            radius,
+        })
+    }
+    fn sphere(x: f64, radius: f64) -> CarrierEquation {
+        CarrierEquation::Sphere(SphereEquation {
+            center: [x, 0., 0.],
+            ref_direction: [1., 0., 0.],
+            radius,
+        })
+    }
+    #[test]
+    fn audit_regression_small_disjoint_carriers_have_no_tangent() {
+        let radius = 1e-10;
+        assert!(
+            carrier_intersection_curve(cylinder(0., radius), cylinder(5. * radius, radius))
+                .is_none()
+        );
+        assert!(
+            carrier_intersection_curve(cylinder(0., radius), cylinder(2. * radius, radius))
+                .is_some()
+        );
+        assert!(
+            carrier_intersection_curve(cylinder(0., 2. * radius), sphere(0., radius)).is_none()
+        );
+        assert!(carrier_intersection_curve(cylinder(0., radius), sphere(0., radius)).is_some());
+    }
+    #[test]
+    fn audit_regression_spherical_sections_keep_their_relative_radius() {
+        for radius in [1e-200, 5e-10, 1.0, 1e200] {
+            let plane = CarrierEquation::Plane(PlaneEquation {
+                origin: [0., 0., 0.],
+                normal: [0., 0., 1.],
+            });
+            let (section, _) = carrier_intersection_curve(plane, sphere(0., radius)).unwrap();
+            let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
+                panic!("circle section")
+            };
+            assert_eq!(circle.radius().get(), radius);
+            let (section, _) =
+                carrier_intersection_curve(sphere(0., radius), sphere(radius, radius)).unwrap();
+            let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
+                panic!("circle section")
+            };
+            assert!(
+                (circle.radius().get() / radius - 3.0_f64.sqrt() / 2.).abs() <= 8. * f64::EPSILON
+            );
         }
     }
 }

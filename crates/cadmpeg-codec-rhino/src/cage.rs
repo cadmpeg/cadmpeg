@@ -11,7 +11,7 @@ use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
 use crate::mesh::MeshExpand;
 use crate::settings::MillimeterScale;
-use crate::wire::{scaled_coordinate, ExactVec, Uuid};
+use crate::wire::{ExactVec, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const MAX_DIMENSION: usize = 10_000;
@@ -257,12 +257,14 @@ pub(crate) fn decode_at(
         let point = stored
             .into_iter()
             .map(|coordinate| {
-                scaled_coordinate(coordinate / weight, scale).ok_or_else(|| {
-                    GeometryError::malformed(
-                        body.position(),
-                        "scaled NURBS cage coordinate is invalid",
-                    )
-                })
+                cadmpeg_ir::math::multiply_divide(coordinate, scale.value(), weight).ok_or_else(
+                    || {
+                        GeometryError::malformed(
+                            body.position(),
+                            "scaled NURBS cage coordinate is invalid",
+                        )
+                    },
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
         control_points
@@ -391,5 +393,27 @@ mod tests {
             ArchiveVersion::V8
         ))
         .is_err());
+    }
+    #[test]
+    fn audit_regression_cage_unweighting_retains_finite_scaled_poles() {
+        let mut body = rational_cage_body();
+        let start = body.len() - 8 * 4 * 8;
+        for pole in body[start..].chunks_exact_mut(32) {
+            pole[..8].copy_from_slice(&1e300_f64.to_le_bytes());
+            pole[24..].copy_from_slice(&1e-10_f64.to_le_bytes());
+        }
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
+        let cage = crate::decode::with_expand_bytes(&bytes, |expand| {
+            decode(
+                expand,
+                0..bytes.len(),
+                crate::test_support::millimeter_scale(1e-7),
+                ArchiveVersion::V8,
+            )
+        })
+        .unwrap();
+        for point in &cage.control_points {
+            assert!((point[0] / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
+        }
     }
 }

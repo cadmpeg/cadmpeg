@@ -1213,12 +1213,18 @@ fn concatenate_nurbs<T>(
         ) {
             return Ok(None);
         }
-        let scale = weights[weights.len() - 1] / child_weights[0];
-        if !scale.is_finite() || scale <= 0.0 {
-            return Err(CompositeCurveError::JoinWeightScale { scale });
-        }
+        let previous_weight = weights[weights.len() - 1];
+        let join_weight = child_weights[0];
+        let scale = previous_weight / join_weight;
         for weight in &mut child_weights {
-            *weight *= scale;
+            let scaled = *weight * scale;
+            *weight = if scaled.is_finite() && scaled > 0.0 {
+                scaled
+            } else {
+                cadmpeg_ir::math::multiply_divide(*weight, previous_weight, join_weight)
+                    .filter(|weight| *weight > 0.0)
+                    .ok_or(CompositeCurveError::JoinWeightScale { scale })?
+            };
         }
         if degree_usize == 0 {
             knots.extend_from_slice(&shifted_knots[1..]);
