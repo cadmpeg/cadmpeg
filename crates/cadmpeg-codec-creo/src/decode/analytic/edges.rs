@@ -355,7 +355,12 @@ fn degree_one_nurbs_point_parameter(
             continue;
         }
         let local = fraction * first_weight / rational_denominator;
-        let parameter = cadmpeg_ir::math::interpolate(lower, upper, local)?;
+        let span = upper - lower;
+        let parameter = if span.is_finite() {
+            lower + local * span
+        } else {
+            cadmpeg_ir::math::interpolate(lower, upper, local)?
+        };
         let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
             continue;
         };
