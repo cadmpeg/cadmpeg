@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
+mod attribute_colors;
+
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
