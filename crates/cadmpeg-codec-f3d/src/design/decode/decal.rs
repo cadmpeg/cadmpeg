@@ -35,7 +35,7 @@ pub(crate) fn decode_decal_images(
     super::image::decode_scoped_images(
         scan,
         scopes,
-        crate::records::feature::scope::DesignFeatureKind::Decal,
+        &crate::records::feature::scope::DesignFeatureKind::Decal,
         parse_decal_image,
         |image| image.id.as_str(),
     )
