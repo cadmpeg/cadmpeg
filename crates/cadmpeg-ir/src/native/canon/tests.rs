@@ -254,6 +254,70 @@ fn one_budget_spans_the_whole_canonical_write() {
     );
 }
 
+/// A member written through `collect_str` carries its `Display` text, as a
+/// value and as a map key, and a `char` member carries its one character.
+///
+/// The whole record is compared against `serde_json::to_value` of the same
+/// typed record, which is the value this serializer states it builds.
+#[test]
+fn a_display_member_writes_its_text_through_collect_str() {
+    use crate::native::NativeRecord;
+
+    struct Displayed(&'static str);
+
+    impl std::fmt::Display for Displayed {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "<{}>", self.0)
+        }
+    }
+
+    impl Serialize for Displayed {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            serializer.collect_str(self)
+        }
+    }
+
+    /// One member whose key arrives through `collect_str`.
+    struct Keyed;
+
+    impl Serialize for Keyed {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry(&Displayed("key"), &1)?;
+            map.end()
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        text: Displayed,
+        escaped: Displayed,
+        letter: char,
+        keyed: Keyed,
+    }
+
+    let record = Record {
+        id: "test:native:record#display",
+        text: Displayed("plain"),
+        escaped: Displayed("a \"quoted\" \\ and\ttab"),
+        letter: '"',
+        keyed: Keyed,
+    };
+    let stored = NativeRecord::from_typed(&record).expect("a Display member is an ordinary string");
+    assert_eq!(stored.field("text"), Some(serde_json::json!("<plain>")));
+    assert_eq!(
+        stored.field("escaped"),
+        Some(serde_json::json!("<a \"quoted\" \\ and\ttab>"))
+    );
+    assert_eq!(stored.field("letter"), Some(serde_json::json!("\"")));
+    assert_eq!(stored.field("keyed"), Some(serde_json::json!({"<key>": 1})));
+    assert_eq!(
+        serde_json::to_value(&stored).expect("the stored record writes"),
+        serde_json::to_value(&record).expect("the typed record writes")
+    );
+}
+
 #[test]
 fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
     let make = || {
