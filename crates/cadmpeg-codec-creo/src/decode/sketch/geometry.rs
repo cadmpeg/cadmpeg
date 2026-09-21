@@ -22,7 +22,11 @@ use crate::decode::sketch_transfer::loci::section_saved_entity;
 const EPS_POINT_NONZERO: f64 = 1.0e-12;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 const EPS_DENOMINATOR_NONZERO: f64 = 1.0e-12;
-const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+/// Bounds every slot of a saved section conic's twelve-slot local system: the two in-plane axis
+/// lengths, their dot product, their `2x2` determinant, and the out-of-plane slots the section
+/// record holds at zero or one. This is a plane record, not the three-dimensional direction pair
+/// of [`crate::surface::valid_orthonormal_frame_directions`].
+const EPS_SECTION_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 const EPS_PARAMETER_FULL_TURN: f64 = 1.0e-9;
 const EPS_ANGLE_FULL_TURN: f64 = 1.0e-12;
@@ -608,18 +612,18 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             if !frame.into_iter().all(f64::is_finite)
                 || first_radius <= EPS_POINT_NONZERO
                 || second_radius <= EPS_POINT_NONZERO
-                || (first_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL * scale
-                || (second_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL * scale
+                || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
+                || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
                 || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
-                    > EPS_FRAME_ORTHONORMAL
+                    > EPS_SECTION_FRAME_ORTHONORMAL
                 || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
-                    > EPS_FRAME_ORTHONORMAL
-                || frame[2].abs() > EPS_FRAME_ORTHONORMAL
-                || frame[5].abs() > EPS_FRAME_ORTHONORMAL
-                || frame[6].abs() > EPS_FRAME_ORTHONORMAL
-                || frame[7].abs() > EPS_FRAME_ORTHONORMAL
-                || (frame[8] - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-                || frame[11].abs() > EPS_FRAME_ORTHONORMAL
+                    > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[2].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[5].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[6].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[7].abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || (frame[8] - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL
+                || frame[11].abs() > EPS_SECTION_FRAME_ORTHONORMAL
             {
                 return None;
             }

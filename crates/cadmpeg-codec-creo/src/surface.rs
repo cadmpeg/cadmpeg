@@ -37,7 +37,13 @@ const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
 
 /// Whether two directions are a unit-length orthogonal pair.
 ///
-/// This is the crate's one statement of that condition. A non-finite component makes the norm
+/// Three other sites in this crate state a related condition and none of them can read this one.
+/// `reference.rs` takes the dot product of the normalized pair, where this function takes it of
+/// the stored pair. `FeatureSectionTransform::new` in `placement.rs` bounds the squared norm
+/// relative to itself, where this function bounds the norm absolutely.
+/// `decode/sketch/geometry.rs` gates a plane record with its own determinant term.
+///
+/// A non-finite component makes the norm
 /// `NaN` or `+inf` and the dot product `NaN` or `+-inf`, and both comparisons below are false on
 /// those values, so the pair carries its own finiteness admission.
 pub(crate) fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
