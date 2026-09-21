@@ -3009,24 +3009,35 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
     }
 }
 
-/// Recursion budget of the binary geometry parsers.
+/// Recursion budget of the geometry parsers, shared by the text and binary
+/// routes.
 ///
-/// A binary geometry record states its basis or directrix inline, so one input
-/// byte can add a parse frame and an input of ordinary size can nest deeper
-/// than the stack holds. The three `parse_binary_*` functions share this budget
-/// across their mutual recursion, and it bounds the parser only: the native
-/// `TextSurface`, `TextCurve` and `TextCurve2d` trees it builds are not neutral
-/// carriers. `MAX_GEOMETRY_NESTING` bounds the neutral chain separately, in the
-/// carrier constructors `topology_transfer` calls.
-const MAX_BINARY_PARSE_DEPTH: usize = 256;
+/// A geometry record states its basis or directrix inline, so one input token
+/// or byte adds a parse frame and an input of ordinary size can nest deeper
+/// than the stack holds. The six `parse_surface`, `parse_curve` and
+/// `parse_curve2d` functions share this budget across their mutual recursion,
+/// so one table entry costs at most `MAX_GEOMETRY_PARSE_DEPTH + 1` frames on
+/// either route. The two routes carry the same OCCT geometry model, so they
+/// admit the same depth.
+///
+/// The budget also bounds the later passes over the tree it admits:
+/// `census_surface`, `append_text_surface`, `append_text_curve`,
+/// `surface_parameter_affine` and `pcurve_geometry` walk the same inline bases
+/// recursively and hold no budget of their own.
+///
+/// It bounds the parser only: the native `TextSurface`, `TextCurve` and
+/// `TextCurve2d` trees are not neutral carriers. `MAX_GEOMETRY_NESTING` bounds
+/// the neutral chain separately, in the carrier constructors
+/// `topology_transfer` calls.
+const MAX_GEOMETRY_PARSE_DEPTH: usize = 64;
 
 fn parse_binary_surface(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextSurface, CodecError> {
-    if depth > MAX_BINARY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary surface nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+            "binary surface nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
         )));
     }
     Ok(match cursor.u8("binary surface kind")? {
@@ -3224,9 +3235,9 @@ fn parse_binary_curve(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve, CodecError> {
-    if depth > MAX_BINARY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary 3D curve nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+            "binary 3D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
         )));
     }
     Ok(match cursor.u8("binary 3D curve kind")? {
@@ -3361,9 +3372,9 @@ fn parse_binary_curve2d(
     cursor: &mut BinaryCursor<'_>,
     depth: usize,
 ) -> Result<TextCurve2d, CodecError> {
-    if depth > MAX_BINARY_PARSE_DEPTH {
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
         return Err(CodecError::malformed(format_args!(
-            "binary parameter-curve nesting exceeds {MAX_BINARY_PARSE_DEPTH}"
+            "binary parameter-curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
         )));
     }
     let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
@@ -3758,10 +3769,10 @@ fn parse_curve2d(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve2d, CodecError> {
-    if depth > 64 {
-        return Err(CodecError::Malformed(
-            "text B-rep 2D curve recursion limit exceeded".into(),
-        ));
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "text B-rep 2D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+        )));
     }
     let kind = cursor.integer("2D curve type")?;
     Ok(match kind {
@@ -4558,10 +4569,10 @@ fn parse_surface(
     depth: usize,
     table_index: usize,
 ) -> Result<TextSurface, CodecError> {
-    if depth > 64 {
-        return Err(CodecError::Malformed(
-            "text B-rep surface recursion limit exceeded".into(),
-        ));
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "text B-rep surface nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+        )));
     }
     let kind = cursor.integer("surface type")?;
     Ok(match kind {
@@ -4577,7 +4588,7 @@ fn parse_surface(
             }
             TextSurface::Extrusion {
                 direction,
-                directrix: Box::new(parse_curve(cursor, 0, table_index)?),
+                directrix: Box::new(parse_curve(cursor, depth + 1, table_index)?),
             }
         }
         7 => {
@@ -4591,7 +4602,7 @@ fn parse_surface(
             TextSurface::Revolution {
                 axis_origin,
                 axis_direction,
-                directrix: Box::new(parse_curve(cursor, 0, table_index)?),
+                directrix: Box::new(parse_curve(cursor, depth + 1, table_index)?),
             }
         }
         8 => TextSurface::Nurbs(parse_bezier_surface(cursor)?),
@@ -4962,10 +4973,10 @@ fn parse_curve(
     depth: usize,
     table_index: usize,
 ) -> Result<TextCurve, CodecError> {
-    if depth > 64 {
-        return Err(CodecError::Malformed(
-            "text B-rep curve recursion limit exceeded".into(),
-        ));
+    if depth > MAX_GEOMETRY_PARSE_DEPTH {
+        return Err(CodecError::malformed(format_args!(
+            "text B-rep 3D curve nesting exceeds {MAX_GEOMETRY_PARSE_DEPTH}"
+        )));
     }
     let kind = cursor.integer("curve type")?;
     Ok(match kind {
@@ -6768,5 +6779,199 @@ pub(crate) mod tests {
         assert!((knots[0] / 1e308 + 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!((knots[5] / 1e308 - 1.1).abs() <= 4.0 * f64::EPSILON);
         assert!(super::normalize_periodic_knots(vec![-1e308, 0.0, 1e308], 1, true).is_err());
+    }
+
+    /// `wrappers` offset surface records over one plane leaf, as text tokens.
+    fn text_offset_surface_tokens(wrappers: usize) -> Vec<String> {
+        let mut tokens = Vec::new();
+        for _ in 0..wrappers {
+            tokens.push("11".to_owned());
+            tokens.push("1.0".to_owned());
+        }
+        tokens.push("1".to_owned());
+        for token in [
+            "0.0", "0.0", "0.0", "0.0", "0.0", "1.0", "1.0", "0.0", "0.0", "0.0", "1.0", "0.0",
+        ] {
+            tokens.push(token.to_owned());
+        }
+        tokens
+    }
+
+    /// `wrappers` offset surface records over one plane leaf, as binary bytes.
+    fn binary_offset_surface_bytes(wrappers: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..wrappers {
+            bytes.push(11);
+            bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+        }
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 96]);
+        bytes
+    }
+
+    /// `wrappers` offset parameter-curve records over one line leaf.
+    fn binary_offset_curve2d_bytes(wrappers: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..wrappers {
+            bytes.push(9);
+            bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+        }
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 32]);
+        bytes
+    }
+
+    fn text_offset_surface_wrappers(surface: &TextSurface) -> usize {
+        match surface {
+            TextSurface::Offset { basis, .. } => 1 + text_offset_surface_wrappers(basis),
+            _ => 0,
+        }
+    }
+
+    fn binary_offset_curve2d_wrappers(curve: &TextCurve2d) -> usize {
+        match curve {
+            TextCurve2d::Offset { basis, .. } => 1 + binary_offset_curve2d_wrappers(basis),
+            _ => 0,
+        }
+    }
+
+    /// One extrusion surface over `wrappers` trimmed curve records and a line
+    /// leaf: `wrappers + 2` records that cross the surface/curve boundary.
+    fn text_extrusion_tokens(wrappers: usize) -> Vec<String> {
+        let mut tokens = vec![
+            "6".to_owned(),
+            "0.0".to_owned(),
+            "0.0".to_owned(),
+            "1.0".to_owned(),
+        ];
+        for _ in 0..wrappers {
+            for token in ["8", "0.0", "1.0"] {
+                tokens.push(token.to_owned());
+            }
+        }
+        for token in ["1", "0.0", "0.0", "0.0", "0.0", "0.0", "1.0"] {
+            tokens.push(token.to_owned());
+        }
+        tokens
+    }
+
+    /// The binary form of `text_extrusion_tokens`.
+    fn binary_extrusion_bytes(wrappers: usize) -> Vec<u8> {
+        let mut bytes = vec![6];
+        bytes.extend_from_slice(&[0; 24]);
+        for _ in 0..wrappers {
+            bytes.push(8);
+            bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+            bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+        }
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 48]);
+        bytes
+    }
+
+    #[test]
+    fn a_directrix_spends_the_same_budget_as_its_surface_on_both_routes() {
+        // The extrusion record and the line leaf are two of the records.
+        let admitted = super::MAX_GEOMETRY_PARSE_DEPTH - 1;
+
+        let tokens = text_extrusion_tokens(admitted);
+        let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
+        let mut cursor = TokenCursor::new(&tokens);
+        super::parse_surface(&mut cursor, 0, 1).expect("the budget is admitted");
+        assert!(cursor.is_empty());
+
+        let tokens = text_extrusion_tokens(admitted + 1);
+        let tokens: Vec<&str> = tokens.iter().map(String::as_str).collect();
+        let error = super::parse_surface(&mut TokenCursor::new(&tokens), 0, 1)
+            .expect_err("one record past the budget is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("text B-rep 3D curve nesting exceeds 64"),
+            "{error}"
+        );
+
+        let bytes = binary_extrusion_bytes(admitted);
+        let mut cursor = BinaryCursor::new(&bytes);
+        super::parse_binary_surface(&mut cursor, 0).expect("the budget is admitted");
+        assert_eq!(cursor.remaining(), 0);
+
+        let bytes = binary_extrusion_bytes(admitted + 1);
+        let error = super::parse_binary_surface(&mut BinaryCursor::new(&bytes), 0)
+            .expect_err("one record past the budget is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("binary 3D curve nesting exceeds 64"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_text_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        let admitted = text_offset_surface_tokens(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let tokens: Vec<&str> = admitted.iter().map(String::as_str).collect();
+        let mut cursor = TokenCursor::new(&tokens);
+        let surface = super::parse_surface(&mut cursor, 0, 1).expect("the budget is admitted");
+        assert_eq!(
+            text_offset_surface_wrappers(&surface),
+            super::MAX_GEOMETRY_PARSE_DEPTH
+        );
+        assert!(cursor.is_empty());
+
+        let refused = text_offset_surface_tokens(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let tokens: Vec<&str> = refused.iter().map(String::as_str).collect();
+        let error = super::parse_surface(&mut TokenCursor::new(&tokens), 0, 1)
+            .expect_err("one record past the budget is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("text B-rep surface nesting exceeds 64"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_binary_surface_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        let admitted = binary_offset_surface_bytes(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let mut cursor = BinaryCursor::new(&admitted);
+        let surface = super::parse_binary_surface(&mut cursor, 0).expect("the budget is admitted");
+        assert_eq!(
+            text_offset_surface_wrappers(&surface),
+            super::MAX_GEOMETRY_PARSE_DEPTH
+        );
+        assert_eq!(cursor.remaining(), 0);
+
+        let refused = binary_offset_surface_bytes(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let error = super::parse_binary_surface(&mut BinaryCursor::new(&refused), 0)
+            .expect_err("one record past the budget is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("binary surface nesting exceeds 64"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn the_binary_parameter_curve_parser_admits_the_budget_and_refuses_one_record_past_it() {
+        let admitted = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_PARSE_DEPTH);
+        let mut cursor = BinaryCursor::new(&admitted);
+        let curve = super::parse_binary_curve2d(&mut cursor, 0).expect("the budget is admitted");
+        assert_eq!(
+            binary_offset_curve2d_wrappers(&curve),
+            super::MAX_GEOMETRY_PARSE_DEPTH
+        );
+        assert_eq!(cursor.remaining(), 0);
+
+        let refused = binary_offset_curve2d_bytes(super::MAX_GEOMETRY_PARSE_DEPTH + 1);
+        let error = super::parse_binary_curve2d(&mut BinaryCursor::new(&refused), 0)
+            .expect_err("one record past the budget is refused");
+        assert!(
+            error
+                .to_string()
+                .contains("binary parameter-curve nesting exceeds 64"),
+            "{error}"
+        );
     }
 }
