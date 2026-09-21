@@ -73,12 +73,13 @@ fn duplicate_typed_fields_cannot_replace_a_native_arena() {
 
 #[test]
 fn malformed_map_protocol_is_reported() {
-    let mut pending = serde::Serializer::serialize_map(CanonValue, None).expect("map");
+    let mut pending =
+        serde::Serializer::serialize_map(CanonValue::for_record(), None).expect("map");
     pending.serialize_key("first").expect("first key");
     assert!(pending.serialize_key("second").is_err());
     assert!(SerializeMap::end(pending).is_err());
 
-    let mut no_key = serde::Serializer::serialize_map(CanonValue, None).expect("map");
+    let mut no_key = serde::Serializer::serialize_map(CanonValue::for_record(), None).expect("map");
     assert!(no_key.serialize_value(&1).is_err());
 }
 
@@ -91,7 +92,8 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
         }
     }
 
-    let mut sequence = serde::Serializer::serialize_seq(CanonValue, None).expect("sequence");
+    let mut sequence =
+        serde::Serializer::serialize_seq(CanonValue::for_record(), None).expect("sequence");
     sequence.serialize_element(&1).expect("first element");
     assert!(sequence.serialize_element(&Refused).is_err());
     sequence.serialize_element(&2).expect("second element");
@@ -185,10 +187,77 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
     );
 }
 
+/// The canonical serializer recurses one frame per container of the record it
+/// is handed, so a `serde_json::Value` field states the descent. One budget
+/// spans the whole record, and a `RawValue` nested inside it continues that
+/// budget instead of starting a fresh one.
+#[test]
+fn one_budget_spans_the_whole_canonical_write() {
+    use crate::native::{NativeRecord, MAX_NATIVE_NESTING_DEPTH};
+    use serde_json::{value::RawValue, Value};
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        nested: Value,
+    }
+
+    #[derive(Serialize)]
+    struct Wrapped {
+        id: &'static str,
+        nested: Vec<Box<RawValue>>,
+    }
+
+    let chain = |containers: usize| {
+        let mut nested = serde_json::json!(7);
+        for _ in 0..containers {
+            nested = Value::Array(vec![nested]);
+        }
+        nested
+    };
+    let text = |containers: usize| format!("{}7{}", "[".repeat(containers), "]".repeat(containers));
+
+    let admitted = chain(MAX_NATIVE_NESTING_DEPTH);
+    let record = NativeRecord::from_typed(&Record {
+        id: "test:native:record#canon",
+        nested: admitted.clone(),
+    })
+    .expect("the bound admits its own depth");
+    assert_eq!(record.field("nested"), Some(admitted));
+
+    let refused = NativeRecord::from_typed(&Record {
+        id: "test:native:record#canon",
+        nested: chain(MAX_NATIVE_NESTING_DEPTH + 1),
+    })
+    .expect_err("one container past the bound");
+    assert!(
+        refused.to_string().contains(&format!(
+            "native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
+        )),
+        "{refused}"
+    );
+
+    // The field is an array, so the raw payload may enter one container fewer.
+    let wrapped = |containers: usize| Wrapped {
+        id: "test:native:record#canon",
+        nested: vec![RawValue::from_string(text(containers)).expect("legal raw JSON")],
+    };
+    NativeRecord::from_typed(&wrapped(MAX_NATIVE_NESTING_DEPTH - 1))
+        .expect("the array plus the payload reach the bound");
+    let refused = NativeRecord::from_typed(&wrapped(MAX_NATIVE_NESTING_DEPTH))
+        .expect_err("a raw payload continues the record's budget");
+    assert!(
+        refused.to_string().contains(&format!(
+            "native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
+        )),
+        "{refused}"
+    );
+}
+
 #[test]
 fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
     let make = || {
-        CanonValue
+        CanonValue::for_record()
             .serialize_struct(super::RAW_VALUE_STRUCT, 1)
             .expect("raw struct")
     };

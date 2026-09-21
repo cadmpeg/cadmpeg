@@ -16,14 +16,24 @@ mod replay;
 
 /// Deepest container chain one native record field may hold.
 ///
-/// [`NativeRecord::new`] and [`NativeRecord::from_identity`] take a
-/// caller-owned `Map`, so a field tree is not limited by the parse that would
-/// otherwise have produced it. Reading one back descends it:
-/// `serde_json::from_value` carries no recursion counter, and [`replay::emit`]
-/// starts one parse per container. Both refuse a field nested past this bound.
-/// It is twice the 128 containers a `serde_json` text parse admits, so every
-/// field a CADIR document can state is read back.
+/// [`NativeRecord::new`] takes a caller-owned `Map`, so a field tree is not
+/// limited by the parse that would otherwise have produced it. Descending one
+/// recurses: `serde_json::from_value` carries no recursion counter,
+/// [`replay::emit`] starts one parse per container, `canon::CanonValue`
+/// enters one frame per container, and `Serialize`, [`NativeRecord::fields`],
+/// [`NativeRecord::field`] and `Drop` walk the stored `Value` itself. The
+/// bound is therefore stated where the field enters the record. It is twice
+/// the 128 containers a `serde_json` text parse admits, so every field a
+/// CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
+
+/// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
+///
+/// The write path, the replay path and the constructor all answer to one
+/// number, so they say the same thing when they refuse.
+fn nests_too_deep_message() -> String {
+    format!("native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers")
+}
 
 /// States whether `value` holds a container chain longer than `limit`.
 ///
@@ -189,7 +199,8 @@ impl NativeRecord {
     /// not: object keys must be distinct, and a `RawValue` payload is read
     /// through one-container replay rather than a recursion-limited parse.
     fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
-        let canon::Node::Object(mut fields) = record.serialize(canon::CanonValue)? else {
+        let canon::Node::Object(mut fields) = record.serialize(canon::CanonValue::for_record())?
+        else {
             return Err(NativeConvertError::NonObject);
         };
         let Some(Value::String(id)) = fields.remove("id") else {
