@@ -1,9 +1,27 @@
 //! Tests for the `compact_reference_planes` module.
 
 use super::{
-    compact_component_plane_frame, compact_reference_plane_source, CompactReferencePlaneIndex,
+    compact_component_plane_frame, compact_reference_plane_source, principal_sketch_frame,
+    CompactReferencePlaneIndex,
 };
+use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
+
+const EPS_PRINCIPAL_SKETCH_FRAME_ORTHONORMAL: f64 = 1.0e-12;
+
+#[test]
+fn every_principal_plane_has_a_sketch_frame() {
+    for plane in [
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ] {
+        let (_, normal, u_axis) = principal_sketch_frame(plane);
+        assert!((normal.dot(normal) - 1.0).abs() <= EPS_PRINCIPAL_SKETCH_FRAME_ORTHONORMAL);
+        assert!((u_axis.dot(u_axis) - 1.0).abs() <= EPS_PRINCIPAL_SKETCH_FRAME_ORTHONORMAL);
+        assert!(normal.dot(u_axis).abs() <= EPS_PRINCIPAL_SKETCH_FRAME_ORTHONORMAL);
+    }
+}
 
 #[test]
 fn compact_reference_plane_source_requires_the_complete_trailer() {

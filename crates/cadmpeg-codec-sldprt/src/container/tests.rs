@@ -9,7 +9,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::container::{self};
+use crate::container::{self, Block, BlockName, CompoundStream, Section};
 use crate::SldprtCodec;
 
 use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
@@ -19,6 +19,38 @@ use crate::test_support::container::sldprt_with_colliding_sites;
 use crate::test_support::container::synthetic_sldprt;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::triangle_body;
+
+#[test]
+fn site_keys_use_outer_container_identity() {
+    let first = Block {
+        offset: 100,
+        type_id: 0,
+        comp_sz: 0,
+        section: BlockName::Named(cadmpeg_ir::stream_name!("Contents/Config-0-Partition")),
+        family: container::PayloadFamily::Parasolid,
+        payload: Vec::new(),
+        ps_streams: Vec::new(),
+    };
+    let second = Block {
+        offset: 200,
+        section: first.section.clone(),
+        ..first.clone()
+    };
+    assert_ne!(
+        Section::Block(&first).site_key(),
+        Section::Block(&second).site_key()
+    );
+
+    let compound = CompoundStream {
+        path: cadmpeg_ir::stream_name!("Contents/Config-0-Partition"),
+        directory_id: 300,
+        start_sector: 0,
+        payload: Vec::new(),
+        decoded_payload: None,
+        ps_streams: Vec::new(),
+    };
+    assert_eq!(Section::Compound(&compound).site_key(), "compound@300");
+}
 
 #[test]
 fn generic_compound_prefix_is_a_weak_container_signal() {
