@@ -1595,6 +1595,75 @@ fn elliptical_cone_reduction_is_reported() {
     }));
 }
 
+/// Writes a document whose single surface is a circular cone of `half_angle`
+/// and returns the export report.
+fn circular_cone_report(half_angle: f64) -> cadmpeg_ir::report::export::ExportReport {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            half_angle,
+        )
+        .unwrap(),
+    ));
+
+    write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap()
+}
+
+/// Whether the report carries the out-of-domain semi-angle note.
+fn reports_cone_semi_angle_out_of_domain(
+    report: &cadmpeg_ir::report::export::ExportReport,
+) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ConeSemiAngleOutOfDomain.kind())
+}
+
+#[test]
+fn cone_semi_angle_inside_wr2_is_not_reported() {
+    let report = circular_cone_report(0.5);
+
+    assert!(!reports_cone_semi_angle_out_of_domain(&report));
+}
+
+#[test]
+fn zero_cone_semi_angle_is_reported() {
+    let report = circular_cone_report(0.0);
+
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::ConeSemiAngleOutOfDomain.kind()
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss
+                .message
+                .contains("1 conical surface(s) were written with a semi-angle outside")
+    }));
+}
+
+#[test]
+fn negative_cone_semi_angle_is_reported() {
+    let report = circular_cone_report(-0.715_584_993_317_674_8);
+
+    assert!(reports_cone_semi_angle_out_of_domain(&report));
+}
+
+#[test]
+fn right_angle_cone_semi_angle_is_reported() {
+    let report = circular_cone_report(std::f64::consts::FRAC_PI_2);
+
+    assert!(reports_cone_semi_angle_out_of_domain(&report));
+}
+
 #[test]
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
