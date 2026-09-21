@@ -368,6 +368,25 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     )
 }
 
+/// The carrier whose values [`surface`] writes into the file for `g`.
+///
+/// [`surface`] emits a `Transformed` carrier as a `SURFACE_REPLICA` over the
+/// record of its basis, so the radii and angles in the file are the basis's.
+/// The export census reads them here.
+pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry {
+    match g {
+        SolvedSurfaceGeometry::Transformed { basis, .. } => emitted_basis(basis),
+        SolvedSurfaceGeometry::Plane(_)
+        | SolvedSurfaceGeometry::Cylinder(_)
+        | SolvedSurfaceGeometry::Cone(_)
+        | SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_)
+        | SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => g,
+    }
+}
+
 /// Emit an analytic or NURBS surface carrier.
 pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {

@@ -1664,6 +1664,217 @@ fn right_angle_cone_semi_angle_is_reported() {
     assert!(reports_cone_semi_angle_out_of_domain(&report));
 }
 
+/// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
+fn replica_transform() -> Transform {
+    Transform::affine([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ])
+    .expect("a scaled rotation is a similarity transform")
+}
+
+/// Writes a document whose single surface places `basis` through a similarity
+/// transform, and returns the export report with the STEP text.
+fn transformed_surface_report(
+    basis: SolvedSurfaceGeometry,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
+        basis: Box::new(basis),
+        transform: replica_transform(),
+    });
+
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+    (report, text)
+}
+
+/// A transformed cone basis of `ratio` and `half_angle`, and the export report
+/// with the STEP text.
+fn transformed_cone_report(
+    ratio: f64,
+    half_angle: f64,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    transformed_surface_report(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            ratio,
+            half_angle,
+        )
+        .unwrap(),
+    ))
+}
+
+#[test]
+fn transformed_cone_basis_outside_wr2_is_reported() {
+    let (report, text) = transformed_cone_report(1.0, 0.0);
+
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CONICAL_SURFACE"));
+    assert!(reports_cone_semi_angle_out_of_domain(&report));
+}
+
+#[test]
+fn transformed_elliptical_cone_basis_is_reported() {
+    let (report, text) = transformed_cone_report(0.4, 0.5);
+
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CONICAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::EllipticalConeReduced.kind()));
+}
+
+#[test]
+fn transformed_signed_sphere_basis_is_reported() {
+    let (report, text) = transformed_surface_report(SolvedSurfaceGeometry::Sphere(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            -2.0,
+        )
+        .unwrap(),
+    ));
+
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("SPHERICAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+/// Writes a document whose single surface is a torus of `minor_radius` attached
+/// to a degenerate torus construction, and returns the report with the text.
+fn degenerate_torus_report(
+    minor_radius: f64,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            minor_radius,
+        )
+        .unwrap(),
+    ));
+    let owner = ir.model.surfaces[0].id.clone();
+    ir.model
+        .add_procedural_surface(
+            owner,
+            cadmpeg_ir::geometry::ProceduralSurface::new(
+                cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                    "test:model:procedural-surface#degenerate_torus",
+                )
+                .expect("identity grammar"),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+                    select_outer: true,
+                },
+                None,
+            ),
+        )
+        .expect("a torus carrier admits a degenerate torus construction");
+
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+    (report, text)
+}
+
+#[test]
+fn degenerate_torus_wider_than_its_major_radius_is_not_reported() {
+    let (report, text) = degenerate_torus_report(2.0);
+
+    assert!(text.contains("DEGENERATE_TOROIDAL_SURFACE"));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+#[test]
+fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
+    let (report, text) = degenerate_torus_report(-2.0);
+
+    assert!(text.contains("DEGENERATE_TOROIDAL_SURFACE"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::AnalyticSurfaceNormalized.kind()));
+}
+
+#[test]
+fn a_cone_cache_written_for_an_unwritable_construction_is_reported() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            0.0,
+        )
+        .unwrap(),
+    ));
+    let owner = ir.model.surfaces[0].id.clone();
+    // A compound construction has no STEP record, so the writer emits the
+    // solved cache instead and the file holds that cone.
+    ir.model
+        .add_procedural_surface(
+            owner,
+            cadmpeg_ir::geometry::ProceduralSurface::new(
+                cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                    "test:model:procedural-surface#compound",
+                )
+                .expect("identity grammar"),
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
+                    cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
+                        Vec::new(),
+                        None,
+                    )
+                    .unwrap(),
+                ),
+                None,
+            ),
+        )
+        .expect("a cone carrier admits a compound construction");
+
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
+
+    assert!(text.contains("CONICAL_SURFACE"));
+    assert!(reports_cone_semi_angle_out_of_domain(&report));
+}
+
 #[test]
 fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
