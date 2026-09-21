@@ -14,6 +14,8 @@
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 #![deny(clippy::disallowed_methods)]
 
+use std::fmt::Display;
+
 use serde::ser::{self, Serialize};
 use serde_json::{Map, Value};
 
@@ -164,7 +166,7 @@ impl ser::Serializer for CanonValue {
     }
 
     fn serialize_char(self, value: char) -> Result<Node, Error> {
-        self.serialize_str(&value.to_string())
+        Ok(Node::Value(Value::String(value.to_string())))
     }
 
     fn serialize_str(self, value: &str) -> Result<Node, Error> {
@@ -288,6 +290,15 @@ impl ser::Serializer for CanonValue {
             variant,
             map: CanonValue::within(depth).serialize_map(Some(len))?,
         })
+    }
+
+    /// The `Display` text is the whole value, so one `String` carries it.
+    ///
+    /// serde's default renders the text into a `String` and hands it to
+    /// [`Self::serialize_str`], which copies it into the `Value`. Every codec
+    /// that writes a member through `collect_str` pays that copy per value.
+    fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<Node, Error> {
+        Ok(Node::Value(Value::String(value.to_string())))
     }
 }
 
@@ -682,6 +693,14 @@ impl ser::Serializer for CanonKey {
         _len: usize,
     ) -> Result<Self::SerializeStructVariant, Error> {
         Err(key_must_be_a_string())
+    }
+
+    /// The `Display` text is the key, so one `String` carries it.
+    ///
+    /// serde's default renders the text into a `String` and hands it to
+    /// [`Self::serialize_str`], which copies it into the key.
+    fn collect_str<T: Display + ?Sized>(self, value: &T) -> Result<String, Error> {
+        Ok(value.to_string())
     }
 }
 
