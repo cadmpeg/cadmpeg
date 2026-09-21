@@ -20,6 +20,8 @@ const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
+const F64_EXPONENT_MASK: u64 = 0x7ff0_0000_0000_0000;
+
 #[derive(Clone, Copy)]
 pub(in crate::decode) struct PlaneEquation {
     pub(in crate::decode) origin: [f64; 3],
@@ -430,13 +432,23 @@ struct PolynomialRoot {
 /// states roots of order `1 / residue` that no exact polynomial has; a real
 /// leading coefficient dropped loses the roots it carries.
 fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialRoot> {
-    let scale = coefficients
+    let largest = coefficients
         .iter()
         .map(|coefficient| coefficient.value.abs())
         .fold(0.0, f64::max);
-    if scale == 0.0 || !scale.is_finite() {
+    if largest == 0.0 || !largest.is_finite() {
         return Vec::new();
     }
+    // Division by the power of two at the largest coefficient is exact. The
+    // largest quotient remains below two for a normal coefficient and below
+    // one when every coefficient is subnormal, so the normalization cannot
+    // overflow and does not discard a coefficient's significand.
+    let normal_scale = f64::from_bits(largest.to_bits() & F64_EXPONENT_MASK);
+    let scale = if normal_scale == 0.0 {
+        f64::MIN_POSITIVE
+    } else {
+        normal_scale
+    };
     let mut scaled = coefficients
         .iter()
         .map(|coefficient| BoundedCoefficient {
@@ -1450,7 +1462,9 @@ pub(in crate::decode) fn plane_cone_conic(
 
 #[cfg(test)]
 mod tests {
-    use super::{ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation};
+    use super::{
+        BoundedCoefficient, ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation,
+    };
     use crate::decode::quadratic::Coefficient;
     use std::f64::consts::FRAC_PI_2;
 
@@ -1474,6 +1488,28 @@ mod tests {
             v,
             constant,
         }
+    }
+
+    #[test]
+    fn polynomial_roots_keep_exact_coefficients_during_normalization() {
+        let roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 6.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: -5.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].value, 2.0);
+        assert_eq!(roots[1].value, 3.0);
     }
 
     #[test]
