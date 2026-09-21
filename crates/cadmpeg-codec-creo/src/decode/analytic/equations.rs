@@ -13,11 +13,9 @@ use super::planes::point_on_carrier;
 
 const EPS_PLANE_CIRCLE_PARALLEL: f64 = 1.0e-9;
 const EPS_PLANE_RESIDUAL: f64 = 1.0e-6;
-const EPS_ROOT_CLUSTER: f64 = 1.0e-7;
 const EPS_PARAM_UNIQUE: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
-const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 const F64_EXPONENT_MASK: u64 = 0x7ff0_0000_0000_0000;
@@ -383,6 +381,21 @@ fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
     })
 }
 
+fn polynomial_value_bound(coefficients: &[BoundedCoefficient], parameter: f64) -> f64 {
+    let magnitude = parameter.abs();
+    let (coefficient_error, evaluation_terms, _) = coefficients.iter().fold(
+        (0.0, 0.0, 1.0),
+        |(coefficient_error, evaluation_terms, power), coefficient| {
+            (
+                coefficient.bound.mul_add(power, coefficient_error),
+                coefficient.value.abs().mul_add(power, evaluation_terms),
+                power * magnitude,
+            )
+        },
+    );
+    coefficient_error + cancellation_bound(evaluation_terms)
+}
+
 /// A polynomial coefficient beside the bound on its distance from the exact
 /// coefficient of the exact polynomial.
 ///
@@ -412,11 +425,10 @@ const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
 ///
 /// The three producers of a root state different accuracies, and a caller that
 /// reads a coordinate off the root cannot tell them apart from the value. A
-/// bisected root is known to the half-width of the bracket the bisection ended
-/// with, which is an absolute width and says nothing about the value's own
-/// significand. `multiple` marks a root the polynomial shares with its
-/// derivative, which is a root of even order: two intersections that coincide
-/// rather than two that are apart.
+/// bisected root carries the polynomial value's bound divided by the lower
+/// magnitude of its derivative, as well as the final bracket width. `multiple`
+/// marks a root the polynomial shares with its derivative, which is a root of
+/// even order: two intersections that coincide rather than two that are apart.
 #[derive(Clone, Copy)]
 struct PolynomialRoot {
     value: f64,
@@ -515,46 +527,67 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         error: cancellation_bound(value),
         multiple: false,
     };
+    let derivative_roots = real_polynomial_roots(&derivative)
+        .into_iter()
+        .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
+        .map(|root| PolynomialRoot {
+            multiple: true,
+            ..root
+        })
+        .collect::<Vec<_>>();
+    let derivative_values = derivative
+        .iter()
+        .map(|coefficient| coefficient.value)
+        .collect::<Vec<_>>();
     let mut boundaries = vec![station(-bound)];
-    boundaries.extend(
-        real_polynomial_roots(&derivative)
-            .into_iter()
-            .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
-            .map(|root| PolynomialRoot {
-                multiple: true,
-                ..root
-            }),
-    );
+    boundaries.extend(derivative_roots.iter().copied());
     boundaries.push(station(bound));
     boundaries.sort_by(|left, right| left.value.total_cmp(&right.value));
-    let value_tolerance = EPS_POLY_ROOT_VALUE;
-    let mut roots = boundaries
-        .iter()
-        .copied()
-        .filter(|station| polynomial_value(&coefficients, station.value).abs() <= value_tolerance)
+    let mut roots = derivative_roots
+        .into_iter()
+        .filter(|station| {
+            let value = polynomial_value(&coefficients, station.value);
+            let value_bound = polynomial_value_bound(&scaled, station.value);
+            value.is_finite() && value_bound.is_finite() && value.abs() <= value_bound
+        })
         .collect::<Vec<_>>();
     for interval in boundaries.windows(2) {
         let (mut lower, mut upper) = (interval[0].value, interval[1].value);
         let mut lower_value = polynomial_value(&coefficients, lower);
         let upper_value = polynomial_value(&coefficients, upper);
-        if lower_value * upper_value >= 0.0 {
+        if !lower_value.is_finite()
+            || !upper_value.is_finite()
+            || lower_value.is_sign_positive() == upper_value.is_sign_positive()
+        {
             continue;
         }
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
             let midpoint_value = polynomial_value(&coefficients, midpoint);
-            if lower_value * midpoint_value <= 0.0 {
+            if lower_value.is_sign_positive() != midpoint_value.is_sign_positive() {
                 upper = midpoint;
             } else {
                 lower = midpoint;
                 lower_value = midpoint_value;
             }
         }
-        // The bracket still holds the sign change, so the exact root is within
-        // half its width of the midpoint stated here.
+        let value = 0.5 * (lower + upper);
+        let derivative_value = polynomial_value(&derivative_values, value).abs();
+        let derivative_error = polynomial_value_bound(&derivative, value);
+        // The value bound divided by the derivative magnitude outside its own
+        // bound is the displacement that coefficient and evaluation error can
+        // give this simple root. If the derivative does not state a nonzero
+        // slope, the complete station interval is the location statement.
+        let coefficient_error = if derivative_value > derivative_error {
+            polynomial_value_bound(&scaled, value) / (derivative_value - derivative_error)
+        } else {
+            0.5 * (interval[1].value - interval[0].value).abs()
+        };
         roots.push(PolynomialRoot {
-            value: 0.5 * (lower + upper),
-            error: 0.5 * (upper - lower).abs(),
+            value,
+            error: (0.5 * (upper - lower).abs())
+                .max(coefficient_error)
+                .max(cancellation_bound(value)),
             multiple: false,
         });
     }
@@ -563,23 +596,16 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         .into_iter()
         .fold(Vec::<PolynomialRoot>::new(), |mut unique, root| {
             if let Some(previous) = unique.last_mut() {
-                let tolerance =
-                    EPS_ROOT_CLUSTER * previous.value.abs().max(root.value.abs()).max(1.0);
-                let separation = (previous.value - root.value).abs();
-                if separation <= tolerance {
-                    // Two roots this close are one root of the exact
-                    // polynomial or two the stated coefficients cannot tell
-                    // apart, so the survivor carries their separation and both
-                    // accuracies, and is multiple if either is.
-                    let error = previous.error.max(root.error).max(separation);
-                    let multiple = previous.multiple || root.multiple;
-                    if polynomial_value(&coefficients, root.value).abs()
-                        < polynomial_value(&coefficients, previous.value).abs()
-                    {
-                        previous.value = root.value;
-                    }
-                    previous.error = error;
-                    previous.multiple = multiple;
+                let overlap_lower = (previous.value - previous.error).max(root.value - root.error);
+                let overlap_upper = (previous.value + previous.error).min(root.value + root.error);
+                if overlap_lower <= overlap_upper {
+                    // Both stated locations contain the same exact root. Keep
+                    // their common interval, which is the tighter statement.
+                    let value = overlap_lower + 0.5 * (overlap_upper - overlap_lower);
+                    previous.value = value;
+                    previous.error =
+                        (0.5 * (overlap_upper - overlap_lower)).max(cancellation_bound(value));
+                    previous.multiple |= root.multiple;
                     return unique;
                 }
             }
@@ -1510,6 +1536,67 @@ mod tests {
         assert_eq!(roots.len(), 2);
         assert_eq!(roots[0].value, 2.0);
         assert_eq!(roots[1].value, 3.0);
+    }
+
+    #[test]
+    fn polynomial_roots_admit_only_even_roots_stated_by_the_arithmetic() {
+        let no_roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 5.0e-12,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+        assert!(no_roots.is_empty());
+
+        let roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: -2.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].value, 1.0);
+        assert!(roots[0].error <= super::cancellation_bound(1.0));
+    }
+
+    #[test]
+    fn polynomial_roots_keep_distinct_roots_closer_than_a_fixed_relative_band() {
+        const SECOND_ROOT: f64 = 5.0e-8;
+        let roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: -SECOND_ROOT,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+
+        assert_eq!(roots.len(), 2);
+        for (root, expected) in roots.iter().zip([0.0, SECOND_ROOT]) {
+            assert!((root.value - expected).abs() <= root.error);
+        }
     }
 
     #[test]
