@@ -209,6 +209,59 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
 }
 
 #[test]
+fn a_field_nested_past_the_native_bound_is_refused_by_the_stored_record_reader() {
+    use crate::native::{NativeConvertError, MAX_NATIVE_NESTING_DEPTH};
+
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct Record {
+        id: String,
+        nested: serde_json::Value,
+    }
+
+    let id = "test:native:record#bound";
+    let chain = |containers: usize| {
+        let mut nested = serde_json::json!(7);
+        for _ in 0..containers {
+            nested = serde_json::Value::Array(vec![nested]);
+        }
+        nested
+    };
+    let record = |nested: serde_json::Value| {
+        NativeRecord::new(
+            id,
+            serde_json::Map::from_iter([("nested".to_owned(), nested)]),
+        )
+        .unwrap()
+    };
+
+    let admitted = chain(MAX_NATIVE_NESTING_DEPTH);
+    assert_eq!(
+        record(admitted.clone()).to_typed::<Record>().unwrap(),
+        Record {
+            id: id.to_owned(),
+            nested: admitted,
+        }
+    );
+    let error = record(chain(MAX_NATIVE_NESTING_DEPTH + 1))
+        .to_typed::<Record>()
+        .unwrap_err();
+    let NativeConvertError::ReadRecord {
+        id: refused,
+        source,
+    } = error
+    else {
+        panic!("record context")
+    };
+    assert_eq!(refused.as_str(), id);
+    assert!(
+        source.to_string().contains(&format!(
+            "field nested nests deeper than {MAX_NATIVE_NESTING_DEPTH}"
+        )),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_identity_admission_is_shared_by_all_construction_paths() {
     #[derive(Serialize)]
     struct Record<'a> {
