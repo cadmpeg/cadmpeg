@@ -66,31 +66,28 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 }
 
 /// Serializes one decoded document: the IR, the decode report, and source
-/// fidelity. A decode error is frozen too. Native arena values are omitted;
-/// arena populations and record identities are pinned.
+/// fidelity. A decode error is frozen too. Native arena text is replaced by the
+/// arena populations and one digest of the records themselves.
+///
+/// The native block is replaced before the authoring-path walk, so that walk
+/// descends only what the snapshot keeps. The digest reads the typed arenas, so
+/// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            {
-                let native_shape = native_shape(&result.ir().native);
-                let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
-                elide_authoring_paths(&mut ir);
-                if let Some(native) = ir.get_mut("native") {
-                    *native = serde_json::json!({
-                        "__elided": "native arena values are omitted; structure is pinned by identity",
-                        "__arena_counts": native_shape["counts"].clone(),
-                        "__shape_sha256": native_shape["sha256"].clone(),
-                    });
-                }
-                serde_json::json!({
-                    "ir": ir,
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
+            let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
+            if let Some(native) = ir.get_mut("native") {
+                *native = elided_native(&result.ir().native);
             }
+            elide_authoring_paths(&mut ir);
+            serde_json::json!({
+                "ir": ir,
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": serde_json::to_value(result.source_fidelity())
+                    .expect("serialize source_fidelity"),
+            })
         }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
     };
@@ -148,35 +145,26 @@ fn carries_authoring_path(text: &str) -> bool {
     })
 }
 
-/// Summarizes native arena structure without hashing platform-dependent values.
-fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
+/// The block the decode snapshot writes in place of the native arenas.
+///
+/// `__arena_counts` states each arena's population, which a reviewer reads
+/// directly. `__shape_sha256` covers the records themselves in the canonical
+/// JSON a CADIR document writes for them, so any member of any record moves it,
+/// not only an arena name, a population or a record identity.
+fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let mut counts = serde_json::Map::new();
-    let mut shape = serde_json::Map::new();
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
-        let mut namespace_shape = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
-            let mut ids = records
-                .iter()
-                .map(|record| record.id().to_owned())
-                .collect::<Vec<_>>();
-            ids.sort_unstable();
             namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
-            namespace_shape.insert(
-                arena.clone(),
-                serde_json::json!({
-                    "count": records.len(),
-                    "ids": ids,
-                }),
-            );
         }
         counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
-        shape.insert(format.clone(), serde_json::Value::Object(namespace_shape));
     }
-    let shape = serde_json::Value::Object(shape);
     serde_json::json!({
-        "counts": counts,
-        "sha256": cadmpeg_ir::hash::canonical_json_sha256(&shape).expect("native shape digests"),
+        "__elided": "native arena values are omitted; structure is pinned by identity",
+        "__arena_counts": counts,
+        "__shape_sha256": cadmpeg_ir::hash::canonical_json_sha256(native)
+            .expect("the native records state canonical JSON"),
     })
 }
 
@@ -446,5 +434,74 @@ mod step_comparison {
     #[test]
     fn a_dropped_record_disagrees() {
         assert!(step_texts_agree(&format!("{LINUX_VECTOR}#96 = X();\n"), LINUX_VECTOR).is_err());
+    }
+}
+
+mod native_elision {
+    use super::elided_native;
+
+    /// One namespace holding one record whose only codec-owned member is `name`.
+    fn one_object_native(name: &str) -> cadmpeg_ir::Native {
+        let mut fields = serde_json::Map::new();
+        fields.insert("name".to_owned(), serde_json::json!(name));
+        let record = cadmpeg_ir::NativeRecord::new("fcstd:native:object#Box", fields)
+            .expect("a well-formed native record");
+        let mut native = cadmpeg_ir::Native::default();
+        native
+            .namespace_mut("fcstd")
+            .arenas_mut()
+            .insert("objects".to_owned(), vec![record]);
+        native
+    }
+
+    /// What the digest read before it read the records: each arena's name, its
+    /// population and its sorted record identities. This is the control: a
+    /// digest over it alone cannot separate two records that differ in any
+    /// other member.
+    fn identity_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
+        let mut shape = serde_json::Map::new();
+        for (format, namespace) in &native.0 {
+            let mut arenas = serde_json::Map::new();
+            for (arena, records) in namespace.arenas() {
+                let mut ids = records
+                    .iter()
+                    .map(|record| record.id().to_owned())
+                    .collect::<Vec<_>>();
+                ids.sort_unstable();
+                arenas.insert(
+                    arena.clone(),
+                    serde_json::json!({ "count": records.len(), "ids": ids }),
+                );
+            }
+            shape.insert(format.clone(), serde_json::Value::Object(arenas));
+        }
+        serde_json::Value::Object(shape)
+    }
+
+    #[test]
+    fn a_changed_non_id_member_moves_the_digest() {
+        let (before, after) = (one_object_native("Box"), one_object_native("Cube"));
+        assert_eq!(
+            identity_shape(&before),
+            identity_shape(&after),
+            "the two documents must hold the same arena, population and identity"
+        );
+        let (before, after) = (elided_native(&before), elided_native(&after));
+        assert_eq!(before["__arena_counts"], after["__arena_counts"]);
+        assert!(
+            before["__shape_sha256"] != after["__shape_sha256"],
+            "the digest must state a member other than the record identity"
+        );
+    }
+
+    #[test]
+    fn the_digest_is_the_canonical_json_of_the_records() {
+        let native = one_object_native("Box");
+        assert_eq!(
+            elided_native(&native)["__shape_sha256"],
+            serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(&native)
+                .expect("the native records state canonical JSON")),
+            "the digest covers the bytes a CADIR document writes for the arenas"
+        );
     }
 }
