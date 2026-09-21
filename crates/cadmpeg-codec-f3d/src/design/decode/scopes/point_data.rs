@@ -8,7 +8,6 @@ use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::work_geometry;
 use crate::records::feature::work_geometry::DesignWorkPointConstruction;
 use crate::records::feature::work_geometry::DesignWorkPointInput;
 use crate::records::feature::work_geometry::DesignWorkPointRule;
@@ -73,11 +72,11 @@ fn point_data_level(
         let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
         inputs.push(
-            DesignWorkPointInput::try_new(work_geometry::DesignWorkPointInputDraft {
-                record_index: u32::try_from(reference.target()?).ok()?,
-                reference_offset: u64::try_from(reference_offset).ok()?,
-                carrier: None,
-            })
+            DesignWorkPointInput::try_new(
+                u32::try_from(reference.target()?).ok()?,
+                u64::try_from(reference_offset).ok()?,
+                None,
+            )
             .ok()?,
         );
     }

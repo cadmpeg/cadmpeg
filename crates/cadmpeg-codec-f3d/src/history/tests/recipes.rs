@@ -140,13 +140,11 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
-                        crate::records::feature::work_geometry::DesignWorkPointInputDraft {
-                            record_index: 202,
-                            reference_offset: 0,
-                            carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                                recipe,
-                            })),
-                        },
+                        202,
+                        0,
+                        Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                            recipe,
+                        })),
                     )
                     .unwrap(),
                 },

@@ -245,11 +245,12 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         scope
     });
     let input = |record_index, work_plane_scope_record_index| {
-        DesignWorkPointInput::try_new(crate::records::feature::work_geometry::DesignWorkPointInputDraft {
+        DesignWorkPointInput::try_new(
             record_index,
-            reference_offset: u64::from(record_index),
-            carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
+            u64::from(record_index),
+            Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
+                    record_index,
                     crate::records::feature::work_geometry::DesignWorkPointPlaneSelectionDraft {
                         class_tag: crate::records::references::DesignClassTag::try_from(
                             "267".to_owned(),
@@ -276,7 +277,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
                 )
                 .unwrap(),
             })),
-        })
+        )
         .unwrap()
     };
     let mut point = DesignParameterScope::empty(
@@ -396,13 +397,11 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
-                        crate::records::feature::work_geometry::DesignWorkPointInputDraft {
-                            record_index: 22,
-                            reference_offset: 0,
-                            carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                                recipe,
-                            })),
-                        },
+                        22,
+                        0,
+                        Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                            recipe,
+                        })),
                     )
                     .unwrap(),
                 },

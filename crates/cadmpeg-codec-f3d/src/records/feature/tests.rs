@@ -1951,12 +1951,37 @@ fn work_point_plane_carrier_is_bound_to_its_input_frame() {
         }}
     });
     let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    let mut draft = admitted.into_draft();
-    draft.record_index += 1;
-    assert!(DesignWorkPointInput::try_new(draft).is_err());
-    let mut invalid = wire;
-    invalid["carrier"]["selection"]["identity_record_index"] = 11.into();
-    assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    for field in ["identity_record_index", "next_record_index"] {
+        let mut invalid = wire.clone();
+        invalid["carrier"]["selection"][field] = 12.into();
+        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+    }
+}
+
+#[test]
+fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
+    use crate::records::feature::work_geometry::DesignWorkPointInput;
+    let wire = serde_json::json!({
+        "record_index": 7, "reference_offset": 0,
+        "carrier": { "kind": "sketch_point", "selection": {
+            "class_tag": "300",
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 108,
+            "identity_record_index": 10, "identity_record_offset": 150,
+            "sketch_record_index": 19, "sketch_record_index_offset": 175,
+            "point_persistent_id": 23, "point_persistent_id_offset": 183,
+            "point_native_id": "f3d:native/BulkStream.dat:sketch-point#19",
+            "next_record_index": 11, "next_byte_offset": 191
+        }}
+    });
+    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+    for field in ["identity_record_index", "next_record_index"] {
+        let mut invalid = wire.clone();
+        invalid["carrier"]["selection"][field] = 12.into();
+        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
+    }
 }
 
 mod three_point_planes;
