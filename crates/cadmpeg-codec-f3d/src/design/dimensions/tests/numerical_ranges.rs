@@ -72,3 +72,22 @@ fn numerical_followup_parabola_bounds_use_transverse_length() {
         ));
     }
 }
+
+#[test]
+fn numerical_followup_parabola_bounds_allow_reversed_orientation() {
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
+        vertex: Point2::new(0., 0.),
+        axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+        focal_length: cadmpeg_ir::scalar::Length::new(2.).unwrap(),
+        bounds: Some([2., 1.]),
+    })
+    .unwrap();
+    assert!(super::super::point_lies_on_sketch_geometry(
+        Point2::new(0.5, 2.),
+        &geometry
+    ));
+    assert!(!super::super::point_lies_on_sketch_geometry(
+        Point2::new(2., 4.),
+        &geometry
+    ));
+}
