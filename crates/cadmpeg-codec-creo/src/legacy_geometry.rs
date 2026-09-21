@@ -39,7 +39,8 @@ pub(crate) enum LegacySurfaceGeometry {
         axis: [f64; 3],
         /// Unit parameter-space reference direction.
         ref_direction: [f64; 3],
-        /// Positive cone half-angle in radians.
+        /// Cone half-angle in radians, admitted by
+        /// [`crate::surface::valid_apex_cone_half_angle`].
         half_angle: f64,
         /// Sign that maps the source `v` parameter to this positive-angle frame.
         parameter_v_sign: f64,
@@ -483,13 +484,14 @@ fn surface_carrier(
                 .filter(|radius| radius.is_finite() && *radius > 0.0)?,
         },
         AnalyticFamily::Cone => {
+            // The legacy record signs the half angle: the magnitude is the half angle and the
+            // sign gives the axis direction. The magnitude is the apex cone half angle that
+            // `surface::valid_apex_cone_half_angle` owns, because
+            // `decode::surfaces::prototypes` builds the same `radius = 0.0`, `ratio = 1.0`
+            // cone from this carrier as the positional cone rows do.
             let signed_half_angle = real_scalar(reals, primitive.offset, "half_angle")?;
-            if !signed_half_angle.is_finite()
-                || signed_half_angle == 0.0
-                || signed_half_angle.abs() >= std::f64::consts::FRAC_PI_2
-            {
-                return None;
-            }
+            let half_angle = signed_half_angle.abs();
+            surface::valid_apex_cone_half_angle(half_angle).then_some(())?;
             LegacySurfaceGeometry::Cone {
                 apex: origin,
                 axis: third.map(|value| {
@@ -500,7 +502,7 @@ fn surface_carrier(
                     }
                 }),
                 ref_direction: first,
-                half_angle: signed_half_angle.abs(),
+                half_angle,
                 parameter_v_sign: signed_half_angle.signum(),
             }
         }
@@ -865,7 +867,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         }
     }
 
-    fn cone_persistence(with_angle: bool) -> Persistence {
+    fn cone_persistence(signed_half_angle: Option<f64>) -> Persistence {
         let root = "cone_root";
         let branch = "cone_branch";
         let array = "cone_array";
@@ -916,7 +918,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0],
             20,
         )];
-        if with_angle {
+        if let Some(signed_half_angle) = signed_half_angle {
             real_values.push(ValueRecord {
                 name: "half_angle".to_string(),
                 attribute_id: 0,
@@ -924,7 +926,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 parent: Some(fixture_offset(primitive)),
                 depth: 0,
                 payload: RealPayload::Scalar {
-                    value: Real::from_bits((-std::f64::consts::FRAC_PI_4).to_bits()),
+                    value: Real::from_bits(signed_half_angle.to_bits()),
                 },
                 offset: 21,
             });
@@ -1151,7 +1153,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     #[test]
     fn extracts_signed_legacy_cone_carrier_from_active_namespace() {
-        let result = scan(&cone_persistence(true));
+        let result = scan(&cone_persistence(Some(-std::f64::consts::FRAC_PI_4)));
 
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.carriers.len(), 1);
@@ -1169,10 +1171,59 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     #[test]
     fn incomplete_legacy_cone_angle_withholds_carrier() {
-        let result = scan(&cone_persistence(false));
+        let result = scan(&cone_persistence(None));
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn legacy_cone_half_angle_magnitude_takes_the_apex_cone_interval() {
+        let refused = [
+            0.0,
+            -0.0,
+            std::f64::consts::FRAC_PI_2,
+            -std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ];
+        for signed_half_angle in refused {
+            let result = scan(&cone_persistence(Some(signed_half_angle)));
+            assert_eq!(result.rows.len(), 1);
+            assert!(
+                result.carriers.is_empty(),
+                "{signed_half_angle} is outside the apex cone interval"
+            );
+        }
+
+        let largest_admitted = f64::from_bits(std::f64::consts::FRAC_PI_2.to_bits() - 1);
+        let smallest_admitted = f64::MIN_POSITIVE;
+        for (signed_half_angle, half_angle, parameter_v_sign) in [
+            (largest_admitted, largest_admitted, 1.0),
+            (-largest_admitted, largest_admitted, -1.0),
+            (smallest_admitted, smallest_admitted, 1.0),
+            (-smallest_admitted, smallest_admitted, -1.0),
+        ] {
+            let result = scan(&cone_persistence(Some(signed_half_angle)));
+            assert_eq!(result.rows.len(), 1);
+            assert_eq!(result.carriers.len(), 1);
+            assert_eq!(
+                result.carriers[0].geometry,
+                LegacySurfaceGeometry::Cone {
+                    apex: [1.0, 2.0, 3.0],
+                    axis: if parameter_v_sign > 0.0 {
+                        [0.0, 0.0, 1.0]
+                    } else {
+                        [-0.0, -0.0, -1.0]
+                    },
+                    ref_direction: [1.0, 0.0, 0.0],
+                    half_angle,
+                    parameter_v_sign,
+                }
+            );
+        }
     }
 
     #[test]
