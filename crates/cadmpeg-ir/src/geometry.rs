@@ -38,11 +38,13 @@ pub mod surface_payloads;
 /// Greatest number of nesting carriers the IR admits over one geometry leaf.
 ///
 /// A nesting carrier holds its basis inline in a `Box` rather than by arena id:
-/// [`SolvedSurfaceGeometry::Transformed`], [`SolvedCurveGeometry::Transformed`],
-/// and a pcurve's [`PcurveGeometry::Transformed`], [`PcurveGeometry::Trimmed`]
-/// and [`PcurveGeometry::Offset`]. Every consumer that reads through a basis
-/// walks that chain, so the depth is one property of the geometry and not of
-/// each consumer. `nesting_within_bound` on each carrier states it.
+/// [`PlacedSurface`], [`PlacedCurve`], and a pcurve's
+/// [`PlacedPcurve`](pcurve::PlacedPcurve),
+/// [`TrimmedPcurve`](pcurve::TrimmedPcurve) and
+/// [`OffsetPcurve`](pcurve::OffsetPcurve). Each one's `try_new` refuses a
+/// result past this depth and stores the depth it holds, so no value of the
+/// three carriers nests deeper however it was built or deserialized, and every
+/// consumer that reads through a basis is bounded without a check of its own.
 pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.

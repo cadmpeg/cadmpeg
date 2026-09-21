@@ -184,24 +184,28 @@ fn nurbs_pcurve_leaf() -> PcurveGeometry {
     }
 }
 
-fn placed_pcurve(placements: usize) -> PcurveGeometry {
+fn placed_pcurve(placements: usize) -> Result<PcurveGeometry, &'static str> {
     let mut geometry = nurbs_pcurve_leaf();
     for _ in 0..placements {
-        geometry = PcurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: crate::transform::Transform2::identity(),
-        };
+        geometry = PcurveGeometry::Transformed(crate::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(geometry),
+            crate::transform::Transform2::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 #[test]
 fn pcurve_bounded_domain_requirement_stops_at_the_admitted_nesting_depth() {
-    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
     assert!(super::pcurve_requires_bounded_domain(&accepted));
 
-    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-    assert!(!super::pcurve_requires_bounded_domain(&refused));
+    // The walk has no depth gate because the carrier one placement deeper
+    // cannot be built: `PlacedPcurve::try_new` refuses it.
+    assert_eq!(
+        placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1),
+        Err("PlacedPcurve.basis nests past the admitted inline basis depth")
+    );
 }
 
 fn trimmed_over_the_nurbs_leaf() -> PcurveGeometry {

@@ -39,7 +39,7 @@ use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
-    check_edge_endpoint_consistency, check_geometry_nesting, check_pcurve_surface_consistency,
+    check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
 };
 use geometry_payloads::check_tessellations;
@@ -67,15 +67,13 @@ use topology::{
 ///
 /// Both the carrier-parameterization pass and the geometric-consistency pass
 /// ask this question of the same carrier, so they ask it of one function.
-/// `None` past [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING)
-/// enclosing carriers: the walk states no domain for a chain it refuses to
-/// follow.
+///
+/// The recursion is bounded by the carrier: each pcurve nesting constructor
+/// refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING).
 fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -> Option<[f64; 2]> {
     use crate::geometry::pcurve::PcurveGeometry;
 
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
@@ -96,7 +94,7 @@ fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -
             }
         }
         PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(offset_pcurve.basis()),
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(placed.basis()),
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
@@ -155,7 +153,6 @@ fn validate_model_with_index(
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
-    check_geometry_nesting(ir, &mut findings);
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ir, &mut findings);
@@ -260,24 +257,29 @@ mod tests {
         }
     }
 
-    fn placed_pcurve(placements: usize) -> PcurveGeometry {
+    fn placed_pcurve(placements: usize) -> Result<PcurveGeometry, &'static str> {
         let mut geometry = nurbs_pcurve_leaf();
         for _ in 0..placements {
-            geometry = PcurveGeometry::Transformed {
-                basis: Box::new(geometry),
-                transform: crate::transform::Transform2::identity(),
-            };
+            geometry = PcurveGeometry::Transformed(crate::geometry::pcurve::PlacedPcurve::try_new(
+                Box::new(geometry),
+                crate::transform::Transform2::identity(),
+            )?);
         }
-        geometry
+        Ok(geometry)
     }
 
     #[test]
     fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
-        let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING);
+        let accepted =
+            placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING).expect("admitted nesting");
         assert!(pcurve_parameter_domain(&accepted).is_some());
 
-        let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1);
-        assert!(pcurve_parameter_domain(&refused).is_none());
+        // The walk has no depth gate because the carrier one placement deeper
+        // cannot be built: `PlacedPcurve::try_new` refuses it.
+        assert_eq!(
+            placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING + 1),
+            Err("PlacedPcurve.basis nests past the admitted inline basis depth")
+        );
     }
 
     #[test]

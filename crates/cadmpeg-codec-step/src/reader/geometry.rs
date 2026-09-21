@@ -4460,10 +4460,13 @@ fn decode_pcurve_geometry(
                     let transform = transformations.get(&operator_id).copied()?;
                     records.extend(basis_records);
                     records.insert(operator_id);
-                    PcurveGeometry::Transformed {
-                        basis: Box::new(basis),
-                        transform,
-                    }
+                    PcurveGeometry::Transformed(
+                        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+                            Box::new(basis),
+                            transform,
+                        )
+                        .ok()?,
+                    )
                 }
                 "TRIMMED_CURVE" => {
                     let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
@@ -4619,7 +4622,7 @@ fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
             let basis = offset_pcurve.basis();
             pcurve_parameter_period(basis)?
         }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,
+        PcurveGeometry::Transformed(placed) => pcurve_parameter_period(placed.basis())?,
         _ => return None,
     };
     (period.is_finite() && period > 0.0).then_some(period)

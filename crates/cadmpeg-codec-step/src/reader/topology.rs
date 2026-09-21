@@ -3700,7 +3700,7 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
             let basis = offset_pcurve.basis();
             pcurve_declared_parameter_range(basis)
         }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_declared_parameter_range(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_declared_parameter_range(placed.basis()),
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)
@@ -3919,8 +3919,8 @@ fn pcurve_parameter_break_fractions(
             let basis = offset_pcurve.basis();
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
-        PcurveGeometry::Transformed { basis, .. } => {
-            pcurve_parameter_break_fractions(basis, parameters, fractions);
+        PcurveGeometry::Transformed(placed) => {
+            pcurve_parameter_break_fractions(placed.basis(), parameters, fractions);
         }
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
@@ -4027,7 +4027,7 @@ fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
             let basis = offset_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
         }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_has_angular_parameterization(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_has_angular_parameterization(placed.basis()),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
             pcurve_has_angular_parameterization(basis)
@@ -4065,7 +4065,7 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             let basis = offset_pcurve.basis();
             pcurve_selection_parameter_domain(basis)
         }
-        PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
+        PcurveGeometry::Transformed(placed) => pcurve_selection_parameter_domain(placed.basis()),
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
         | PcurveGeometry::Ellipse(_)

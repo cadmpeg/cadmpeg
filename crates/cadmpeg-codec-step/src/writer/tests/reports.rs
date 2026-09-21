@@ -981,17 +981,20 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed {
-        basis: Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform: cadmpeg_ir::transform::Transform2::affine([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
-            .expect("affine transform"),
-    };
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed(
+        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            cadmpeg_ir::transform::Transform2::affine([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0]])
+                .expect("affine transform"),
+        )
+        .expect("placed pcurve"),
+    );
 
     let mut output = Vec::new();
     let report = write_step(

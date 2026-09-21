@@ -148,7 +148,7 @@ fn a_surface_placement_chain_past_the_bound_is_unwritable() {
     );
 }
 
-fn placed_line(placements: usize) -> CurveGeometry {
+fn placed_line(placements: usize) -> Result<CurveGeometry, &'static str> {
     let mut geometry = SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -157,30 +157,32 @@ fn placed_line(placements: usize) -> CurveGeometry {
         .expect("a unit-direction line"),
     );
     for _ in 0..placements {
-        geometry = SolvedCurveGeometry::Transformed(
-            cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(geometry), Transform::identity())
-                .expect("placed curve"),
-        );
+        geometry = SolvedCurveGeometry::Transformed(cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(geometry),
+            Transform::identity(),
+        )?);
     }
-    CurveGeometry::Solved(geometry)
+    Ok(CurveGeometry::Solved(geometry))
 }
 
 #[test]
 fn a_curve_placement_chain_past_the_bound_is_unwritable() {
-    let accepted = placed_line(ACCEPTED_PLACEMENTS);
+    let accepted = placed_line(ACCEPTED_PLACEMENTS).expect("admitted nesting");
     assert!(curve_is_supported(&accepted));
     let mut emitter = crate::writer::Emitter::new();
     assert!(curve(&mut emitter, accepted.solved().expect("solved carrier")).is_some());
 
-    let refused = placed_line(ACCEPTED_PLACEMENTS + 1);
-    assert!(!curve_is_supported(&refused));
-    let mut emitter = crate::writer::Emitter::new();
-    assert!(curve(&mut emitter, refused.solved().expect("solved carrier")).is_none());
-    assert!(emitter.into_lines().is_empty());
+    // One placement deeper is unwritable because it is unbuildable.
+    assert_eq!(
+        placed_line(ACCEPTED_PLACEMENTS + 1),
+        Err("PlacedCurve.basis nests past the admitted inline basis depth")
+    );
 }
 
-fn placed_pcurve(placements: usize) -> cadmpeg_ir::geometry::pcurve::PcurveGeometry {
-    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+fn placed_pcurve(
+    placements: usize,
+) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, &'static str> {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, PlacedPcurve};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::transform::Transform2;
     let mut geometry = PcurveGeometry::Line(
@@ -188,23 +190,27 @@ fn placed_pcurve(placements: usize) -> cadmpeg_ir::geometry::pcurve::PcurveGeome
             .expect("a unit-direction parameter-space line"),
     );
     for _ in 0..placements {
-        geometry = PcurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: Transform2::identity(),
-        };
+        geometry = PcurveGeometry::Transformed(PlacedPcurve::try_new(
+            Box::new(geometry),
+            Transform2::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 #[test]
 fn a_pcurve_placement_chain_past_the_bound_is_unwritable() {
     use super::pcurve;
 
+    let accepted = placed_pcurve(ACCEPTED_PLACEMENTS).expect("admitted nesting");
     let mut emitter = crate::writer::Emitter::new();
-    assert!(pcurve(&mut emitter, &placed_pcurve(ACCEPTED_PLACEMENTS)).is_some());
+    assert!(pcurve(&mut emitter, &accepted).is_some());
 
-    let mut emitter = crate::writer::Emitter::new();
-    assert!(pcurve(&mut emitter, &placed_pcurve(ACCEPTED_PLACEMENTS + 1)).is_none());
+    // One carrier deeper is unwritable because it is unbuildable.
+    assert_eq!(
+        placed_pcurve(ACCEPTED_PLACEMENTS + 1),
+        Err("PlacedPcurve.basis nests past the admitted inline basis depth")
+    );
 }
 
 #[test]

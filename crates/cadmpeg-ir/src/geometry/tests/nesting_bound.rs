@@ -2,7 +2,9 @@
 //! The one depth the IR admits over an inline geometry basis.
 
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
-use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, TrimmedPcurve};
+use crate::geometry::pcurve::{
+    LinePcurve, OffsetPcurve, PcurveGeometry, PlacedPcurve, TrimmedPcurve,
+};
 use crate::geometry::{
     PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
 };
@@ -47,24 +49,26 @@ fn placed_line(placements: usize) -> Result<SolvedCurveGeometry, &'static str> {
 
 /// A chain that uses each of the three pcurve nesting carriers in turn, so the
 /// admitted depth is the count of all three together and not of one of them.
-fn nested_pcurve(carriers: usize) -> PcurveGeometry {
+///
+/// Each carrier's constructor refuses the chain that would pass the bound, so
+/// the refusal names whichever of the three the next carrier would be.
+fn nested_pcurve(carriers: usize) -> Result<PcurveGeometry, &'static str> {
     let mut geometry = PcurveGeometry::Line(LinePcurve::U_AXIS);
     for index in 0..carriers {
         geometry = match index % 3 {
-            0 => PcurveGeometry::Transformed {
-                basis: Box::new(geometry),
-                transform: Transform2::identity(),
-            },
-            1 => PcurveGeometry::Trimmed(
-                TrimmedPcurve::try_new([0.0, 1.0], true, Box::new(geometry))
-                    .expect("an ordered finite trim"),
-            ),
-            _ => PcurveGeometry::Offset(
-                OffsetPcurve::try_new(1.0, Box::new(geometry)).expect("a finite offset distance"),
-            ),
+            0 => PcurveGeometry::Transformed(PlacedPcurve::try_new(
+                Box::new(geometry),
+                Transform2::identity(),
+            )?),
+            1 => PcurveGeometry::Trimmed(TrimmedPcurve::try_new(
+                [0.0, 1.0],
+                true,
+                Box::new(geometry),
+            )?),
+            _ => PcurveGeometry::Offset(OffsetPcurve::try_new(1.0, Box::new(geometry))?),
         };
     }
-    geometry
+    Ok(geometry)
 }
 
 #[test]
@@ -87,13 +91,12 @@ fn a_curve_placement_chain_one_past_the_bound_is_refused() {
 
 #[test]
 fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
-    assert!(nested_pcurve(MAX_GEOMETRY_NESTING).nesting_within_bound());
-    assert!(!nested_pcurve(MAX_GEOMETRY_NESTING + 1).nesting_within_bound());
-}
-
-#[test]
-fn a_leaf_carrier_is_within_the_bound() {
-    assert!(nested_pcurve(0).nesting_within_bound());
+    assert!(nested_pcurve(MAX_GEOMETRY_NESTING).is_ok());
+    // 256 carriers cycle Transformed, Trimmed, Offset, so the 257th is a trim.
+    assert_eq!(
+        nested_pcurve(MAX_GEOMETRY_NESTING + 1),
+        Err("TrimmedPcurve.basis nests past the admitted inline basis depth")
+    );
 }
 
 #[test]

@@ -501,17 +501,19 @@ fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
 
 #[test]
 fn anisotropic_replica_scaling_conjugates_the_parent_map() {
-    let original = PcurveGeometry::Transformed {
-        basis: Box::new(PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(1.0, 2.0),
-                Point2::new(3.0, 4.0),
-            )
-            .unwrap(),
-        )),
-        transform: Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]])
-            .expect("affine transform"),
-    };
+    let original = PcurveGeometry::Transformed(
+        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(1.0, 2.0),
+                    Point2::new(3.0, 4.0),
+                )
+                .unwrap(),
+            )),
+            Transform2::affine([[0.0, -2.0, 10.0], [2.0, 0.0, 20.0]]).expect("affine transform"),
+        )
+        .expect("placed pcurve"),
+    );
     let mut scaled = original.clone();
     assert!(scaled.try_scale_coordinates([2.0, 3.0]).is_ok());
     for parameter in [0.0, 0.5, 1.0] {
