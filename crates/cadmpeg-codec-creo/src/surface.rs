@@ -857,7 +857,7 @@ impl PositionalConeFrame {
         half_angle: f64,
     ) -> Option<Self> {
         let frame = PositionalFrame::new(apex, axis, ref_direction)?;
-        valid_half_angle(half_angle).then_some(Self { frame, half_angle })
+        valid_apex_cone_half_angle(half_angle).then_some(Self { frame, half_angle })
     }
     /// Returns the apex.
     pub(crate) fn apex(&self) -> [f64; 3] {
@@ -3315,7 +3315,8 @@ fn parsed_named_surface_value(
         {
             Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
         } else if name == "half_angle" {
-            scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
+            scalar::decode_positive_dict(body, cursor)
+                .filter(|(value, _)| valid_apex_cone_half_angle(*value))
         } else if radius_field {
             scalar::decode_named_surface_radius(body, cursor, cache)
         } else if parameter_bound_field {
@@ -3576,7 +3577,7 @@ fn unique_cone_half_angle_layout(
 ) -> Option<ConeHalfAngleLayout> {
     let mut layouts = (0..body.len()).filter_map(|start| {
         let (value, end) = scalar::decode_positive_dict(body, start)?;
-        (valid_half_angle(value) && accepts_end(end)).then_some(ConeHalfAngleLayout {
+        (valid_apex_cone_half_angle(value) && accepts_end(end)).then_some(ConeHalfAngleLayout {
             value,
             start,
             end,
@@ -4473,7 +4474,7 @@ fn inline_surface_carrier(
         }
         SurfaceKind::Cone => {
             let half_angle = suffix[0];
-            valid_half_angle(half_angle).then_some(())?;
+            valid_apex_cone_half_angle(half_angle).then_some(())?;
             let radial_extent =
                 envelope.axial.into_iter().map(f64::abs).fold(0.0, f64::max) * half_angle.tan();
             for coordinate in 0..3 {
@@ -4575,7 +4576,7 @@ fn inline_surface_suffix_carrier(
         }
         SurfaceKind::Cone => {
             let half_angle = suffix[0];
-            valid_half_angle(half_angle).then_some(())?;
+            valid_apex_cone_half_angle(half_angle).then_some(())?;
             Some(InlineSurfaceCarrier::Cone(PositionalConeFrame::new(
                 origin,
                 axis,
@@ -5969,7 +5970,7 @@ fn decode_planar_envelope_cone_frame(
     let inner_apex = inner_axial - inner_distance;
     close(outer_apex, inner_apex).then_some(())?;
     let half_angle = radial_high.atan2(outer_distance);
-    valid_half_angle(half_angle).then_some(())?;
+    valid_apex_cone_half_angle(half_angle).then_some(())?;
     PositionalConeFrame::new(
         [0.0, outer_apex.midpoint(inner_apex), 0.0],
         [0.0, 1.0, 0.0],
@@ -5983,7 +5984,7 @@ fn decode_support_apex_cone_frame(
     half_angle: f64,
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    valid_half_angle(half_angle).then_some(())?;
+    valid_apex_cone_half_angle(half_angle).then_some(())?;
     let reference_candidates = (0..body.len())
         .filter_map(|start| {
             matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
@@ -8577,7 +8578,15 @@ pub(crate) fn prototype_count(payload: &[u8]) -> usize {
     named + unlabeled
 }
 
-fn valid_half_angle(value: f64) -> bool {
+/// Admits the half angle of an apex cone: finite and in `(0, pi/2)`.
+///
+/// A cone surface record carries an apex, an axis, a reference direction and this half angle,
+/// and no radius, so the surface radius is the distance from the apex times the tangent of the
+/// half angle. At zero the locus is the axis line and not a surface; the record family states a
+/// cylinder through [`SurfaceKind::Cylinder`], whose [`PositionalCylinderFrame`] carries the
+/// radius. At `pi/2` the locus is the apex plane, and above it the tangent is negative, which is
+/// the same cone about the opposite axis direction.
+pub(crate) fn valid_apex_cone_half_angle(value: f64) -> bool {
     value.is_finite() && value > 0.0 && value < std::f64::consts::FRAC_PI_2
 }
 

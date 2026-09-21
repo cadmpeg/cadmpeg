@@ -485,6 +485,8 @@ fn pcurve_endpoint_carrier_status(
     }
 }
 
+/// Mirrors an apex cone through its apex: the same shape a cone surface record carries, so it
+/// takes its half angle from [`crate::surface::valid_apex_cone_half_angle`].
 fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeometry> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = geometry else {
         return None;
@@ -501,7 +503,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let ref_length = dot(ref_values, ref_values).sqrt();
     if radius != 0.0
         || (ratio - 1.0).abs() > EPS_NEAR_ZERO
-        || !(0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
+        || !crate::surface::valid_apex_cone_half_angle(half_angle)
         || !axis_length.is_finite()
         || (axis_length - 1.0).abs() > EPS_ORTHO
         || !ref_length.is_finite()
@@ -2471,5 +2473,22 @@ mod tests {
             perpendicular_endpoints,
             perpendicular_plane
         ));
+    }
+
+    #[test]
+    fn a_zero_half_angle_apex_cone_is_not_a_support_apex_cone() {
+        let degenerate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                0.0,
+                1.0,
+                0.0,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
+
+        assert!(mirrored_support_apex_cone(&degenerate).is_none());
     }
 }
