@@ -19,20 +19,12 @@ use super::radii::{
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
+/// General reconstructed sketch-intersection geometry tolerance.
 const EPS_SKETCH_INTERSECTION_GEOMETRY: f64 = 1.0e-9;
+/// Threshold for degenerate sketch-intersection configurations.
 const EPS_SKETCH_INTERSECTION_DEGENERATE: f64 = 1.0e-10;
+/// Exact-geometry threshold for sketch-intersection calculations.
 const EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY: f64 = 1.0e-12;
-
-const EPS_LINE_INTERSECTION: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
-const EPS_RADIUS_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
-const EPS_PARAMETER_BOUND: f64 = EPS_SKETCH_INTERSECTION_DEGENERATE;
-const EPS_CENTER_DISTANCE: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
-const EPS_HEIGHT_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
-const EPS_RADIUS_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
-const EPS_DISTANCE_MATCH: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
-const EPS_DIRECTION_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
-const EPS_OFFSET_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
-const EPS_ENDPOINT_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 
 fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry.definition() {
@@ -59,7 +51,7 @@ pub(in crate::decode) fn intersect_section_lines(
     let determinant = first_direction
         .x
         .mul_add(second_direction.y, -first_direction.y * second_direction.x);
-    if determinant.abs() <= EPS_LINE_INTERSECTION {
+    if determinant.abs() <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY {
         return None;
     }
     let delta = Point2::new(
@@ -94,16 +86,17 @@ pub(in crate::decode) fn intersect_section_line_arc(
     let SketchGeometryDefinition::Arc { center, radius, .. } = arc else {
         return None;
     };
-    if (end.u - start.u).hypot(end.v - start.v) <= EPS_RADIUS_NONZERO
-        || radius.get() <= EPS_RADIUS_NONZERO
+    if (end.u - start.u).hypot(end.v - start.v) <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY
+        || radius.get() <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY
     {
         return None;
     }
     let parameters =
         cadmpeg_ir::math::planar::line_circle_parameters(*start, *end, *center, radius.get())?;
-    let mut inside = parameters
-        .into_iter()
-        .filter(|parameter| (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND).contains(parameter));
+    let mut inside = parameters.into_iter().filter(|parameter| {
+        (-EPS_SKETCH_INTERSECTION_DEGENERATE..=1.0 + EPS_SKETCH_INTERSECTION_DEGENERATE)
+            .contains(parameter)
+    });
     let parameter = inside.next()?;
     if inside.next().is_some_and(|other| other != parameter) {
         return None;
@@ -137,7 +130,9 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
     else {
         return None;
     };
-    if first_radius.get() <= EPS_RADIUS_NONZERO || second_radius.get() <= EPS_RADIUS_NONZERO {
+    if first_radius.get() <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY
+        || second_radius.get() <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY
+    {
         return None;
     }
     let delta = [
@@ -146,7 +141,7 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
     ];
     let distance = delta[0].hypot(delta[1]);
     let scale = distance.max(first_radius.get()).max(second_radius.get());
-    if !scale.is_finite() || distance <= EPS_CENTER_DISTANCE * scale {
+    if !scale.is_finite() || distance <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY * scale {
         return None;
     }
     let d = distance / scale;
@@ -154,7 +149,7 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
     let s = second_radius.get() / scale;
     let offset = 0.5 * (d + (r - s) * (r + s) / d);
     let height_squared = (r - offset) * (r + offset);
-    if !height_squared.is_finite() || height_squared.abs() > EPS_HEIGHT_RESIDUAL {
+    if !height_squared.is_finite() || height_squared.abs() > EPS_SKETCH_INTERSECTION_GEOMETRY {
         return None;
     }
     let point = [
@@ -163,7 +158,7 @@ pub(in crate::decode) fn intersect_tangent_section_arcs(
     ];
     let on_circle = |center: &Point2, radius: f64| {
         ((point[0] - center.u).hypot(point[1] - center.v) - radius).abs()
-            <= EPS_HEIGHT_RESIDUAL * radius
+            <= EPS_SKETCH_INTERSECTION_GEOMETRY * radius
     };
     (point.iter().all(|value| value.is_finite())
         && on_circle(first_center, first_radius.get())
@@ -268,7 +263,8 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             if !radius.is_finite()
                 || radius <= 0.0
                 || !candidate_radius.is_finite()
-                || (candidate_radius - radius).abs() / radial_scale > EPS_RADIUS_AGREEMENT
+                || (candidate_radius - radius).abs() / radial_scale
+                    > EPS_SKETCH_INTERSECTION_GEOMETRY
             {
                 continue;
             }
@@ -435,12 +431,12 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 .flatten()
                 .map(|value| value.abs())
                 .fold(1.0, f64::max);
-            let matched = if distances[0] <= EPS_DISTANCE_MATCH * scale
-                && distances[1] > EPS_DISTANCE_MATCH * scale
+            let matched = if distances[0] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+                && distances[1] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
             {
                 0
-            } else if distances[1] <= EPS_DISTANCE_MATCH * scale
-                && distances[0] > EPS_DISTANCE_MATCH * scale
+            } else if distances[1] <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+                && distances[0] > EPS_SKETCH_INTERSECTION_GEOMETRY * scale
             {
                 1
             } else {
@@ -485,7 +481,7 @@ fn reconciled_section_coordinates(
             .fold(1.0, f64::max);
         if values.iter().all(|candidate| {
             (candidate[0] - first[0]).hypot(candidate[1] - first[1])
-                <= EPS_ENDPOINT_AGREEMENT * scale
+                <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
         }) {
             coordinates.insert(vertex, first);
         } else {
@@ -539,14 +535,14 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             carrier_end.v / scale - carrier_start.v / scale,
         ];
         let direction_norm = direction[0].hypot(direction[1]);
-        if direction_norm <= EPS_DIRECTION_NONZERO
+        if direction_norm <= EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY
             || [start, end].into_iter().any(|point| {
                 let offset = [
                     point[0] / scale - carrier_start.u / scale,
                     point[1] / scale - carrier_start.v / scale,
                 ];
                 (offset[0] * direction[1] - offset[1] * direction[0]).abs()
-                    > EPS_OFFSET_RESIDUAL * direction_norm
+                    > EPS_SKETCH_INTERSECTION_GEOMETRY * direction_norm
             })
         {
             return None;
@@ -564,8 +560,8 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             || radius <= 0.0
             || !first_radius.is_finite()
             || !second_radius.is_finite()
-            || (first_radius - radius).abs() / scale > EPS_RADIUS_AGREEMENT
-            || (second_radius - radius).abs() / scale > EPS_RADIUS_AGREEMENT
+            || (first_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
+            || (second_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
         {
             return None;
         }

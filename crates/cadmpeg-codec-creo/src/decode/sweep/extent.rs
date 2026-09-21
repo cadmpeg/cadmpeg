@@ -16,15 +16,10 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 
+/// General reconstructed sweep-extent geometry tolerance.
 const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;
+/// Threshold for degenerate sweep-extent configurations.
 const EPS_SWEEP_EXTENT_DEGENERATE: f64 = 1.0e-10;
-
-const EPS_PLANE_PARALLEL: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
-const EPS_STATION_RELATIVE: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
-const EPS_COORDINATE_AGREEMENT: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
-const EPS_VECTOR_AGREEMENT: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
-const EPS_AXIS_ALIGNMENT: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
-const EPS_WEIGHT_AGREEMENT: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
 
 pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) starts: Vec<[f64; 3]>,
@@ -52,8 +47,8 @@ fn blind_extrusion_from_carriers(
         )
         .map(f64::abs)
         .fold(length.max(1.0), f64::max);
-    let tolerance = EPS_COORDINATE_AGREEMENT * coordinate_scale;
-    let vector_tolerance = EPS_VECTOR_AGREEMENT * length.max(1.0);
+    let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
+    let vector_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * length.max(1.0);
     let start_station = dot(first_start, direction);
     let end_station = start_station + length;
     let mut has_opposed_carrier = false;
@@ -91,9 +86,9 @@ fn blind_extrusion_from_carriers(
         .map(|(origin, normal)| {
             let normal = normalize(*normal)?;
             let alignment = dot(normal, direction).abs();
-            if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
+            if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
                 Some(Some(dot(*origin, direction)))
-            } else if alignment <= EPS_AXIS_ALIGNMENT {
+            } else if alignment <= EPS_SWEEP_EXTENT_DEGENERATE {
                 Some(None)
             } else {
                 None
@@ -148,7 +143,7 @@ fn blind_extrusion_from_carriers(
     };
     if let Some(transform) = transform {
         let normal = transform.normal();
-        ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT
+        ((dot(direction, normal).abs() - 1.0).abs() <= EPS_SWEEP_EXTENT_DEGENERATE
             && (dot(transform.origin(), direction) - start_station).abs() <= tolerance)
             .then_some(())?;
     }
@@ -311,13 +306,13 @@ pub(in super::super) fn bounded_cylinder_span(
                 .chain(frame.frame().origin())
                 .map(f64::abs)
                 .fold(1.0, f64::max);
-            let tolerance = EPS_COORDINATE_AGREEMENT * scale;
+            let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
             let start_station = dot(frame.frame().origin(), axis);
             let mut terminal_offsets = Vec::new();
             for (origin, normal) in planes {
                 let normal = normalize(*normal)?;
                 let alignment = dot(normal, axis).abs();
-                if alignment >= 1.0 - EPS_AXIS_ALIGNMENT {
+                if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
                     let offset = dot(*origin, axis) - start_station;
                     if offset.abs() > tolerance
                         && terminal_offsets
@@ -326,7 +321,7 @@ pub(in super::super) fn bounded_cylinder_span(
                     {
                         terminal_offsets.push(offset);
                     }
-                } else if alignment > EPS_AXIS_ALIGNMENT {
+                } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
                     return None;
                 }
             }
@@ -401,7 +396,8 @@ fn nurbs_translation_candidate(
             (start_weight.is_finite()
                 && end_weight.is_finite()
                 && (start_weight - end_weight).abs()
-                    <= EPS_WEIGHT_AGREEMENT * start_weight.abs().max(end_weight.abs()).max(1.0))
+                    <= EPS_SWEEP_EXTENT_DEGENERATE
+                        * start_weight.abs().max(end_weight.abs()).max(1.0))
             .then_some(())?;
         }
         let candidate = std::array::from_fn(|axis| end[axis] - start[axis]);
@@ -414,7 +410,7 @@ fn nurbs_translation_candidate(
             candidate
                 .into_iter()
                 .zip(reference)
-                .all(|(left, right)| (left - right).abs() <= EPS_COORDINATE_AGREEMENT * scale)
+                .all(|(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale)
                 .then_some(())?;
         } else {
             vector = Some(candidate);
@@ -653,7 +649,7 @@ fn rectilinear_extent_from_section_plane(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
     let section_normal = normalize(section_normal)?;
-    (dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL).then_some(())?;
+    (dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE).then_some(())?;
     let planes = family.stations.iter().map(|station| {
         (
             family
@@ -665,7 +661,7 @@ fn rectilinear_extent_from_section_plane(
     let (extent, direction) =
         extrusion_extent_and_direction(section_origin, section_normal, planes)?;
     if matches!(extent, ExtrudeExtent::OneSided { .. })
-        && dot(cap_direction, direction) < 1.0 - EPS_PLANE_PARALLEL
+        && dot(cap_direction, direction) < 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
     {
         return None;
     }
@@ -743,7 +739,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         .flat_map(|(plane, _)| plane.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let station_tolerance = EPS_STATION_RELATIVE * coordinate_scale;
+    let station_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
         let station = dot(plane.origin, plane.normal);
@@ -753,7 +749,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 .normal
                 .iter()
                 .zip(plane.normal)
-                .all(|(left, right)| (left - right).abs() <= EPS_PLANE_PARALLEL)
+                .all(|(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
         }) {
             if let Some(known) = family
                 .stations
@@ -770,7 +766,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         } else {
             families
                 .iter()
-                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_PLANE_PARALLEL)
+                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
                 .then_some(())?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
@@ -802,7 +798,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             let axial_families = families
                 .iter()
                 .filter(|family| {
-                    dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL
+                    dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
                 })
                 .collect::<Vec<_>>();
             let [family] = axial_families.as_slice() else {
@@ -853,7 +849,7 @@ pub(in super::super) fn directed_blind_extrusion_span(
     let profile_direction = normalize(profile_direction)?;
     let extrusion_direction = normalize(extrusion_direction)?;
     let alignment = dot(profile_direction, extrusion_direction);
-    (alignment.abs() >= 1.0 - EPS_COORDINATE_AGREEMENT).then_some(())?;
+    (alignment.abs() >= 1.0 - EPS_SWEEP_EXTENT_GEOMETRY).then_some(())?;
     Some(if alignment.is_sign_positive() {
         ExtrusionSpan {
             lower: 0.0,
