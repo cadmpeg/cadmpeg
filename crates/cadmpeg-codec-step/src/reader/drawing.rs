@@ -10,7 +10,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::NativeRecord;
+use cadmpeg_ir::{NativeField, NativeRecord};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::ids;
@@ -330,13 +330,13 @@ fn add_source_typed_targets(
             .map(|partial| partial.name.as_str())
             .collect::<Vec<_>>()
             .join("+");
-        let mut fields = serde_json::Map::new();
-        fields.insert(
-            "source_id".into(),
-            serde_json::Value::String(format!("#{id}")),
-        );
-        fields.insert("source_type".into(), serde_json::Value::String(source_type));
-        native_targets.push(NativeRecord::from_identity(identity.clone(), fields));
+        native_targets.push(NativeRecord::from_identity(
+            identity.clone(),
+            [
+                ("source_id".to_owned(), NativeField::Text(format!("#{id}"))),
+                ("source_type".to_owned(), NativeField::Text(source_type)),
+            ],
+        ));
         target_identities.insert(id, BTreeSet::from([identity.into_string()]));
     }
     if native_targets.is_empty() {

@@ -79,21 +79,22 @@ impl TryFrom<&UnknownRecord> for NativeUnknownRecord {
 }
 
 impl From<&NativeUnknownRecord> for crate::native::NativeRecord {
+    /// The projection states one field, a list of identity strings, so the
+    /// record it builds cannot nest and this conversion cannot fail.
     fn from(record: &NativeUnknownRecord) -> Self {
-        let mut fields = serde_json::Map::new();
-        if !record.links.is_empty() {
-            fields.insert(
-                "links".into(),
-                serde_json::Value::Array(
+        let links = (!record.links.is_empty()).then(|| {
+            (
+                "links".to_owned(),
+                crate::native::NativeField::TextList(
                     record
                         .links
                         .iter()
-                        .map(|link| serde_json::Value::String(link.as_str().to_owned()))
+                        .map(|link| link.as_str().to_owned())
                         .collect(),
                 ),
-            );
-        }
-        Self::from_identity(record.id.clone(), fields)
+            )
+        });
+        Self::from_identity(record.id.clone(), links)
     }
 }
 

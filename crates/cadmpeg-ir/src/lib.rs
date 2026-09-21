@@ -98,7 +98,9 @@ pub use features::{
     ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use ids::{is_valid_identity, IdentityError};
-pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
+pub use native::{
+    LossCount, Native, NativeConvertError, NativeField, NativeNamespace, NativeRecord,
+};
 pub use pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,

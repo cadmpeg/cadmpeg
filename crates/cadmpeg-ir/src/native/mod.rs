@@ -16,15 +16,14 @@ mod replay;
 
 /// Deepest container chain one native record field may hold.
 ///
-/// [`NativeRecord::new`] takes a caller-owned `Map`, so a field tree is not
-/// limited by the parse that would otherwise have produced it. Descending one
-/// recurses: `serde_json::from_value` carries no recursion counter,
-/// [`replay::emit`] starts one parse per container, `canon::CanonValue`
-/// enters one frame per container, and `Serialize`, [`NativeRecord::fields`],
-/// [`NativeRecord::field`] and `Drop` walk the stored `Value` itself. The
-/// bound is therefore stated where the field enters the record. It is twice
-/// the 128 containers a `serde_json` text parse admits, so every field a
-/// CADIR document can state is read back.
+/// Every descent of a stored field recurses: `serde_json::from_value` carries
+/// no recursion counter, [`replay::emit`] starts one parse per container,
+/// `canon::CanonValue` enters one frame per container, and `Serialize`,
+/// [`NativeRecord::fields`], [`NativeRecord::field`] and `Drop` walk the
+/// stored `Value` itself. The bound is therefore stated where a field enters
+/// the record, so every reader of a constructed record is already inside it.
+/// It is twice the 128 containers a `serde_json` text parse admits, so every
+/// field a CADIR document can state is read back.
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
@@ -96,6 +95,17 @@ pub enum NativeConvertError {
     /// A typed record did not serialize as a JSON object.
     #[error("native record did not serialize as an object")]
     NonObject,
+    /// A caller-owned field nests deeper than a native record may hold.
+    #[error(
+        "native record {id}: field {field} nests deeper than {} containers",
+        MAX_NATIVE_NESTING_DEPTH
+    )]
+    FieldNestsTooDeep {
+        /// Identity the refused field was offered under.
+        id: crate::ids::Identity,
+        /// Name of the refused field.
+        field: String,
+    },
     /// JSON conversion failed.
     #[error("native record conversion failed: {0}")]
     Serde(#[from] serde_json::Error),
@@ -156,7 +166,37 @@ struct RecordShape<'a> {
     fields: &'a Map<String, Value>,
 }
 
+/// One native record field a producer states without nesting it.
+///
+/// A record assembled from these cannot reach [`MAX_NATIVE_NESTING_DEPTH`], so
+/// [`NativeRecord::from_identity`] admits them with nothing to measure and
+/// nothing to refuse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeField {
+    /// A JSON string.
+    Text(String),
+    /// A JSON array of strings.
+    TextList(Vec<String>),
+}
+
+impl NativeField {
+    /// This field as the value a record stores.
+    fn into_value(self) -> Value {
+        match self {
+            Self::Text(text) => Value::String(text),
+            Self::TextList(items) => Value::Array(items.into_iter().map(Value::String).collect()),
+        }
+    }
+}
+
 /// One source-native record with a stable identity and codec-owned fields.
+///
+/// Every field is at most [`MAX_NATIVE_NESTING_DEPTH`] containers deep: the
+/// four ways to build one are [`NativeRecord::new`], which measures the
+/// caller's map, `Deserialize`, which calls it, [`NativeRecord::from_typed`],
+/// whose serializer counts the containers it enters, and
+/// [`NativeRecord::from_identity`], whose fields cannot nest. Readers of a
+/// stored record therefore descend a bounded value and measure nothing.
 ///
 /// The record holds the value it was constructed from. `serde_json::Map` is
 /// key-sorted, so the stored map is already in canonical order and the record
@@ -172,25 +212,47 @@ pub struct NativeRecord {
 }
 
 impl NativeRecord {
-    /// Build a record from a stable identity and its codec-owned fields.
+    /// Build a record from a stable identity and an arbitrary field map.
     ///
     /// Any `id` member of `fields` is dropped in favour of `id`.
     /// Identity syntax is checked here; document validation checks uniqueness.
+    /// A field nested past [`MAX_NATIVE_NESTING_DEPTH`] is refused by name:
+    /// the map is the caller's own, so nothing about it is bounded until it
+    /// is measured here.
     pub fn new(
         id: impl Into<String>,
-        fields: Map<String, Value>,
+        mut fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
-        Ok(Self::from_identity(crate::ids::Identity::new(id)?, fields))
+        let id = crate::ids::Identity::new(id)?;
+        fields.remove("id");
+        for (field, value) in &fields {
+            if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
+                return Err(NativeConvertError::FieldNestsTooDeep {
+                    id,
+                    field: field.clone(),
+                });
+            }
+        }
+        Ok(Self { id, fields })
     }
 
-    /// Build a record from an admitted identity and codec-owned fields.
+    /// Build a record from an admitted identity and fields that do not nest.
+    ///
+    /// A `NativeField` states its own shape, so this path has nothing to
+    /// measure and no failing branch. An `id` entry is dropped in favour of
+    /// `id`, and a repeated name keeps the last entry.
     pub fn from_identity(
         id: impl Into<crate::ids::Identity>,
-        mut fields: Map<String, Value>,
+        fields: impl IntoIterator<Item = (String, NativeField)>,
     ) -> Self {
         let id = id.into();
-        fields.remove("id");
-        Self { id, fields }
+        let mut stored = Map::new();
+        for (name, value) in fields {
+            if name != "id" {
+                stored.insert(name, value.into_value());
+            }
+        }
+        Self { id, fields: stored }
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -238,21 +300,11 @@ impl NativeRecord {
 
     /// Deserialize the record into a codec-owned typed record.
     ///
-    /// `serde_json::from_value` descends the value with no recursion counter,
-    /// so the fields are measured first: a field nested past
-    /// [`MAX_NATIVE_NESTING_DEPTH`] is refused by name instead of driving the
-    /// descent.
+    /// `serde_json::from_value` descends the value with no recursion counter.
+    /// It needs none: a stored field entered through [`Self::new`], which
+    /// measures it, so the descent is already inside
+    /// [`MAX_NATIVE_NESTING_DEPTH`].
     fn to_typed<T: DeserializeOwned>(&self) -> Result<T, NativeConvertError> {
-        for (name, value) in &self.fields {
-            if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
-                return Err(NativeConvertError::ReadRecord {
-                    id: self.id.clone(),
-                    source: <serde_json::Error as serde::de::Error>::custom(format!(
-                        "field {name} nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers"
-                    )),
-                });
-            }
-        }
         let mut record = self.fields.clone();
         record.insert("id".to_owned(), Value::String(self.id.as_str().to_owned()));
         serde_json::from_value(Value::Object(record)).map_err(|source| {
