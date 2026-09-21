@@ -391,6 +391,7 @@ pub(crate) fn bind_work_point_input_carriers(
                     input
                         .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
                             selection: DesignWorkPointSketchPointSelection::try_new(
+                                input.record_index(),
                                 crate::records::feature::work_geometry::DesignWorkPointSketchPointSelectionDraft {
                                     class_tag: header.class_tag.clone(),
                                     asset_id,
@@ -445,19 +446,20 @@ pub(crate) fn bind_work_point_input_carriers(
             input
                 .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                     selection: DesignWorkPointPlaneSelection::try_new(
+                        input.record_index(),
                         crate::records::feature::work_geometry::DesignWorkPointPlaneSelectionDraft {
-                            class_tag: header.class_tag.clone(),
-                            asset_id,
-                            asset_id_offset: selection.asset_id_offset,
-                            context_id,
-                            context_id_offset: selection.context_id_offset,
-                            identity_record_index: selection.identity_record_index,
-                            identity_record_offset: selection.identity_record_offset,
-                            primary_identity: selection.primary_identity,
-                            primary_identity_offset: selection.primary_identity_offset,
-                            work_plane_scope_record_index,
-                            next_record_index: selection.next_record_index,
-                            next_byte_offset: selection.next_byte_offset,
+                        class_tag: header.class_tag.clone(),
+                        asset_id,
+                        asset_id_offset: selection.asset_id_offset,
+                        context_id,
+                        context_id_offset: selection.context_id_offset,
+                        identity_record_index: selection.identity_record_index,
+                        identity_record_offset: selection.identity_record_offset,
+                        primary_identity: selection.primary_identity,
+                        primary_identity_offset: selection.primary_identity_offset,
+                        work_plane_scope_record_index,
+                        next_record_index: selection.next_record_index,
+                        next_byte_offset: selection.next_byte_offset,
                         },
                     )
                     .map_err(crate::error::malformed)?,

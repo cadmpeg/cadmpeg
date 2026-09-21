@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
     deserialize_carrier,
-    Box<DesignWorkPointInputCarrier>,
+    Box<DesignWorkPointInputCarrierWire>,
     "carrier"
 );
 cadmpeg_core::named_optional_field!(deserialize_recipe_state_id, i64, "recipe_state_id");
@@ -61,8 +61,8 @@ pub(crate) struct DesignWorkAxisConstruction {
 /// One source-record reference used by a `WorkPoint` construction rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
-    try_from = "DesignWorkPointInputDraft",
-    into = "DesignWorkPointInputDraft"
+    try_from = "DesignWorkPointInputWire",
+    into = "DesignWorkPointInputWire"
 )]
 pub(crate) struct DesignWorkPointInput {
     /// Referenced Design record index.
@@ -75,34 +75,26 @@ pub(crate) struct DesignWorkPointInput {
 }
 
 impl DesignWorkPointInput {
-    pub(crate) fn try_new(draft: DesignWorkPointInputDraft) -> Result<Self, String> {
-        match draft.carrier.as_deref() {
-            Some(DesignWorkPointInputCarrier::WorkPlane { selection })
-                if draft.record_index.checked_add(3) != Some(selection.identity_record_index()) =>
-            {
-                return Err("carrier.identity_record_index must follow record_index by 3".into())
-            }
-            Some(DesignWorkPointInputCarrier::SketchPoint { selection })
-                if draft.record_index.checked_add(3) != Some(selection.identity_record_index())
-                    || draft.record_index.checked_add(4) != Some(selection.next_record_index()) =>
-            {
-                return Err("carrier identity/next_record_index disagree with input frame".into())
-            }
-            _ => {}
+    pub(crate) fn try_new(
+        record_index: u32,
+        reference_offset: u64,
+        carrier: Option<Box<DesignWorkPointInputCarrier>>,
+    ) -> Result<Self, String> {
+        if matches!(
+            carrier.as_deref(),
+            Some(
+                DesignWorkPointInputCarrier::WorkPlane { .. }
+                    | DesignWorkPointInputCarrier::SketchPoint { .. }
+            )
+        ) && record_index.checked_add(4).is_none()
+        {
+            return Err("carrier record indices overflow input record_index".into());
         }
-        let value = Self {
-            record_index: draft.record_index,
-            reference_offset: draft.reference_offset,
-            carrier: draft.carrier,
-        };
-        Ok(value)
-    }
-    pub(super) fn into_draft(self) -> DesignWorkPointInputDraft {
-        DesignWorkPointInputDraft {
-            record_index: self.record_index,
-            reference_offset: self.reference_offset,
-            carrier: self.carrier,
-        }
+        Ok(Self {
+            record_index,
+            reference_offset,
+            carrier,
+        })
     }
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
@@ -112,43 +104,48 @@ impl DesignWorkPointInput {
     }
 }
 
-/// Unadmitted `DesignWorkPointInput` fields.
+/// Serialized `DesignWorkPointInput` columns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignWorkPointInputDraft {
+struct DesignWorkPointInputWire {
     /// Referenced Design record index.
-    pub(crate) record_index: u32,
+    record_index: u32,
     /// Byte offset of the serialized reference target.
-    pub(crate) reference_offset: u64,
+    reference_offset: u64,
     /// Exact source carrier selected by this reference, when decoded.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_carrier"
     )]
-    pub(crate) carrier: Option<Box<DesignWorkPointInputCarrier>>,
+    carrier: Option<Box<DesignWorkPointInputCarrierWire>>,
 }
 
-impl TryFrom<DesignWorkPointInputDraft> for DesignWorkPointInput {
+impl TryFrom<DesignWorkPointInputWire> for DesignWorkPointInput {
     type Error = String;
-    fn try_from(draft: DesignWorkPointInputDraft) -> Result<Self, String> {
-        Self::try_new(draft)
+    fn try_from(wire: DesignWorkPointInputWire) -> Result<Self, String> {
+        let carrier = wire
+            .carrier
+            .map(|carrier| carrier.into_model(wire.record_index))
+            .transpose()?
+            .map(Box::new);
+        Self::try_new(wire.record_index, wire.reference_offset, carrier)
     }
 }
 
-impl From<DesignWorkPointInput> for DesignWorkPointInputDraft {
+impl From<DesignWorkPointInput> for DesignWorkPointInputWire {
     fn from(value: DesignWorkPointInput) -> Self {
-        let value = value.into_draft();
         Self {
             record_index: value.record_index,
             reference_offset: value.reference_offset,
-            carrier: value.carrier,
+            carrier: value
+                .carrier
+                .map(|carrier| Box::new((*carrier).into_wire(value.record_index))),
         }
     }
 }
 
 /// Exact source carrier selected by one `WorkPoint` construction input.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DesignWorkPointInputCarrier {
     /// Persistent edge recipe retained in the native edge-operand arena.
     EdgeRecipe {
@@ -170,6 +167,59 @@ pub(crate) enum DesignWorkPointInputCarrier {
         /// Exact selection envelope and resolved native sketch-point record.
         selection: DesignWorkPointSketchPointSelection,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DesignWorkPointInputCarrierWire {
+    EdgeRecipe {
+        operand_id: String,
+    },
+    VertexRecipe {
+        recipe: DesignVertexRecipe,
+    },
+    WorkPlane {
+        selection: DesignWorkPointPlaneSelectionDraft,
+    },
+    SketchPoint {
+        selection: DesignWorkPointSketchPointSelectionDraft,
+    },
+}
+
+impl DesignWorkPointInputCarrierWire {
+    fn into_model(self, record_index: u32) -> Result<DesignWorkPointInputCarrier, String> {
+        Ok(match self {
+            Self::EdgeRecipe { operand_id } => {
+                DesignWorkPointInputCarrier::EdgeRecipe { operand_id }
+            }
+            Self::VertexRecipe { recipe } => DesignWorkPointInputCarrier::VertexRecipe { recipe },
+            Self::WorkPlane { selection } => DesignWorkPointInputCarrier::WorkPlane {
+                selection: DesignWorkPointPlaneSelection::try_new(record_index, selection)?,
+            },
+            Self::SketchPoint { selection } => DesignWorkPointInputCarrier::SketchPoint {
+                selection: DesignWorkPointSketchPointSelection::try_new(record_index, selection)?,
+            },
+        })
+    }
+}
+
+impl DesignWorkPointInputCarrier {
+    fn into_wire(self, record_index: u32) -> DesignWorkPointInputCarrierWire {
+        match self {
+            Self::EdgeRecipe { operand_id } => {
+                DesignWorkPointInputCarrierWire::EdgeRecipe { operand_id }
+            }
+            Self::VertexRecipe { recipe } => {
+                DesignWorkPointInputCarrierWire::VertexRecipe { recipe }
+            }
+            Self::WorkPlane { selection } => DesignWorkPointInputCarrierWire::WorkPlane {
+                selection: selection.into_draft(record_index),
+            },
+            Self::SketchPoint { selection } => DesignWorkPointInputCarrierWire::SketchPoint {
+                selection: selection.into_draft(record_index),
+            },
+        }
+    }
 }
 
 /// Historical state and a nonnegative stable vertex slot.
@@ -601,11 +651,7 @@ impl TryFrom<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
 }
 
 /// Exact persistent entity selection naming one `WorkPlane` scope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignWorkPointPlaneSelectionDraft",
-    into = "DesignWorkPointPlaneSelectionDraft"
-)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignWorkPointPlaneSelection {
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
@@ -617,20 +663,25 @@ pub(crate) struct DesignWorkPointPlaneSelection {
     context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    /// Nested indexed record carrying the persistent identity.
-    identity_record_index: u32,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Serialized primary identity immediately preceding the `WorkPlane` scope.
     pub(crate) primary_identity: u64,
     /// Selected `WorkPlane` scope record index.
     pub(crate) work_plane_scope_record_index: u32,
-    /// Identity of the indexed record closing the selection envelope.
-    next_record_index: u32,
 }
 
 impl DesignWorkPointPlaneSelection {
-    pub(crate) fn try_new(draft: DesignWorkPointPlaneSelectionDraft) -> Result<Self, String> {
+    pub(crate) fn try_new(
+        record_index: u32,
+        draft: DesignWorkPointPlaneSelectionDraft,
+    ) -> Result<Self, String> {
+        if record_index.checked_add(3) != Some(draft.identity_record_index) {
+            return Err("carrier.identity_record_index must follow record_index by 3".into());
+        }
+        if record_index.checked_add(4) != Some(draft.next_record_index) {
+            return Err("carrier.next_record_index must follow record_index by 4".into());
+        }
         draft
             .identity_record_offset
             .checked_add(29)
@@ -648,11 +699,9 @@ impl DesignWorkPointPlaneSelection {
             asset_id_offset: draft.asset_id_offset,
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
-            identity_record_index: draft.identity_record_index,
             identity_record_offset: draft.identity_record_offset,
             primary_identity: draft.primary_identity,
             work_plane_scope_record_index: draft.work_plane_scope_record_index,
-            next_record_index: draft.next_record_index,
         };
         if value.next_byte_offset() != draft.next_byte_offset {
             return Err("next_byte_offset disagrees with frame layout".into());
@@ -662,7 +711,7 @@ impl DesignWorkPointPlaneSelection {
         }
         Ok(value)
     }
-    fn into_draft(self) -> DesignWorkPointPlaneSelectionDraft {
+    fn into_draft(self, record_index: u32) -> DesignWorkPointPlaneSelectionDraft {
         let next_byte_offset = self.next_byte_offset();
         let primary_identity_offset = self.primary_identity_offset();
         DesignWorkPointPlaneSelectionDraft {
@@ -671,20 +720,17 @@ impl DesignWorkPointPlaneSelection {
             asset_id_offset: self.asset_id_offset,
             context_id: self.context_id,
             context_id_offset: self.context_id_offset,
-            identity_record_index: self.identity_record_index,
+            identity_record_index: record_index + 3,
             identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,
             primary_identity_offset,
             work_plane_scope_record_index: self.work_plane_scope_record_index,
-            next_record_index: self.next_record_index,
+            next_record_index: record_index + 4,
             next_byte_offset,
         }
     }
     pub(crate) fn asset_id_offset(&self) -> u64 {
         self.asset_id_offset
-    }
-    fn identity_record_index(&self) -> u32 {
-        self.identity_record_index
     }
     fn primary_identity_offset(&self) -> u64 {
         self.identity_record_offset + 21
@@ -723,39 +769,8 @@ pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     pub(crate) next_byte_offset: u64,
 }
 
-impl TryFrom<DesignWorkPointPlaneSelectionDraft> for DesignWorkPointPlaneSelection {
-    type Error = String;
-    fn try_from(draft: DesignWorkPointPlaneSelectionDraft) -> Result<Self, String> {
-        Self::try_new(draft)
-    }
-}
-
-impl From<DesignWorkPointPlaneSelection> for DesignWorkPointPlaneSelectionDraft {
-    fn from(value: DesignWorkPointPlaneSelection) -> Self {
-        let value = value.into_draft();
-        Self {
-            class_tag: value.class_tag,
-            asset_id: value.asset_id,
-            asset_id_offset: value.asset_id_offset,
-            context_id: value.context_id,
-            context_id_offset: value.context_id_offset,
-            identity_record_index: value.identity_record_index,
-            identity_record_offset: value.identity_record_offset,
-            primary_identity: value.primary_identity,
-            primary_identity_offset: value.primary_identity_offset,
-            work_plane_scope_record_index: value.work_plane_scope_record_index,
-            next_record_index: value.next_record_index,
-            next_byte_offset: value.next_byte_offset,
-        }
-    }
-}
-
 /// Exact persistent entity selection naming one sketch point.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignWorkPointSketchPointSelectionDraft",
-    into = "DesignWorkPointSketchPointSelectionDraft"
-)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignWorkPointSketchPointSelection {
     /// Source per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
@@ -767,8 +782,6 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
     context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    /// Nested indexed record carrying the persistent identity.
-    identity_record_index: u32,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Record identity of the owning Sketch entity.
@@ -777,12 +790,18 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
     pub(crate) point_persistent_id: u64,
     /// Native id of the decoded sketch-point record selected by this frame.
     pub(crate) point_native_id: String,
-    /// Identity of the indexed record closing the selection envelope.
-    next_record_index: u32,
 }
 
 impl DesignWorkPointSketchPointSelection {
-    pub(crate) fn try_new(draft: DesignWorkPointSketchPointSelectionDraft) -> Result<Self, String> {
+    pub(crate) fn try_new(
+        record_index: u32,
+        draft: DesignWorkPointSketchPointSelectionDraft,
+    ) -> Result<Self, String> {
+        if record_index.checked_add(3) != Some(draft.identity_record_index)
+            || record_index.checked_add(4) != Some(draft.next_record_index)
+        {
+            return Err("carrier identity/next_record_index disagree with input frame".into());
+        }
         draft
             .identity_record_offset
             .checked_add(crate::layout::work_point_sketch_point_identity::LEN as u64)
@@ -800,12 +819,10 @@ impl DesignWorkPointSketchPointSelection {
             asset_id_offset: draft.asset_id_offset,
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
-            identity_record_index: draft.identity_record_index,
             identity_record_offset: draft.identity_record_offset,
             sketch_record_index: draft.sketch_record_index,
             point_persistent_id: draft.point_persistent_id,
             point_native_id: draft.point_native_id,
-            next_record_index: draft.next_record_index,
         };
         if value.next_byte_offset() != draft.next_byte_offset {
             return Err("next_byte_offset disagrees with frame layout".into());
@@ -818,7 +835,7 @@ impl DesignWorkPointSketchPointSelection {
         }
         Ok(value)
     }
-    fn into_draft(self) -> DesignWorkPointSketchPointSelectionDraft {
+    fn into_draft(self, record_index: u32) -> DesignWorkPointSketchPointSelectionDraft {
         let next_byte_offset = self.next_byte_offset();
         let sketch_record_index_offset = self.sketch_record_index_offset();
         let point_persistent_id_offset = self.point_persistent_id_offset();
@@ -828,22 +845,19 @@ impl DesignWorkPointSketchPointSelection {
             asset_id_offset: self.asset_id_offset,
             context_id: self.context_id,
             context_id_offset: self.context_id_offset,
-            identity_record_index: self.identity_record_index,
+            identity_record_index: record_index + 3,
             identity_record_offset: self.identity_record_offset,
             sketch_record_index: self.sketch_record_index,
             sketch_record_index_offset,
             point_persistent_id: self.point_persistent_id,
             point_persistent_id_offset,
             point_native_id: self.point_native_id,
-            next_record_index: self.next_record_index,
+            next_record_index: record_index + 4,
             next_byte_offset,
         }
     }
     pub(crate) fn asset_id_offset(&self) -> u64 {
         self.asset_id_offset
-    }
-    fn identity_record_index(&self) -> u32 {
-        self.identity_record_index
     }
     fn sketch_record_index_offset(&self) -> u64 {
         self.identity_record_offset
@@ -852,9 +866,6 @@ impl DesignWorkPointSketchPointSelection {
     fn point_persistent_id_offset(&self) -> u64 {
         self.identity_record_offset
             + crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID as u64
-    }
-    fn next_record_index(&self) -> u32 {
-        self.next_record_index
     }
     fn next_byte_offset(&self) -> u64 {
         self.identity_record_offset + crate::layout::work_point_sketch_point_identity::LEN as u64
@@ -892,35 +903,6 @@ pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     pub(crate) next_record_index: u32,
     /// Byte offset of the indexed record closing the selection envelope.
     pub(crate) next_byte_offset: u64,
-}
-
-impl TryFrom<DesignWorkPointSketchPointSelectionDraft> for DesignWorkPointSketchPointSelection {
-    type Error = String;
-    fn try_from(draft: DesignWorkPointSketchPointSelectionDraft) -> Result<Self, String> {
-        Self::try_new(draft)
-    }
-}
-
-impl From<DesignWorkPointSketchPointSelection> for DesignWorkPointSketchPointSelectionDraft {
-    fn from(value: DesignWorkPointSketchPointSelection) -> Self {
-        let value = value.into_draft();
-        Self {
-            class_tag: value.class_tag,
-            asset_id: value.asset_id,
-            asset_id_offset: value.asset_id_offset,
-            context_id: value.context_id,
-            context_id_offset: value.context_id_offset,
-            identity_record_index: value.identity_record_index,
-            identity_record_offset: value.identity_record_offset,
-            sketch_record_index: value.sketch_record_index,
-            sketch_record_index_offset: value.sketch_record_index_offset,
-            point_persistent_id: value.point_persistent_id,
-            point_persistent_id_offset: value.point_persistent_id_offset,
-            point_native_id: value.point_native_id,
-            next_record_index: value.next_record_index,
-            next_byte_offset: value.next_byte_offset,
-        }
-    }
 }
 
 /// Construction rule whose input arity and decoded carrier roles agree.
@@ -1145,9 +1127,7 @@ impl DesignWorkPointInput {
         &mut self,
         carrier: Option<Box<DesignWorkPointInputCarrier>>,
     ) -> Result<(), String> {
-        let mut draft = self.clone().into_draft();
-        draft.carrier = carrier;
-        *self = Self::try_new(draft)?;
+        *self = Self::try_new(self.record_index, self.reference_offset, carrier)?;
         Ok(())
     }
 }
