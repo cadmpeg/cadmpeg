@@ -162,7 +162,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                 Ok(())
             })
             .map_err(|error| match error {
-                TessellationError::EditRefused(message) => CodecError::malformed(message),
+                TessellationError::EditRefused(message) => CodecError::NotImplemented(message),
                 error @ TessellationError::Admission { .. } => {
                     CodecError::malformed(format_args!("invalid transformed tessellation: {error}"))
                 }
@@ -175,7 +175,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    TessellationError::EditRefused(message) => CodecError::malformed(message),
+                    TessellationError::EditRefused(message) => CodecError::NotImplemented(message),
                     error @ TessellationError::Admission { .. } => CodecError::malformed(
                         format_args!("invalid transformed tessellation: {error}"),
                     ),
@@ -210,11 +210,19 @@ const NON_FINITE_POINT: &str = "baked body placement produced a non-finite point
 const NON_FINITE_DIRECTION: &str = "baked body placement produced a non-finite direction";
 
 fn non_finite_point() -> CodecError {
-    CodecError::malformed(NON_FINITE_POINT)
+    CodecError::NotImplemented(NON_FINITE_POINT.into())
 }
 
 fn non_finite_vector() -> CodecError {
-    CodecError::malformed(NON_FINITE_DIRECTION)
+    CodecError::NotImplemented(NON_FINITE_DIRECTION.into())
+}
+
+fn sampled_edit_error(error: GeometryLayoutError) -> CodecError {
+    if let GeometryLayoutError::EditRefused(message) = error {
+        CodecError::NotImplemented(message)
+    } else {
+        CodecError::Malformed(error.to_string())
+    }
 }
 
 /// Places a point, refusing a placement that leaves the finite range.
@@ -327,7 +335,7 @@ fn transform_surface(
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(message) => CodecError::malformed(message),
+                    NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {
                         CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
                     }
@@ -343,7 +351,7 @@ fn transform_surface(
                     }
                     Ok(())
                 })
-                .map_err(CodecError::malformed)?;
+                .map_err(sampled_edit_error)?;
         }
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
@@ -353,7 +361,7 @@ fn transform_surface(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
             let composed = transform.compose(*placed.transform()).map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+                CodecError::NotImplemented(format!("invalid transformed carrier: {error}"))
             })?;
             placed.set_transform(composed);
         }
@@ -409,7 +417,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                     Ok(())
                 })
                 .map_err(|error| match error {
-                    NurbsError::EditRefused(message) => CodecError::malformed(message),
+                    NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
                     error => {
                         CodecError::malformed(format_args!("invalid transformed NURBS: {error}"))
                     }
@@ -425,7 +433,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                         Ok(())
                     })
                 })
-                .map_err(CodecError::malformed)?;
+                .map_err(sampled_edit_error)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = placed_point(transform, parabola_curve.vertex().get())?;
@@ -461,7 +469,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed)) => {
             let composed = transform.compose(*placed.transform()).map_err(|error| {
-                CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
+                CodecError::NotImplemented(format!("invalid transformed carrier: {error}"))
             })?;
             placed.set_transform(composed);
         }
@@ -477,11 +485,92 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::transform_curve;
+    use super::{placed_point, placed_vector, transform_curve, transform_surface};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::geometry::CurveGeometry;
-    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, PlacedCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::transform::Transform;
+
+    fn maximum_translation() -> Transform {
+        Transform::affine([
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("a finite translation is admitted")
+    }
+
+    #[test]
+    fn admitted_point_overflow_is_not_implemented() {
+        let error = placed_point(maximum_translation(), Point3::new(f64::MAX, 0.0, 0.0))
+            .expect_err("the admitted operands overflow");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+    }
+
+    #[test]
+    fn admitted_direction_overflow_is_not_implemented() {
+        let rotation = Transform::affine([
+            [0.8, 0.6, 0.0, 0.0],
+            [-0.6, 0.8, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("a finite rotation is admitted");
+        let error = placed_vector(rotation, Vector3::new(f64::MAX, f64::MAX, 0.0))
+            .expect_err("the admitted operands overflow");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+    }
+
+    #[test]
+    fn admitted_sampled_geometry_overflow_is_not_implemented() {
+        let mut surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
+            PolygonalSurface::new(
+                vec![
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(0.0, 0.0, 1.0),
+                ],
+                vec![[0, 1, 2]],
+                0.0,
+            )
+            .expect("finite polygonal geometry is admitted"),
+        ));
+        let error = transform_surface(&mut surface, maximum_translation())
+            .expect_err("the admitted placement overflows a vertex");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+
+        let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Unparameterized {
+                    points: vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+                        .try_into()
+                        .expect("the polyline has samples"),
+                },
+                0.0,
+            )
+            .expect("finite polyline geometry is admitted"),
+        ));
+        let error = transform_curve(&mut curve, maximum_translation())
+            .expect_err("the admitted placement overflows a sample");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+    }
+
+    #[test]
+    fn admitted_transform_composition_overflow_is_not_implemented() {
+        let basis = SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                .expect("a finite line is admitted"),
+        );
+        let placed = PlacedCurve::try_new(Box::new(basis), maximum_translation())
+            .expect("a finite placement is admitted");
+        let mut curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed));
+        let error = transform_curve(&mut curve, maximum_translation())
+            .expect_err("the admitted transform composition overflows");
+        assert!(matches!(error, CodecError::NotImplemented(_)));
+    }
 
     #[test]
     fn transform_curve_rejects_non_explicit_geometry() {
@@ -495,7 +584,6 @@ mod tests {
     #[test]
     fn circle_body_rotation_transforms_the_zero_angle_direction() {
         use cadmpeg_ir::geometry::analytic::CircleCurve;
-        use cadmpeg_ir::math::{Point3, Vector3};
 
         let mut geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             CircleCurve::try_new(
