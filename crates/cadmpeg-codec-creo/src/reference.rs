@@ -6,7 +6,15 @@ use cadmpeg_core::bytes::find_in;
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 
-const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+/// Bounds the stored lengths and the normalized dot product of a conic local system's two
+/// stored directions.
+///
+/// This is not the admission of [`crate::surface::valid_orthonormal_frame_directions`], which
+/// gates the same shape at the same value. That function takes the dot product of the stored
+/// pair, where this site takes it of the normalized pair, so the two bounds differ by the
+/// product of the stored lengths. It also derives each length from the sum of squares, where
+/// [`normalize_with_length`] derives it from `hypot`.
+const EPS_ELLIPSE_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 const EPS_PLANE_RESIDUAL: f64 = 1.0e-9;
@@ -167,9 +175,9 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             .chain(conic.end.iter())
             .map(|value| value.abs())
             .fold(1.0_f64, f64::max);
-        if (first_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-            || (second_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-            || dot(first_frame, second_frame).abs() > EPS_FRAME_ORTHONORMAL
+        if (first_length - 1.0).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
+            || (second_length - 1.0).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
+            || dot(first_frame, second_frame).abs() > EPS_ELLIPSE_FRAME_ORTHONORMAL
         {
             continue;
         }
