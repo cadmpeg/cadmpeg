@@ -1,3 +1,4 @@
+#[cfg(feature = "rhino")]
 use cadmpeg_test_support::wire;
 
 #[cfg(any(feature = "iges", feature = "step"))]
@@ -12,6 +13,7 @@ use cadmpeg_registry::Format;
 
 use crate::application::artifact_store::FileDestination;
 use crate::application::document::LoadedDocument;
+#[cfg(any(feature = "iges", feature = "step"))]
 use crate::application::refusal::ConversionRefusal;
 
 #[cfg(any(feature = "iges", feature = "rhino", feature = "step"))]
