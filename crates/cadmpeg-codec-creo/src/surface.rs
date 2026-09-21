@@ -16,6 +16,7 @@ use crate::layout::type24_first_coordinate_bounded_round as type24_round;
 use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
 use crate::psb::{self, compact_int};
 use crate::scalar;
+use crate::vecmath::local_system_lanes;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FRAME_UNIT: f64 = 1.0e-9;
@@ -1604,7 +1605,7 @@ impl SurfaceParameterRecord {
         values
             .iter()
             .all(|value| value.is_finite())
-            .then_some([values[..3].try_into().ok()?, values[3..].try_into().ok()?])
+            .then_some([*values.first_chunk::<3>()?, *values.last_chunk::<3>()?])
     }
 
     /// Decode a source-bound selector-corner interval cylinder.
@@ -1745,8 +1746,8 @@ impl SurfaceParameterRecord {
             .map(|slot| slot.value)
             .collect::<Option<Vec<_>>>()?;
         values.iter().all(|value| value.is_finite()).then_some(())?;
-        let first: [f64; 3] = values[..3].try_into().ok()?;
-        let second: [f64; 3] = values[3..].try_into().ok()?;
+        let first = *values.first_chunk::<3>()?;
+        let second = *values.last_chunk::<3>()?;
         let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let scale = values
             .iter()
@@ -1806,8 +1807,8 @@ impl SurfaceParameterRecord {
             .map(|slot| slot.value)
             .collect::<Option<Vec<_>>>()?;
         values.iter().all(|value| value.is_finite()).then_some(())?;
-        let first: [f64; 3] = values[..3].try_into().ok()?;
-        let second: [f64; 3] = values[3..].try_into().ok()?;
+        let first = *values.first_chunk::<3>()?;
+        let second = *values.last_chunk::<3>()?;
         let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
         let equal_pairs = [(0, 1), (0, 2), (1, 2)]
@@ -2260,18 +2261,15 @@ impl SurfaceParameterRecord {
             else {
                 return None;
             };
-            let values = [
-                direction_values[0],
-                direction_values[1],
-                direction_values[2],
-                start_x.value?,
-                start_y.value?,
-                start_z.value?,
-                end_x.value?,
-                end_y.value?,
-                end_z.value?,
+            let directrix_points = [
+                [start_x.value?, start_y.value?, start_z.value?],
+                [end_x.value?, end_y.value?, end_z.value?],
             ];
-            values.iter().all(|value| value.is_finite()).then_some(())?;
+            direction_values
+                .iter()
+                .chain(directrix_points.as_flattened())
+                .all(|value| value.is_finite())
+                .then_some(())?;
             let first_gap = self.opaque_spans.first()?;
             if first_gap.offset
                 != direction.offset
@@ -2304,8 +2302,8 @@ impl SurfaceParameterRecord {
                 }
             }
             return Some(LineExtrusionFrame {
-                direction: values[0..3].try_into().ok()?,
-                directrix: [values[3..6].try_into().ok()?, values[6..9].try_into().ok()?],
+                direction: direction_values,
+                directrix: directrix_points,
             })
             .filter(LineExtrusionFrame::is_valid);
         }
@@ -4441,7 +4439,7 @@ fn inline_surface_carrier(
 
     let (axis_index, reference_direction) = inline_frame_directions(prefix)?;
     let axis_index = witnessed_inline_axis_index(envelope, axis_index)?;
-    let stored_origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
+    let [.., stored_origin] = local_system_lanes(prefix.values);
     let stored_axis_sense = prefix.values[6 + axis_index];
     let (origin_axis, axis_sense) = solve_inline_axis_endpoint(
         envelope,
@@ -4569,7 +4567,7 @@ fn inline_surface_suffix_carrier(
 ) -> Option<InlineSurfaceCarrier> {
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
     let (axis, ref_direction) = inline_suffix_frame_directions(prefix)?;
-    let origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
+    let [.., origin] = local_system_lanes(prefix.values);
     origin.into_iter().all(f64::is_finite).then_some(())?;
     match kind {
         SurfaceKind::Cylinder => {
@@ -4611,9 +4609,7 @@ fn inline_surface_suffix_carrier(
 fn inline_suffix_frame_directions(
     prefix: scalar::InlineLocalSystemFrame,
 ) -> Option<([f64; 3], [f64; 3])> {
-    let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
-    let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
-    let stored_axis: [f64; 3] = prefix.values[6..9].try_into().ok()?;
+    let [first, second, stored_axis, _] = local_system_lanes(prefix.values);
     let norm = |vector: [f64; 3]| {
         vector
             .into_iter()
@@ -4648,9 +4644,7 @@ fn inline_suffix_frame_directions(
 /// The axis coordinate is the one model axis the stored axis direction lies
 /// along; a stored axis that names no single coordinate has no reading here.
 fn inline_frame_directions(prefix: scalar::InlineLocalSystemFrame) -> Option<(usize, [f64; 3])> {
-    let first: [f64; 3] = prefix.values[0..3].try_into().ok()?;
-    let second: [f64; 3] = prefix.values[3..6].try_into().ok()?;
-    let stored_axis: [f64; 3] = prefix.values[6..9].try_into().ok()?;
+    let [first, second, stored_axis, _] = local_system_lanes(prefix.values);
     let norm = |vector: [f64; 3]| {
         vector
             .into_iter()
@@ -5181,8 +5175,7 @@ fn decode_positional_torus_frame(
     (close(a1, b0) && (proves_radii(b1 - a1, b2 - a2) ^ proves_radii(b2 - a1, b1 - a2)))
         .then_some(())?;
 
-    let first: [f64; 3] = slots[0..3].try_into().ok()?;
-    let second: [f64; 3] = slots[6..9].try_into().ok()?;
+    let [first, _, second, origin] = local_system_lanes(slots);
     let first_norm = first.iter().map(|value| value * value).sum::<f64>().sqrt();
     let second_norm = second.iter().map(|value| value * value).sum::<f64>().sqrt();
     let scale = first_norm.max(second_norm).max(1.0);
@@ -5209,13 +5202,7 @@ fn decode_positional_torus_frame(
     (axis_norm.is_finite() && axis_norm > EPS_SURFACE_NONZERO).then_some(())?;
     let axis = axis.map(|value| value / axis_norm);
 
-    PositionalTorusFrame::new(
-        slots[9..12].try_into().ok()?,
-        axis,
-        ref_direction,
-        major_radius,
-        minor_radius,
-    )
+    PositionalTorusFrame::new(origin, axis, ref_direction, major_radius, minor_radius)
 }
 
 fn decode_positional_cylinder_frame(
@@ -6024,8 +6011,7 @@ fn decode_support_apex_cone_frame(
     let [slots] = support_candidates.as_slice() else {
         return None;
     };
-    let first: [f64; 3] = slots[0..3].try_into().ok()?;
-    let second: [f64; 3] = slots[6..9].try_into().ok()?;
+    let [first, _, second, _] = local_system_lanes(*slots);
     let normalize = |vector: [f64; 3]| {
         let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
         (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
@@ -6320,7 +6306,7 @@ fn decode_local_system_cylinder_frame(
         2.0 * radius,
     )
     .then_some(())?;
-    let origin: [f64; 3] = slots[9..12].try_into().ok()?;
+    let [support, .., origin] = local_system_lanes(*slots);
     let first_axial = envelope[1 + axis_index];
     let second_axial = envelope[4 + axis_index];
     let origin_at_first = close(origin[*axis_index], first_axial);
@@ -6333,7 +6319,6 @@ fn decode_local_system_cylinder_frame(
     };
     let mut axis = [0.0; 3];
     axis[*axis_index] = sign;
-    let support: [f64; 3] = slots[0..3].try_into().ok()?;
     let magnitude = support
         .iter()
         .map(|value| value * value)
@@ -6724,8 +6709,8 @@ fn decode_precise_center_edge_cylinder_frame(
 
     let signed_length = values[0];
     (signed_length.is_finite() && signed_length != 0.0).then_some(())?;
-    let first: [f64; 3] = values[1..4].try_into().ok()?;
-    let second: [f64; 3] = values[4..7].try_into().ok()?;
+    let first = [values[1], values[2], values[3]];
+    let second = [values[4], values[5], values[6]];
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
     let close =
@@ -6908,8 +6893,9 @@ fn cylinder_frame_from_local_system(
         (magnitude.is_finite() && magnitude > 0.0)
             .then(|| (vector.map(|value| value / magnitude), magnitude))
     };
-    let (first, first_magnitude) = normalize(slots[0..3].try_into().ok()?)?;
-    let (second, second_magnitude) = normalize(slots[3..6].try_into().ok()?)?;
+    let [stored_first, stored_second, _, origin] = local_system_lanes(*slots);
+    let (first, first_magnitude) = normalize(stored_first)?;
+    let (second, second_magnitude) = normalize(stored_second)?;
     let scale = first_magnitude.max(second_magnitude).max(1.0);
     ((first_magnitude - second_magnitude).abs() <= EPS_SURFACE_AGREEMENT * scale).then_some(())?;
     (first
@@ -6925,7 +6911,7 @@ fn cylinder_frame_from_local_system(
         first[2] * second[0] - first[0] * second[2],
         first[0] * second[1] - first[1] * second[0],
     ])?;
-    PositionalCylinderFrame::new(slots[9..12].try_into().ok()?, axis, first, radius, None)
+    PositionalCylinderFrame::new(origin, axis, first, radius, None)
 }
 
 fn decode_zero_support_cylinder_origin_radius(
@@ -7006,8 +6992,8 @@ fn decode_compact_axis_aligned_cylinder_frame(
     }
     (cursor == body.len()).then_some(())?;
     axis_aligned_cylinder_from_corners(
-        values[1..4].try_into().ok()?,
-        values[4..7].try_into().ok()?,
+        [values[1], values[2], values[3]],
+        [values[4], values[5], values[6]],
         Some(PositiveLength::new(values[0])?),
         AxisAlignedCornerOrientation::SecondToFirst,
     )
@@ -7038,8 +7024,8 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
     // are `values[1..7]`, and no later statement reads `values[0]`.
     (values[0] > 0.0).then_some(())?;
     axis_aligned_cylinder_from_corners(
-        values[1..4].try_into().ok()?,
-        values[4..7].try_into().ok()?,
+        [values[1], values[2], values[3]],
+        [values[4], values[5], values[6]],
         None,
         orientation,
     )

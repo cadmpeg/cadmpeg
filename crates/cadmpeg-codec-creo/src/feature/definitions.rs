@@ -5180,16 +5180,13 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
             }
         }
     }
-    if cursor != bytes.len() || values.len() != 12 {
+    if cursor != bytes.len() {
         return None;
     }
-    let mut chunks = values.chunks_exact(4);
-    let result = [
-        chunks.next()?.try_into().ok()?,
-        chunks.next()?.try_into().ok()?,
-        chunks.next()?.try_into().ok()?,
-    ];
-    chunks.next().is_none().then_some(result)
+    let ([first, second, third], []) = values.as_chunks::<4>() else {
+        return None;
+    };
+    Some([*first, *second, *third])
 }
 
 fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {

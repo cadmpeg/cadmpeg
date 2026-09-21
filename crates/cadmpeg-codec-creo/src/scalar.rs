@@ -382,7 +382,7 @@ pub(crate) fn decode_in_surface_row_lane(
         return Some((f64::from_be_bytes(raw), offset + 7));
     }
     if matches!(data.get(offset), Some(0x92 | 0xda)) {
-        let payload: [u8; 6] = data.get(offset + 1..offset + 7)?.try_into().ok()?;
+        let payload = data.get(offset + 1..)?.first_chunk::<6>()?;
         // endian-exception: reconstructed-scalar
         let signed = i64::from_be_bytes([
             if payload[0] & 0x80 == 0 { 0 } else { 0xff },

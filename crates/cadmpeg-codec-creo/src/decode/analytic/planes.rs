@@ -26,7 +26,7 @@ use super::equations::{
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
 };
 use super::vertices::model_points_agree;
-use crate::vecmath::{cross, dot};
+use crate::vecmath::{cross, dot, local_system_lanes};
 
 const EPS_ON_CARRIER: f64 = 1.0e-7;
 const EPS_POINT_UNIQUE: f64 = 1.0e-7;
@@ -488,13 +488,10 @@ fn stored_parameter_normal_candidate(
     mirror_z: bool,
     mirror_origin_z: bool,
 ) -> Option<PlaneCandidate> {
-    let slots = frame.complete_slots()?;
-    if slots[3..6].iter().any(|value| *value != 0.0) {
+    let [mut u_axis, second, mut normal, mut origin] = local_system_lanes(frame.complete_slots()?);
+    if second.iter().any(|value| *value != 0.0) {
         return None;
     }
-    let mut origin: [f64; 3] = slots[9..12].try_into().ok()?;
-    let mut u_axis: [f64; 3] = slots[0..3].try_into().ok()?;
-    let mut normal: [f64; 3] = slots[6..9].try_into().ok()?;
     if mirror_z {
         u_axis[2] = -u_axis[2];
         normal[2] = -normal[2];

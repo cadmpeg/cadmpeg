@@ -564,10 +564,7 @@ fn real_vector_array(
         return None;
     };
     (*width == 3).then_some(())?;
-    values
-        .chunks_exact(3)
-        .map(|vector| vector.try_into().ok())
-        .collect()
+    Some(values.as_chunks::<3>().0.to_vec())
 }
 
 fn real_scalar_array(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<Vec<f64>> {

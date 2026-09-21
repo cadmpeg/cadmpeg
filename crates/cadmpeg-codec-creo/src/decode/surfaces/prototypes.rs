@@ -16,7 +16,7 @@ use crate::surface::SurfaceParameterRecord;
 
 use super::super::native::annotate;
 use super::super::sweep::nurbs::interpolation_spline_surface;
-use crate::vecmath::{cross, dot};
+use crate::vecmath::{cross, dot, local_system_lanes};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 
@@ -90,9 +90,7 @@ fn prototype_local_frame(
     let slots = array.values().iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
     slots.iter().all(|value| value.is_finite()).then_some(())?;
-    let first: [f64; 3] = slots[0..3].try_into().ok()?;
-    let middle: [f64; 3] = slots[3..6].try_into().ok()?;
-    let third: [f64; 3] = slots[6..9].try_into().ok()?;
+    let [first, middle, third, origin] = local_system_lanes(slots);
     let first_norm = dot(first, first).sqrt();
     let reference = normalize(first)?;
     let torus = matches!(
@@ -118,8 +116,6 @@ fn prototype_local_frame(
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
     let axis = normalize(cross(reference, second))?;
-    let origin: [f64; 3] = slots[9..12].try_into().ok()?;
-    origin.into_iter().all(f64::is_finite).then_some(())?;
     Some((origin, axis, reference))
 }
 
