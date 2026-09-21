@@ -3292,11 +3292,6 @@ fn oriented_curve_entity(
                 ),
             ));
             let reversed_range = [-span.range[1], -span.range[0]];
-            if reversed_range.iter().any(|value| !value.is_finite()) {
-                return Err(CodecError::Malformed(
-                    "IGES reversed hyperbola parameter range is non-finite".into(),
-                ));
-            }
             let reversed_span = CurveSpan {
                 range: reversed_range,
                 start: span.end,
@@ -4559,15 +4554,12 @@ fn extrusion_surface_entities(
             "IGES Type 122 output requires a bounded directrix parameter interval".into(),
         )
     })?;
-    if !start_parameter.is_finite()
-        || !terminate_parameter.is_finite()
-        || start_parameter >= terminate_parameter
-    {
+    if start_parameter >= terminate_parameter {
         return Err(CodecError::Malformed(
             "IGES Type 122 directrix parameter interval is invalid".into(),
         ));
     }
-    if !direction.is_finite() || direction.norm() <= 0.0 {
+    if direction.norm() <= 0.0 {
         return Err(CodecError::Malformed(
             "IGES Type 122 sweep direction must be finite and non-zero".into(),
         ));
@@ -4758,14 +4750,6 @@ fn revolution_surface_entities(
             "IGES Type 120 output requires a bounded generatrix parameter interval".into(),
         )
     })?;
-    if !start_parameter.is_finite()
-        || !terminate_parameter.is_finite()
-        || start_parameter >= terminate_parameter
-    {
-        return Err(CodecError::Malformed(
-            "IGES Type 120 generatrix parameter interval is invalid".into(),
-        ));
-    }
     let source_curve = ir
         .model
         .curves
@@ -4943,7 +4927,7 @@ fn surface_entities(
                 ));
             }
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "IGES cone semi-angle must be in (0, 90) degrees".into(),
                 ));
             }
@@ -4976,7 +4960,7 @@ fn surface_entities(
             let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
             if radius <= 0.0 {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "IGES sphere radius must be positive".into(),
                 ));
             }
@@ -5009,7 +4993,7 @@ fn surface_entities(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if minor_radius <= 0.0 || minor_radius >= major_radius {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "IGES torus radii must satisfy 0 < minor < major".into(),
                 ));
             }
@@ -5052,27 +5036,10 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     let pole_count = u_count.checked_mul(v_count).ok_or_else(|| {
         CodecError::Malformed("IGES surface control-point count overflows".into())
     })?;
-    if nurbs.u_knots().iter().any(|value| !value.is_finite())
-        || nurbs.v_knots().iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(nurbs.u_knots())
-        || !knots_nondecreasing(nurbs.v_knots())
-        || nurbs.poles().iter().any(|point| {
-            [point.x, point.y, point.z]
-                .iter()
-                .any(|value| !value.is_finite())
-        })
-    {
-        return Err(CodecError::Malformed(
-            "IGES NURBS surface dimensions, knots, or poles are invalid".into(),
-        ));
-    }
     let weights = match nurbs.pole_weights() {
         Some(values) => {
-            if values
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-            {
-                return Err(CodecError::Malformed(
+            if values.iter().any(|weight| *weight <= 0.0) {
+                return Err(CodecError::NotImplemented(
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
@@ -5083,7 +5050,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     let u_range = [nurbs.u_knots()[u_degree], nurbs.u_knots()[u_count]];
     let v_range = [nurbs.v_knots()[v_degree], nurbs.v_knots()[v_count]];
     if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "IGES NURBS surface has an empty parameter domain".into(),
         ));
     }
@@ -5741,8 +5708,8 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
         (-1074 - minimum, 1023 - maximum)
     };
     if lower > upper {
-        return Err(CodecError::malformed(
-            "IGES conic coefficient range is not representable",
+        return Err(CodecError::NotImplemented(
+            "IGES conic coefficient range is not representable".into(),
         ));
     }
     // Center the coefficient exponents so subnormal rounding cannot discard
@@ -5763,8 +5730,9 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
         .map(|value| value.filter(|value| *value != 0.0))
         .collect::<Option<Vec<_>>>()
         .and_then(|values| <[f64; 3]>::try_from(values).ok());
-    admitted
-        .ok_or_else(|| CodecError::malformed("IGES conic coefficient range is not representable"))
+    admitted.ok_or_else(|| {
+        CodecError::NotImplemented("IGES conic coefficient range is not representable".into())
+    })
 }
 
 fn curve_entity(
@@ -5882,7 +5850,7 @@ fn curve_entity(
             let major_direction = parabola_curve.major_direction();
             let focal_distance = parabola_curve.focal_distance().get();
             if range[0] == range[1] {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
@@ -5914,7 +5882,7 @@ fn curve_entity(
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             if range[0] == range[1] {
-                return Err(CodecError::Malformed(
+                return Err(CodecError::NotImplemented(
                     "IGES hyperbola requires a finite non-zero parameter span".into(),
                 ));
             }
@@ -5982,13 +5950,9 @@ fn encode_nurbs(
     let control_count = nurbs.control_points().len();
     let degree = usize::try_from(nurbs.degree())
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
-    if range[0] > range[1]
-        || range.iter().any(|value| !value.is_finite())
-        || nurbs.knots().iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(nurbs.knots())
-    {
+    if range[0] > range[1] || range.iter().any(|value| !value.is_finite()) {
         return Err(CodecError::Malformed(
-            "IGES NURBS degree, knot vector, or parameter range is invalid".into(),
+            "IGES NURBS parameter range is invalid".into(),
         ));
     }
     let domain = [nurbs.knots()[degree], nurbs.knots()[control_count]];
@@ -5997,22 +5961,10 @@ fn encode_nurbs(
             "IGES NURBS parameter range lies outside its knot domain".into(),
         ));
     }
-    if nurbs
-        .control_points()
-        .iter()
-        .any(|point| !point.is_finite())
-    {
-        return Err(CodecError::Malformed(
-            "IGES NURBS control point is non-finite".into(),
-        ));
-    }
     let weights = match nurbs.weights() {
         Some(weights) => {
-            if weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-            {
-                return Err(CodecError::Malformed(
+            if weights.iter().any(|weight| *weight <= 0.0) {
+                return Err(CodecError::NotImplemented(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
@@ -6410,7 +6362,7 @@ fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[f64; 2], Codec
         .iter()
         .all(|value| value.is_finite())
         .then_some(point)
-        .ok_or_else(|| CodecError::Malformed("IGES parabola endpoint is non-finite".into()))
+        .ok_or_else(|| CodecError::NotImplemented("IGES parabola endpoint is non-finite".into()))
 }
 
 fn hyperbola_point(
@@ -6424,7 +6376,7 @@ fn hyperbola_point(
             cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?.0,
         ])
     })()
-    .ok_or_else(|| CodecError::Malformed("IGES hyperbola endpoint is non-finite".into()))
+    .ok_or_else(|| CodecError::NotImplemented("IGES hyperbola endpoint is non-finite".into()))
 }
 
 fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {
@@ -6465,7 +6417,7 @@ fn polyline_parameters(
                 last: *last,
             })
         }
-        _ => Err(CodecError::Malformed(
+        _ => Err(CodecError::NotImplemented(
             "IGES polyline parameters must be finite and strictly increasing".into(),
         )),
     }

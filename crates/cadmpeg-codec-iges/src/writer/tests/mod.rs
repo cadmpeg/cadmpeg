@@ -679,6 +679,56 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
 }
 
 #[test]
+fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
+    let cone = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+        -0.5,
+    )
+    .expect("the IR admits a finite signed cone angle");
+    assert!(matches!(
+        surface_entities(&SolvedSurfaceGeometry::Cone(cone), 0, IgesVersion::V5_3),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn negative_sphere_radius_is_not_implemented() {
+    let sphere = cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        -1.0,
+    )
+    .expect("the IR admits a negative nonzero sphere radius");
+    assert!(matches!(
+        surface_entities(&SolvedSurfaceGeometry::Sphere(sphere), 0, IgesVersion::V5_3),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn torus_radii_outside_iges_interval_are_not_implemented() {
+    for minor_radius in [-1.0, 3.0] {
+        let torus = cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            minor_radius,
+        )
+        .expect("the IR admits any finite nonzero tube radius");
+        assert!(matches!(
+            surface_entities(&SolvedSurfaceGeometry::Torus(torus), 0, IgesVersion::V5_3),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+}
+
+#[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
@@ -1007,6 +1057,93 @@ fn conic_coefficients_preserve_extreme_finite_radii() {
 }
 
 #[test]
+fn unrepresentable_conic_coefficients_are_not_implemented() {
+    let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1e200,
+        1e-200,
+    )
+    .expect("the IR admits finite ordered positive ellipse radii");
+    assert!(matches!(
+        curve_entity(
+            &SolvedCurveGeometry::Ellipse(ellipse),
+            None,
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn negative_nurbs_weights_are_not_implemented() {
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        Some(vec![1.0, -1.0]),
+        false,
+    )
+    .expect("the IR admits finite nonzero signed NURBS weights");
+    assert!(matches!(
+        curve_entity(
+            &SolvedCurveGeometry::Nurbs(curve),
+            Some(&CurveSpan {
+                range: [0.0, 1.0],
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(1.0, 0.0, 0.0),
+            }),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+
+    let axis =
+        || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        axis(),
+        axis(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            Some(vec![vec![1.0, 1.0], vec![1.0, -1.0]]),
+        ),
+        false,
+    )
+    .expect("the IR admits finite nonzero signed NURBS weights");
+    assert!(matches!(
+        surface_entities(&SolvedSurfaceGeometry::Nurbs(surface), 0, IgesVersion::V5_3),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn empty_nurbs_surface_domain_is_not_implemented() {
+    let axis =
+        || cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.0, 0.0], false);
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        axis(),
+        axis(),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("the IR admits a nondecreasing knot vector with an empty active domain");
+    assert!(matches!(
+        surface_entities(&SolvedSurfaceGeometry::Nurbs(surface), 0, IgesVersion::V5_3),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
 fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
     let expected = (720.0 + 1e-10_f64.ln()).exp() * 0.5;
     for parameter in [-720.0_f64, 720.0] {
@@ -1016,4 +1153,118 @@ fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
         assert_eq!(point[1], point[0] * parameter.signum());
     }
     assert!(hyperbola_point(1., 1., 2000.).is_err());
+}
+
+#[test]
+fn hyperbola_endpoint_overflow_is_not_implemented() {
+    let hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+    )
+    .expect("the IR admits finite positive hyperbola radii");
+    let span = CurveSpan {
+        range: [0.0, 2000.0],
+        start: Point3::new(1.0, 0.0, 0.0),
+        end: Point3::new(1.0, 0.0, 0.0),
+    };
+    assert!(matches!(
+        curve_entity(
+            &SolvedCurveGeometry::Hyperbola(hyperbola),
+            Some(&span),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn parabola_endpoint_overflow_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        f64::MAX,
+    )
+    .expect("the IR admits a finite positive focal distance");
+    let span = CurveSpan {
+        range: [0.0, 2.0],
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    assert!(matches!(
+        curve_entity(
+            &SolvedCurveGeometry::Parabola(parabola),
+            Some(&span),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn zero_conic_parameter_span_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .expect("valid parabola");
+    let hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+        1.0,
+    )
+    .expect("valid hyperbola");
+    let span = CurveSpan {
+        range: [1.0, 1.0],
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    for geometry in [
+        SolvedCurveGeometry::Parabola(parabola),
+        SolvedCurveGeometry::Hyperbola(hyperbola),
+    ] {
+        assert!(matches!(
+            curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+}
+
+#[test]
+fn decreasing_polyline_parameters_are_not_implemented() {
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+
+    let vertices = vec![
+        PolylineVertex {
+            parameter: 1.0,
+            point: Point3::new(0.0, 0.0, 0.0),
+        },
+        PolylineVertex {
+            parameter: 0.0,
+            point: Point3::new(1.0, 0.0, 0.0),
+        },
+    ]
+    .try_into()
+    .expect("nonempty polyline samples");
+    let polyline = PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0)
+        .expect("the IR admits finite strictly decreasing polyline parameters");
+    assert!(matches!(
+        curve_entity(
+            &SolvedCurveGeometry::Polyline(polyline),
+            Some(&CurveSpan {
+                range: [0.0, 1.0],
+                start: Point3::new(0.0, 0.0, 0.0),
+                end: Point3::new(1.0, 0.0, 0.0),
+            }),
+            IgesVersion::V5_3
+        ),
+        Err(CodecError::NotImplemented(_))
+    ));
 }
