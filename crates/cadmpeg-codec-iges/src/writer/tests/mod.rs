@@ -2,6 +2,7 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
+use super::card;
 use super::curve_entity;
 use super::ensure_version_support;
 use super::face_loop_order;
@@ -43,6 +44,12 @@ use cadmpeg_ir::CadIr;
 use std::f64::consts::TAU;
 use std::io::Cursor;
 use std::time::UNIX_EPOCH;
+
+#[test]
+fn generated_card_sequence_exhaustion_is_not_implemented() {
+    let error = card(b"", b'D', 10_000_000).expect_err("seven-digit sequence field");
+    assert!(matches!(error, CodecError::NotImplemented(_)));
+}
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;

@@ -422,7 +422,7 @@ fn section_directory_entries(
         .zip(type_ids)
         .map(|((section, payload), type_id)| {
             let size = u32::try_from(payload.len())
-                .map_err(|_| CodecError::Malformed("SLDPRT section exceeds 4 GiB".into()))?;
+                .map_err(|_| CodecError::NotImplemented("SLDPRT section exceeds 4 GiB".into()))?;
             let source_entry = source_scan.and_then(|scan| {
                 scan.directory
                     .iter()
@@ -567,11 +567,13 @@ fn section_type_ids(
                     || {
                         0x20u32
                             .checked_add(u32::try_from(index).map_err(|_| {
-                                CodecError::Malformed(
+                                CodecError::NotImplemented(
                                     "SLDPRT section count exceeds type-id space".into(),
                                 )
                             })?)
-                            .ok_or_else(|| CodecError::Malformed("SLDPRT type-id overflow".into()))
+                            .ok_or_else(|| {
+                                CodecError::NotImplemented("SLDPRT type-id overflow".into())
+                            })
                     },
                     Ok,
                 )
@@ -791,7 +793,9 @@ pub(super) fn reserve_configuration_index(
             return Ok(index);
         }
         *next = index.checked_add(1).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT configuration source index space is exhausted".into())
+            CodecError::NotImplemented(
+                "SLDPRT configuration source index space is exhausted".into(),
+            )
         })?;
     }
 }
@@ -1201,11 +1205,10 @@ fn patch_retained_swobjects_metadata(
                     CodecError::Malformed("truncated retained SLDPRT unit name".into())
                 })?);
                 let units = name.encode_utf16().collect::<Vec<_>>();
-                let byte_len = units.len().checked_mul(2).ok_or_else(|| {
-                    CodecError::Malformed("source linear unit name is too long".into())
-                })?;
+                // The resident u16 vector already occupies this byte count.
+                let byte_len = units.len() * 2;
                 let new_len = u8::try_from(byte_len).map_err(|_| {
-                    CodecError::Malformed("source linear unit name is too long".into())
+                    CodecError::NotImplemented("source linear unit name is too long".into())
                 })?;
                 if units.is_empty() {
                     return Err(CodecError::Malformed(
@@ -1709,7 +1712,7 @@ fn metadata_payloads(
                     .flat_map(u16::to_le_bytes)
                     .collect::<Vec<_>>();
                 let length = u8::try_from(bytes.len()).map_err(|_| {
-                    CodecError::Malformed("source linear unit name is too long".into())
+                    CodecError::NotImplemented("source linear unit name is too long".into())
                 })?;
                 if bytes.is_empty() {
                     return Err(CodecError::Malformed(
@@ -2013,10 +2016,11 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
             u32::try_from(mesh.triangle_count()).map_err(|_| {
-                CodecError::Malformed("tessellation triangle count overflow".into())
+                CodecError::NotImplemented("tessellation triangle count overflow".into())
             })?,
-            u32::try_from(mesh.strip_lengths().len())
-                .map_err(|_| CodecError::Malformed("tessellation strip count overflow".into()))?,
+            u32::try_from(mesh.strip_lengths().len()).map_err(|_| {
+                CodecError::NotImplemented("tessellation strip count overflow".into())
+            })?,
         ),
         None => (0, 0),
     };
@@ -2084,7 +2088,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 run.checked_mul(2)
                     .and_then(|value| value.checked_sub(2))
                     .ok_or_else(|| {
-                        CodecError::Malformed("tessellation strip is too short or too large".into())
+                        CodecError::NotImplemented(
+                            "tessellation strip is too short or too large".into(),
+                        )
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -2373,7 +2379,7 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(String, Color)>, CodecError> {
 fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     let name = name.encode_utf16().collect::<Vec<_>>();
     let length = u8::try_from(name.len())
-        .map_err(|_| CodecError::Malformed("SLDPRT material name is too long".into()))?;
+        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))?;
     if name.is_empty() {
         return Err(CodecError::Malformed(
             "SLDPRT material name is empty".into(),
@@ -3443,7 +3449,7 @@ fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     let attr = *next;
     *next = next
         .checked_add(1)
-        .ok_or_else(|| CodecError::Malformed("SLDPRT attribute space exhausted".into()))?;
+        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
     Ok(attr)
 }
 
