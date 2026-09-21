@@ -39,7 +39,7 @@ use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{
-    check_edge_endpoint_consistency, check_pcurve_surface_consistency,
+    check_edge_endpoint_consistency, check_geometry_nesting, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
 };
 use geometry_payloads::check_tessellations;
@@ -102,6 +102,7 @@ fn validate_model_with_index(
     check_edge_endpoint_consistency(ir, &mut findings);
     check_pcurve_surface_consistency(ir, &mut findings);
     check_procedural_support_consistency(ir, &mut findings);
+    check_geometry_nesting(ir, &mut findings);
     check_topology_tolerances(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ir, &mut findings);

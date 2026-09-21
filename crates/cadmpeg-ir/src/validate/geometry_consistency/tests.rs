@@ -1153,3 +1153,125 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed);
     assert!(super::pcurve_geometry_trim_range(&refused).is_none());
 }
+
+fn placed_line_curve(placements: usize) -> SolvedCurveGeometry {
+    let mut geometry = SolvedCurveGeometry::Line(
+        crate::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    for _ in 0..placements {
+        geometry = SolvedCurveGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: crate::transform::Transform::identity(),
+        };
+    }
+    geometry
+}
+
+/// The findings the nesting walk produces, separated from the reachability
+/// findings an isolated carrier also raises.
+fn nesting_findings(
+    report: &crate::report::check::ValidationReport,
+) -> Vec<&crate::report::check::Finding> {
+    report
+        .findings
+        .iter()
+        .filter(|finding| {
+            finding.check == Check::GeometricConsistency
+                && finding
+                    .message
+                    .contains("nests past the admitted inline basis depth")
+        })
+        .collect()
+}
+
+#[test]
+fn a_surface_chain_one_past_the_bound_is_reported() {
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId::mint("test:model:surface#deep").unwrap(),
+        geometry: SurfaceGeometry::Solved(placed_nurbs_surface(
+            crate::geometry::MAX_GEOMETRY_NESTING + 1,
+        )),
+        source_object: None,
+    });
+
+    let report = validate_neutral(&ir, Vec::new());
+    let reported = nesting_findings(&report);
+    assert_eq!(reported.len(), 1, "{:?}", report.findings);
+    assert_eq!(reported[0].severity, Severity::Error);
+    assert_eq!(
+        reported[0].entity.as_deref(),
+        Some("test:model:surface#deep")
+    );
+
+    ir.model.surfaces[0].geometry =
+        SurfaceGeometry::Solved(placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING));
+    let at_bound = validate_neutral(&ir, Vec::new());
+    assert!(
+        nesting_findings(&at_bound).is_empty(),
+        "{:?}",
+        at_bound.findings
+    );
+}
+
+#[test]
+fn a_curve_chain_one_past_the_bound_is_reported() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("test:model:curve#deep").unwrap(),
+        geometry: CurveGeometry::Solved(placed_line_curve(
+            crate::geometry::MAX_GEOMETRY_NESTING + 1,
+        )),
+        source_object: None,
+    });
+
+    let report = validate_neutral(&ir, Vec::new());
+    let reported = nesting_findings(&report);
+    assert_eq!(reported.len(), 1, "{:?}", report.findings);
+    assert_eq!(reported[0].severity, Severity::Error);
+    assert_eq!(reported[0].entity.as_deref(), Some("test:model:curve#deep"));
+
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(placed_line_curve(crate::geometry::MAX_GEOMETRY_NESTING));
+    let at_bound = validate_neutral(&ir, Vec::new());
+    assert!(
+        nesting_findings(&at_bound).is_empty(),
+        "{:?}",
+        at_bound.findings
+    );
+}
+
+#[test]
+fn a_pcurve_chain_one_past_the_bound_is_reported() {
+    let mut ir = CadIr::empty();
+    ir.model.pcurves.push(Pcurve {
+        id: crate::ids::PcurveId::mint("test:model:pcurve#deep").unwrap(),
+        geometry: placed_pcurve(
+            crate::geometry::MAX_GEOMETRY_NESTING + 1,
+            nurbs_pcurve_leaf(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+
+    let report = validate_neutral(&ir, Vec::new());
+    let reported = nesting_findings(&report);
+    assert_eq!(reported.len(), 1, "{:?}", report.findings);
+    assert_eq!(reported[0].severity, Severity::Error);
+    assert_eq!(
+        reported[0].entity.as_deref(),
+        Some("test:model:pcurve#deep")
+    );
+
+    ir.model.pcurves[0].geometry =
+        placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, nurbs_pcurve_leaf());
+    let at_bound = validate_neutral(&ir, Vec::new());
+    assert!(
+        nesting_findings(&at_bound).is_empty(),
+        "{:?}",
+        at_bound.findings
+    );
+}
