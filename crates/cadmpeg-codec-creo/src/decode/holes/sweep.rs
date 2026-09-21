@@ -233,21 +233,9 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
             length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
         },
         geometry: HoleCylinder {
-            origin: Point3::new(
-                frame.frame().origin()[0],
-                frame.frame().origin()[1],
-                frame.frame().origin()[2],
-            ),
-            axis: Vector3::new(
-                frame.frame().axis()[0],
-                frame.frame().axis()[1],
-                frame.frame().axis()[2],
-            ),
-            ref_direction: Vector3::new(
-                frame.frame().ref_direction()[0],
-                frame.frame().ref_direction()[1],
-                frame.frame().ref_direction()[2],
-            ),
+            origin: frame.frame().origin_point(),
+            axis: frame.frame().axis_vector(),
+            ref_direction: frame.frame().ref_direction_vector(),
             radius: frame.radius(),
         },
     })

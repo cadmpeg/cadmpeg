@@ -118,21 +118,9 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         }
         let frame = datum.frame;
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(
-                frame.frame().origin()[0],
-                frame.frame().origin()[1],
-                frame.frame().origin()[2],
-            ),
-            Vector3::new(
-                frame.frame().axis()[0],
-                frame.frame().axis()[1],
-                frame.frame().axis()[2],
-            ),
-            Vector3::new(
-                frame.frame().ref_direction()[0],
-                frame.frame().ref_direction()[1],
-                frame.frame().ref_direction()[2],
-            ),
+            frame.frame().origin_point(),
+            frame.frame().axis_vector(),
+            frame.frame().ref_direction_vector(),
             frame.radius(),
         ) else {
             continue;
@@ -1158,21 +1146,9 @@ pub(in super::super) fn transfer_positional_cylinders(
                 {
                     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                         match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                            Point3::new(
-                                frame.frame().origin()[0],
-                                frame.frame().origin()[1],
-                                frame.frame().origin()[2],
-                            ),
-                            Vector3::new(
-                                frame.frame().axis()[0],
-                                frame.frame().axis()[1],
-                                frame.frame().axis()[2],
-                            ),
-                            Vector3::new(
-                                frame.frame().ref_direction()[0],
-                                frame.frame().ref_direction()[1],
-                                frame.frame().ref_direction()[2],
-                            ),
+                            frame.frame().origin_point(),
+                            frame.frame().axis_vector(),
+                            frame.frame().ref_direction_vector(),
                             frame.radius(),
                         ) {
                             Ok(payload) => payload,
@@ -1192,21 +1168,9 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         }
         let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            Point3::new(
-                frame.frame().origin()[0],
-                frame.frame().origin()[1],
-                frame.frame().origin()[2],
-            ),
-            Vector3::new(
-                frame.frame().axis()[0],
-                frame.frame().axis()[1],
-                frame.frame().axis()[2],
-            ),
-            Vector3::new(
-                frame.frame().ref_direction()[0],
-                frame.frame().ref_direction()[1],
-                frame.frame().ref_direction()[2],
-            ),
+            frame.frame().origin_point(),
+            frame.frame().axis_vector(),
+            frame.frame().ref_direction_vector(),
             frame.radius(),
         ) else {
             continue;
@@ -1444,24 +1408,10 @@ pub(in super::super) fn transfer_positional_cones(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Ok(cone_surface) = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(
-                frame.frame().origin()[0],
-                frame.frame().origin()[1],
-                frame.frame().origin()[2],
-            ),
-            Vector3::new(
-                frame.frame().axis()[0],
-                frame.frame().axis()[1],
-                frame.frame().axis()[2],
-            ),
-            Vector3::new(
-                frame.frame().ref_direction()[0],
-                frame.frame().ref_direction()[1],
-                frame.frame().ref_direction()[2],
-            ),
-            0.0,
-            1.0,
+        let Some(cone_surface) = super::apex_cone(
+            frame.frame().origin_point(),
+            frame.frame().axis_vector(),
+            frame.frame().ref_direction_vector(),
             frame.half_angle(),
         ) else {
             continue;

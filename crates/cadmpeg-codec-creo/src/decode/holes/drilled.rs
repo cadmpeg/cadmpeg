@@ -481,11 +481,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
                 <= EPS_COORDINATE_AGREEMENT * coordinate_scale
         })
         .then_some(cadmpeg_ir::features::holes::HolePlacement::Axis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                first.frame().origin()[0],
-                first.frame().origin()[1],
-                first.frame().origin()[2],
-            ))?,
+            origin: cadmpeg_ir::features::FinitePoint3::new(first.frame().origin_point())?,
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                 axis[0], axis[1], axis[2],
             ))?,
