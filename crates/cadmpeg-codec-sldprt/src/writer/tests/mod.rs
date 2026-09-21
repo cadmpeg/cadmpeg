@@ -4,7 +4,6 @@
 pub(crate) mod configuration_carriers;
 mod flex_history;
 mod helix_surfaces;
-mod nesting_bound;
 mod parameters_extrude;
 mod patterns_history;
 mod round_trip;
@@ -12,3 +11,4 @@ mod sketch_tessellation;
 mod swobjects;
 mod targets;
 mod thicken_reference;
+mod transformed_surface;
