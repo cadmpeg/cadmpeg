@@ -21,32 +21,25 @@ const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
-/// The number of nested affine placements the writer accepts over one basis
-/// carrier.
-///
-/// `SolvedSurfaceGeometry::Transformed`, `SolvedCurveGeometry::Transformed` and
-/// the three nesting `PcurveGeometry` variants hold their basis inline in a
-/// `Box`, so the nesting is whatever the decoded or built IR contains. Nothing
-/// in the IR bounds it. A carrier nested deeper than this is unwritable, and
-/// every reader of it here refuses instead of walking the chain.
-const MAX_PLACEMENT_NESTING: usize = 256;
-
 /// The affine placements over `surface`, outermost first, and the basis carrier
 /// under them.
 ///
-/// The walk is iterative, so a chain of any depth is read without stack
-/// recursion. It yields nothing past [`MAX_PLACEMENT_NESTING`] placements:
-/// [`surface_is_supported`], [`surface`] and [`emitted_basis`] take their bound
-/// here, so a deeper chain is an unwritable carrier at every caller.
+/// The IR admits at most
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING)
+/// placements over one basis, and states that as `nesting_within_bound`. A
+/// chain past it is refused here, so it is an unwritable carrier at every
+/// caller: [`surface_is_supported`], [`surface`] and [`emitted_basis`] take
+/// their bound from this walk. Both the bound question and the walk are
+/// iterative, so a chain of any depth is read without stack recursion.
 fn placed_surface(
     surface: &SolvedSurfaceGeometry,
 ) -> Option<(Vec<&Transform>, &SolvedSurfaceGeometry)> {
+    if !surface.nesting_within_bound() {
+        return None;
+    }
     let mut placements = Vec::new();
     let mut geometry = surface;
     while let SolvedSurfaceGeometry::Transformed { basis, transform } = geometry {
-        if placements.len() == MAX_PLACEMENT_NESTING {
-            return None;
-        }
         placements.push(transform);
         geometry = basis;
     }
@@ -101,12 +94,12 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
 /// The walk is iterative and bounded exactly as [`placed_surface`] is:
 /// [`leaf_curve_is_supported`] and [`curve`] take their bound here.
 fn placed_curve(curve: &SolvedCurveGeometry) -> Option<(Vec<&Transform>, &SolvedCurveGeometry)> {
+    if !curve.nesting_within_bound() {
+        return None;
+    }
     let mut placements = Vec::new();
     let mut geometry = curve;
     while let SolvedCurveGeometry::Transformed { basis, transform } = geometry {
-        if placements.len() == MAX_PLACEMENT_NESTING {
-            return None;
-        }
         placements.push(transform);
         geometry = basis;
     }
@@ -239,19 +232,24 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
 }
 
 /// Emit a two-dimensional curve for use inside a `PCURVE` representation.
-pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
-    pcurve_nested(e, geometry, 0)
-}
-
-/// Emit a parameter-space curve nested under `nesting` enclosing carriers.
 ///
 /// `Transformed`, `Trimmed` and `Offset` each hold their basis inline in a
-/// `Box`, so this walk carries the bound the three of them share: past
-/// [`MAX_PLACEMENT_NESTING`] enclosing carriers the pcurve is unwritable.
-fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry, nesting: usize) -> Option<Ref> {
-    if nesting > MAX_PLACEMENT_NESTING {
+/// `Box`. The IR counts the three of them together and admits at most
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) of
+/// them over one leaf; a deeper pcurve is unwritable and nothing is emitted
+/// for it.
+pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    if !geometry.nesting_within_bound() {
         return None;
     }
+    pcurve_nested(e, geometry)
+}
+
+/// Emit a parameter-space curve whose nesting [`pcurve`] has already admitted.
+///
+/// Each nesting arm emits its own record after the basis record it references,
+/// so the chain is written from the leaf outwards.
+fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
@@ -349,7 +347,7 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry, nesting: usize) -> 
             if !similarity_transform_2d(transform) {
                 return None;
             }
-            let basis = pcurve_nested(e, basis, nesting + 1)?;
+            let basis = pcurve_nested(e, basis)?;
             let operator = transformation_operator_2d(e, *transform)?;
             e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}"))
         }
@@ -357,7 +355,7 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry, nesting: usize) -> 
             let parameter_range = trimmed_pcurve.parameter_range();
             let same_sense = trimmed_pcurve.same_sense();
             let basis = trimmed_pcurve.basis();
-            let basis = pcurve_nested(e, basis, nesting + 1)?;
+            let basis = pcurve_nested(e, basis)?;
             let sense = if same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
@@ -371,7 +369,7 @@ fn pcurve_nested(e: &mut Emitter, geometry: &PcurveGeometry, nesting: usize) -> 
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
-            let basis = pcurve_nested(e, basis, nesting + 1)?;
+            let basis = pcurve_nested(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
                 &format!("'',{basis},{},.F.", real(distance)),
@@ -449,7 +447,8 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
 /// [`surface`] emits a `Transformed` carrier as a `SURFACE_REPLICA` over the
 /// record of its basis, so the radii and angles in the file are the basis's.
 /// The export census reads them here. `None` for a carrier [`surface`] refuses
-/// because its placements nest past [`MAX_PLACEMENT_NESTING`].
+/// because its placements nest past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING).
 pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> Option<&SolvedSurfaceGeometry> {
     placed_surface(g).map(|(_, basis)| basis)
 }
