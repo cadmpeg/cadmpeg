@@ -337,9 +337,4 @@ pub(super) fn project_point(
 }
 
 #[cfg(test)]
-fn dot(left: Vector3, right: Vector3) -> f64 {
-    left.dot(right)
-}
-
-#[cfg(test)]
 mod sketch_edges_tests;
