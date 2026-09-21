@@ -8,9 +8,9 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
-    pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
@@ -148,6 +148,19 @@ struct LoopSegment {
     end_vertex: String,
 }
 
+/// An analytic surface record in the emitted file, held as the IR carrier whose
+/// values that record carries. The export census counts these, so it states
+/// what the file holds and not what the document holds.
+enum WrittenAnalyticSurface<'a> {
+    /// Written by `geometry::surface`, which takes a sphere radius and a torus
+    /// tube radius through `abs()` and emits every other value verbatim. A
+    /// `Transformed` carrier is held here through its emitted basis.
+    Carrier(&'a SolvedSurfaceGeometry),
+    /// Written as `DEGENERATE_TOROIDAL_SURFACE`, which represents a tube radius
+    /// larger than the major radius and takes both radii through `abs()`.
+    DegenerateTorus(&'a TorusSurface),
+}
+
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -180,6 +193,8 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    /// Analytic surface records the writer put in the file, in emission order.
+    written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
     /// Edges skipped because they carry no attributed 3D curve, deduplicated
     /// (a shared edge is reached once per coedge) and aggregated into a single
@@ -355,6 +370,7 @@ impl<'a> Builder<'a> {
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
+            written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
@@ -2555,21 +2571,25 @@ impl<'a> Builder<'a> {
                     procedural.definition().clone(),
                 )
             });
-            let solved = surf.geometry.solved_cache().map_or_else(
-                || surf.geometry.clone(),
-                |cache| SurfaceGeometry::Solved(cache.clone()),
-            );
+            let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_surface(&solved, &definition)
+                self.emit_procedural_surface(solved, &definition)
                     .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 reference
-            } else if !geometry::surface_is_supported(surf.geometry.solved()?) {
-                return None;
             } else {
-                geometry::surface(&mut self.emitter, surf.geometry.solved()?)?
+                let solved = solved?;
+                if !geometry::surface_is_supported(solved) {
+                    return None;
+                }
+                let reference = geometry::surface(&mut self.emitter, solved)?;
+                self.written_analytic_surfaces
+                    .push(WrittenAnalyticSurface::Carrier(geometry::emitted_basis(
+                        solved,
+                    )));
+                reference
             };
             Some(r)
         })();
@@ -2583,7 +2603,7 @@ impl<'a> Builder<'a> {
 
     fn emit_procedural_surface(
         &mut self,
-        solved: &SurfaceGeometry,
+        solved: Option<&'a SolvedSurfaceGeometry>,
         definition: &ProceduralSurfaceDefinition,
     ) -> Option<Ref> {
         let logical = |value: Option<bool>| match value {
@@ -2662,8 +2682,7 @@ impl<'a> Builder<'a> {
                 )
             }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
-                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = solved
-                else {
+                let Some(SolvedSurfaceGeometry::Torus(torus_surface)) = solved else {
                     return None;
                 };
                 let center = torus_surface.center().get();
@@ -2673,7 +2692,7 @@ impl<'a> Builder<'a> {
                 let minor_radius = torus_surface.minor_radius().get();
                 let placement =
                     geometry::placement(&mut self.emitter, center, *axis, *ref_direction);
-                Some(self.emitter.emit(
+                let reference = self.emitter.emit(
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(
                         "'',{placement},{},{},{}",
@@ -2681,7 +2700,10 @@ impl<'a> Builder<'a> {
                         real(minor_radius.abs()),
                         if *select_outer { ".T." } else { ".F." }
                     ),
-                ))
+                );
+                self.written_analytic_surfaces
+                    .push(WrittenAnalyticSurface::DegenerateTorus(torus_surface));
+                Some(reference)
             }
             _ => None,
         }
@@ -3731,33 +3753,24 @@ impl<'a> Builder<'a> {
             );
         }
         let nonstandard_analytic_surfaces = self
-            .ir
-            .model
-            .surfaces
+            .written_analytic_surfaces
             .iter()
-            .filter(|surface| match &surface.geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
+            .filter(|written| match written {
+                WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                     let radius = sphere_surface.radius().get();
                     radius < 0.0
                 }
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
+                WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                     let major_radius = torus_surface.major_radius().get();
                     let minor_radius = torus_surface.minor_radius().get();
-                    minor_radius < 0.0
-                        || (minor_radius.abs() > major_radius.abs()
-                            && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
-                                self.ir.model.procedural_surface_owner(&procedural.id)
-                                    == Some(&surface.id)
-                                    && self
-                                        .written_procedural_surfaces
-                                        .contains(procedural.id.as_str())
-                                    && matches!(
-                                        procedural.definition(),
-                                        ProceduralSurfaceDefinition::DegenerateTorus { .. }
-                                    )
-                            }))
+                    minor_radius < 0.0 || minor_radius.abs() > major_radius.abs()
                 }
-                _ => false,
+                // `DEGENERATE_TOROIDAL_SURFACE` holds a tube radius larger than
+                // the major radius, so only the tube radius sign is normalized.
+                WrittenAnalyticSurface::DegenerateTorus(torus_surface) => {
+                    torus_surface.minor_radius().get() < 0.0
+                }
+                WrittenAnalyticSurface::Carrier(_) => false,
             })
             .count();
         if nonstandard_analytic_surfaces > 0 {
@@ -3770,12 +3783,10 @@ impl<'a> Builder<'a> {
             );
         }
         let elliptical_cones = self
-            .ir
-            .model
-            .surfaces
+            .written_analytic_surfaces
             .iter()
-            .filter(|surface| {
-                matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            .filter(|written| {
+                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let ratio = cone_surface.ratio().get();
                     ratio != 1.0
@@ -3795,12 +3806,10 @@ impl<'a> Builder<'a> {
         // outside that interval leaves the emitted record outside WR2. This
         // note carries that to the caller and to `--reject-lossy=export`.
         let out_of_domain_cone_semi_angles = self
-            .ir
-            .model
-            .surfaces
+            .written_analytic_surfaces
             .iter()
-            .filter(|surface| {
-                matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
+            .filter(|written| {
+                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let half_angle = cone_surface.half_angle().get();
                     half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2
