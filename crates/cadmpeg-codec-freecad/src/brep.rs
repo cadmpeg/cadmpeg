@@ -940,11 +940,8 @@ impl TryFrom<TextPointRepresentationWire> for TextPointRepresentation {
 }
 
 /// One edge representation record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "TextEdgeRepresentationWire",
-    into = "TextEdgeRepresentationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "TextEdgeRepresentationWire")]
 pub(crate) enum TextEdgeRepresentation {
     /// Kind 1: exact 3D curve.
     Curve3d {
@@ -1066,7 +1063,7 @@ impl TextEdgeRepresentation {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct TextEdgeRepresentationWire {
     kind: u8,
     primary: usize,
@@ -1080,10 +1077,34 @@ struct TextEdgeRepresentationWire {
     uv_endpoints: Option<[Point2; 2]>,
 }
 
-impl From<TextEdgeRepresentation> for TextEdgeRepresentationWire {
-    fn from(value: TextEdgeRepresentation) -> Self {
+/// The retained wire shape, borrowed from the representation it states.
+///
+/// Every other member is a scalar; the continuity token is the one value the
+/// record owns, and writing it needs no copy.
+#[derive(Serialize)]
+struct TextEdgeRepresentationOut<'a> {
+    kind: u8,
+    primary: usize,
+    secondary: Option<usize>,
+    surface: Option<usize>,
+    second_surface: Option<usize>,
+    location: usize,
+    second_location: Option<usize>,
+    parameter_range: Option<[f64; 2]>,
+    continuity: Option<&'a str>,
+    uv_endpoints: Option<[Point2; 2]>,
+}
+
+impl Serialize for TextEdgeRepresentation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TextEdgeRepresentationOut::new(self).serialize(serializer)
+    }
+}
+
+impl<'a> TextEdgeRepresentationOut<'a> {
+    fn new(value: &'a TextEdgeRepresentation) -> Self {
         let kind = value.kind();
-        match value {
+        match *value {
             TextEdgeRepresentation::Curve3d {
                 curve,
                 location,
@@ -1120,7 +1141,7 @@ impl From<TextEdgeRepresentation> for TextEdgeRepresentationWire {
             },
             TextEdgeRepresentation::PcurvePair {
                 curves,
-                continuity,
+                ref continuity,
                 surface,
                 location,
                 parameter_range,
@@ -1138,7 +1159,7 @@ impl From<TextEdgeRepresentation> for TextEdgeRepresentationWire {
                 uv_endpoints,
             },
             TextEdgeRepresentation::Regularity {
-                continuity,
+                ref continuity,
                 surfaces,
                 locations,
             } => Self {
@@ -1464,7 +1485,7 @@ impl TextTShape {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct TextTShapeWire {
     index: usize,
     kind: TextShapeKind,
@@ -1473,7 +1494,7 @@ struct TextTShapeWire {
     children: Vec<TextShapeUse>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum TextTShapeGeometryWire {
     Vertex {
@@ -1498,10 +1519,113 @@ enum TextTShapeGeometryWire {
     Empty,
 }
 
+/// The retained wire shape of one topology record, borrowed from the record.
+///
+/// Reading owns the tables it builds; writing states the one-based position and
+/// the family, which are derived, and borrows everything else.
+#[derive(Serialize)]
+struct TextTShapeOut<'a> {
+    index: usize,
+    kind: TextShapeKind,
+    geometry: TextTShapeGeometryOut<'a>,
+    flags: [bool; 7],
+    children: &'a [TextShapeUse],
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TextTShapeGeometryOut<'a> {
+    Vertex {
+        tolerance: f64,
+        point: Point3,
+        representations: &'a [TextPointRepresentation],
+    },
+    Edge {
+        tolerance: f64,
+        same_parameter: bool,
+        same_range: bool,
+        degenerated: bool,
+        representations: &'a [TextEdgeRepresentation],
+    },
+    Face {
+        natural_restriction: bool,
+        tolerance: f64,
+        surface: usize,
+        location: usize,
+        triangulation: Option<usize>,
+    },
+    Empty,
+}
+
+impl<'a> TextTShapeOut<'a> {
+    fn new(position: usize, value: &'a TextTShape) -> Self {
+        let geometry = match &value.geometry {
+            TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            } => TextTShapeGeometryOut::Vertex {
+                tolerance: *tolerance,
+                point: *point,
+                representations,
+            },
+            TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            } => TextTShapeGeometryOut::Edge {
+                tolerance: *tolerance,
+                same_parameter: *same_parameter,
+                same_range: *same_range,
+                degenerated: *degenerated,
+                representations,
+            },
+            TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            } => TextTShapeGeometryOut::Face {
+                natural_restriction: *natural_restriction,
+                tolerance: *tolerance,
+                surface: surface.map_or(0, TableRef::index),
+                location: location.index(),
+                triangulation: triangulation.map(TableRef::index),
+            },
+            TextTShapeGeometry::Wire
+            | TextTShapeGeometry::Shell
+            | TextTShapeGeometry::Solid
+            | TextTShapeGeometry::CompSolid
+            | TextTShapeGeometry::Compound => TextTShapeGeometryOut::Empty,
+        };
+        Self {
+            index: position + 1,
+            kind: value.kind(),
+            geometry,
+            flags: value.flags,
+            children: &value.children,
+        }
+    }
+}
+
 /// Topology records whose one-based identity is their collection position.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<TextTShapeWire>", into = "Vec<TextTShapeWire>")]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(try_from = "Vec<TextTShapeWire>")]
 pub(crate) struct TextTShapes(Vec<TextTShape>);
+
+impl Serialize for TextTShapes {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(position, value)| TextTShapeOut::new(position, value)),
+        )
+    }
+}
 
 impl TextTShapes {
     /// Resolve a one-based topology identity without unchecked subtraction.
@@ -1546,72 +1670,6 @@ impl TryFrom<Vec<TextTShapeWire>> for TextTShapes {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(Self)
-    }
-}
-
-impl From<TextTShapes> for Vec<TextTShapeWire> {
-    fn from(shapes: TextTShapes) -> Self {
-        shapes
-            .0
-            .into_iter()
-            .enumerate()
-            .map(TextTShapeWire::from)
-            .collect()
-    }
-}
-
-impl From<(usize, TextTShape)> for TextTShapeWire {
-    fn from((position, value): (usize, TextTShape)) -> Self {
-        let kind = value.kind();
-        let geometry = match value.geometry {
-            TextTShapeGeometry::Vertex {
-                tolerance,
-                point,
-                representations,
-            } => TextTShapeGeometryWire::Vertex {
-                tolerance,
-                point,
-                representations,
-            },
-            TextTShapeGeometry::Edge {
-                tolerance,
-                same_parameter,
-                same_range,
-                degenerated,
-                representations,
-            } => TextTShapeGeometryWire::Edge {
-                tolerance,
-                same_parameter,
-                same_range,
-                degenerated,
-                representations,
-            },
-            TextTShapeGeometry::Face {
-                natural_restriction,
-                tolerance,
-                surface,
-                location,
-                triangulation,
-            } => TextTShapeGeometryWire::Face {
-                natural_restriction,
-                tolerance,
-                surface: surface.map_or(0, TableRef::index),
-                location: location.index(),
-                triangulation: triangulation.map(TableRef::index),
-            },
-            TextTShapeGeometry::Wire
-            | TextTShapeGeometry::Shell
-            | TextTShapeGeometry::Solid
-            | TextTShapeGeometry::CompSolid
-            | TextTShapeGeometry::Compound => TextTShapeGeometryWire::Empty,
-        };
-        Self {
-            index: position + 1,
-            kind,
-            geometry,
-            flags: value.flags,
-            children: value.children,
-        }
     }
 }
 
@@ -6028,6 +6086,69 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn tshape_geometry_arms_write_their_representation_tables() {
+        let wire = serde_json::json!([
+            {"index": 1, "kind": "vertex",
+             "geometry": {"kind": "vertex", "tolerance": 0.25,
+                 "point": {"x": 1.0, "y": 2.0, "z": 3.0},
+                 "representations": [{"parameter": 0.5, "second_parameter": null, "kind": 1,
+                     "curve": 1, "surface": null, "location": 0}]},
+             "flags": [true, false, true, false, true, false, true],
+             "children": []},
+            {"index": 2, "kind": "edge",
+             "geometry": {"kind": "edge", "tolerance": 0.125, "same_parameter": true,
+                 "same_range": false, "degenerated": false,
+                 "representations": [{"kind": 1, "primary": 1, "secondary": null,
+                     "surface": null, "second_surface": null, "location": 0,
+                     "second_location": null, "parameter_range": [0.0, 1.0],
+                     "continuity": null, "uv_endpoints": null}]},
+             "flags": [false, false, false, false, false, false, false],
+             "children": [{"shape": 1, "orientation": "forward", "location": 0}]}
+        ]);
+        let shapes: TextTShapes = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&shapes).unwrap(), wire);
+    }
+
+    #[test]
+    fn an_edge_representation_writes_its_continuity_token() {
+        for (representation, expected) in [
+            (
+                TextEdgeRepresentation::PcurvePair {
+                    curves: [5, 6],
+                    continuity: "CN".to_owned(),
+                    surface: 7,
+                    location: 8,
+                    parameter_range: [0.0, 1.0],
+                    uv_endpoints: None,
+                },
+                serde_json::json!({
+                    "kind": 3, "primary": 5, "secondary": 6, "surface": 7,
+                    "second_surface": null, "location": 8, "second_location": null,
+                    "parameter_range": [0.0, 1.0], "continuity": "CN", "uv_endpoints": null
+                }),
+            ),
+            (
+                TextEdgeRepresentation::Regularity {
+                    continuity: "C1".to_owned(),
+                    surfaces: [2, 3],
+                    locations: [0, 4],
+                },
+                serde_json::json!({
+                    "kind": 4, "primary": 0, "secondary": null, "surface": 2,
+                    "second_surface": 3, "location": 0, "second_location": 4,
+                    "parameter_range": null, "continuity": "C1", "uv_endpoints": null
+                }),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&representation).unwrap(), expected);
+            assert_eq!(
+                serde_json::from_value::<TextEdgeRepresentation>(expected).unwrap(),
+                representation
+            );
+        }
+    }
+
+    #[test]
     fn shape_set_wire_indices_match_position_for_both_carriers() {
         for form in ["text", "binary"] {
             let mut facts = serde_json::json!({
@@ -6165,8 +6286,8 @@ pub(crate) mod tests {
             TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire.clone()).unwrap())
                 .unwrap();
         assert_eq!(
-            serde_json::to_value(TextTShapeWire::from((0, shape))).unwrap(),
-            wire
+            serde_json::to_value(TextTShapes::from(vec![shape])).unwrap(),
+            serde_json::Value::Array(vec![wire.clone()])
         );
         wire["geometry"]["triangulation"] = serde_json::json!(0);
         assert!(
