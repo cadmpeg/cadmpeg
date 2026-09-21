@@ -74,13 +74,12 @@ fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> Loss
 }
 
 pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    fn is_line(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
-        if depth > 256 {
-            return false;
-        }
+    // `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the
+    // walk needs no depth of its own.
+    fn is_line(geometry: &SolvedCurveGeometry) -> bool {
         match geometry {
             SolvedCurveGeometry::Line(_) => true,
-            SolvedCurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            SolvedCurveGeometry::Transformed(placed) => is_line(placed.basis()),
             _ => false,
         }
     }
@@ -89,12 +88,7 @@ pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| {
-            curve
-                .geometry
-                .solved()
-                .is_some_and(|geometry| is_line(geometry, 0))
-        })
+        .is_some_and(|curve| curve.geometry.solved().is_some_and(is_line))
 }
 
 pub(crate) fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {

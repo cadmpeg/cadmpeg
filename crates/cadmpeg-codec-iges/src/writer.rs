@@ -5708,7 +5708,7 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
         SolvedCurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
         )),
-        SolvedCurveGeometry::Transformed { .. } => Err(CodecError::Malformed(
+        SolvedCurveGeometry::Transformed(_) => Err(CodecError::Malformed(
             "IGES transformed curve was not flattened before encoding".into(),
         )),
     }
@@ -5968,7 +5968,7 @@ fn curve_entity(
         SolvedCurveGeometry::Unknown { .. } => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
-        SolvedCurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
+        SolvedCurveGeometry::Transformed(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer does not encode this curve geometry".into(),
         )),
     }
@@ -6154,13 +6154,14 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
 
 fn flatten_curve(geometry: &SolvedCurveGeometry) -> Result<CurveGeometry, CodecError> {
     match geometry {
-        SolvedCurveGeometry::Transformed { basis, transform } => {
+        SolvedCurveGeometry::Transformed(placed) => {
+            let transform = placed.transform();
             if !transform.is_proper_rigid() {
                 return Err(CodecError::NotImplemented(
                     "IGES semantic writer only applies proper-rigid curve transforms".into(),
                 ));
             }
-            let basis = flatten_curve(basis)?;
+            let basis = flatten_curve(placed.basis())?;
             apply_rigid_transform(basis, *transform)
         }
         _ => Ok(CurveGeometry::Solved(geometry.clone())),

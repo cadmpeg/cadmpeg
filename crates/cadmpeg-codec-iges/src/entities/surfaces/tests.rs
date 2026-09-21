@@ -1086,7 +1086,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             .geometry;
         assert!(matches!(
             directrix_geometry,
-            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. })
+            cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_))
         ));
         let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
         let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)

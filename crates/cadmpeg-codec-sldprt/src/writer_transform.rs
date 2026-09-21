@@ -459,12 +459,11 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
-        CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-            transform: carrier, ..
-        }) => {
-            *carrier = transform.compose(*carrier).map_err(|error| {
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed)) => {
+            let composed = transform.compose(*placed.transform()).map_err(|error| {
                 CodecError::malformed(format_args!("invalid transformed carrier: {error}"))
             })?;
+            placed.set_transform(composed);
         }
         CurveGeometry::Procedural { .. }
         | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {

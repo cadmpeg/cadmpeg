@@ -83,23 +83,18 @@ pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
 ///
 /// The walk is iterative and bounded exactly as [`placed_surface`] is:
 /// [`leaf_curve_is_supported`] and [`curve`] take their bound here.
-fn placed_curve(curve: &SolvedCurveGeometry) -> Option<(Vec<&Transform>, &SolvedCurveGeometry)> {
-    if !curve.nesting_within_bound() {
-        return None;
-    }
+fn placed_curve(curve: &SolvedCurveGeometry) -> (Vec<&Transform>, &SolvedCurveGeometry) {
     let mut placements = Vec::new();
     let mut geometry = curve;
-    while let SolvedCurveGeometry::Transformed { basis, transform } = geometry {
-        placements.push(transform);
-        geometry = basis;
+    while let SolvedCurveGeometry::Transformed(placed) = geometry {
+        placements.push(placed.transform());
+        geometry = placed.basis();
     }
-    Some((placements, geometry))
+    (placements, geometry)
 }
 
 fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
-    let Some((placements, basis)) = placed_curve(curve) else {
-        return false;
-    };
+    let (placements, basis) = placed_curve(curve);
     placements
         .iter()
         .all(|transform| similarity_transform(transform))
@@ -114,7 +109,7 @@ fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
             | SolvedCurveGeometry::Polyline(_) => true,
             // `placed_curve` ends the walk at the first carrier that is not a
             // placement, so the basis is never `Transformed`.
-            SolvedCurveGeometry::Transformed { .. }
+            SolvedCurveGeometry::Transformed(_)
             | SolvedCurveGeometry::Composite { .. }
             | SolvedCurveGeometry::Unknown { .. } => false,
         }
@@ -535,7 +530,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
 
 /// Emit an analytic or NURBS 3D curve carrier.
 pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
-    let (placements, basis) = placed_curve(g)?;
+    let (placements, basis) = placed_curve(g);
     let mut reference = basis_curve(e, basis)?;
     // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
     // references the record written for the placement inside it.
@@ -616,7 +611,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
         // placement, so `Transformed` does not reach this function. A composite
         // carrier is emitted from its child graph by the exporter, and an
         // unknown carrier has no STEP record.
-        SolvedCurveGeometry::Transformed { .. }
+        SolvedCurveGeometry::Transformed(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => return None,
     })

@@ -356,22 +356,18 @@ fn bounded_evaluable_curve(
         ))
 }
 
-fn is_line_carrier(geometry: &SolvedCurveGeometry, depth: usize) -> bool {
-    if depth > 256 {
-        return false;
-    }
+/// `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the walk
+/// needs no depth of its own.
+fn is_line_carrier(geometry: &SolvedCurveGeometry) -> bool {
     match geometry {
         SolvedCurveGeometry::Line(_) => true,
-        SolvedCurveGeometry::Transformed { basis, .. } => is_line_carrier(basis, depth + 1),
+        SolvedCurveGeometry::Transformed(placed) => is_line_carrier(placed.basis()),
         _ => false,
     }
 }
 
 fn source_parameter_interval(geometry: &CurveGeometry, carrier_interval: [f64; 2]) -> [f64; 2] {
-    if geometry
-        .solved()
-        .is_some_and(|geometry| is_line_carrier(geometry, 0))
-    {
+    if geometry.solved().is_some_and(is_line_carrier) {
         [0.0, 1.0]
     } else {
         carrier_interval
@@ -1450,10 +1446,13 @@ pub(super) fn project(
                 sequences.record_curve(&placed_id, entry.sequence);
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-                        basis: Box::new(directrix_solved.clone()),
-                        transform,
-                    }),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+                        cadmpeg_ir::geometry::PlacedCurve::try_new(
+                            Box::new(directrix_solved.clone()),
+                            transform,
+                        )
+                        .map_err(CodecError::malformed)?,
+                    )),
                     source_object: Some(source_object(entry)?),
                 });
                 placed_id
@@ -1775,10 +1774,13 @@ pub(super) fn project(
                 sequences.record_curve(&procedural_directrix, entry.sequence);
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-                        basis: Box::new(directrix_solved.clone()),
-                        transform,
-                    }),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+                        cadmpeg_ir::geometry::PlacedCurve::try_new(
+                            Box::new(directrix_solved.clone()),
+                            transform,
+                        )
+                        .map_err(CodecError::malformed)?,
+                    )),
                     source_object: Some(source_object(entry)?),
                 });
                 procedural_axis_origin = transform.apply_point(axis_origin).ok_or_else(|| {

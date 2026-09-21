@@ -4,7 +4,7 @@
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
 use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, TrimmedPcurve};
 use crate::geometry::{
-    PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
+    PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, MAX_GEOMETRY_NESTING,
 };
 use crate::math::{Point3, Vector3};
 use crate::transform::{Transform, Transform2};
@@ -29,18 +29,20 @@ fn placed_plane(placements: usize) -> Result<SolvedSurfaceGeometry, &'static str
     Ok(geometry)
 }
 
-fn placed_line(placements: usize) -> SolvedCurveGeometry {
+/// A chain of `placements` placements over a line leaf, or the constructor's
+/// refusal at the placement that would pass the bound.
+fn placed_line(placements: usize) -> Result<SolvedCurveGeometry, &'static str> {
     let mut geometry = SolvedCurveGeometry::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
             .expect("a unit-direction line"),
     );
     for _ in 0..placements {
-        geometry = SolvedCurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: Transform::identity(),
-        };
+        geometry = SolvedCurveGeometry::Transformed(PlacedCurve::try_new(
+            Box::new(geometry),
+            Transform::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 /// A chain that uses each of the three pcurve nesting carriers in turn, so the
@@ -76,8 +78,11 @@ fn a_surface_placement_chain_one_past_the_bound_is_refused() {
 
 #[test]
 fn a_curve_placement_chain_one_past_the_bound_is_refused() {
-    assert!(placed_line(MAX_GEOMETRY_NESTING).nesting_within_bound());
-    assert!(!placed_line(MAX_GEOMETRY_NESTING + 1).nesting_within_bound());
+    assert!(placed_line(MAX_GEOMETRY_NESTING).is_ok());
+    assert_eq!(
+        placed_line(MAX_GEOMETRY_NESTING + 1),
+        Err("PlacedCurve.basis nests past the admitted inline basis depth")
+    );
 }
 
 #[test]
@@ -88,7 +93,6 @@ fn a_pcurve_nesting_chain_one_past_the_bound_is_refused() {
 
 #[test]
 fn a_leaf_carrier_is_within_the_bound() {
-    assert!(placed_line(0).nesting_within_bound());
     assert!(nested_pcurve(0).nesting_within_bound());
 }
 

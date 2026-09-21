@@ -690,10 +690,10 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         [0.0, 0.0, 3.0, 3.0e6],
     ])
     .expect("affine transform");
-    let geometry = SolvedCurveGeometry::Transformed {
-        basis: Box::new(basis.clone()),
-        transform,
-    };
+    let geometry = SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(Box::new(basis.clone()), transform)
+            .expect("placed curve"),
+    );
     let parameter = 0.7 + std::f64::consts::TAU;
     let point = curve_point(&CurveGeometry::Solved(geometry.clone()), parameter)
         .expect("transformed curve evaluates");
@@ -713,15 +713,18 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     .expect("transformed inverse");
     assert!((inverse - parameter).abs() < 1.0e-10);
 
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(basis),
-        transform: Transform::affine([
-            [0.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .expect("affine transform"),
-    });
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(
+            Box::new(basis),
+            Transform::affine([
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed curve"),
+    ));
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &crate::index::ModelIndex::new(&ir),
         &id,
@@ -1197,21 +1200,24 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-            basis: Box::new(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            crate::geometry::PlacedCurve::try_new(
+                Box::new(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                crate::transform::Transform::affine([
+                    [2.0, 0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0, 2.0],
+                    [0.0, 0.0, 1.0, 3.0],
+                ])
                 .unwrap(),
-            )),
-            transform: crate::transform::Transform::affine([
-                [2.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 3.0],
-            ])
-            .unwrap(),
-        }),
+            )
+            .expect("placed curve"),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
@@ -1425,16 +1431,19 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-            basis: Box::new(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(2.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            )),
-            transform: Transform::identity(),
-        }),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            crate::geometry::PlacedCurve::try_new(
+                Box::new(SolvedCurveGeometry::Line(
+                    crate::geometry::analytic::LineCurve::try_new(
+                        Point3::new(2.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+                Transform::identity(),
+            )
+            .expect("placed curve"),
+        )),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {

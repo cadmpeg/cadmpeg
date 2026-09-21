@@ -640,10 +640,13 @@ fn a_solved_cache_refuses_a_procedural_carrier_as_an_unknown_variant() {
         });
     }
 
-    let solved = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Unknown { record: None }),
-        transform: crate::transform::Transform::default(),
-    });
+    let solved = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Unknown { record: None }),
+            crate::transform::Transform::default(),
+        )
+        .expect("placed curve"),
+    ));
     assert_eq!(
         serde_json::from_value::<CurveGeometry>(serde_json::to_value(&solved).unwrap()).unwrap(),
         solved

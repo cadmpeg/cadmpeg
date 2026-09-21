@@ -1147,23 +1147,6 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     assert!(super::pcurve_geometry_trim_range(&refused).is_none());
 }
 
-fn placed_line_curve(placements: usize) -> SolvedCurveGeometry {
-    let mut geometry = SolvedCurveGeometry::Line(
-        crate::geometry::analytic::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        )
-        .unwrap(),
-    );
-    for _ in 0..placements {
-        geometry = SolvedCurveGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: crate::transform::Transform::identity(),
-        };
-    }
-    geometry
-}
-
 /// The findings the nesting walk produces, separated from the reachability
 /// findings an isolated carrier also raises.
 fn nesting_findings(
@@ -1179,33 +1162,6 @@ fn nesting_findings(
                     .contains("nests past the admitted inline basis depth")
         })
         .collect()
-}
-
-#[test]
-fn a_curve_chain_one_past_the_bound_is_reported() {
-    let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
-        id: CurveId::mint("test:model:curve#deep").unwrap(),
-        geometry: CurveGeometry::Solved(placed_line_curve(
-            crate::geometry::MAX_GEOMETRY_NESTING + 1,
-        )),
-        source_object: None,
-    });
-
-    let report = validate_neutral(&ir, Vec::new());
-    let reported = nesting_findings(&report);
-    assert_eq!(reported.len(), 1, "{:?}", report.findings);
-    assert_eq!(reported[0].severity, Severity::Error);
-    assert_eq!(reported[0].entity.as_deref(), Some("test:model:curve#deep"));
-
-    ir.model.curves[0].geometry =
-        CurveGeometry::Solved(placed_line_curve(crate::geometry::MAX_GEOMETRY_NESTING));
-    let at_bound = validate_neutral(&ir, Vec::new());
-    assert!(
-        nesting_findings(&at_bound).is_empty(),
-        "{:?}",
-        at_bound.findings
-    );
 }
 
 #[test]

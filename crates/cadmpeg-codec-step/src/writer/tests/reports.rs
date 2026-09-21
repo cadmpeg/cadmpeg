@@ -1442,10 +1442,13 @@ fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
-        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Unknown { record: None }),
-        transform: cadmpeg_ir::transform::Transform::identity(),
-    });
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Unknown { record: None }),
+            cadmpeg_ir::transform::Transform::identity(),
+        )
+        .expect("placed curve"),
+    ));
     let report = write_step(
         &nested_unknown,
         &mut Vec::new(),

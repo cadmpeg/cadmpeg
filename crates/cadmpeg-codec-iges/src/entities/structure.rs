@@ -1525,21 +1525,21 @@ fn bounded_plane_curve_is_simple(
                     valid
                 })
         }
-        SolvedCurveGeometry::Transformed {
-            basis,
-            transform: map,
-        } => context.transform.compose(*map).is_ok_and(|transform| {
-            bounded_plane_curve_is_simple(
-                basis,
-                PlaneBoundarySimplicity {
-                    transform,
-                    ..context
-                },
-                source_is_certified_simple,
-                parameter_range,
-                active,
-            )
-        }),
+        SolvedCurveGeometry::Transformed(placed) => context
+            .transform
+            .compose(*placed.transform())
+            .is_ok_and(|transform| {
+                bounded_plane_curve_is_simple(
+                    placed.basis(),
+                    PlaneBoundarySimplicity {
+                        transform,
+                        ..context
+                    },
+                    source_is_certified_simple,
+                    parameter_range,
+                    active,
+                )
+            }),
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => parameter_range
             .is_some_and(|range| {
                 analytic_curve_is_simple_closed(&CurveGeometry::Solved(geometry.clone()), range)

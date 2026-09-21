@@ -183,16 +183,19 @@ fn transformed_carriers_preserve_basis_parameters() {
         [0.0, 0.0, 2.0, 6.0],
     ])
     .expect("affine transform");
-    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-        basis: Box::new(SolvedCurveGeometry::Line(
-            crate::geometry::analytic::LineCurve::try_new(
-                Point3::new(1.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform,
-    });
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(1.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed curve"),
+    ));
     assert_eq!(
         crate::eval::curve_point(&curve, 3.0),
         Some(Point3::new(-4.0, 5.0, 6.0))

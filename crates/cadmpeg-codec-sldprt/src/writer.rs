@@ -3628,7 +3628,7 @@ pub(super) fn curve_values(
             ))
         }
         CurveGeometry::Procedural { .. }
-        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed { .. }) => {
+        | CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
             ))
