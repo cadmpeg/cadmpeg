@@ -20,33 +20,24 @@ const EPS_LOCAL_SYSTEM_HANDEDNESS: f64 = 1.0e-9;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum LegacySurfaceGeometry {
     /// A plane from a complete row-major local system.
+    ///
+    /// The frame origin is the plane origin, the frame axis is the surface normal and
+    /// the frame ref direction is the parameter-space u axis.
     Plane {
-        /// Origin in the stored model coordinate system.
-        origin: [f64; 3],
-        /// Surface normal from local-system column two.
-        normal: [f64; 3],
-        /// Parameter-space reference direction from local-system column zero.
-        u_axis: [f64; 3],
+        /// Origin with the normal and u-axis pair.
+        frame: surface::PositionalFrame,
     },
     /// A cylinder from a complete row-major local system and radius.
     Cylinder {
-        /// A point on the cylinder axis in the stored model coordinate system.
-        origin: [f64; 3],
-        /// Cylinder axis from local-system column two.
-        axis: [f64; 3],
-        /// Parameter-space reference direction from local-system column zero.
-        ref_direction: [f64; 3],
+        /// A point on the cylinder axis with the axis and ref direction.
+        frame: surface::PositionalFrame,
         /// Positive cylinder radius in the stored model coordinate system.
         radius: f64,
     },
     /// A circular cone from a complete legacy local system and signed angle.
     Cone {
-        /// The cone apex in the stored model coordinate system.
-        apex: [f64; 3],
-        /// Unit axis directed from the apex toward increasing radius.
-        axis: [f64; 3],
-        /// Unit parameter-space reference direction.
-        ref_direction: [f64; 3],
+        /// The apex with the axis directed toward increasing radius.
+        frame: surface::PositionalFrame,
         /// Cone half-angle in radians, admitted by
         /// [`crate::surface::valid_apex_cone_half_angle`].
         half_angle: f64,
@@ -55,12 +46,8 @@ pub(crate) enum LegacySurfaceGeometry {
     },
     /// A torus from a complete legacy local system and two radii.
     Torus {
-        /// Torus center in the stored model coordinate system.
-        center: [f64; 3],
-        /// Unit torus axis from local-system column two.
-        axis: [f64; 3],
-        /// Unit parameter-space reference direction.
-        ref_direction: [f64; 3],
+        /// The torus center with the axis and ref direction.
+        frame: surface::PositionalFrame,
         /// Torus major radius.
         major_radius: f64,
         /// Torus minor radius.
@@ -68,12 +55,9 @@ pub(crate) enum LegacySurfaceGeometry {
     },
     /// A sphere represented by the torus family with a zero major radius.
     Sphere {
-        /// Sphere center in the stored model coordinate system.
-        center: [f64; 3],
-        /// Stored local-system axis retained for parameter provenance.
-        axis: [f64; 3],
-        /// Stored local-system reference direction retained for provenance.
-        ref_direction: [f64; 3],
+        /// The sphere center with the stored local-system directions, which the
+        /// sphere keeps for parameter provenance.
+        frame: surface::PositionalFrame,
         /// Sphere radius.
         radius: f64,
     },
@@ -488,16 +472,13 @@ fn surface_carrier(
     let third = [slots[2], slots[5], slots[8]];
     valid_right_handed_local_system(first, second, third).then_some(())?;
     let origin = [slots[9], slots[10], slots[11]];
+    // The matrix admission above states the finite origin and the unit-length orthogonal
+    // pair the frame holds, so this construction is the one the carrier keeps.
+    let frame = surface::PositionalFrame::new(origin, third, first)?;
     let geometry = match family {
-        AnalyticFamily::Plane => LegacySurfaceGeometry::Plane {
-            origin,
-            normal: third,
-            u_axis: first,
-        },
+        AnalyticFamily::Plane => LegacySurfaceGeometry::Plane { frame },
         AnalyticFamily::Cylinder => LegacySurfaceGeometry::Cylinder {
-            origin,
-            axis: third,
-            ref_direction: first,
+            frame,
             radius: real_scalar(reals, primitive.offset, "radius")
                 .filter(|radius| *radius > 0.0)?,
         },
@@ -511,15 +492,11 @@ fn surface_carrier(
             let half_angle = signed_half_angle.abs();
             surface::valid_apex_cone_half_angle(half_angle).then_some(())?;
             LegacySurfaceGeometry::Cone {
-                apex: origin,
-                axis: third.map(|value| {
-                    if signed_half_angle.is_sign_positive() {
-                        value
-                    } else {
-                        -value
-                    }
-                }),
-                ref_direction: first,
+                frame: if signed_half_angle.is_sign_positive() {
+                    frame
+                } else {
+                    frame.with_reversed_axis()
+                },
                 half_angle,
                 parameter_v_sign: signed_half_angle.signum(),
             }
@@ -531,16 +508,12 @@ fn surface_carrier(
                 real_scalar(reals, primitive.offset, "radius2").filter(|radius| *radius > 0.0)?;
             if major_radius == 0.0 {
                 LegacySurfaceGeometry::Sphere {
-                    center: origin,
-                    axis: third,
-                    ref_direction: first,
+                    frame,
                     radius: minor_radius,
                 }
             } else {
                 LegacySurfaceGeometry::Torus {
-                    center: origin,
-                    axis: third,
-                    ref_direction: first,
+                    frame,
                     major_radius,
                     minor_radius,
                 }
@@ -713,6 +686,18 @@ mod tests {
 
     fn real(value: f64) -> String {
         format!("{:016X}", value.to_bits())
+    }
+
+    /// The frame a carrier holds, from the origin, axis and ref direction a test states.
+    fn frame(
+        origin: [f64; 3],
+        axis: [f64; 3],
+        ref_direction: [f64; 3],
+    ) -> crate::surface::PositionalFrame {
+        let Some(frame) = crate::surface::PositionalFrame::new(origin, axis, ref_direction) else {
+            panic!("the test states a finite origin and an orthonormal direction pair");
+        };
+        frame
     }
 
     fn fixture(radius: f64, conflicting: bool) -> Vec<u8> {
@@ -1056,9 +1041,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(
             result.carriers[0].geometry,
             LegacySurfaceGeometry::Cylinder {
-                origin: [0.0, 0.0, 0.0],
-                axis: [0.0, 0.0, 1.0],
-                ref_direction: [1.0, 0.0, 0.0],
+                frame: frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
                 radius: 2.0,
             }
         );
@@ -1222,9 +1205,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(
             result.carriers[0].geometry,
             LegacySurfaceGeometry::Cone {
-                apex: [1.0, 2.0, 3.0],
-                axis: [-0.0, -0.0, -1.0],
-                ref_direction: [1.0, 0.0, 0.0],
+                frame: frame([1.0, 2.0, 3.0], [-0.0, -0.0, -1.0], [1.0, 0.0, 0.0]),
                 half_angle: std::f64::consts::FRAC_PI_4,
                 parameter_v_sign: -1.0,
             }
@@ -1274,13 +1255,15 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             assert_eq!(
                 result.carriers[0].geometry,
                 LegacySurfaceGeometry::Cone {
-                    apex: [1.0, 2.0, 3.0],
-                    axis: if parameter_v_sign > 0.0 {
-                        [0.0, 0.0, 1.0]
-                    } else {
-                        [-0.0, -0.0, -1.0]
-                    },
-                    ref_direction: [1.0, 0.0, 0.0],
+                    frame: frame(
+                        [1.0, 2.0, 3.0],
+                        if parameter_v_sign > 0.0 {
+                            [0.0, 0.0, 1.0]
+                        } else {
+                            [-0.0, -0.0, -1.0]
+                        },
+                        [1.0, 0.0, 0.0],
+                    ),
                     half_angle,
                     parameter_v_sign,
                 }
@@ -1296,9 +1279,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(
             torus.carriers[0].geometry,
             LegacySurfaceGeometry::Torus {
-                center: [1.0, 2.0, 3.0],
-                axis: [1.0, 0.0, 0.0],
-                ref_direction: [0.0, 1.0, 0.0],
+                frame: frame([1.0, 2.0, 3.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
                 major_radius: 4.0,
                 minor_radius: 0.5,
             }
@@ -1310,9 +1291,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(
             sphere.carriers[0].geometry,
             LegacySurfaceGeometry::Sphere {
-                center: [1.0, 2.0, 3.0],
-                axis: [1.0, 0.0, 0.0],
-                ref_direction: [0.0, 1.0, 0.0],
+                frame: frame([1.0, 2.0, 3.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
                 radius: 2.0,
             }
         );
@@ -1324,9 +1303,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             namespace: LegacySurfaceNamespace::Visible,
             surface_id: 42,
             geometry: LegacySurfaceGeometry::Cone {
-                apex: [0.0, 0.0, 0.0],
-                axis: [0.0, 0.0, 1.0],
-                ref_direction: [1.0, 0.0, 0.0],
+                frame: frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
                 half_angle: std::f64::consts::FRAC_PI_4,
                 parameter_v_sign: -1.0,
             },

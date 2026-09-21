@@ -744,8 +744,9 @@ impl TabulatedCylinderFrame {
 
 /// Model-space origin with an orthonormal direction pair.
 ///
-/// The dimensioned carriers hold one of these and add their own scalars. The origin is the
-/// apex of a cone and the center of a torus or sphere.
+/// The positional and legacy analytic carriers hold one of these and add their own scalars.
+/// The origin is the origin of a plane, a point on the axis of a cylinder, the apex of a cone
+/// and the center of a torus or sphere.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalFrame {
     origin: [f64; 3],
@@ -759,7 +760,7 @@ impl PositionalFrame {
     /// The origin carries its own finiteness check because no other condition reads it.
     /// [`valid_orthonormal_frame_directions`] refuses a non-finite axis or ref direction
     /// through the unit-length and orthogonality comparisons.
-    fn new(origin: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Option<Self> {
+    pub(crate) fn new(origin: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Option<Self> {
         (origin.into_iter().all(f64::is_finite)
             && valid_orthonormal_frame_directions(axis, ref_direction))
         .then_some(Self {
@@ -767,6 +768,18 @@ impl PositionalFrame {
             axis,
             ref_direction,
         })
+    }
+
+    /// Returns the same frame with the axis directed the opposite way.
+    ///
+    /// Negating every axis component leaves the axis norm and the magnitude of its dot
+    /// product with the ref direction unchanged, so the admitted pair stays admitted and
+    /// the operation is total.
+    pub(crate) fn with_reversed_axis(self) -> Self {
+        Self {
+            axis: self.axis.map(|component| -component),
+            ..self
+        }
     }
 
     /// Returns the origin.

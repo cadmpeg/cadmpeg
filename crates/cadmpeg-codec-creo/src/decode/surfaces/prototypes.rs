@@ -608,24 +608,6 @@ pub(in super::super) fn transfer_positional_spline_replays(
     Ok(transferred)
 }
 
-/// One legacy analytic carrier's stored origin and direction pair, as the
-/// geometry values the IR carrier constructors take.
-///
-/// The five analytic variants name these three arrays differently — the plane
-/// calls its pair the normal and the u axis, the cone its origin the apex —
-/// but each carries the same local-system origin, column two and column zero.
-fn carrier_frame(
-    origin: [f64; 3],
-    axis: [f64; 3],
-    ref_direction: [f64; 3],
-) -> (Point3, Vector3, Vector3) {
-    (
-        Point3::new(origin[0], origin[1], origin[2]),
-        Vector3::new(axis[0], axis[1], axis[2]),
-        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-    )
-}
-
 /// Transfer one exact surface carrier per unique legacy ASCII carrier record.
 ///
 /// A carrier spline whose lanes the IR carrier refuses states no carrier. The
@@ -661,33 +643,28 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             continue;
         };
         let geometry = match &carrier.geometry {
-            crate::legacy_geometry::LegacySurfaceGeometry::Plane {
-                origin,
-                normal,
-                u_axis,
-            } if row.kind == crate::surface::SurfaceKind::Plane => {
-                let (origin, normal, u_axis) = carrier_frame(*origin, *normal, *u_axis);
+            crate::legacy_geometry::LegacySurfaceGeometry::Plane { frame }
+                if row.kind == crate::surface::SurfaceKind::Plane =>
+            {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        origin, normal, u_axis,
+                        frame.origin_point(),
+                        frame.axis_vector(),
+                        frame.ref_direction_vector(),
                     ) {
                         Ok(payload) => payload,
                         Err(_) => continue,
                     },
                 ))
             }
-            crate::legacy_geometry::LegacySurfaceGeometry::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-            } if row.kind == crate::surface::SurfaceKind::Cylinder => {
-                let (origin, axis, ref_direction) = carrier_frame(*origin, *axis, *ref_direction);
+            crate::legacy_geometry::LegacySurfaceGeometry::Cylinder { frame, radius }
+                if row.kind == crate::surface::SurfaceKind::Cylinder =>
+            {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        origin,
-                        axis,
-                        ref_direction,
+                        frame.origin_point(),
+                        frame.axis_vector(),
+                        frame.ref_direction_vector(),
                         *radius,
                     ) {
                         Ok(payload) => payload,
@@ -696,31 +673,28 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Cone {
-                apex,
-                axis,
-                ref_direction,
-                half_angle,
-                ..
+                frame, half_angle, ..
             } if row.kind == crate::surface::SurfaceKind::Cone => {
-                let (apex, axis, ref_direction) = carrier_frame(*apex, *axis, *ref_direction);
-                let Some(cone) = super::apex_cone(apex, axis, ref_direction, *half_angle) else {
+                let Some(cone) = super::apex_cone(
+                    frame.origin_point(),
+                    frame.axis_vector(),
+                    frame.ref_direction_vector(),
+                    *half_angle,
+                ) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Torus {
-                center,
-                axis,
-                ref_direction,
+                frame,
                 major_radius,
                 minor_radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
-                let (center, axis, ref_direction) = carrier_frame(*center, *axis, *ref_direction);
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        center,
-                        axis,
-                        ref_direction,
+                        frame.origin_point(),
+                        frame.axis_vector(),
+                        frame.ref_direction_vector(),
                         *major_radius,
                         *minor_radius,
                     ) {
@@ -729,18 +703,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     },
                 ))
             }
-            crate::legacy_geometry::LegacySurfaceGeometry::Sphere {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
-                let (center, axis, ref_direction) = carrier_frame(*center, *axis, *ref_direction);
+            crate::legacy_geometry::LegacySurfaceGeometry::Sphere { frame, radius }
+                if row.kind == crate::surface::SurfaceKind::TorusOrSphere =>
+            {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        center,
-                        axis,
-                        ref_direction,
+                        frame.origin_point(),
+                        frame.axis_vector(),
+                        frame.ref_direction_vector(),
                         *radius,
                     ) {
                         Ok(payload) => payload,
