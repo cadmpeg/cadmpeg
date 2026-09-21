@@ -208,8 +208,11 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
     );
 }
 
+/// The bound belongs to the value, so it is stated where a caller-owned map
+/// enters the record. Every reader of a constructed record — `Serialize`,
+/// `fields`, `field`, `to_typed` and `Drop` — then descends a bounded value.
 #[test]
-fn a_field_nested_past_the_native_bound_is_refused_by_the_stored_record_reader() {
+fn a_field_nested_past_the_native_bound_never_enters_a_record() {
     use crate::native::{NativeConvertError, MAX_NATIVE_NESTING_DEPTH};
 
     #[derive(Debug, PartialEq, serde::Deserialize)]
@@ -231,33 +234,44 @@ fn a_field_nested_past_the_native_bound_is_refused_by_the_stored_record_reader()
             id,
             serde_json::Map::from_iter([("nested".to_owned(), nested)]),
         )
-        .unwrap()
     };
 
     let admitted = chain(MAX_NATIVE_NESTING_DEPTH);
     assert_eq!(
-        record(admitted.clone()).to_typed::<Record>().unwrap(),
+        record(admitted.clone())
+            .unwrap()
+            .to_typed::<Record>()
+            .unwrap(),
         Record {
             id: id.to_owned(),
             nested: admitted,
         }
     );
-    let error = record(chain(MAX_NATIVE_NESTING_DEPTH + 1))
-        .to_typed::<Record>()
-        .unwrap_err();
-    let NativeConvertError::ReadRecord {
-        id: refused,
-        source,
-    } = error
-    else {
-        panic!("record context")
+
+    let refused = chain(MAX_NATIVE_NESTING_DEPTH + 1);
+    let error = record(refused.clone()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "native record {id}: field nested nests deeper than \
+             {MAX_NATIVE_NESTING_DEPTH} containers"
+        )
+    );
+    let NativeConvertError::FieldNestsTooDeep { id: offered, field } = error else {
+        panic!("field context")
     };
-    assert_eq!(refused.as_str(), id);
+    assert_eq!(offered.as_str(), id);
+    assert_eq!(field, "nested");
+
+    // The wire reader builds through the same constructor, so a document
+    // handed in as a value tree cannot state a deeper field either.
+    let wire = serde_json::json!({"id": id, "nested": refused});
+    let error = serde_json::from_value::<NativeRecord>(wire).unwrap_err();
     assert!(
-        source.to_string().contains(&format!(
-            "field nested nests deeper than {MAX_NATIVE_NESTING_DEPTH}"
-        )),
-        "{source}"
+        error
+            .to_string()
+            .contains(&format!("nests deeper than {MAX_NATIVE_NESTING_DEPTH}")),
+        "{error}"
     );
 }
 
@@ -298,14 +312,43 @@ fn native_identity_admission_is_shared_by_all_construction_paths() {
     let typed = NativeRecord::from_typed(&Record { id }).unwrap();
     let decoded =
         serde_json::from_value::<NativeRecord>(serde_json::to_value(&record).unwrap()).unwrap();
-    let admitted = NativeRecord::from_identity(
-        crate::ids::UnknownId::mint(id).unwrap(),
-        serde_json::Map::new(),
-    );
+    let admitted = NativeRecord::from_identity(crate::ids::UnknownId::mint(id).unwrap(), []);
     assert_eq!(record, admitted);
     assert_eq!(record, typed);
     assert_eq!(record, decoded);
     assert_eq!(record.id(), id);
+}
+
+/// The infallible constructor takes fields that state their own shape, so its
+/// records read back through the fallible one without measurement.
+#[test]
+fn flat_fields_build_a_record_no_reader_has_to_measure() {
+    use crate::native::NativeField;
+
+    let id = "step:test:drawing-target#1";
+    let record = NativeRecord::from_identity(
+        crate::ids::Identity::new(id).unwrap(),
+        [
+            ("source_id".to_owned(), NativeField::Text("#42".to_owned())),
+            (
+                "links".to_owned(),
+                NativeField::TextList(vec!["step:test:target#0".to_owned()]),
+            ),
+            ("id".to_owned(), NativeField::Text("ignored".to_owned())),
+        ],
+    );
+    assert_eq!(record.id(), id);
+    assert_eq!(record.field("id"), None);
+    assert_eq!(record.field("source_id"), Some(serde_json::json!("#42")));
+    assert_eq!(
+        record.field("links"),
+        Some(serde_json::json!(["step:test:target#0"]))
+    );
+    assert_eq!(
+        NativeRecord::new(id, record.fields()).unwrap(),
+        record,
+        "the measured constructor admits what the flat one builds"
+    );
 }
 
 #[test]
