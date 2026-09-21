@@ -213,7 +213,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
             let SketchGeometryDefinition::Nurbs { curve } = definition else {
                 unreachable!("test result is a NURBS")
             };
-            let last = curve.pole_rows().len().checked_sub(1);
+            let last = curve.pole_rows().count().checked_sub(1);
             let mut pole_index = 0usize;
             curve
                 .edit_control_points(|point| {

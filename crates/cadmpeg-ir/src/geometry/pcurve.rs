@@ -80,11 +80,9 @@ impl PcurveNurbsPoles {
         })
     }
 
-    /// Number of poles.
+    /// Count poles.
     #[must_use]
-    // Curve admission consumes pole counts; no caller needs an emptiness accessor.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> usize {
         match self {
             Self::Polynomial { points } => points.len(),
             Self::Rational { points } => points.len(),
@@ -1206,11 +1204,9 @@ impl PolarNurbsPoles {
         })
     }
 
-    /// Number of poles.
+    /// Count poles.
     #[must_use]
-    // Curve admission consumes pole counts; no caller needs an emptiness accessor.
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn count(&self) -> usize {
         match self {
             Self::Polynomial { poles } => poles.len(),
             Self::Rational { poles } => poles.len(),
@@ -1253,7 +1249,7 @@ impl PolarPcurveNurbs {
         poles: PolarNurbsPoles,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.len(), "poles")?;
+        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "polar NURBS degree must be positive".into(),
@@ -1371,7 +1367,7 @@ impl PcurveNurbs {
         poles: PcurveNurbsPoles,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.len(), "control_points")?;
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
         if degree == 0 {
             return Err(NurbsError::Structure(
                 "pcurve NURBS degree must be positive".into(),
