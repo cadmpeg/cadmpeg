@@ -487,28 +487,24 @@ fn pcurve_endpoint_carrier_status(
 
 /// Mirrors an apex cone through its apex: the same shape a cone surface record carries, so it
 /// takes its half angle from [`crate::surface::valid_apex_cone_half_angle`].
+///
+/// The frame is not examined. A `ConeSurface` holds an
+/// [`cadmpeg_ir::units::OrthonormalFrame3`], whose only admission is
+/// [`cadmpeg_ir::units::OrthonormalFrame3::new`]: both directions are unit length and
+/// perpendicular within the analytic frame tolerance, so every component is finite.
+/// [`cadmpeg_ir::units::OrthonormalFrame3::reverse_axis`] negates components and keeps that
+/// guarantee, and `ConeSurface::new` moves the frame across without a new admission.
 fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeometry> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = geometry else {
         return None;
     };
     let origin = cone_surface.origin().get();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
-    let axis_values = [axis.x, axis.y, axis.z];
-    let ref_values = [ref_direction.x, ref_direction.y, ref_direction.z];
-    let axis_length = dot(axis_values, axis_values).sqrt();
-    let ref_length = dot(ref_values, ref_values).sqrt();
     if radius != 0.0
         || (ratio - 1.0).abs() > EPS_NEAR_ZERO
         || !crate::surface::valid_apex_cone_half_angle(half_angle)
-        || !axis_length.is_finite()
-        || (axis_length - 1.0).abs() > EPS_ORTHO
-        || !ref_length.is_finite()
-        || (ref_length - 1.0).abs() > EPS_ORTHO
-        || dot(axis_values, ref_values).abs() > EPS_ORTHO
     {
         return None;
     }
@@ -2490,5 +2486,37 @@ mod tests {
         ));
 
         assert!(mirrored_support_apex_cone(&degenerate).is_none());
+    }
+
+    #[test]
+    fn an_apex_cone_mirrors_on_every_frame_the_ir_admits() {
+        // `OrthonormalFrame3` admits a unit length and an orthogonality within 1e-9. This axis
+        // is 5e-10 long of unit and this reference is 5e-10 out of square with it, so both sit
+        // inside that admission and outside the 1e-10 the module applies to native record
+        // directions.
+        let slack = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(1.0, 0.0, 0.0),
+                Vector3::new(-1.0 - 5.0e-10, 0.0, 0.0),
+                Vector3::new(5.0e-10, 0.0, -1.0 - 5.0e-10),
+                0.0,
+                1.0,
+                std::f64::consts::FRAC_PI_4,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
+        let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                Point3::new(-1.0, 0.0, 0.0),
+                Vector3::new(1.0 + 5.0e-10, 0.0, 0.0),
+                Vector3::new(5.0e-10, 0.0, -1.0 - 5.0e-10),
+                0.0,
+                1.0,
+                std::f64::consts::FRAC_PI_4,
+            )
+            .expect("valid ConeSurface fixture"),
+        ));
+
+        assert_eq!(mirrored_support_apex_cone(&slack), Some(expected));
     }
 }
