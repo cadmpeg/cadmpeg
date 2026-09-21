@@ -508,11 +508,232 @@ mod tests {
             "fcstd:model:body#A%20B:Shape%20Value:"
         );
     }
+
+    /// Identity frame shared by the written-form tests below.
+    fn identity() -> [[f64; 4]; 4] {
+        cadmpeg_ir::transform::Transform::identity().rows()
+    }
+
+    /// A link target wire object naming one object and its subelements.
+    fn link(object: &str, subelements: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "document": null,
+            "document_attribute": null,
+            "object": object,
+            "subelements": subelements
+        })
+    }
+
+    #[test]
+    fn an_attachment_writes_its_supports_frames_and_effective_frame() {
+        let wire = serde_json::json!({
+            "id": "attachment",
+            "object": "object",
+            "supports": [null, link("Pad", &["Face1"])],
+            "map_mode": "3",
+            "placement": identity(),
+            "offset": identity(),
+            "effective_frame": identity()
+        });
+        let record = serde_json::from_value::<super::AttachmentRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let mut bare = wire;
+        bare["supports"] = serde_json::json!([]);
+        bare["map_mode"] = serde_json::Value::Null;
+        bare["placement"] = serde_json::Value::Null;
+        bare["offset"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::AttachmentRecord>(bare.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+    }
+
+    #[test]
+    fn archive_and_logical_spans_write_their_role_and_owner() {
+        for (role, entry) in [
+            ("compressed-payload", serde_json::json!("Document.xml")),
+            ("end-record", serde_json::Value::Null),
+        ] {
+            let wire = serde_json::json!({
+                "id": "span", "start": 0, "end": 4, "role": role, "entry": entry
+            });
+            let record = serde_json::from_value::<super::ArchiveSpan>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+
+        for (classification, owner) in [
+            ("structural", serde_json::Value::Null),
+            ("typed", serde_json::json!("fcstd:native:object#A")),
+            (
+                "named_opaque",
+                serde_json::json!("fcstd:native:property#A:Shape"),
+            ),
+        ] {
+            let wire = serde_json::json!({
+                "id": "span", "entry": "Document.xml", "start": 0, "end": 4,
+                "classification": classification, "owner": owner
+            });
+            let record = serde_json::from_value::<super::LogicalSpan>(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        }
+    }
+
+    #[test]
+    fn a_drawing_record_writes_page_views_and_a_non_page_without_them() {
+        let base = serde_json::json!({
+            "id": "drawing", "object": "object",
+            "kind": "TechDraw::DrawPage",
+            "views": ["fcstd:native:object#View"],
+            "template": "fcstd:native:object#Template",
+            "sources": [null, link("Body", &["Face2"])],
+            "relationships": {"Source": [link("Body", &[])]},
+            "parameters": {"Scale": "1.0"},
+            "side_entries": ["template.svg"]
+        });
+        let record = serde_json::from_value::<super::DrawingRecord>(base.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), base);
+
+        let mut other = base;
+        other["kind"] = serde_json::json!("TechDraw::DrawViewPart");
+        other["views"] = serde_json::json!([]);
+        other["template"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::DrawingRecord>(other.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), other);
+    }
+
+    #[test]
+    fn an_object_record_writes_its_retained_xml_and_its_absence() {
+        let wire = serde_json::json!({
+            "id": "object", "name": "A", "type_name": "App::Feature",
+            "persistent_id": 7, "view_type": "Gui::ViewProviderFeature",
+            "attributes": {"Touched": "1"},
+            "dependencies": ["fcstd:native:object#B"],
+            "dependency_allow_partial": 2, "order": 0,
+            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+        });
+        let record = serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+
+        let mut bare = wire;
+        bare["persistent_id"] = serde_json::Value::Null;
+        bare["view_type"] = serde_json::Value::Null;
+        bare["dependency_allow_partial"] = serde_json::Value::Null;
+        bare["raw_xml"] = serde_json::Value::Null;
+        bare["byte_start"] = serde_json::Value::Null;
+        bare["byte_end"] = serde_json::Value::Null;
+        let record = serde_json::from_value::<super::ObjectRecord>(bare.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), bare);
+    }
+
+    #[test]
+    fn a_property_record_writes_its_payload_and_a_transient_declaration_without_one() {
+        let wire = serde_json::json!({
+            "id": "property", "owner": "object", "name": "Label",
+            "type_name": "App::PropertyString", "family": "string", "status": 1,
+            "transient": false,
+            "dynamic": {"group": "Base", "documentation": "label", "attributes": 0,
+                        "read_only": false, "hidden": null},
+            "order": 2,
+            "values": [{"tag": "String", "order": 0, "attributes": {"value": "A"},
+                        "text": null, "raw_xml": "<String value=\"A\"/>"}],
+            "links": [null, link("B", &["Face1"])],
+            "side_entries": ["Body.brp"],
+            "raw_xml": "<A/>", "byte_start": 10, "byte_end": 14
+        });
+        let record = serde_json::from_value::<super::PropertyRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+
+        let mut transient = wire;
+        transient["transient"] = serde_json::json!(true);
+        transient["dynamic"] = serde_json::Value::Null;
+        transient["values"] = serde_json::json!([]);
+        transient["links"] = serde_json::json!([]);
+        transient["side_entries"] = serde_json::json!([]);
+        let record = serde_json::from_value::<super::PropertyRecord>(transient.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), transient);
+    }
+
+    #[test]
+    fn an_entry_record_writes_its_bytes_beside_their_length_and_digest() {
+        let wire = serde_json::json!({
+            "id": "fcstd:native:entry#Document.xml",
+            "name": "Document.xml",
+            "role": "document",
+            "byte_len": 3,
+            "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+            "referenced_by": ["fcstd:native:property#A:Shape"],
+            "data": [1, 2, 3]
+        });
+        let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let mut empty = wire;
+        empty["byte_len"] = serde_json::json!(0);
+        empty["sha256"] =
+            serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        empty["referenced_by"] = serde_json::json!([]);
+        empty["data"] = serde_json::json!([]);
+        let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), empty);
+    }
+
+    #[test]
+    fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
+        let occurrence = serde_json::json!({
+            "id": "link", "object": "object", "kind": "occurrence",
+            "members": ["fcstd:native:object#Child"],
+            "prototype": "fcstd:native:object#Proto",
+            "external_document": "Other.FCStd",
+            "external_document_attribute": "file",
+            "local_transform": identity(),
+            "placement_property": "Placement",
+            "element_count": 1,
+            "link_transform": true,
+            "element_transforms": [identity()],
+            "element_scales": [[2.0, 2.0, 2.0]],
+            "linked_subelements": ["Face1"],
+            "claim_child": false,
+            "copy_on_change": "2",
+            "copy_on_change_source": link("Source", &[]),
+            "copy_on_change_group": link("Group", &[]),
+            "copy_on_change_touched": true,
+            "scale": [3.0, 3.0, 3.0],
+            "element_visibility": [true],
+            "element_objects": ["fcstd:native:object#Element"]
+        });
+        let record =
+            serde_json::from_value::<super::ProductNodeRecord>(occurrence.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), occurrence);
+
+        let container = serde_json::json!({
+            "id": "group", "object": "object", "kind": "group",
+            "members": ["fcstd:native:object#Child"],
+            "prototype": null,
+            "external_document": null,
+            "external_document_attribute": null,
+            "local_transform": identity(),
+            "placement_property": "Placement",
+            "element_count": null,
+            "link_transform": null,
+            "element_transforms": [],
+            "element_scales": [],
+            "linked_subelements": [],
+            "claim_child": null,
+            "copy_on_change": null,
+            "copy_on_change_source": null,
+            "copy_on_change_group": null,
+            "copy_on_change_touched": null,
+            "scale": null,
+            "element_visibility": [],
+            "element_objects": []
+        });
+        let record = serde_json::from_value::<super::ProductNodeRecord>(container.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), container);
+    }
 }
 
 /// Machine-derived semantic projection census for one design object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DesignCensusRecordWire", into = "DesignCensusRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignCensusRecordWire")]
 pub(crate) struct DesignCensusRecord {
     /// Stable census identity derived from the native object.
     pub(crate) id: String,
@@ -535,7 +756,7 @@ impl DesignCensusRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct DesignCensusRecordWire {
     id: String,
     object: String,
@@ -546,18 +767,29 @@ struct DesignCensusRecordWire {
     post_processed: bool,
 }
 
-impl From<DesignCensusRecord> for DesignCensusRecordWire {
-    fn from(value: DesignCensusRecord) -> Self {
-        let neutral = value.neutral();
-        Self {
-            id: value.id,
-            object: value.object,
-            type_name: value.type_name,
-            feature: value.feature,
-            semantic_kind: value.semantic_kind,
-            neutral,
-            post_processed: value.post_processed,
+#[derive(Serialize)]
+struct DesignCensusRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    type_name: &'a str,
+    feature: &'a str,
+    semantic_kind: &'a str,
+    neutral: bool,
+    post_processed: bool,
+}
+
+impl Serialize for DesignCensusRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignCensusRecordOut {
+            id: &self.id,
+            object: &self.object,
+            type_name: &self.type_name,
+            feature: &self.feature,
+            semantic_kind: &self.semantic_kind,
+            neutral: self.neutral(),
+            post_processed: self.post_processed,
         }
+        .serialize(serializer)
     }
 }
 
@@ -618,8 +850,8 @@ pub(crate) struct CarrierCensusRecord {
 }
 
 /// One support attachment and its distinct persisted frames.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "AttachmentRecordWire", into = "AttachmentRecordWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "AttachmentRecordWire")]
 pub(crate) struct AttachmentRecord {
     /// Stable attachment identity.
     pub(crate) id: String,
@@ -676,7 +908,7 @@ impl AttachmentRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct AttachmentRecordWire {
     id: String,
     object: String,
@@ -687,18 +919,29 @@ struct AttachmentRecordWire {
     effective_frame: [[f64; 4]; 4],
 }
 
-impl From<AttachmentRecord> for AttachmentRecordWire {
-    fn from(value: AttachmentRecord) -> Self {
-        let effective_frame = value.effective_frame();
-        Self {
-            id: value.id,
-            object: value.object,
-            supports: value.supports,
-            map_mode: value.map_mode,
-            placement: value.placement.map(FiniteFrame::rows),
-            offset: value.offset.map(FiniteFrame::rows),
-            effective_frame,
+#[derive(Serialize)]
+struct AttachmentRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    supports: &'a [Option<LinkTarget>],
+    map_mode: Option<MapModeIndex>,
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+    effective_frame: [[f64; 4]; 4],
+}
+
+impl Serialize for AttachmentRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        AttachmentRecordOut {
+            id: &self.id,
+            object: &self.object,
+            supports: &self.supports,
+            map_mode: self.map_mode,
+            placement: self.placement.map(FiniteFrame::rows),
+            offset: self.offset.map(FiniteFrame::rows),
+            effective_frame: self.effective_frame(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -752,8 +995,8 @@ impl ByteSpan {
 }
 
 /// Exact XML text paired with its nonempty source interval.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "RetainedXmlWire", into = "RetainedXmlWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "RetainedXmlWire")]
 pub(crate) struct RetainedXml {
     text: String,
     span: ByteSpan,
@@ -784,7 +1027,7 @@ impl RetainedXml {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct RetainedXmlWire {
     raw_xml: String,
     byte_start: u64,
@@ -796,19 +1039,28 @@ impl TryFrom<RetainedXmlWire> for RetainedXml {
         Self::try_new(wire.raw_xml, wire.byte_start, wire.byte_end)
     }
 }
-impl From<RetainedXml> for RetainedXmlWire {
-    fn from(value: RetainedXml) -> Self {
-        Self {
-            raw_xml: value.text,
-            byte_start: value.span.start(),
-            byte_end: value.span.end(),
+
+#[derive(Serialize)]
+struct RetainedXmlOut<'a> {
+    raw_xml: &'a str,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl Serialize for RetainedXml {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RetainedXmlOut {
+            raw_xml: &self.text,
+            byte_start: self.span.start(),
+            byte_end: self.span.end(),
         }
+        .serialize(serializer)
     }
 }
 
 /// Document-level GUI state outside application-object view providers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "GuiDocumentRecordWire", into = "GuiDocumentRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "GuiDocumentRecordWire")]
 pub(crate) struct GuiDocumentRecord {
     /// Stable GUI document identity.
     pub(crate) id: String,
@@ -838,33 +1090,59 @@ pub(crate) struct GuiStateRecord {
     pub(crate) xml: RetainedXml,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct GuiStateRecordWire {
     order: usize,
     #[serde(flatten)]
     state: GuiStateRecord,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct GuiDocumentRecordWire {
     id: String,
     schema_version: Option<String>,
     attributes: BTreeMap<String, String>,
     states: Vec<GuiStateRecordWire>,
 }
-impl From<GuiDocumentRecord> for GuiDocumentRecordWire {
-    fn from(value: GuiDocumentRecord) -> Self {
-        Self {
-            id: value.id,
-            schema_version: value.schema_version,
-            attributes: value.attributes,
-            states: value
-                .states
-                .into_iter()
+
+#[derive(Serialize)]
+struct GuiStateRecordOut<'a> {
+    order: usize,
+    #[serde(flatten)]
+    state: &'a GuiStateRecord,
+}
+
+/// Writes each state beside the order its collection position states.
+struct GuiStatesOut<'a>(&'a [GuiStateRecord]);
+
+impl Serialize for GuiStatesOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .iter()
                 .enumerate()
-                .map(|(order, state)| GuiStateRecordWire { order, state })
-                .collect(),
+                .map(|(order, state)| GuiStateRecordOut { order, state }),
+        )
+    }
+}
+
+#[derive(Serialize)]
+struct GuiDocumentRecordOut<'a> {
+    id: &'a str,
+    schema_version: Option<&'a str>,
+    attributes: &'a BTreeMap<String, String>,
+    states: GuiStatesOut<'a>,
+}
+
+impl Serialize for GuiDocumentRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        GuiDocumentRecordOut {
+            id: &self.id,
+            schema_version: self.schema_version.as_deref(),
+            attributes: &self.attributes,
+            states: GuiStatesOut(&self.states),
         }
+        .serialize(serializer)
     }
 }
 impl TryFrom<GuiDocumentRecordWire> for GuiDocumentRecord {
@@ -1080,8 +1358,8 @@ impl TechDrawKind {
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DrawingRecordWire", into = "DrawingRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DrawingRecordWire")]
 pub(crate) struct DrawingRecord {
     /// Stable drawing-record identity.
     pub(crate) id: String,
@@ -1099,7 +1377,7 @@ pub(crate) struct DrawingRecord {
     pub(crate) side_entries: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct DrawingRecordWire {
     id: String,
     object: String,
@@ -1112,26 +1390,40 @@ struct DrawingRecordWire {
     side_entries: Vec<String>,
 }
 
-impl From<DrawingRecord> for DrawingRecordWire {
-    fn from(value: DrawingRecord) -> Self {
-        let kind = value.kind.as_str().to_owned();
-        let (views, template) = match value.kind {
+#[derive(Serialize)]
+struct DrawingRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    kind: &'a str,
+    views: &'a [String],
+    template: Option<&'a str>,
+    sources: &'a [Option<LinkTarget>],
+    relationships: &'a BTreeMap<String, Vec<Option<LinkTarget>>>,
+    parameters: &'a BTreeMap<String, String>,
+    side_entries: &'a [String],
+}
+
+impl Serialize for DrawingRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // A non-page drawing object carries no views and no template.
+        let (views, template) = match &self.kind {
             TechDrawKind::Page {
                 views, template, ..
-            } => (views, template),
-            TechDrawKind::Other(_) => (Vec::new(), None),
+            } => (views.as_slice(), template.as_deref()),
+            TechDrawKind::Other(_) => (&[][..], None),
         };
-        Self {
-            id: value.id,
-            object: value.object,
-            kind,
+        DrawingRecordOut {
+            id: &self.id,
+            object: &self.object,
+            kind: self.kind.as_str(),
             views,
             template,
-            sources: value.sources,
-            relationships: value.relationships,
-            parameters: value.parameters,
-            side_entries: value.side_entries,
+            sources: &self.sources,
+            relationships: &self.relationships,
+            parameters: &self.parameters,
+            side_entries: &self.side_entries,
         }
+        .serialize(serializer)
     }
 }
 
@@ -1153,8 +1445,8 @@ impl TryFrom<DrawingRecordWire> for DrawingRecord {
 }
 
 /// One product container, prototype, or placed link occurrence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ProductNodeRecordWire", into = "ProductNodeRecordWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ProductNodeRecordWire")]
 pub(crate) struct ProductNodeRecord {
     /// Stable record identity.
     pub(crate) id: String,
@@ -1525,7 +1817,7 @@ impl ProductNodeRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ProductNodeRecordWire {
     id: String,
     object: String,
@@ -1551,48 +1843,79 @@ struct ProductNodeRecordWire {
     element_objects: Vec<String>,
 }
 
-impl From<ProductNodeRecord> for ProductNodeRecordWire {
-    fn from(value: ProductNodeRecord) -> Self {
-        Self {
-            kind: value.kind().to_owned(),
-            members: value.members().to_vec(),
-            prototype: value.prototype().map(str::to_owned),
-            external_document: value
+/// Writes admitted frames as the row-major matrices the wire carries.
+struct FrameRowsOut<'a>(&'a [FiniteFrame]);
+
+impl Serialize for FrameRowsOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().copied().map(FiniteFrame::rows))
+    }
+}
+
+/// Writes admitted scale vectors as the component triples the wire carries.
+struct Vec3ValuesOut<'a>(&'a [FiniteVec3]);
+
+impl Serialize for Vec3ValuesOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().copied().map(FiniteVec3::values))
+    }
+}
+
+#[derive(Serialize)]
+struct ProductNodeRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    kind: &'static str,
+    members: &'a [String],
+    prototype: Option<&'a str>,
+    external_document: Option<&'a str>,
+    external_document_attribute: Option<&'static str>,
+    local_transform: Option<[[f64; 4]; 4]>,
+    placement_property: Option<&'a str>,
+    element_count: Option<u64>,
+    link_transform: Option<bool>,
+    element_transforms: FrameRowsOut<'a>,
+    element_scales: Vec3ValuesOut<'a>,
+    linked_subelements: &'a [String],
+    claim_child: Option<bool>,
+    copy_on_change: Option<&'a str>,
+    copy_on_change_source: Option<&'a LinkTarget>,
+    copy_on_change_group: Option<&'a LinkTarget>,
+    copy_on_change_touched: Option<bool>,
+    scale: Option<[f64; 3]>,
+    element_visibility: &'a [bool],
+    element_objects: &'a [String],
+}
+
+impl Serialize for ProductNodeRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ProductNodeRecordOut {
+            id: &self.id,
+            object: &self.object,
+            kind: self.kind(),
+            members: self.members(),
+            prototype: self.prototype(),
+            external_document: self.external_document().map(ExternalDocument::as_str),
+            external_document_attribute: self
                 .external_document()
-                .map(ExternalDocument::as_str)
-                .map(str::to_owned),
-            external_document_attribute: value
-                .external_document()
-                .and_then(ExternalDocument::attribute)
-                .map(str::to_owned),
-            local_transform: value.local_transform().map(FiniteFrame::rows),
-            placement_property: value.placement_property().map(str::to_owned),
-            element_count: value.element_count(),
-            link_transform: value.link_transform(),
-            element_transforms: value
-                .element_transforms()
-                .iter()
-                .copied()
-                .map(FiniteFrame::rows)
-                .collect(),
-            element_scales: value
-                .element_scales()
-                .iter()
-                .copied()
-                .map(FiniteVec3::values)
-                .collect(),
-            linked_subelements: value.linked_subelements().to_vec(),
-            claim_child: value.claim_child(),
-            copy_on_change: value.copy_on_change().map(str::to_owned),
-            copy_on_change_source: value.copy_on_change_source().cloned(),
-            copy_on_change_group: value.copy_on_change_group().cloned(),
-            copy_on_change_touched: value.copy_on_change_touched(),
-            scale: value.scale(),
-            element_visibility: value.element_visibility().to_vec(),
-            element_objects: value.element_objects().to_vec(),
-            id: value.id,
-            object: value.object,
+                .and_then(ExternalDocument::attribute),
+            local_transform: self.local_transform().map(FiniteFrame::rows),
+            placement_property: self.placement_property(),
+            element_count: self.element_count(),
+            link_transform: self.link_transform(),
+            element_transforms: FrameRowsOut(self.element_transforms()),
+            element_scales: Vec3ValuesOut(self.element_scales()),
+            linked_subelements: self.linked_subelements(),
+            claim_child: self.claim_child(),
+            copy_on_change: self.copy_on_change(),
+            copy_on_change_source: self.copy_on_change_source(),
+            copy_on_change_group: self.copy_on_change_group(),
+            copy_on_change_touched: self.copy_on_change_touched(),
+            scale: self.scale(),
+            element_visibility: self.element_visibility(),
+            element_objects: self.element_objects(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1885,8 +2208,8 @@ impl ArchiveSpanRole {
 }
 
 /// One physical archive span.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ArchiveSpanWire", into = "ArchiveSpanWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ArchiveSpanWire")]
 pub(crate) struct ArchiveSpan {
     /// Stable span identity.
     pub(crate) id: String,
@@ -1896,7 +2219,7 @@ pub(crate) struct ArchiveSpan {
     pub(crate) role: ArchiveSpanRole,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ArchiveSpanWire {
     id: String,
     start: u64,
@@ -1905,15 +2228,25 @@ struct ArchiveSpanWire {
     entry: Option<String>,
 }
 
-impl From<ArchiveSpan> for ArchiveSpanWire {
-    fn from(value: ArchiveSpan) -> Self {
-        Self {
-            id: value.id,
-            start: value.span.start(),
-            end: value.span.end(),
-            role: value.role.as_str().to_owned(),
-            entry: value.role.entry().map(str::to_owned),
+#[derive(Serialize)]
+struct ArchiveSpanOut<'a> {
+    id: &'a str,
+    start: u64,
+    end: u64,
+    role: &'static str,
+    entry: Option<&'a str>,
+}
+
+impl Serialize for ArchiveSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ArchiveSpanOut {
+            id: &self.id,
+            start: self.span.start(),
+            end: self.span.end(),
+            role: self.role.as_str(),
+            entry: self.role.entry(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -1986,8 +2319,8 @@ impl FileVersion {
 }
 
 /// Metadata read from the persistence document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DocumentFactsWire", into = "DocumentFactsWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DocumentFactsWire")]
 pub(crate) struct DocumentFacts {
     /// Stable document-record identity.
     pub(crate) id: String,
@@ -2022,7 +2355,7 @@ impl DocumentFacts {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct DocumentFactsWire {
     id: String,
     file_version: String,
@@ -2032,17 +2365,30 @@ struct DocumentFactsWire {
     domains: Vec<String>,
     document_kind: DocumentKind,
 }
-impl From<DocumentFacts> for DocumentFactsWire {
-    fn from(value: DocumentFacts) -> Self {
-        Self {
-            document_kind: value.document_kind(),
-            id: value.id,
-            file_version: value.file_version.spelling,
-            program_version: value.program_version,
-            root_name: value.root_name,
-            object_count: value.object_count,
-            domains: value.domains,
+
+#[derive(Serialize)]
+struct DocumentFactsOut<'a> {
+    id: &'a str,
+    file_version: &'a str,
+    program_version: Option<&'a str>,
+    root_name: &'a str,
+    object_count: usize,
+    domains: &'a [String],
+    document_kind: DocumentKind,
+}
+
+impl Serialize for DocumentFacts {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DocumentFactsOut {
+            id: &self.id,
+            file_version: self.file_version.as_str(),
+            program_version: self.program_version.as_deref(),
+            root_name: &self.root_name,
+            object_count: self.object_count,
+            domains: &self.domains,
+            document_kind: self.document_kind(),
         }
+        .serialize(serializer)
     }
 }
 impl TryFrom<DocumentFactsWire> for DocumentFacts {
@@ -2064,8 +2410,8 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
 }
 
 /// One declared application object and its persistence state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ObjectRecordWire")]
 pub(crate) struct ObjectRecord {
     /// Stable native identity.
     pub(crate) id: String,
@@ -2089,7 +2435,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) data: Option<RetainedXml>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct ObjectRecordWire {
     id: String,
     name: String,
@@ -2105,32 +2451,46 @@ struct ObjectRecordWire {
     byte_end: Option<u64>,
 }
 
-impl From<ObjectRecord> for ObjectRecordWire {
-    fn from(value: ObjectRecord) -> Self {
-        let (raw_xml, byte_start, byte_end) = match value.data {
-            Some(data) => (
-                Some(data.text),
-                Some(data.span.start()),
-                Some(data.span.end()),
-            ),
+#[derive(Serialize)]
+struct ObjectRecordOut<'a> {
+    id: &'a str,
+    name: &'a str,
+    type_name: &'a str,
+    persistent_id: Option<i64>,
+    view_type: Option<&'a str>,
+    attributes: &'a BTreeMap<String, String>,
+    dependencies: &'a [String],
+    dependency_allow_partial: Option<i128>,
+    order: usize,
+    raw_xml: Option<&'a str>,
+    byte_start: Option<u64>,
+    byte_end: Option<u64>,
+}
+
+impl Serialize for ObjectRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Absent object data writes all three span members absent.
+        let (raw_xml, byte_start, byte_end) = match &self.data {
+            Some(data) => (Some(data.text()), Some(data.start()), Some(data.end())),
             None => (None, None, None),
         };
-        Self {
-            id: value.id,
-            name: value.name,
-            type_name: value.type_name,
-            persistent_id: value.persistent_id,
-            view_type: value.view_type,
-            attributes: value.attributes,
-            dependencies: value.dependencies,
-            dependency_allow_partial: value
+        ObjectRecordOut {
+            id: &self.id,
+            name: &self.name,
+            type_name: &self.type_name,
+            persistent_id: self.persistent_id,
+            view_type: self.view_type.as_deref(),
+            attributes: &self.attributes,
+            dependencies: &self.dependencies,
+            dependency_allow_partial: self
                 .dependency_allow_partial
                 .map(|value| i128::from(value.get())),
-            order: value.order,
+            order: self.order,
             raw_xml,
             byte_start,
             byte_end,
         }
+        .serialize(serializer)
     }
 }
 
@@ -2251,8 +2611,8 @@ impl ExternalDocument {
 }
 
 /// One `XLink`, `PropertyLink`, or `PropertyLinkSub` target.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "LinkTargetWire", into = "LinkTargetWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "LinkTargetWire")]
 pub(crate) struct LinkTarget {
     /// External document, when the target is not local.
     document: Option<ExternalDocument>,
@@ -2323,7 +2683,7 @@ impl LinkTarget {
 }
 
 /// The persisted link target fields.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub(crate) struct LinkTargetWire {
     pub(crate) document: Option<String>,
     pub(crate) document_attribute: Option<String>,
@@ -2331,30 +2691,24 @@ pub(crate) struct LinkTargetWire {
     pub(crate) subelements: Vec<String>,
 }
 
-impl From<LinkTarget> for LinkTargetWire {
-    fn from(value: LinkTarget) -> Self {
-        let document_attribute = value
-            .document
-            .as_ref()
-            .and_then(ExternalDocument::attribute)
-            .map(str::to_owned);
-        let document = value
-            .document
-            .as_ref()
-            .map(ExternalDocument::as_str)
-            .map(str::to_owned);
-        Self {
-            document,
-            document_attribute,
-            object: Some(
-                value
-                    .object
-                    .as_ref()
-                    .map_or("", NonBlankString::as_str)
-                    .to_owned(),
-            ),
-            subelements: value.subelements,
+#[derive(Serialize)]
+struct LinkTargetOut<'a> {
+    document: Option<&'a str>,
+    document_attribute: Option<&'static str>,
+    object: Option<&'a str>,
+    subelements: &'a [String],
+}
+
+impl Serialize for LinkTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LinkTargetOut {
+            document: self.document_name(),
+            document_attribute: self.document_attribute(),
+            // An absent object identity writes the empty name the source carried.
+            object: Some(self.object().unwrap_or("")),
+            subelements: &self.subelements,
         }
+        .serialize(serializer)
     }
 }
 
@@ -2403,8 +2757,8 @@ pub(crate) enum PropertyBody {
 }
 
 /// One persisted property.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PropertyRecordWire", into = "PropertyRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "PropertyRecordWire")]
 pub(crate) struct PropertyRecord {
     /// Stable native identity.
     pub(crate) id: String,
@@ -2508,6 +2862,14 @@ impl PropertyRecord {
         }
     }
 
+    /// Dynamic-property metadata; absent for a transient declaration.
+    fn dynamic(&self) -> Option<&DynamicPropertyMeta> {
+        match &self.body {
+            PropertyBody::Persisted { dynamic, .. } => dynamic.as_ref(),
+            PropertyBody::Transient => None,
+        }
+    }
+
     pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
         match &mut self.body {
             PropertyBody::Persisted { values, .. } => Some(values),
@@ -2516,7 +2878,7 @@ impl PropertyRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct PropertyRecordWire {
     id: String,
     owner: String,
@@ -2535,34 +2897,47 @@ struct PropertyRecordWire {
     byte_end: u64,
 }
 
-impl From<PropertyRecord> for PropertyRecordWire {
-    fn from(value: PropertyRecord) -> Self {
-        let (transient, values, links, side_entries, dynamic) = match value.body {
-            PropertyBody::Transient => (true, Vec::new(), Vec::new(), Vec::new(), None),
-            PropertyBody::Persisted {
-                values,
-                links,
-                side_entries,
-                dynamic,
-            } => (false, values, links, side_entries, dynamic),
-        };
-        Self {
-            id: value.id,
-            owner: value.owner,
-            name: value.name,
-            type_name: value.type_name,
-            family: value.family,
-            status: value.status,
-            transient,
-            dynamic,
-            order: value.order,
-            values,
-            links,
-            side_entries,
-            raw_xml: value.xml.text,
-            byte_start: value.xml.span.start(),
-            byte_end: value.xml.span.end(),
+#[derive(Serialize)]
+struct PropertyRecordOut<'a> {
+    id: &'a str,
+    owner: &'a str,
+    name: &'a str,
+    type_name: &'a str,
+    family: PropertyFamily,
+    status: Option<u64>,
+    transient: bool,
+    dynamic: Option<&'a DynamicPropertyMeta>,
+    order: usize,
+    values: &'a [ValueRecord],
+    links: &'a [Option<LinkTarget>],
+    side_entries: &'a [String],
+    raw_xml: &'a str,
+    byte_start: u64,
+    byte_end: u64,
+}
+
+impl Serialize for PropertyRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PropertyRecordOut {
+            id: &self.id,
+            owner: &self.owner,
+            name: &self.name,
+            type_name: &self.type_name,
+            family: self.family,
+            status: self.status,
+            transient: self.is_transient(),
+            // A transient declaration writes no payload: the accessors state its
+            // empty tables and absent metadata.
+            dynamic: self.dynamic(),
+            order: self.order,
+            values: self.values(),
+            links: self.links(),
+            side_entries: self.side_entries(),
+            raw_xml: self.xml.text(),
+            byte_start: self.xml.start(),
+            byte_end: self.xml.end(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -2641,8 +3016,8 @@ pub(crate) enum PropertyFamily {
 }
 
 /// One logical archive entry and its graph ownership.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "EntryRecordWire", into = "EntryRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "EntryRecordWire")]
 pub(crate) struct EntryRecord {
     /// Stable entry identity.
     pub(crate) id: String,
@@ -2668,7 +3043,7 @@ impl EntryRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct EntryRecordWire {
     id: String,
     name: String,
@@ -2679,19 +3054,30 @@ struct EntryRecordWire {
     data: Vec<u8>,
 }
 
-impl From<EntryRecord> for EntryRecordWire {
-    fn from(value: EntryRecord) -> Self {
-        let byte_len = value.byte_len();
-        let sha256 = value.sha256();
-        Self {
-            id: value.id,
-            name: value.name,
-            role: value.role.as_str().to_owned(),
-            byte_len,
-            sha256,
-            referenced_by: value.referenced_by,
-            data: value.data,
+#[derive(Serialize)]
+struct EntryRecordOut<'a> {
+    id: &'a str,
+    name: &'a str,
+    role: &'static str,
+    byte_len: u64,
+    sha256: String,
+    referenced_by: &'a [String],
+    data: &'a [u8],
+}
+
+impl Serialize for EntryRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        EntryRecordOut {
+            id: &self.id,
+            name: &self.name,
+            role: self.role.as_str(),
+            byte_len: self.byte_len(),
+            // The digest is the written value, computed over the entry's own bytes.
+            sha256: self.sha256(),
+            referenced_by: &self.referenced_by,
+            data: &self.data,
         }
+        .serialize(serializer)
     }
 }
 
@@ -2715,8 +3101,8 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
 }
 
 /// One non-overlapping logical-entry byte span.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "LogicalSpanWire", into = "LogicalSpanWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "LogicalSpanWire")]
 pub(crate) struct LogicalSpan {
     /// Stable span identity.
     pub(crate) id: String,
@@ -2764,7 +3150,7 @@ impl LogicalClassification {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct LogicalSpanWire {
     id: String,
     entry: String,
@@ -2774,18 +3160,27 @@ struct LogicalSpanWire {
     owner: Option<String>,
 }
 
-impl From<LogicalSpan> for LogicalSpanWire {
-    fn from(value: LogicalSpan) -> Self {
-        let classification = value.classification.as_str().to_owned();
-        let owner = value.classification.owner().map(str::to_owned);
-        Self {
-            id: value.id,
-            entry: value.entry,
-            start: value.span.start(),
-            end: value.span.end(),
-            classification,
-            owner,
+#[derive(Serialize)]
+struct LogicalSpanOut<'a> {
+    id: &'a str,
+    entry: &'a str,
+    start: u64,
+    end: u64,
+    classification: &'static str,
+    owner: Option<&'a str>,
+}
+
+impl Serialize for LogicalSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        LogicalSpanOut {
+            id: &self.id,
+            entry: &self.entry,
+            start: self.span.start(),
+            end: self.span.end(),
+            classification: self.classification.as_str(),
+            owner: self.classification.owner(),
         }
+        .serialize(serializer)
     }
 }
 
@@ -2866,8 +3261,8 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
 }
 
 /// One document-wide persistent string table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "StringTableRecordWire", into = "StringTableRecordWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "StringTableRecordWire")]
 pub(crate) struct StringTableRecord {
     /// Zero-based document table index referenced by shape properties.
     index: usize,
@@ -2926,7 +3321,7 @@ impl StringTableRecord {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct StringTableRecordWire {
     id: String,
     index: usize,
@@ -2938,20 +3333,32 @@ struct StringTableRecordWire {
     entries: Vec<StringTableEntry>,
 }
 
-impl From<StringTableRecord> for StringTableRecordWire {
-    fn from(value: StringTableRecord) -> Self {
-        let declared_count = value.declared_count();
-        let index = value.index;
-        Self {
-            id: native_id("string-table", index.to_string()),
-            index,
-            owner_property: value.owner_property,
-            save_all: value.save_all,
-            threshold: value.threshold,
-            declared_count,
-            source_entry: value.source_entry,
-            entries: value.entries,
+#[derive(Serialize)]
+struct StringTableRecordOut<'a> {
+    id: String,
+    index: usize,
+    owner_property: Option<&'a str>,
+    save_all: bool,
+    threshold: i64,
+    declared_count: usize,
+    source_entry: Option<&'a str>,
+    entries: &'a [StringTableEntry],
+}
+
+impl Serialize for StringTableRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        StringTableRecordOut {
+            // The identity is the written value, derived from the table index.
+            id: self.id(),
+            index: self.index,
+            owner_property: self.owner_property.as_deref(),
+            save_all: self.save_all,
+            threshold: self.threshold,
+            declared_count: self.declared_count(),
+            source_entry: self.source_entry.as_deref(),
+            entries: self.entries(),
         }
+        .serialize(serializer)
     }
 }
 

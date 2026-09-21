@@ -81,13 +81,6 @@ impl JointParameters {
             .map(Self)
     }
 
-    fn into_raw(self) -> BTreeMap<String, String> {
-        self.0
-            .into_iter()
-            .map(|(name, value)| (name, value.raw().to_owned()))
-            .collect()
-    }
-
     #[cfg(test)]
     pub(crate) fn raw(&self, name: &str) -> Option<&str> {
         self.0.get(name).map(JointParameter::raw)
@@ -109,8 +102,8 @@ impl JointParameters {
 }
 
 /// One assembly joint or grounded-object constraint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "JointRecordWire", into = "JointRecordWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "JointRecordWire")]
 pub(crate) struct JointRecord {
     /// Stable joint identity.
     pub(crate) id: String,
@@ -194,6 +187,7 @@ impl JointRecord {
     }
 
     /// Connector-local coordinate frames in connector order.
+    #[cfg(test)]
     pub(crate) fn placements(&self) -> Vec<[[f64; 4]; 4]> {
         match &self.body {
             JointBody::Grounded { placement, .. } => vec![placement.rows()],
@@ -205,19 +199,9 @@ impl JointRecord {
             }
         }
     }
-
-    /// Connector attachment-offset frames in connector order.
-    fn offsets(&self) -> Vec<[[f64; 4]; 4]> {
-        match &self.body {
-            JointBody::Grounded { .. } => Vec::new(),
-            JointBody::Pair { connectors, .. } => {
-                vec![connectors[0].offset.rows(), connectors[1].offset.rows()]
-            }
-        }
-    }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct JointRecordWire {
     id: String,
     object: String,
@@ -238,27 +222,90 @@ pub(crate) fn validate_parameter_value(name: &str, value: &str) -> Result<(), St
     JointParameter::from_raw(name, value.to_owned()).map(|_| ())
 }
 
-impl From<JointRecord> for JointRecordWire {
-    fn from(value: JointRecord) -> Self {
-        let kind = value.kind().to_owned();
-        let references = match &value.body {
-            JointBody::Grounded { reference, .. } => vec![reference.clone()],
-            JointBody::Pair { connectors, .. } => connectors
-                .iter()
-                .map(|connector| connector.reference.clone())
-                .collect(),
-        };
-        let placements = value.placements();
-        let offsets = value.offsets();
-        Self {
-            id: value.id,
-            object: value.object,
-            kind,
-            references,
-            placements,
-            offsets,
-            parameters: value.parameters.into_raw(),
+/// Writes the connector references in connector order.
+struct JointReferencesOut<'a>(&'a JointBody);
+
+impl Serialize for JointReferencesOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            JointBody::Grounded { reference, .. } => {
+                serializer.collect_seq(std::iter::once(reference.as_ref()))
+            }
+            JointBody::Pair { connectors, .. } => serializer.collect_seq(
+                connectors
+                    .iter()
+                    .map(|connector| connector.reference.as_ref()),
+            ),
         }
+    }
+}
+
+/// Writes the connector-local frames in connector order.
+struct JointPlacementsOut<'a>(&'a JointBody);
+
+impl Serialize for JointPlacementsOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            JointBody::Grounded { placement, .. } => {
+                serializer.collect_seq(std::iter::once(placement.rows()))
+            }
+            JointBody::Pair { connectors, .. } => serializer.collect_seq(
+                connectors
+                    .iter()
+                    .map(|connector| connector.placement.rows()),
+            ),
+        }
+    }
+}
+
+/// Writes the connector attachment-offset frames; a grounded joint has none.
+struct JointOffsetsOut<'a>(&'a JointBody);
+
+impl Serialize for JointOffsetsOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            JointBody::Grounded { .. } => {
+                serializer.collect_seq(std::iter::empty::<[[f64; 4]; 4]>())
+            }
+            JointBody::Pair { connectors, .. } => {
+                serializer.collect_seq(connectors.iter().map(|connector| connector.offset.rows()))
+            }
+        }
+    }
+}
+
+/// Writes each checked parameter under its source spelling.
+struct JointParametersOut<'a>(&'a JointParameters);
+
+impl Serialize for JointParametersOut<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(self.0 .0.iter().map(|(name, value)| (name, value.raw())))
+    }
+}
+
+#[derive(Serialize)]
+struct JointRecordOut<'a> {
+    id: &'a str,
+    object: &'a str,
+    kind: &'a str,
+    references: JointReferencesOut<'a>,
+    placements: JointPlacementsOut<'a>,
+    offsets: JointOffsetsOut<'a>,
+    parameters: JointParametersOut<'a>,
+}
+
+impl Serialize for JointRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        JointRecordOut {
+            id: &self.id,
+            object: &self.object,
+            kind: self.kind(),
+            references: JointReferencesOut(&self.body),
+            placements: JointPlacementsOut(&self.body),
+            offsets: JointOffsetsOut(&self.body),
+            parameters: JointParametersOut(&self.parameters),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -426,6 +473,29 @@ mod tests {
             invalid["kind"] = serde_json::json!(name);
             assert!(serde_json::from_value::<JointRecord>(invalid).is_err());
         }
+    }
+
+    #[test]
+    fn a_grounded_joint_writes_one_placement_slot_and_no_offsets() {
+        let identity = cadmpeg_ir::transform::Transform::identity().rows();
+        let reference = serde_json::json!({
+            "document": null, "document_attribute": null,
+            "object": "fcstd:native:object#Part", "subelements": ["Face1"]
+        });
+        let wire = serde_json::json!({
+            "id": "joint", "object": "object", "kind": "grounded",
+            "references": [reference],
+            "placements": [identity],
+            "offsets": [],
+            "parameters": {"Suppressed": "true"}
+        });
+        let record = serde_json::from_value::<JointRecord>(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+
+        let mut unreferenced = wire;
+        unreferenced["references"] = serde_json::json!([null]);
+        let record = serde_json::from_value::<JointRecord>(unreferenced.clone()).unwrap();
+        assert_eq!(serde_json::to_value(record).unwrap(), unreferenced);
     }
 
     #[test]
