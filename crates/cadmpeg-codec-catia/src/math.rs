@@ -49,6 +49,7 @@ mod tests {
                 [magnitude, -magnitude, 0.0],
                 [0.0, magnitude, -magnitude],
                 [-magnitude, 0.0, magnitude],
+                [magnitude, 0.0, 0.0],
             ] {
                 let result = unit_vector(value).expect("finite nonzero direction");
                 for (actual, source) in result.into_iter().zip(value) {
@@ -62,17 +63,23 @@ mod tests {
                 assert!(
                     (result[0].hypot(result[1]).hypot(result[2]) - 1.0).abs() <= EPS_UNIT_ROUNDING
                 );
+                let vector_result =
+                    unit_vector(Vector3::from(value)).expect("finite nonzero vector direction");
+                assert_eq!(vector_result, Vector3::from(result));
             }
         }
     }
 
     #[test]
     fn unit_vector_rejects_nonfinite_components_on_each_axis() {
+        assert!(unit_vector([0.0; 3]).is_none());
+        assert!(unit_vector(Vector3::new(0.0, 0.0, 0.0)).is_none());
         for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for axis in 0..3 {
                 let mut value = [1.0; 3];
                 value[axis] = invalid;
                 assert!(unit_vector(value).is_none());
+                assert!(unit_vector(Vector3::from(value)).is_none());
             }
         }
     }
@@ -94,37 +101,6 @@ mod tests {
         assert_eq!(
             distance([f64::MAX, 0.0, 0.0], [-f64::MAX, 0.0, 0.0]),
             f64::INFINITY
-        );
-    }
-
-    #[test]
-    fn unit_preserves_tiny_finite_direction() {
-        assert_eq!(unit_vector([1e-200, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
-        assert_eq!(unit_vector([0.0, 0.0, 0.0]), None);
-    }
-
-    #[test]
-    fn unit_preserves_subnormal_direction() {
-        assert_eq!(unit_vector([1e-310, 0.0, 0.0]), Some([1.0, 0.0, 0.0]));
-    }
-
-    #[test]
-    fn unit_rejects_nonfinite_length() {
-        for value in [[f64::INFINITY, 0.0, 0.0], [f64::NAN, 0.0, 0.0]] {
-            assert_eq!(unit_vector(value), None);
-        }
-    }
-
-    #[test]
-    fn unit_vector_preserves_tiny_finite_direction() {
-        assert_eq!(
-            unit_vector(Vector3::new(1e-200, 0.0, 0.0)),
-            Some(Vector3::new(1.0, 0.0, 0.0))
-        );
-        assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
-        assert_eq!(
-            unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)),
-            Some(Vector3::new(1.0, 0.0, 0.0))
         );
     }
 }
