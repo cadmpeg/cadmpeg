@@ -2294,7 +2294,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "d0f3b26bf4d61633a29dd3fa4d0d02a8b25fe41f7600d38b7dbccab42541ce49"
+      "__shape_sha256": "ceb474fd3247d58c11fdfca03816f6e3ccd29a36265b0fcd59f1b0b935251e49"
     },
     "source": {
       "attributes": {
