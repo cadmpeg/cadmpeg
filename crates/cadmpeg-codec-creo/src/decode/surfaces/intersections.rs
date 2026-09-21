@@ -648,13 +648,15 @@ mod tests {
                 origin: [0., 0., 0.],
                 normal: [0., 0., 1.],
             });
-            let (section, _) = carrier_intersection_curve(plane, sphere(0., radius)).unwrap();
+            let (section, _) = carrier_intersection_curve(plane, sphere(0., radius))
+                .expect("nondegenerate plane section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };
             assert_eq!(circle.radius().get(), radius);
             let (section, _) =
-                carrier_intersection_curve(sphere(0., radius), sphere(radius, radius)).unwrap();
+                carrier_intersection_curve(sphere(0., radius), sphere(radius, radius))
+                    .expect("nondegenerate sphere section");
             let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) = section else {
                 panic!("circle section")
             };

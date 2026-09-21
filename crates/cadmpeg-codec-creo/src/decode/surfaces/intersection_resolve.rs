@@ -222,7 +222,7 @@ mod tests {
                     Point3::new(x, 0., 0.),
                     Vector3::new(1., 0., 0.),
                 )
-                .unwrap(),
+                .expect("valid X-axis carrier"),
             ))
         };
         for origin in [0., 1e8] {

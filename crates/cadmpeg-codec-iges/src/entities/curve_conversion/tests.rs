@@ -134,8 +134,8 @@ fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
         1e308,
         [1e-100, 2e-100],
     )
-    .unwrap()
-    .unwrap();
+    .expect("valid quadratic NURBS")
+    .expect("finite parabola interval");
     let points = curve.control_points();
     for (point, expected) in [(&points[0], 2e208), (&points[2], 4e208)] {
         assert!((point.y / expected - 1.).abs() <= 8. * f64::EPSILON);
