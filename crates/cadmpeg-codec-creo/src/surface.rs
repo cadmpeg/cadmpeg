@@ -19,7 +19,7 @@ use crate::scalar;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_FRAME_UNIT: f64 = 1.0e-9;
-const EPS_FRAME_ORTHOGONAL: f64 = 1.0e-9;
+const EPS_ORTHONORMAL_PAIR_DOT: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_MIN: f64 = 1.0e-12;
 const EPS_PLANE_FRAME_NONZERO: f64 = 1.0e-6;
@@ -29,7 +29,7 @@ const EPS_PLANE_FRAME_ORTHOGONAL: f64 = 1.0e-9;
 const EPS_SURFACE_AGREEMENT: f64 = 1.0e-9;
 const EPS_SURFACE_NONZERO: f64 = 1.0e-12;
 const EPS_FRAME_AGREEMENT: f64 = 1.0e-10;
-const EPS_FRAME_ORTHOGONALITY: f64 = 1.0e-10;
+const EPS_TORUS_FRAME_COLUMN_DOT: f64 = 1.0e-10;
 const EPS_AXIS_COMPONENT_NONZERO: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
@@ -56,7 +56,7 @@ pub(crate) fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: 
         .sum::<f64>();
     (axis_norm - 1.0).abs() <= EPS_FRAME_UNIT
         && (ref_norm - 1.0).abs() <= EPS_FRAME_UNIT
-        && dot.abs() <= EPS_FRAME_ORTHOGONAL
+        && dot.abs() <= EPS_ORTHONORMAL_PAIR_DOT
 }
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
@@ -5192,7 +5192,7 @@ fn decode_positional_torus_frame(
         .zip(second)
         .map(|(first, second)| first * second)
         .sum::<f64>();
-    (orthogonality.abs() <= EPS_FRAME_ORTHOGONALITY).then_some(())?;
+    (orthogonality.abs() <= EPS_TORUS_FRAME_COLUMN_DOT).then_some(())?;
     let axis = [
         ref_direction[1] * second[2] - ref_direction[2] * second[1],
         ref_direction[2] * second[0] - ref_direction[0] * second[2],
