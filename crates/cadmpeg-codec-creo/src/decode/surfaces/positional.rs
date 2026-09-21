@@ -208,21 +208,9 @@ pub(in super::super) fn transfer_positional_tori(
         else {
             continue;
         };
-        let center = Point3::new(
-            frame.frame().origin()[0],
-            frame.frame().origin()[1],
-            frame.frame().origin()[2],
-        );
-        let axis = Vector3::new(
-            frame.frame().axis()[0],
-            frame.frame().axis()[1],
-            frame.frame().axis()[2],
-        );
-        let ref_direction = Vector3::new(
-            frame.frame().ref_direction()[0],
-            frame.frame().ref_direction()[1],
-            frame.frame().ref_direction()[2],
-        );
+        let center = frame.frame().origin_point();
+        let axis = frame.frame().axis_vector();
+        let ref_direction = frame.frame().ref_direction_vector();
         let geometry = if frame.major_radius() == 0.0 {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(

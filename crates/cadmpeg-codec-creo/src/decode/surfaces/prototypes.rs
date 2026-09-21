@@ -304,27 +304,6 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         .collect())
 }
 
-/// Builds the apex cone the positional and legacy prototype routes both state.
-///
-/// The apex is the frame origin, the radius there is zero and the ratio is one, so the half
-/// angle alone states the taper. A frame the IR refuses states no cone.
-fn apex_cone(
-    apex: [f64; 3],
-    axis: [f64; 3],
-    ref_direction: [f64; 3],
-    half_angle: f64,
-) -> Option<cadmpeg_ir::geometry::analytic::ConeSurface> {
-    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-        Point3::new(apex[0], apex[1], apex[2]),
-        Vector3::new(axis[0], axis[1], axis[2]),
-        Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
-        0.0,
-        1.0,
-        half_angle,
-    )
-    .ok()
-}
-
 /// Transfer one exact surface carrier per first-instance prototype record.
 ///
 /// A prototype spline whose lanes the IR carrier refuses states no carrier.
@@ -428,10 +407,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let Some(frame) = crate::surface::prototype_cone_frame(record) else {
                     continue;
                 };
-                let Some(cone) = apex_cone(
-                    frame.frame().origin(),
-                    frame.frame().axis(),
-                    frame.frame().ref_direction(),
+                let Some(cone) = super::apex_cone(
+                    frame.frame().origin_point(),
+                    frame.frame().axis_vector(),
+                    frame.frame().ref_direction_vector(),
                     frame.half_angle(),
                 ) else {
                     continue;
@@ -705,7 +684,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 half_angle,
                 ..
             } if row.kind == crate::surface::SurfaceKind::Cone => {
-                let Some(cone) = apex_cone(*apex, *axis, *ref_direction, *half_angle) else {
+                let Some(cone) = super::apex_cone(
+                    Point3::new(apex[0], apex[1], apex[2]),
+                    Vector3::new(axis[0], axis[1], axis[2]),
+                    Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                    *half_angle,
+                ) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))

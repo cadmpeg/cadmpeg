@@ -9,6 +9,7 @@ pub(crate) mod arrays;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
 use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
@@ -793,6 +794,23 @@ impl PositionalFrame {
     /// Returns the ref direction.
     pub(crate) fn ref_direction(&self) -> [f64; 3] {
         self.ref_direction
+    }
+
+    /// Returns the origin as the geometry point the carrier constructors take.
+    pub(crate) fn origin_point(&self) -> Point3 {
+        Point3::new(self.origin[0], self.origin[1], self.origin[2])
+    }
+    /// Returns the axis as the geometry vector the carrier constructors take.
+    pub(crate) fn axis_vector(&self) -> Vector3 {
+        Vector3::new(self.axis[0], self.axis[1], self.axis[2])
+    }
+    /// Returns the ref direction as the geometry vector the carrier constructors take.
+    pub(crate) fn ref_direction_vector(&self) -> Vector3 {
+        Vector3::new(
+            self.ref_direction[0],
+            self.ref_direction[1],
+            self.ref_direction[2],
+        )
     }
 }
 
