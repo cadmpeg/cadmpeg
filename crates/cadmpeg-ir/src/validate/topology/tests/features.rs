@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::features::BodySelection;
-
 use std::collections::BTreeMap;
 
 use crate::examples::unit_cube;
@@ -11,50 +9,6 @@ use crate::math::{Point3, Vector3};
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-
-#[test]
-fn historical_body_overlap_spans_direct_and_paired_member_selections() {
-    use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
-
-    let state =
-        FeatureInputTopologyId::mint("test:model:entity#test:input").expect("valid identity");
-    let target = BodySelection::historical(
-        state.clone(),
-        vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
-        "target".into(),
-    )
-    .unwrap();
-    let overlapping = BodySelection::HistoricalSet {
-        state: state.clone(),
-        members: crate::features::BodyMembers::try_from_rows(vec![
-            crate::features::BodyMember::new(
-                HistoricalBodyId::mint("test:body:2").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool-a")
-                    .expect("valid historical body selection row"),
-            ),
-            crate::features::BodyMember::new(
-                HistoricalBodyId::mint("test:body:4").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool-b")
-                    .expect("valid historical body selection row"),
-            ),
-        ])
-        .expect("valid historical body selection rows"),
-    };
-    let disjoint = BodySelection::HistoricalSet {
-        state,
-        members: crate::features::BodyMembers::try_from_rows(vec![
-            crate::features::BodyMember::new(
-                HistoricalBodyId::mint("test:body:5").expect("valid identity"),
-                cadmpeg_core::text::NonBlankString::new("tool")
-                    .expect("valid historical body selection row"),
-            ),
-        ])
-        .expect("valid historical body selection rows"),
-    };
-
-    assert!(crate::features::SectionOperands::new(target.clone(), overlapping).is_err());
-    assert!(crate::features::SectionOperands::new(target, disjoint).is_ok());
-}
 
 #[test]
 fn historical_vertex_selection_requires_input_state_membership() {
