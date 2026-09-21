@@ -20,7 +20,7 @@ fn numerical_0922_inverse_keeps_both_branches() {
             None,
             false,
         )
-        .unwrap();
+        .expect("valid folded degree-one curve");
         let g = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(n.clone()));
         let result =
             degree_one_nurbs_point_parameter(&g, &n, [0., 0., 0.], [0., d], POINT_FIT_TOLERANCE);
@@ -38,7 +38,7 @@ fn numerical_0922_finite_knot_domain_reverses() {
             None,
             false,
         )
-        .unwrap();
+        .expect("valid translated degree-one curve");
         let result = reverse_nonperiodic_nurbs(&mut c, d);
         println!("Creo reverse finite line domain{d:?}: {result:?}");
         assert_eq!(result, Some(()));
