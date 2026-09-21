@@ -8,7 +8,7 @@ use crate::surface::counted_row_bounds;
 use crate::surface::cross_section_parameter_records;
 use crate::surface::cross_section_plane_envelopes;
 use crate::surface::cross_section_rows;
-use crate::surface::decode_compound_local_system_cylinder_frame;
+use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
 use crate::surface::named_prototype_records;

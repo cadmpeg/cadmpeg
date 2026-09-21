@@ -768,7 +768,9 @@ fn unique_support_tangent_cylinder_frame(
         if !frames
             .iter()
             .any(|known: &crate::surface::PositionalCylinderFrame| {
-                crate::surface::positional_cylinder_frames_agree(*known, candidate)
+                crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
+                    *known, candidate,
+                )
             })
         {
             frames.push(candidate);
@@ -985,7 +987,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 let perpendicular = perpendicular_result.as_ref()?.as_ref().ok().copied();
                 match (replay, perpendicular) {
                     (Some(replay), Some(perpendicular))
-                        if crate::surface::positional_cylinder_frames_agree(
+    if crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(
                             replay,
                             perpendicular,
                         ) =>
@@ -1105,9 +1107,9 @@ pub(in super::super) fn transfer_positional_cylinders(
             };
             frame
         };
-        let stored_frame_agrees = record
-            .positional_cylinder_frame()
-            .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame));
+        let stored_frame_agrees = record.positional_cylinder_frame().is_some_and(|stored| {
+            crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree(stored, frame)
+        });
         let witnessed_frame_replaces_stored = mechanism.replaces_stored_frame();
         let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
             && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());

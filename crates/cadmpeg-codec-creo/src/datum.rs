@@ -4,10 +4,8 @@
 use cadmpeg_core::bytes::find_from as find;
 
 use crate::scalar;
-use crate::surface::{
-    positional_cylinder_frames_agree, PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord,
-    SurfaceRow,
-};
+use crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree;
+use crate::surface::{PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord, SurfaceRow};
 
 const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1.0e-9;
 const EPS_ACTIVE_CYLINDER_MIN: f64 = 1.0e-12;
