@@ -909,6 +909,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
+            let geometry = SolvedCurveGeometry::Transformed {
+                basis: Box::new(basis),
+                transform,
+            };
+            if !geometry.nesting_within_bound() {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "CURVE_REPLICA #{id} nests past the admitted inline basis depth"
+                )));
+                continue;
+            }
             let curve_index = CurveIndex(ir.model.curves.len());
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let procedural = ProceduralCurve::new(
@@ -920,10 +930,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             );
             ir.model.curves.push(Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
-                }),
+                geometry: CurveGeometry::Solved(geometry),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_curve(curve, procedural);
@@ -1754,14 +1761,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             else {
                 continue;
             };
+            let geometry = SolvedSurfaceGeometry::Transformed {
+                basis: Box::new(basis),
+                transform,
+            };
+            if !geometry.nesting_within_bound() {
+                losses.push(StepLossCode::DecodeWarning.note(format!(
+                    "SURFACE_REPLICA #{id} nests past the admitted inline basis depth"
+                )));
+                continue;
+            }
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
-                }),
+                geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
             });
             let _attached = ir.model.add_procedural_surface(

@@ -692,10 +692,12 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
 #8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
 ",
     );
-    for id in 9..=264 {
+    // The head replica carries exactly MAX_GEOMETRY_NESTING placements over the
+    // line, the deepest chain the IR admits.
+    for id in 9..=263 {
         writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
     }
-    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+    records.push_str("#264=CURVE_REPLICA('',#6,#8);");
 
     let decoded = decode_inline(&records);
     assert!(decoded.ir().model.curves.iter().any(|curve| {
@@ -867,4 +869,86 @@ fn mapped_representation_dag_is_memoized() {
         result.ir().model.product_definitions[0].bodies[0].as_str(),
         "step:data:body#9000"
     );
+}
+
+#[test]
+fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+",
+    );
+    // #9 carries one placement more than the IR admits; #10 carries exactly the
+    // admitted depth.
+    for id in 9..=264 {
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append curve replica");
+    }
+    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("CURVE_REPLICA #9 nests past the admitted inline basis depth")
+    }));
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#9"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Unknown { .. })
+            )
+    }));
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#10"
+            && matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Transformed { .. })
+            )
+    }));
+}
+
+#[test]
+fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,1.,#4);
+",
+    );
+    // #8 carries one placement more than the IR admits; #9 carries exactly the
+    // admitted depth.
+    for id in 8..=263 {
+        writeln!(records, "#{id}=SURFACE_REPLICA('',#{},#7);", id + 1)
+            .expect("append surface replica");
+    }
+    records.push_str("#264=SURFACE_REPLICA('',#6,#7);\n#265=GEOMETRIC_SET('',(#8));");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("SURFACE_REPLICA #8 nests past the admitted inline basis depth")
+    }));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#8"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Unknown { .. })
+            )
+    }));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#9"
+            && matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Transformed { .. })
+            )
+    }));
 }

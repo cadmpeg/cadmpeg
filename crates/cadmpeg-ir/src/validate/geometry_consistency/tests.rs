@@ -1056,3 +1056,100 @@ fn pcurve_surface_mismatch_is_flagged() {
         finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
     }));
 }
+
+/// A NURBS surface with a finite knot domain, so the walk below returns a
+/// domain at every depth the bound admits and nothing past it.
+fn nurbs_surface_leaf() -> SolvedSurfaceGeometry {
+    SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            crate::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap(),
+    )
+}
+
+fn placed_nurbs_surface(placements: usize) -> SolvedSurfaceGeometry {
+    let mut geometry = nurbs_surface_leaf();
+    for _ in 0..placements {
+        geometry = SolvedSurfaceGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: crate::transform::Transform::identity(),
+        };
+    }
+    geometry
+}
+
+fn nurbs_pcurve_leaf() -> PcurveGeometry {
+    PcurveGeometry::Nurbs {
+        nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    }
+}
+
+fn placed_pcurve(placements: usize, leaf: PcurveGeometry) -> PcurveGeometry {
+    let mut geometry = leaf;
+    for _ in 0..placements {
+        geometry = PcurveGeometry::Transformed {
+            basis: Box::new(geometry),
+            transform: crate::transform::Transform2::identity(),
+        };
+    }
+    geometry
+}
+
+#[test]
+fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
+    let accepted = placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING);
+    assert!(super::solved_surface_parameter_domains(&accepted).is_some());
+
+    let refused = placed_nurbs_surface(crate::geometry::MAX_GEOMETRY_NESTING + 1);
+    assert!(super::solved_surface_parameter_domains(&refused).is_none());
+}
+
+#[test]
+fn pcurve_parameter_domain_stops_at_the_admitted_nesting_depth() {
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, nurbs_pcurve_leaf());
+    assert!(pcurve_parameter_domain(&accepted).is_some());
+
+    let refused = placed_pcurve(
+        crate::geometry::MAX_GEOMETRY_NESTING + 1,
+        nurbs_pcurve_leaf(),
+    );
+    assert!(pcurve_parameter_domain(&refused).is_none());
+}
+
+#[test]
+fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
+    let trimmed = PcurveGeometry::Trimmed(
+        crate::geometry::pcurve::TrimmedPcurve::try_new(
+            [0.25, 0.75],
+            true,
+            Box::new(nurbs_pcurve_leaf()),
+        )
+        .unwrap(),
+    );
+    // The trim itself is one carrier, so the chain over it holds one less.
+    let accepted = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING - 1, trimmed.clone());
+    assert_eq!(
+        super::pcurve_geometry_trim_range(&accepted),
+        Some([0.25, 0.75])
+    );
+
+    let refused = placed_pcurve(crate::geometry::MAX_GEOMETRY_NESTING, trimmed);
+    assert!(super::pcurve_geometry_trim_range(&refused).is_none());
+}

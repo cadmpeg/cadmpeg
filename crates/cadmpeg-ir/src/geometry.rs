@@ -35,6 +35,16 @@ pub mod curve_payloads;
 /// Checked procedural surface payloads.
 pub mod surface_payloads;
 
+/// Greatest number of nesting carriers the IR admits over one geometry leaf.
+///
+/// A nesting carrier holds its basis inline in a `Box` rather than by arena id:
+/// [`SolvedSurfaceGeometry::Transformed`], [`SolvedCurveGeometry::Transformed`],
+/// and a pcurve's [`PcurveGeometry::Transformed`], [`PcurveGeometry::Trimmed`]
+/// and [`PcurveGeometry::Offset`]. Every consumer that reads through a basis
+/// walks that chain, so the depth is one property of the geometry and not of
+/// each consumer. `nesting_within_bound` on each carrier states it.
+pub const MAX_GEOMETRY_NESTING: usize = 256;
+
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -133,6 +143,34 @@ pub enum SolvedSurfaceGeometry {
         )]
         record: Option<UnknownId>,
     },
+}
+
+impl SolvedSurfaceGeometry {
+    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
+    /// placements.
+    ///
+    /// The walk is iterative, so it answers a chain of any depth without
+    /// recursing. A consumer that recurses on `basis` is bounded by calling
+    /// this first; a producer that adds one placement is bounded by calling it
+    /// on the carrier it built.
+    #[must_use]
+    pub fn nesting_within_bound(&self) -> bool {
+        let mut current = self;
+        for _ in 0..MAX_GEOMETRY_NESTING {
+            match current {
+                Self::Transformed { basis, .. } => current = basis,
+                Self::Plane(_)
+                | Self::Cylinder(_)
+                | Self::Cone(_)
+                | Self::Sphere(_)
+                | Self::Torus(_)
+                | Self::Nurbs(_)
+                | Self::Polygonal(_)
+                | Self::Unknown { .. } => return true,
+            }
+        }
+        !matches!(current, Self::Transformed { .. })
+    }
 }
 
 /// Analytic, NURBS, procedural, or opaque surface geometry.
@@ -255,6 +293,34 @@ pub enum SolvedCurveGeometry {
         )]
         record: Option<UnknownId>,
     },
+}
+
+impl SolvedCurveGeometry {
+    /// Whether the inline basis chain holds at most [`MAX_GEOMETRY_NESTING`]
+    /// placements.
+    ///
+    /// The walk is iterative, so it answers a chain of any depth without
+    /// recursing.
+    #[must_use]
+    pub fn nesting_within_bound(&self) -> bool {
+        let mut current = self;
+        for _ in 0..MAX_GEOMETRY_NESTING {
+            match current {
+                Self::Transformed { basis, .. } => current = basis,
+                Self::Line(_)
+                | Self::Circle(_)
+                | Self::Ellipse(_)
+                | Self::Parabola(_)
+                | Self::Hyperbola(_)
+                | Self::Degenerate(_)
+                | Self::Composite { .. }
+                | Self::Nurbs(_)
+                | Self::Polyline(_)
+                | Self::Unknown { .. } => return true,
+            }
+        }
+        !matches!(current, Self::Transformed { .. })
+    }
 }
 
 /// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
