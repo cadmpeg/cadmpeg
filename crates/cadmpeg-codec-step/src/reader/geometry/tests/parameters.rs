@@ -687,3 +687,33 @@ fn pcurve_trim_select_prefers_parameter_value() {
     ]);
     assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
 }
+
+#[test]
+fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry};
+    use cadmpeg_ir::math::Point3;
+    for d in [1e-12, 1.0, 1e12] {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![-0.25 * d, 0., 0.25 * d, 0.5 * d, 0.75 * d, d, 1.25 * d],
+            vec![
+                Point3::new(0., 0., 0.),
+                Point3::new(1., 0., 0.),
+                Point3::new(1., 1., 0.),
+                Point3::new(0., 1., 0.),
+                Point3::new(0., 0., 0.),
+            ],
+            None,
+            true,
+        )
+        .unwrap();
+        let range = super::super::edge_parameter_range(
+            &SolvedCurveGeometry::Nurbs(curve),
+            0.8 * d,
+            0.9 * d,
+        )
+        .unwrap();
+        assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
+        assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
+    }
+}

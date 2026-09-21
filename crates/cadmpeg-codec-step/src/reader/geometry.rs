@@ -185,7 +185,7 @@ fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) ->
         return None;
     }
     let sweep = (end - start).rem_euclid(period);
-    let tolerance = 1.0e-9_f64.max(period.abs() * EPS_GEOMETRY_READ_GEOMETRY);
+    let tolerance = period * EPS_GEOMETRY_READ_GEOMETRY;
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
     }

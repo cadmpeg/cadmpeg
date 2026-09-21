@@ -51,3 +51,24 @@ fn reflection_preserves_finite_points_at_extreme_scales() {
     )
     .is_none());
 }
+
+#[test]
+fn numerical_followup_parabola_bounds_use_transverse_length() {
+    for focal in [2.0, 1e200] {
+        let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
+            vertex: Point2::new(0., 0.),
+            axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+            focal_length: cadmpeg_ir::scalar::Length::new(focal).unwrap(),
+            bounds: Some([0.5 * focal, focal]),
+        })
+        .unwrap();
+        assert!(super::super::point_lies_on_sketch_geometry(
+            Point2::new(0.25 * focal, focal),
+            &geometry
+        ));
+        assert!(!super::super::point_lies_on_sketch_geometry(
+            Point2::new(focal, 2. * focal),
+            &geometry
+        ));
+    }
+}

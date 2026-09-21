@@ -651,10 +651,7 @@ fn analytic_rolling_ball_surface(
         let second_origin = plane_surface_2.origin();
         let second_normal = plane_surface_2.normal();
         let (origin, axis) = linear_nurbs_spine(spine)?;
-        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
-            * radius
-                .max(point_vector(*first_origin, *second_origin).norm())
-                .max(1.0);
+        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * radius;
         let first_normal = first_normal.unit()?;
         let second_normal = second_normal.unit()?;
         let support_intersection = first_normal.cross(second_normal);
@@ -733,7 +730,7 @@ fn analytic_rolling_ball_surface(
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
-    let scale = major_radius.max(radius).max(cylinder_radius).max(1.0);
+    let scale = major_radius.max(radius).max(cylinder_radius);
     let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
     let center_offset = point_vector(cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
@@ -905,8 +902,7 @@ pub(super) fn rational_four_arc_circle(
         .iter()
         .flat_map(|span| span.windows(2))
         .map(|pair| point_distance(pair[0], pair[1]))
-        .fold(0.0_f64, f64::max)
-        .max(1.0);
+        .fold(0.0_f64, f64::max);
     let tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * scale;
     if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
         || quadratic_points
@@ -936,16 +932,14 @@ pub(super) fn rational_four_arc_circle(
     for span in &quadratic_points {
         let radial = point_vector(first_center, span[0]);
         let next = point_vector(first_center, span[2]);
-        if (radial.norm() - radius).abs() > tolerance || radial.dot(next).abs() > tolerance * radius
+        let radial_unit = radial.unit_nonzero()?;
+        let next_unit = next.unit_nonzero()?;
+        if (radial.norm() - radius).abs() > tolerance
+            || radial_unit.dot(next_unit).abs() > EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
         {
             return None;
         }
-        let span_normal = radial.cross(next);
-        let span_normal_norm = span_normal.norm();
-        if span_normal_norm <= tolerance * radius {
-            return None;
-        }
-        let span_normal = span_normal.scale(1.0 / span_normal_norm);
+        let span_normal = radial_unit.cross(next_unit).unit_nonzero()?;
         if normal.is_some_and(|normal: Vector3| {
             normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
         }) {
@@ -953,12 +947,7 @@ pub(super) fn rational_four_arc_circle(
         }
         normal.get_or_insert(span_normal);
     }
-    Some((
-        first_center,
-        normal?,
-        first_radial.scale(1.0 / radius),
-        radius,
-    ))
+    Some((first_center, normal?, first_radial.unit_nonzero()?, radius))
 }
 
 fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<[[f64; 4]; 3]> {
@@ -1215,6 +1204,7 @@ mod sense_tests {
 
 #[cfg(test)]
 mod tests {
+    mod numerical_ranges;
     use super::Point3;
     const SMALL_CURVED_SPINE_EXTENT: f64 = 1.0e-10;
     #[test]

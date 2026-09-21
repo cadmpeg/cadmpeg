@@ -1239,3 +1239,31 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         [FeatureId::mint("synthetic:test:id#multi-child").expect("identity grammar")]
     );
 }
+
+#[test]
+fn numerical_followup_parabola_endpoints_avoid_intermediate_overflow() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
+    let entity = SketchEntity::new(
+        SketchEntityId::mint("sldprt:test:entity#numeric").unwrap(),
+        SketchId::mint("sldprt:test:sketch#numeric").unwrap(),
+        SketchGeometryDefinition::Parabola {
+            vertex: Point2::new(0., 0.),
+            axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+            focal_length: cadmpeg_ir::scalar::Length::new(1e200).unwrap(),
+            bounds: Some([1e200, 2e200]),
+        }
+        .try_into()
+        .unwrap(),
+    );
+    let points = super::super::sketch_entity_loci(&entity);
+    assert_eq!(points.len(), 2);
+    for ((point, _), expected) in points
+        .into_iter()
+        .zip([Point2::new(2.5e199, 1e200), Point2::new(1e200, 2e200)])
+    {
+        assert!(point.is_finite());
+        assert!((point.u / expected.u - 1.).abs() < 16. * f64::EPSILON);
+        assert_eq!(point.v, expected.v);
+    }
+}

@@ -453,6 +453,20 @@ fn homogeneous_product_with_scalar(
     Some(product)
 }
 
+fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
+    if !value.is_finite() || !domain.into_iter().all(f64::is_finite) || domain[0] >= domain[1] {
+        return None;
+    }
+    let width = domain[1] - domain[0];
+    let offset = value - domain[0];
+    let fraction = if width.is_finite() && offset.is_finite() {
+        offset / width
+    } else {
+        (0.5 * value - 0.5 * domain[0]) / (0.5 * domain[1] - 0.5 * domain[0])
+    };
+    fraction.is_finite().then_some(fraction)
+}
+
 fn split_homogeneous_bezier_span(
     span: &HomogeneousBezierSpan,
     cut: f64,
@@ -460,11 +474,7 @@ fn split_homogeneous_bezier_span(
     if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
         return None;
     }
-    let width = span.domain[1] - span.domain[0];
-    if !width.is_finite() || width <= 0.0 {
-        return None;
-    }
-    let parameter = (cut - span.domain[0]) / width;
+    let parameter = span_fraction(cut, span.domain)?;
     if !parameter.is_finite() || parameter <= 0.0 || parameter >= 1.0 {
         return None;
     }
@@ -512,14 +522,10 @@ fn normalized_span_boundaries(
     spans: &[HomogeneousBezierSpan],
     domain: [f64; 2],
 ) -> Option<Vec<f64>> {
-    let width = domain[1] - domain[0];
-    if !width.is_finite() || width <= 0.0 {
-        return None;
-    }
     let mut boundaries = Vec::with_capacity(spans.len().checked_add(1)?);
     for span in spans {
         for value in span.domain {
-            let normalized = (value - domain[0]) / width;
+            let normalized = span_fraction(value, domain)?;
             if !normalized.is_finite() || !(0.0..=1.0).contains(&normalized) {
                 return None;
             }
@@ -536,14 +542,10 @@ fn partition_homogeneous_spans(
     domain: [f64; 2],
     boundaries: &[f64],
 ) -> Option<Vec<HomogeneousBezierSpan>> {
-    let width = domain[1] - domain[0];
-    if !width.is_finite() || width <= 0.0 {
-        return None;
-    }
     let mut partitioned = Vec::new();
     for span in spans {
-        let start = (span.domain[0] - domain[0]) / width;
-        let end = (span.domain[1] - domain[0]) / width;
+        let start = span_fraction(span.domain[0], domain)?;
+        let end = span_fraction(span.domain[1], domain)?;
         if !start.is_finite() || !end.is_finite() || start >= end {
             return None;
         }
@@ -551,8 +553,8 @@ fn partition_homogeneous_spans(
             .iter()
             .copied()
             .filter(|boundary| start < *boundary && *boundary < end)
-            .map(|boundary| domain[0] + boundary * width)
-            .collect::<Vec<_>>();
+            .map(|boundary| cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary))
+            .collect::<Option<Vec<_>>>()?;
         let mut current = span.clone();
         for cut in cuts {
             let (left, right) = split_homogeneous_bezier_span(&current, cut)?;

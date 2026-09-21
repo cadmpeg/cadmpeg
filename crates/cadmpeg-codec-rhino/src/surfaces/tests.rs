@@ -1123,3 +1123,11 @@ fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
     assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
     assert_eq!(weights, Some(vec![1e-10]));
 }
+
+#[test]
+fn numerical_followup_plane_map_retains_finite_extrapolated_controls() {
+    let result = super::map_parameter(2., [0., 1.], [1e308, 1.1e308]);
+    assert!(result.is_finite());
+    assert!((result / 1.2e308 - 1.).abs() < 16. * f64::EPSILON);
+    assert_eq!(super::map_parameter(0.5, [0., 1.], [-1e308, 1e308]), 0.);
+}

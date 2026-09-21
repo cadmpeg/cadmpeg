@@ -502,3 +502,42 @@ fn ellipse_membership_rejects_nonfinite_intermediates() {
         Point2::new(2., 0.)
     ));
 }
+
+#[test]
+fn numerical_followup_membership_preserves_large_finite_geometry() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition, SketchId};
+    let entity = |geometry: SketchGeometryDefinition| {
+        SketchEntity::new(
+            SketchEntityId::mint("sldprt:test:entity#numeric").unwrap(),
+            SketchId::mint("sldprt:test:sketch#numeric").unwrap(),
+            geometry.try_into().unwrap(),
+        )
+    };
+    let line = entity(SketchGeometryDefinition::Line {
+        start: Point2::new(0., 0.),
+        end: Point2::new(1e200, 0.),
+    });
+    assert!(super::sketch_entity_contains_point(
+        &line,
+        Point2::new(5e199, 0.)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &line,
+        Point2::new(5e199, 1.)
+    ));
+    let parabola = entity(SketchGeometryDefinition::Parabola {
+        vertex: Point2::new(0., 0.),
+        axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+        focal_length: cadmpeg_ir::scalar::Length::new(1e200).unwrap(),
+        bounds: Some([1e200, 2e200]),
+    });
+    assert!(super::sketch_entity_contains_point(
+        &parabola,
+        Point2::new(2.5e199, 1e200)
+    ));
+    assert!(!super::sketch_entity_contains_point(
+        &parabola,
+        Point2::new(2.5e199, 2e200)
+    ));
+}

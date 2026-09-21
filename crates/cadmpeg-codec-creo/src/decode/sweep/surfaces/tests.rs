@@ -112,3 +112,38 @@ fn malformed_saved_spline_reports_transfer_loss() {
         crate::loss::CreoLossCode::SectionSplineUnresolved.kind()
     );
 }
+
+#[test]
+fn numerical_followup_revolution_refuses_skew_line_specialization() {
+    use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
+    for radius in [2e-10, 2.] {
+        let axis = RevolutionAxis {
+            origin: FinitePoint3::new(Point3::new(0., 0., 0.)).unwrap(),
+            direction: FeatureDirection3::new(Vector3::new(0., 0., 1.)).unwrap(),
+            reference: None,
+        };
+        let transform = crate::placement::FeatureSectionTransform::new(
+            1,
+            Some(1),
+            [radius, 0., 0.],
+            [0., 1., 0.],
+            [0., 0., 1.],
+            0,
+        )
+        .unwrap();
+        let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0., 0.),
+            end: Point2::new(radius, radius),
+        })
+        .unwrap();
+        assert!(super::revolved_section_surface(&transform, &line, &axis).is_none());
+        let generator = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0., 0.),
+            end: Point2::new(0., radius),
+        })
+        .unwrap();
+        assert!(super::revolved_section_surface(&transform, &generator, &axis).is_some());
+    }
+}

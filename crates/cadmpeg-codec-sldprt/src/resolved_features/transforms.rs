@@ -789,17 +789,24 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             bounds,
         } => {
             let point = |parameter: f64| {
-                let x = parameter * parameter / (4.0 * focal_length.get());
-                Point2::new(
+                let x = cadmpeg_ir::math::product_quotient(
+                    [parameter, parameter],
+                    [4.0, focal_length.get()],
+                )?;
+                let point = Point2::new(
                     vertex.u + x * axis_angle.get().cos() - parameter * axis_angle.get().sin(),
                     vertex.v + x * axis_angle.get().sin() + parameter * axis_angle.get().cos(),
-                )
+                );
+                point.is_finite().then_some(point)
             };
             match bounds {
-                Some([start, end]) => vec![
-                    locus(point(*start), SketchLocus::Start(entity.id().clone())),
-                    locus(point(*end), SketchLocus::End(entity.id().clone())),
-                ],
+                Some([start, end]) => match (point(*start), point(*end)) {
+                    (Some(start), Some(end)) => vec![
+                        locus(start, SketchLocus::Start(entity.id().clone())),
+                        locus(end, SketchLocus::End(entity.id().clone())),
+                    ],
+                    _ => Vec::new(),
+                },
                 None => Vec::new(),
             }
         }

@@ -1021,8 +1021,7 @@ fn plane_candidate_is_fc05_tangent(
     let relative =
         std::array::from_fn(|index| cylinder.origin[index] - candidate.equation.origin[index]);
     let signed_distance = dot(normal, relative);
-    (signed_distance.abs() - cylinder.radius).abs()
-        <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
+    (signed_distance.abs() - cylinder.radius).abs() <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius
 }
 
 fn plane_candidate_pcurve_lies_on_carrier(

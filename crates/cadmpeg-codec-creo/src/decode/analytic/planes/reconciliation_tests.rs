@@ -1291,3 +1291,29 @@ fn numerical_seventh_sphere_tangency_and_membership_preserve_scale() {
         );
     }
 }
+
+#[test]
+fn numerical_followup_fc05_tangency_is_relative_to_radius() {
+    for radius in [1e-200, 1e-10, 1.0, 1e200] {
+        let cylinder = CylinderEquation {
+            origin: [0.; 3],
+            axis: [0., 0., 1.],
+            ref_direction: [1., 0., 0.],
+            radius,
+        };
+        for offset in [0., radius] {
+            let plane = PlaneCandidate {
+                equation: PlaneEquation {
+                    origin: [offset, 0., 0.],
+                    normal: [1., 0., 0.],
+                },
+                chart: None,
+                offset: 0,
+            };
+            assert_eq!(
+                super::plane_candidate_is_fc05_tangent(plane, cylinder),
+                offset == radius
+            );
+        }
+    }
+}

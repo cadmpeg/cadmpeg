@@ -5464,8 +5464,14 @@ pub(super) fn point_lies_on_sketch_geometry(
             let (sin, cos) = axis_angle.get().sin_cos();
             let x = relative.u.mul_add(cos, relative.v * sin);
             let y = (-relative.u).mul_add(sin, relative.v * cos);
-            let parameter = y / (2.0 * focal_length.get());
-            close(x, focal_length.get() * parameter * parameter)
+            let parameter = y;
+            let Some(axial) = cadmpeg_ir::math::product_quotient(
+                [parameter, parameter],
+                [4.0, focal_length.get()],
+            ) else {
+                return false;
+            };
+            close(x, axial)
                 && match bounds {
                     Some([start, end]) => {
                         parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9

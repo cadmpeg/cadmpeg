@@ -603,6 +603,27 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     )
     .is_some());
     assert!(solve(
+        cylinder.clone(),
+        [Point3::new(2., 0., 0.), Point3::new(2., 0., 1e-310)]
+    )
+    .is_some());
+    for radius in [0.0005, 2.0] {
+        let small = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0., 0., 0.),
+                Vector3::new(0., 0., 1.),
+                Vector3::new(1., 0., 0.),
+                radius,
+            )
+            .unwrap(),
+        ));
+        assert!(solve(
+            small,
+            [Point3::new(radius, 0., 0.), Point3::new(-radius, 0., 0.)]
+        )
+        .is_none());
+    }
+    assert!(solve(
         cylinder,
         [Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)]
     )

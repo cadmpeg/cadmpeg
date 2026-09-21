@@ -949,13 +949,17 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
         SketchGeometryDefinition::Line { start, end } => {
             let du = end.u - start.u;
             let dv = end.v - start.v;
-            let length_squared = du * du + dv * dv;
-            if length_squared <= SKETCH_POINT_TOLERANCE * SKETCH_POINT_TOLERANCE {
+            let scale = du.abs().max(dv.abs());
+            let length = du.hypot(dv);
+            if !length.is_finite() || length <= SKETCH_POINT_TOLERANCE {
                 return false;
             }
-            let parameter = ((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared;
+            let u = du / scale;
+            let v = dv / scale;
+            let parameter = (((point.u - start.u) / scale) * u + ((point.v - start.v) / scale) * v)
+                / (u * u + v * v);
             let distance =
-                ((point.u - start.u) * dv - (point.v - start.v) * du).abs() / length_squared.sqrt();
+                ((point.u - start.u) * (dv / length) - (point.v - start.v) * (du / length)).abs();
             distance <= SKETCH_POINT_TOLERANCE
                 && (-SKETCH_POINT_TOLERANCE..=1.0 + SKETCH_POINT_TOLERANCE).contains(&parameter)
         }
@@ -1063,8 +1067,13 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let dv = point.v - vertex.v;
             let x = du * cosine + dv * sine;
             let parameter = -du * sine + dv * cosine;
-            let on_curve = (x - parameter * parameter / (4.0 * focal_length.get())).abs()
-                <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            let Some(axial) = cadmpeg_ir::math::product_quotient(
+                [parameter, parameter],
+                [4.0, focal_length.get()],
+            ) else {
+                return false;
+            };
+            let on_curve = (x - axial).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
                     ((*start).min(*end) - SKETCH_POINT_TOLERANCE

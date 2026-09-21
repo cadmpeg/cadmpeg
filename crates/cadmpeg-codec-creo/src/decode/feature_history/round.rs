@@ -129,7 +129,7 @@ pub(in super::super) fn slot_fillet_cylinder(
     for first in 0..midplanes.len() {
         for second in first + 1..midplanes.len() {
             let radius = midplanes[first].1;
-            let scale = radius.max(midplanes[second].1).max(1.0);
+            let scale = radius.max(midplanes[second].1);
             if (midplanes[second].1 - radius).abs() > EPS_GEOMETRY_AGREEMENT * scale
                 || dot(midplanes[first].0.normal, midplanes[second].0.normal).abs()
                     > 1.0 - EPS_GEOMETRY_AGREEMENT
@@ -163,7 +163,7 @@ pub(in super::super) fn slot_fillet_cylinder(
         }
     }
     let first = *candidates.first()?;
-    let scale = first.radius.max(1.0);
+    let scale = first.radius;
     candidates
         .iter()
         .all(|candidate| {
