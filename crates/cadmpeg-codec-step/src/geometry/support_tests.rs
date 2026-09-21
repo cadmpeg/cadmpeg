@@ -101,8 +101,10 @@ fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
 /// carrier.
 const ACCEPTED_PLACEMENTS: usize = cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING;
 
-fn placed_plane(placements: usize) -> cadmpeg_ir::geometry::SolvedSurfaceGeometry {
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+fn placed_plane(
+    placements: usize,
+) -> Result<cadmpeg_ir::geometry::SolvedSurfaceGeometry, &'static str> {
+    use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry};
     let mut geometry = SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -112,30 +114,32 @@ fn placed_plane(placements: usize) -> cadmpeg_ir::geometry::SolvedSurfaceGeometr
         .expect("a unit-axis plane"),
     );
     for _ in 0..placements {
-        geometry = SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(geometry),
-            transform: Transform::identity(),
-        };
+        geometry = SolvedSurfaceGeometry::Transformed(PlacedSurface::try_new(
+            Box::new(geometry),
+            Transform::identity(),
+        )?);
     }
-    geometry
+    Ok(geometry)
 }
 
 #[test]
 fn a_surface_placement_chain_past_the_bound_is_unwritable() {
     use super::{emitted_basis, surface, surface_is_supported};
 
-    let accepted = placed_plane(ACCEPTED_PLACEMENTS);
+    let accepted = placed_plane(ACCEPTED_PLACEMENTS).expect("admitted nesting");
     assert!(surface_is_supported(&accepted));
-    assert!(emitted_basis(&accepted).is_some());
+    assert!(matches!(
+        emitted_basis(&accepted),
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
+    ));
     let mut emitter = crate::writer::Emitter::new();
     assert!(surface(&mut emitter, &accepted).is_some());
 
-    let refused = placed_plane(ACCEPTED_PLACEMENTS + 1);
-    assert!(!surface_is_supported(&refused));
-    assert!(emitted_basis(&refused).is_none());
-    let mut emitter = crate::writer::Emitter::new();
-    assert!(surface(&mut emitter, &refused).is_none());
-    assert!(emitter.into_lines().is_empty());
+    // One placement deeper is unwritable because it is unbuildable.
+    assert_eq!(
+        placed_plane(ACCEPTED_PLACEMENTS + 1),
+        Err("PlacedSurface.basis nests past the admitted inline basis depth")
+    );
 }
 
 fn placed_line(placements: usize) -> CurveGeometry {

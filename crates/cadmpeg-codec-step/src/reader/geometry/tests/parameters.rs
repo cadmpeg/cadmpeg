@@ -155,10 +155,13 @@ fn surface_parameter_units_follow_the_surface_chart() {
         )
         .unwrap(),
     ));
-    let transformed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(cylinder.clone().solved().expect("solved carrier").clone()),
-        transform: Transform::identity(),
-    });
+    let transformed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(cylinder.clone().solved().expect("solved carrier").clone()),
+            Transform::identity(),
+        )
+        .expect("placed surface"),
+    ));
     assert_eq!(
         surface_parameter_scales_for_step(
             &ir,

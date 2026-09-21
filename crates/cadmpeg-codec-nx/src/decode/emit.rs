@@ -1051,7 +1051,7 @@ pub(super) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
         SolvedSurfaceGeometry::Torus(_) => "TORUS",
         SolvedSurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
         SolvedSurfaceGeometry::Polygonal(_) => "POLYGONAL_SURFACE",
-        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => surface_tag(placed.basis()),
         SolvedSurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }

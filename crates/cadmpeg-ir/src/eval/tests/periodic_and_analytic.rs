@@ -198,17 +198,20 @@ fn transformed_carriers_preserve_basis_parameters() {
         Some(Point3::new(-4.0, 5.0, 6.0))
     );
 
-    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Plane(
-            crate::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform,
-    });
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                crate::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed surface"),
+    ));
     assert_eq!(
         crate::eval::surface_point(&surface, 2.0, 3.0),
         Some(Point3::new(0.0, 11.0, 6.0))

@@ -261,17 +261,20 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     .expect("affine transform");
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(1.0, 2.0, 3.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            transform,
-        }),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(
+                Box::new(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(1.0, 2.0, 3.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                transform,
+            )
+            .expect("placed surface"),
+        )),
         source_object: None,
     };
 

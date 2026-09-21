@@ -2488,68 +2488,69 @@ fn prune_rejected_topology(out: &mut Brep) {
 }
 
 fn fold_surface_frame(
-    mut geometry: &mut SolvedSurfaceGeometry,
+    geometry: &mut SolvedSurfaceGeometry,
     u_reference: cadmpeg_ir::math::Vector3,
     v_reference: cadmpeg_ir::math::Vector3,
 ) -> Result<(), &'static str> {
-    loop {
-        match geometry {
-            SolvedSurfaceGeometry::Plane(payload) => {
-                let frame = OrthonormalFrame3::new(*payload.normal(), u_reference)
-                    .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
-                *payload =
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(payload.origin(), frame);
-                return Ok(());
-            }
-            SolvedSurfaceGeometry::Cylinder(payload) => {
-                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
-                    .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
-                *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
-                    payload.origin(),
-                    frame,
-                    payload.radius(),
-                );
-                return Ok(());
-            }
-            SolvedSurfaceGeometry::Cone(payload) => {
-                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
-                    .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
-                *payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
-                    payload.origin(),
-                    frame,
-                    payload.radius(),
-                    payload.ratio(),
-                    payload.half_angle(),
-                );
-                return Ok(());
-            }
-            SolvedSurfaceGeometry::Torus(payload) => {
-                let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
-                    .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
-                *payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
-                    payload.center(),
-                    frame,
-                    payload.major_radius(),
-                    payload.minor_radius(),
-                );
-                return Ok(());
-            }
-            SolvedSurfaceGeometry::Sphere(payload) => {
-                let frame = OrthonormalFrame3::new(v_reference, u_reference)
-                    .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
-                *payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
-                    payload.center(),
-                    frame,
-                    payload.radius(),
-                );
-                return Ok(());
-            }
-            SolvedSurfaceGeometry::Transformed { basis, .. } => geometry = basis,
-            SolvedSurfaceGeometry::Nurbs(_)
-            | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Unknown { .. } => return Ok(()),
+    match geometry {
+        SolvedSurfaceGeometry::Plane(payload) => {
+            let frame = OrthonormalFrame3::new(*payload.normal(), u_reference)
+                .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?;
+            *payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(payload.origin(), frame);
         }
+        SolvedSurfaceGeometry::Cylinder(payload) => {
+            let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                .ok_or("CylinderSurface.axis/ref_direction must form an orthonormal frame")?;
+            *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                payload.origin(),
+                frame,
+                payload.radius(),
+            );
+        }
+        SolvedSurfaceGeometry::Cone(payload) => {
+            let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                .ok_or("ConeSurface.axis/ref_direction must form an orthonormal frame")?;
+            *payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                payload.origin(),
+                frame,
+                payload.radius(),
+                payload.ratio(),
+                payload.half_angle(),
+            );
+        }
+        SolvedSurfaceGeometry::Torus(payload) => {
+            let frame = OrthonormalFrame3::new(*payload.axis(), u_reference)
+                .ok_or("TorusSurface.axis/ref_direction must form an orthonormal frame")?;
+            *payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                payload.center(),
+                frame,
+                payload.major_radius(),
+                payload.minor_radius(),
+            );
+        }
+        SolvedSurfaceGeometry::Sphere(payload) => {
+            let frame = OrthonormalFrame3::new(v_reference, u_reference)
+                .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
+            *payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                payload.center(),
+                frame,
+                payload.radius(),
+            );
+        }
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            // The placement re-admits its basis, so the frame is folded into a
+            // candidate and the carrier is rebuilt from it. The recursion is
+            // bounded by the depth `PlacedSurface::try_new` admits.
+            let mut basis = placed.basis().clone();
+            fold_surface_frame(&mut basis, u_reference, v_reference)?;
+            *placed =
+                cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), *placed.transform())?;
+        }
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => {}
     }
+    Ok(())
 }
 
 fn annotate_surface_frame(
@@ -2581,7 +2582,7 @@ fn annotate_surface_frame(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 break;
             }
-            SolvedSurfaceGeometry::Transformed { basis, .. } => geometry = basis,
+            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
             | SolvedSurfaceGeometry::Unknown { .. } => break,

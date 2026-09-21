@@ -331,17 +331,20 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         )),
         transform,
     };
-    let surface_geometry = SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(1.0, 2.0, 3.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        transform,
-    };
+    let surface_geometry = SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(1.0, 2.0, 3.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            transform,
+        )
+        .expect("placed surface"),
+    );
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
@@ -405,7 +408,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         surface.id.as_str() == "step:data:surface#10"
             && matches!(
                 surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Transformed { .. })
+                Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
     assert!(decoded
@@ -528,20 +531,26 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         }),
         transform,
     });
-    let expected_surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed {
-        basis: Box::new(SolvedSurfaceGeometry::Transformed {
-            basis: Box::new(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
+    let expected_surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    )),
+                    transform,
                 )
-                .unwrap(),
+                .expect("placed surface"),
             )),
             transform,
-        }),
-        transform,
-    });
+        )
+        .expect("placed surface"),
+    ));
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && curve.geometry.solved() == expected_curve.solved()
@@ -948,7 +957,7 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
         surface.id.as_str() == "step:data:surface#9"
             && matches!(
                 surface.geometry.solved(),
-                Some(SolvedSurfaceGeometry::Transformed { .. })
+                Some(SolvedSurfaceGeometry::Transformed(_))
             )
     }));
 }

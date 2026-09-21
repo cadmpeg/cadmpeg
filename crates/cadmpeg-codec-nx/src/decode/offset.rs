@@ -2273,8 +2273,8 @@ pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { basis, .. }) => {
-            return surface_parameters(&SurfaceGeometry::Solved((**basis).clone()), uv)
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+            return surface_parameters(&SurfaceGeometry::Solved(placed.basis().clone()), uv)
         }
     };
     [point.u, point.v]

@@ -7608,7 +7608,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         }
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Transformed(_)
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => return None,
@@ -9547,7 +9547,7 @@ fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Transformed(_)
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => None,

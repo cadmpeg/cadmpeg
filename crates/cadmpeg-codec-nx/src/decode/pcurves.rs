@@ -1345,7 +1345,7 @@ fn opposite_chart_transfer_priority(
         Some(SolvedSurfaceGeometry::Sphere(_)) => 0,
         Some(SolvedSurfaceGeometry::Torus(_)) => 0,
         Some(SolvedSurfaceGeometry::Nurbs(_)) => 0,
-        Some(SolvedSurfaceGeometry::Transformed { .. }) => 1,
+        Some(SolvedSurfaceGeometry::Transformed(_)) => 1,
         None if blend_boundary_transfer_available(index, source_surface, target_surface)
             && blend_transfer_contact(index, source_surface, target_surface).is_some() =>
         {

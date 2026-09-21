@@ -202,11 +202,12 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     })
                     .unwrap();
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed { transform, .. }) => {
-                let mut rows = transform.affine_rows();
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+                let mut rows = placed.transform().affine_rows();
                 rows[0][3] += dx;
-                *transform =
-                    cadmpeg_ir::transform::Transform::affine(rows).expect("affine transform");
+                placed.set_transform(
+                    cadmpeg_ir::transform::Transform::affine(rows).expect("affine transform"),
+                );
             }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {}

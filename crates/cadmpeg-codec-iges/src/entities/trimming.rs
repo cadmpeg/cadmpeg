@@ -312,7 +312,7 @@ fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64,
             SurfaceGeometry::Procedural { .. } => None,
             SurfaceGeometry::Solved(
                 SolvedSurfaceGeometry::Polygonal(_)
-                | SolvedSurfaceGeometry::Transformed { .. }
+                | SolvedSurfaceGeometry::Transformed(_)
                 | SolvedSurfaceGeometry::Unknown { .. },
             ) => None,
         },

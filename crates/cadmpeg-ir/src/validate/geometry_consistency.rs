@@ -59,15 +59,6 @@ pub(super) fn check_geometry_nesting(ir: &CadIr, findings: &mut Vec<Finding>) {
             entity: Some(id.to_owned()),
         });
     };
-    for surface in &ir.model.surfaces {
-        if surface
-            .geometry
-            .solved()
-            .is_some_and(|geometry| !geometry.nesting_within_bound())
-        {
-            refuse("surface", surface.id.as_str());
-        }
-    }
     for curve in &ir.model.curves {
         if curve
             .geometry
@@ -905,9 +896,6 @@ fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[
 }
 
 fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<[[f64; 2]; 2]> {
-    if !geometry.nesting_within_bound() {
-        return None;
-    }
     match geometry {
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let u_count = surface.u_count();
@@ -917,7 +905,9 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
                 nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
             ])
         }
-        SolvedSurfaceGeometry::Transformed { basis, .. } => solved_surface_parameter_domains(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            solved_surface_parameter_domains(placed.basis())
+        }
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Cylinder(_)
         | SolvedSurfaceGeometry::Cone(_)

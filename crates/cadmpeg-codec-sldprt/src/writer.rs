@@ -3235,7 +3235,7 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Transformed { .. }
+            | SolvedSurfaceGeometry::Transformed(_)
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
@@ -3644,21 +3644,19 @@ pub(super) fn curve_values(
 
 /// Reference direction the compact carrier record states for `geometry`.
 ///
-/// A chain that nests past
-/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING) is not
-/// walked, so the writer is bounded by the depth the IR admits. Both callers
-/// pass the same carrier to `surface_values`, which refuses every transformed
-/// surface, so a carrier past the bound leaves the file through
-/// `CodecError::NotImplemented` whatever direction this returns.
+/// The recursion is bounded by the carrier itself:
+/// `cadmpeg_ir::geometry::PlacedSurface::try_new` refuses a chain past
+/// [`MAX_GEOMETRY_NESTING`](cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING), so
+/// the walk is at most that many levels deep. Both callers pass the same
+/// carrier to `surface_values`, which refuses every transformed surface, so a
+/// transformed carrier leaves the file through `CodecError::NotImplemented`
+/// whatever direction this returns.
 pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir::math::Vector3 {
     const DEFAULT_REFERENCE: cadmpeg_ir::math::Vector3 = cadmpeg_ir::math::Vector3 {
         x: 1.0,
         y: 0.0,
         z: 0.0,
     };
-    if !geometry.nesting_within_bound() {
-        return DEFAULT_REFERENCE;
-    }
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let u_axis = plane_surface.u_axis();
@@ -3680,7 +3678,7 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
             let ref_direction = sphere_surface.ref_direction();
             *ref_direction
         }
-        SolvedSurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
+        SolvedSurfaceGeometry::Transformed(placed) => surface_reference(placed.basis()),
         SolvedSurfaceGeometry::Nurbs(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => DEFAULT_REFERENCE,
