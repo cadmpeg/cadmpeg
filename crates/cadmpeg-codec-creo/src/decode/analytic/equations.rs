@@ -381,6 +381,28 @@ fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
     })
 }
 
+fn operation_rounding_bound(value: f64) -> f64 {
+    f64::EPSILON * value.abs() + f64::from_bits(1)
+}
+
+fn inflate_positive_bound(value: f64) -> f64 {
+    value + cancellation_bound(value) + f64::from_bits(1)
+}
+
+fn polynomial_value_and_bound(coefficients: &[BoundedCoefficient], parameter: f64) -> (f64, f64) {
+    coefficients
+        .iter()
+        .rev()
+        .fold((0.0, 0.0), |(value, bound), coefficient| {
+            let next_value = value.mul_add(parameter, coefficient.value);
+            let propagated = bound.mul_add(parameter.abs(), coefficient.bound);
+            (
+                next_value,
+                inflate_positive_bound(propagated + operation_rounding_bound(next_value)),
+            )
+        })
+}
+
 fn polynomial_value_bound(coefficients: &[BoundedCoefficient], parameter: f64) -> f64 {
     let magnitude = parameter.abs();
     let (coefficient_error, evaluation_terms, _) = coefficients.iter().fold(
@@ -394,6 +416,58 @@ fn polynomial_value_bound(coefficients: &[BoundedCoefficient], parameter: f64) -
         },
     );
     coefficient_error + cancellation_bound(evaluation_terms)
+}
+
+fn polynomial_interval_value_bound(
+    coefficients: &[BoundedCoefficient],
+    parameter: f64,
+    parameter_error: f64,
+) -> f64 {
+    let (_, mut bound) = polynomial_value_and_bound(coefficients, parameter);
+    let mut derivative = coefficients.to_vec();
+    let mut parameter_error_power = 1.0;
+    let mut factorial = 1.0;
+    for order in 1..coefficients.len() {
+        derivative = derivative
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(power, coefficient)| {
+                let Ok(power) = u32::try_from(power) else {
+                    return BoundedCoefficient {
+                        value: f64::INFINITY,
+                        bound: f64::INFINITY,
+                    };
+                };
+                let factor = f64::from(power);
+                let value = coefficient.value * factor;
+                BoundedCoefficient {
+                    value,
+                    bound: inflate_positive_bound(
+                        coefficient.bound * factor + operation_rounding_bound(value),
+                    ),
+                }
+            })
+            .collect();
+        let Ok(order) = u32::try_from(order) else {
+            return f64::INFINITY;
+        };
+        parameter_error_power *= parameter_error;
+        factorial *= f64::from(order);
+        let (derivative_value, derivative_bound) =
+            polynomial_value_and_bound(&derivative, parameter);
+        let term = inflate_positive_bound(
+            (derivative_value.abs() + derivative_bound) * parameter_error_power / factorial,
+        );
+        bound = inflate_positive_bound(bound + term);
+    }
+    bound
+}
+
+fn polynomial_sign(coefficients: &[BoundedCoefficient], parameter: f64) -> Option<bool> {
+    let (value, bound) = polynomial_value_and_bound(coefficients, parameter);
+    (value.is_finite() && bound.is_finite() && value.abs() > bound)
+        .then_some(value.is_sign_positive())
 }
 
 /// A polynomial coefficient beside the bound on its distance from the exact
@@ -516,17 +590,9 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
             .map(f64::abs)
             .fold(0.0, f64::max)
             / leading;
-    // The stations are the Cauchy interval's ends and the derivative's roots.
-    // A station the derivative owns at which the polynomial also states zero is
-    // a root the two share, so it is marked and keeps the derivative's own
-    // accuracy: the derivative of a polynomial with a root of even order has a
-    // root of one lower order at the same place, which bisection locates as an
-    // ordinary sign change where the polynomial itself has none.
-    let station = |value: f64| PolynomialRoot {
-        value,
-        error: cancellation_bound(value),
-        multiple: false,
-    };
+    // Each derivative root partitions the polynomial into monotone intervals.
+    // Its reported location interval, rather than its approximate value, is
+    // removed from those intervals before their endpoint signs are compared.
     let derivative_roots = real_polynomial_roots(&derivative)
         .into_iter()
         .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
@@ -539,34 +605,55 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         .iter()
         .map(|coefficient| coefficient.value)
         .collect::<Vec<_>>();
-    let mut boundaries = vec![station(-bound)];
-    boundaries.extend(derivative_roots.iter().copied());
-    boundaries.push(station(bound));
-    boundaries.sort_by(|left, right| left.value.total_cmp(&right.value));
-    let mut roots = derivative_roots
-        .into_iter()
-        .filter(|station| {
-            let value = polynomial_value(&coefficients, station.value);
-            let value_bound = polynomial_value_bound(&scaled, station.value);
-            value.is_finite() && value_bound.is_finite() && value.abs() <= value_bound
-        })
-        .collect::<Vec<_>>();
-    for interval in boundaries.windows(2) {
-        let (mut lower, mut upper) = (interval[0].value, interval[1].value);
-        let mut lower_value = polynomial_value(&coefficients, lower);
-        let upper_value = polynomial_value(&coefficients, upper);
-        if !lower_value.is_finite()
-            || !upper_value.is_finite()
-            || lower_value.is_sign_positive() == upper_value.is_sign_positive()
+    let mut roots = Vec::new();
+    let mut gap_lower = -bound;
+    let mut gap_lower_sign = polynomial_sign(&scaled, gap_lower);
+    let mut gaps = Vec::new();
+    for station in derivative_roots {
+        let station_lower = station.value - station.error;
+        let station_upper = station.value + station.error;
+        if gap_lower < station_lower {
+            gaps.push((
+                gap_lower,
+                gap_lower_sign,
+                station_lower,
+                polynomial_sign(&scaled, station_lower),
+            ));
+        }
+        let (station_value, _) = polynomial_value_and_bound(&scaled, station.value);
+        let station_value_bound =
+            polynomial_interval_value_bound(&scaled, station.value, station.error);
+        if station_value.is_finite()
+            && station_value_bound.is_finite()
+            && station_value.abs() <= station_value_bound
         {
+            roots.push(station);
+        }
+        gap_lower = gap_lower.max(station_upper);
+        gap_lower_sign = polynomial_sign(&scaled, gap_lower);
+    }
+    gaps.push((
+        gap_lower,
+        gap_lower_sign,
+        bound,
+        polynomial_sign(&scaled, bound),
+    ));
+    for (mut lower, lower_sign, mut upper, upper_sign) in gaps {
+        let (Some(mut lower_sign), Some(upper_sign)) = (lower_sign, upper_sign) else {
+            continue;
+        };
+        if lower_sign == upper_sign {
             continue;
         }
+        let complete_lower = lower;
+        let complete_upper = upper;
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
-            let midpoint_value = polynomial_value(&coefficients, midpoint);
-            if lower_value.is_sign_positive() == midpoint_value.is_sign_positive() {
+            let midpoint_sign = polynomial_sign(&scaled, midpoint)
+                .unwrap_or_else(|| polynomial_value(&coefficients, midpoint).is_sign_positive());
+            if lower_sign == midpoint_sign {
                 lower = midpoint;
-                lower_value = midpoint_value;
+                lower_sign = midpoint_sign;
             } else {
                 upper = midpoint;
             }
@@ -577,11 +664,12 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         // The value bound divided by the derivative magnitude outside its own
         // bound is the displacement that coefficient and evaluation error can
         // give this simple root. If the derivative does not state a nonzero
-        // slope, the complete station interval is the location statement.
+        // slope, the complete gap between derivative-station intervals is the
+        // location statement.
         let coefficient_error = if derivative_value > derivative_error {
             polynomial_value_bound(&scaled, value) / (derivative_value - derivative_error)
         } else {
-            0.5 * (interval[1].value - interval[0].value).abs()
+            (value - complete_lower).max(complete_upper - value)
         };
         roots.push(PolynomialRoot {
             value,
@@ -593,25 +681,6 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
     }
     roots.sort_by(|left, right| left.value.total_cmp(&right.value));
     roots
-        .into_iter()
-        .fold(Vec::<PolynomialRoot>::new(), |mut unique, root| {
-            if let Some(previous) = unique.last_mut() {
-                let overlap_lower = (previous.value - previous.error).max(root.value - root.error);
-                let overlap_upper = (previous.value + previous.error).min(root.value + root.error);
-                if overlap_lower <= overlap_upper {
-                    // Both stated locations contain the same exact root. Keep
-                    // their common interval, which is the tighter statement.
-                    let value = overlap_lower + 0.5 * (overlap_upper - overlap_lower);
-                    previous.value = value;
-                    previous.error =
-                        (0.5 * (overlap_upper - overlap_lower)).max(cancellation_bound(value));
-                    previous.multiple |= root.multiple;
-                    return unique;
-                }
-            }
-            unique.push(root);
-            unique
-        })
 }
 
 fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
@@ -1597,6 +1666,51 @@ mod tests {
         for (root, expected) in roots.iter().zip([0.0, SECOND_ROOT]) {
             assert!((root.value - expected).abs() <= root.error);
         }
+    }
+
+    #[test]
+    fn polynomial_root_intervals_cover_exactly_the_clustered_quartic_roots() {
+        let roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 156.982_737_423_565_65,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: -177.398_141_926_765_25,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 75.175_686_368_480_33,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: -14.158_691_457_556_788,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+        let expected = [
+            3.537_110_093_263_118,
+            3.538_086_303_440_86,
+            3.538_796_911_152_453,
+            3.544_698_149_700_357,
+        ];
+
+        assert_eq!(roots.len(), expected.len());
+        assert!(roots.iter().all(|root| !root.multiple));
+        assert!(expected
+            .iter()
+            .all(|expected_root| roots.iter().any(|root| {
+                (root.value - root.error..=root.value + root.error).contains(expected_root)
+            })));
+        assert!(roots
+            .iter()
+            .all(|root| expected.iter().any(|expected_root| {
+                (root.value - root.error..=root.value + root.error).contains(expected_root)
+            })));
     }
 
     #[test]
