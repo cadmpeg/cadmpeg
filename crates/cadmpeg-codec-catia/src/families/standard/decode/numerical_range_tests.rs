@@ -14,7 +14,7 @@ fn numerical_0922_quintic_keeps_both_branches() {
         let mut knots = vec![0.; 6];
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
-        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).unwrap();
+        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
         let result = standard_limit_curve_point_parameter(&n, Point3::new(0., 0., 0.), 2e-3);
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
         assert_eq!(result, None);
@@ -28,7 +28,7 @@ fn numerical_0922_finite_bezier_midpoint() {
             .collect::<Vec<_>>();
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
-        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).unwrap();
+        let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
         let result = standard_limit_curve_point_parameter(&n, Point3::new(x, 0.5, 0.), 2e-3);
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
         assert_eq!(result, Some(0.5));
