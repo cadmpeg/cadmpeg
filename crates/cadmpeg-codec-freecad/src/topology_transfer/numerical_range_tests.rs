@@ -4,6 +4,7 @@ use super::*;
 
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::math::Point2;
 
 #[test]
 fn numerical_0922_interior_trim_is_preserved() {
