@@ -152,17 +152,31 @@ fn carries_authoring_path(text: &str) -> bool {
 /// [`NATIVE_ELISION_KEY`] states what the block stands for, and the
 /// `cadmpeg-ir` golden sweep reads that key to recognise an elided document.
 /// `__arena_counts` states each arena's population, which a reviewer reads
-/// directly. `__shape_sha256` covers the records themselves in the canonical
-/// JSON a CADIR document writes for them, so any member of any record moves it,
-/// not only an arena name, a population or a record identity.
+/// directly. `__arena_sha256` carries one digest per arena over the canonical
+/// JSON a CADIR document writes for that arena's records, so any member of any
+/// record moves it, not only an arena name, a population or a record identity.
+///
+/// The digest is per arena, not one over the whole namespace, so a drifted
+/// record names the arena it sits in: the two maps carry the same keys and a
+/// diff states which of them moved. Their union covers every record byte the
+/// whole-namespace digest covered, since the arena and namespace names are the
+/// keys the golden prints.
 fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let mut counts = serde_json::Map::new();
+    let mut digests = serde_json::Map::new();
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
+        let mut namespace_digests = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
             namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
+            namespace_digests.insert(
+                arena.clone(),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(records)
+                    .expect("the native records state canonical JSON")),
+            );
         }
-        counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
+        counts.insert(format.clone(), namespace_counts.into());
+        digests.insert(format.clone(), namespace_digests.into());
     }
     let mut block = serde_json::Map::new();
     block.insert(
@@ -170,11 +184,7 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         serde_json::json!(NATIVE_ELISION_MARKER),
     );
     block.insert("__arena_counts".to_owned(), counts.into());
-    block.insert(
-        "__shape_sha256".to_owned(),
-        serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(native)
-            .expect("the native records state canonical JSON")),
-    );
+    block.insert("__arena_sha256".to_owned(), digests.into());
     block.into()
 }
 
@@ -454,18 +464,37 @@ mod step_comparison {
 mod native_elision {
     use super::elided_native;
 
-    /// One namespace holding one record whose only codec-owned member is `name`.
-    fn one_object_native(name: &str) -> cadmpeg_ir::Native {
+    /// One record under `id` whose only codec-owned member is `name`.
+    fn named_record(id: &str, name: &str) -> cadmpeg_ir::NativeRecord {
         let mut fields = serde_json::Map::new();
         fields.insert("name".to_owned(), serde_json::json!(name));
-        let record = cadmpeg_ir::NativeRecord::new("fcstd:native:object#Box", fields)
-            .expect("a well-formed native record");
+        cadmpeg_ir::NativeRecord::new(id, fields).expect("a well-formed native record")
+    }
+
+    /// One namespace holding one record whose only codec-owned member is `name`.
+    fn one_object_native(name: &str) -> cadmpeg_ir::Native {
         let mut native = cadmpeg_ir::Native::default();
+        native.namespace_mut("fcstd").arenas_mut().insert(
+            "objects".to_owned(),
+            vec![named_record("fcstd:native:object#Box", name)],
+        );
         native
-            .namespace_mut("fcstd")
-            .arenas_mut()
-            .insert("objects".to_owned(), vec![record]);
+    }
+
+    /// The same namespace with a second arena, so a test can state which arena
+    /// a drift reaches.
+    fn two_arena_native(object_name: &str, property_name: &str) -> cadmpeg_ir::Native {
+        let mut native = one_object_native(object_name);
+        native.namespace_mut("fcstd").arenas_mut().insert(
+            "properties".to_owned(),
+            vec![named_record("fcstd:native:property#Length", property_name)],
+        );
         native
+    }
+
+    /// The digest one arena carries in the written block.
+    fn arena_digest(block: &serde_json::Value, arena: &str) -> serde_json::Value {
+        block["__arena_sha256"]["fcstd"][arena].clone()
     }
 
     /// What the digest read before it read the records: each arena's name, its
@@ -503,19 +532,38 @@ mod native_elision {
         let (before, after) = (elided_native(&before), elided_native(&after));
         assert_eq!(before["__arena_counts"], after["__arena_counts"]);
         assert!(
-            before["__shape_sha256"] != after["__shape_sha256"],
+            arena_digest(&before, "objects") != arena_digest(&after, "objects"),
             "the digest must state a member other than the record identity"
         );
     }
 
     #[test]
-    fn the_digest_is_the_canonical_json_of_the_records() {
-        let native = one_object_native("Box");
+    fn a_drift_moves_only_the_digest_of_its_own_arena() {
+        let before = elided_native(&two_arena_native("Box", "Length"));
+        let after = elided_native(&two_arena_native("Box", "Width"));
         assert_eq!(
-            elided_native(&native)["__shape_sha256"],
-            serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(&native)
-                .expect("the native records state canonical JSON")),
-            "the digest covers the bytes a CADIR document writes for the arenas"
+            arena_digest(&before, "objects"),
+            arena_digest(&after, "objects"),
+            "an arena no record moved in must keep its digest"
         );
+        assert!(
+            arena_digest(&before, "properties") != arena_digest(&after, "properties"),
+            "the arena the drifted record sits in must be the one whose digest moves"
+        );
+    }
+
+    #[test]
+    fn each_digest_is_the_canonical_json_of_its_arena() {
+        let native = two_arena_native("Box", "Length");
+        let block = elided_native(&native);
+        for arena in ["objects", "properties"] {
+            let records = &native.0["fcstd"].arenas()[arena];
+            assert_eq!(
+                arena_digest(&block, arena),
+                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(records)
+                    .expect("the native records state canonical JSON")),
+                "the digest of `{arena}` covers the bytes a CADIR document writes for it"
+            );
+        }
     }
 }

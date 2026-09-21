@@ -841,8 +841,33 @@
           "string_tables": 1
         }
       },
-      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON",
-      "__shape_sha256": "bf84d29800cabc2d233f4489c6213973a4d852c8b8c1f81cd6e102a0a82345ac"
+      "__arena_sha256": {
+        "fcstd": {
+          "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "applications": "c7ee6e0a53a956a4948d62c8fec53516f9e7e3ac6dda5747519866ec8e6801ad",
+          "attachments": "d78511b19961c3027c9ec394c13abd272a8d0bea097026c6e04020d28a606ce3",
+          "byte_coverage": "04780f7f48d7109d1d6a7dd945813d893132a79d0c2fbd24ab2aa604742e2146",
+          "carrier_census": "b4fc9a4c2f317e87e6f18c5c4ab2cdef86f68a5a0bacfc94222162c048b0fea4",
+          "design_census": "5927fb2c6fba155430c6df4da9710912cb46be3fafcd9d3881f7883514d0df32",
+          "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
+          "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "entries": "3974446a9a483bc9609de44bcc15d05deb58611d46347cde7795eb47a3d2dddd",
+          "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "logical_ledger": "5c13597a948f4389914998bfe9b9f9dba2685f347e9090b9c7b6b1c61626aace",
+          "objects": "1d3b9b2a93f696114a76553b0443b84a09fb98b44ece4b7303a3066178397424",
+          "physical_ledger": "5850b98598e9e77ec7781c9a65097a0b0d9730109a2894346a828b6581efa43d",
+          "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "properties": "26a7b4002d1dac5554f2834b51bda3515de3b68ce0cf2703a1bc97623a285064",
+          "shape_payloads": "1262fed60df3c2da2a2c606dc18b05b569810f6c74a2133d523379ddb3bf4488",
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+        }
+      },
+      "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
     },
     "source": {
       "attributes": {
