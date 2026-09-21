@@ -1127,6 +1127,16 @@ pub(in super::super) fn transfer_positional_cylinders(
         {
             continue;
         }
+        // The repair arm below and the transfer arm after it state the same
+        // carrier from the same frame. They differ in what a refusal costs:
+        // the repair arm leaves the existing surface's geometry as it stands,
+        // the transfer arm states no surface at all.
+        let carrier = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+            frame.frame().origin_point(),
+            frame.frame().axis_vector(),
+            frame.frame().ref_direction_vector(),
+            frame.radius(),
+        );
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
@@ -1144,17 +1154,11 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .iter_mut()
                     .find(|surface| surface.id == id)
                 {
-                    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                        match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                            frame.frame().origin_point(),
-                            frame.frame().axis_vector(),
-                            frame.frame().ref_direction_vector(),
-                            frame.radius(),
-                        ) {
+                    surface.geometry =
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(match carrier {
                             Ok(payload) => payload,
                             Err(_) => continue,
-                        },
-                    ));
+                        }));
                     annotate(
                         annotations,
                         &id,
@@ -1167,12 +1171,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             }
             continue;
         }
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            frame.frame().origin_point(),
-            frame.frame().axis_vector(),
-            frame.frame().ref_direction_vector(),
-            frame.radius(),
-        ) else {
+        let Ok(cylinder_surface) = carrier else {
             continue;
         };
         annotate(
