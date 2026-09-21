@@ -667,6 +667,37 @@ fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
 }
 
 #[test]
+fn admitted_degree_zero_nurbs_are_writer_limits() {
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+
+    let point = Point3::new(0.0, 0.0, 0.0);
+    let curve = NurbsCurve::from_lanes(0, vec![0.0, 1.0], vec![point], None, false)
+        .expect("degree-zero curves are admitted by the IR");
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceAxis::new(0, vec![0.0, 1.0], false),
+        NurbsSurfaceLanes::new(vec![vec![point]], None),
+        false,
+    )
+    .expect("degree-zero surfaces are admitted by the IR");
+
+    let curve_error = super::super::check_nurbs_curve("curve-1", &curve)
+        .expect_err("Rhino requires positive NURBS degree");
+    let surface_error = super::super::check_nurbs_surface("surface-1", &surface)
+        .expect_err("Rhino requires positive NURBS degree");
+    assert!(matches!(
+        curve_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+    assert!(matches!(
+        surface_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+}
+
+#[test]
 fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
     use crate::writer::{
         model::{WritableEdge, WritableEdgeCurve, WritablePcurve},

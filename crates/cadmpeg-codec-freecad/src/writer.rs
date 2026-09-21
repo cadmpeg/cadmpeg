@@ -90,7 +90,7 @@ fn write_seekable(
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
-                    CodecError::malformed(format_args!("cannot write {}: {error}", entry.name))
+                    std::io::Error::other(format!("cannot write {}: {error}", entry.name))
                 })?;
             archive.write_all(if entry.name == "Document.xml" {
                 &document_xml
@@ -99,7 +99,7 @@ fn write_seekable(
             })?;
         }
         archive.finish().map_err(|error| {
-            CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
+            std::io::Error::other(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
     let notes = vec![
@@ -134,13 +134,13 @@ fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
                 .split('/')
                 .any(|part| part.is_empty() || part == "." || part == "..")
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::NotImplemented(format!(
                 "unsafe FCStd output entry name {:?}",
                 entry.name
             )));
         }
         if !names.insert(entry.name.as_str()) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::NotImplemented(format!(
                 "duplicate FCStd output entry {}",
                 entry.name
             )));

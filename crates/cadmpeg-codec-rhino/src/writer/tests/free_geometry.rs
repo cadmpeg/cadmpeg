@@ -114,7 +114,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert_eq!(output, [0xaa]);
 }
 
@@ -399,6 +399,27 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         ),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
+}
+
+#[test]
+fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
+    let mesh = Tessellation::new(
+        "cadir:model:tessellation#wide-coordinates",
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices: vec![
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("finite coordinates are admitted by the IR");
+
+    let error = super::super::check_mesh(&mesh)
+        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
 }
 
 #[test]

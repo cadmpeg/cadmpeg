@@ -3,7 +3,74 @@
 
 use super::{adjacent_quad_sheet, polygon_sheet};
 use crate::writer::model::{WritableFaceSurface, WritableModel};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::EdgeCarrier;
+
+#[test]
+fn zero_length_edge_parameter_range_is_a_writer_limit() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    let curve = ir.model.edges[0]
+        .curve()
+        .expect("polygon edge has a curve")
+        .clone();
+    ir.model.edges[0].carrier =
+        EdgeCarrier::new(Some(curve), Some([0.0, 0.0])).expect("equal endpoints are admitted");
+
+    let error = WritableModel::try_new(&ir)
+        .err()
+        .expect("Rhino cannot write a zero-length domain");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn admitted_unit_direction_outside_rhino_bound_is_a_writer_limit() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0 + 5.0e-10, 0.0, 0.0),
+        )
+        .expect("the IR unit-direction bound admits this direction"),
+    ));
+
+    let error = WritableModel::try_new(&ir)
+        .err()
+        .expect("Rhino uses a tighter direction bound");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn admitted_frame_outside_rhino_bound_is_a_writer_limit() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("the IR orthonormal-frame bound admits this frame"),
+    ));
+
+    let error = WritableModel::try_new(&ir)
+        .err()
+        .expect("Rhino uses a tighter frame bound");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
 
 #[test]
 fn single_face_resolves_arena_permutations_in_traversal_order() {

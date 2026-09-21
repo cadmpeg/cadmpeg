@@ -208,16 +208,12 @@ fn write_seekable(
 
     output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
     let table_end = output.stream_position()?;
-    let body_len = i64::try_from(table_end - body_start)
-        .map_err(|_| CodecError::Malformed("3DM object table size overflow".into()))?;
+    let body_len = archive_body_len(table_end - body_start)?;
     output.seek(SeekFrom::Start(table_start + 4))?;
     output.write_all(&body_len.to_le_bytes())?;
     output.seek(SeekFrom::Start(table_end))?;
     output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[]))?;
-    let final_size = output
-        .stream_position()?
-        .checked_add(20)
-        .ok_or_else(|| CodecError::Malformed("3DM output size overflow".into()))?;
+    let final_size = archive_final_size(output.stream_position()?)?;
     output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes()))?;
     Ok(())
 }
@@ -563,7 +559,7 @@ fn prepare_write(
     archive_version: RhinoArchiveVersion,
 ) -> Result<WritePlan<'_>, CodecError> {
     if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::NotImplemented(
             "Rhino angular tolerance must not exceed pi".into(),
         ));
     }
@@ -601,16 +597,10 @@ fn prepare_write(
             unsupported.join(", ")
         )));
     }
-    if i32::try_from(model.points.len()).is_err()
-        || model
-            .points
-            .iter()
-            .any(|point| !point.position().is_finite())
-    {
-        return Err(CodecError::Malformed(
-            "point arena exceeds native counts or contains non-finite coordinates".into(),
-        ));
-    }
+    native_i32_count(
+        model.points.len(),
+        "point arena exceeds native counts".into(),
+    )?;
     let breps = brep_scopes(ir)?;
     let used_pcurves = breps
         .iter()
@@ -1162,7 +1152,7 @@ fn generated_projected_brep_c2_curve(
                     *point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
                     Ok(())
                 })
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
+                .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             if sense == Sense::Reversed {
                 let sum = projected.knots()[projected.degree() as usize]
                     + projected.knots()[projected.pole_count()];
@@ -1173,7 +1163,7 @@ fn generated_projected_brep_c2_curve(
                             *knot += sum;
                         }
                     })
-                    .map_err(|error| CodecError::malformed(error.to_string()))?;
+                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
                 canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
             }
             (
@@ -1192,10 +1182,10 @@ fn canonicalize_native_curve_knots(
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
-        .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
+        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     curve
         .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
-        .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
+        .map_err(|error| CodecError::NotImplemented(format!("curve {id}: {error}")))?;
     Ok(())
 }
 
@@ -1222,15 +1212,6 @@ fn admit_pcurve<'a>(
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin();
             let direction = line.direction();
-            if !origin.is_finite()
-                || !direction.is_finite()
-                || direction.u == 0.0 && direction.v == 0.0
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "pcurve {} has invalid line geometry",
-                    pcurve.id.as_str()
-                )));
-            }
             let from = [
                 origin.u + direction.u * domain[0],
                 origin.v + direction.v * domain[0],
@@ -1250,20 +1231,11 @@ fn admit_pcurve<'a>(
             )
         }
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
-            let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                nurbs.degree(),
-                nurbs.knots().to_vec(),
-                nurbs
-                    .control_points()
-                    .into_iter()
-                    .map(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
-                    .collect(),
-                nurbs.weights(),
-                nurbs.periodic(),
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id.as_str()))
-            })?;
+            let curve = nurbs
+                .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+                .map_err(|error| {
+                    CodecError::NotImplemented(format!("pcurve {}: {error}", pcurve.id.as_str()))
+                })?;
             check_nurbs_curve(pcurve.id.as_str(), &curve)?;
             let count = curve.pole_count();
             if curve.periodic()
@@ -1505,9 +1477,25 @@ fn empty_region_wrapper() -> Vec<u8> {
 
 /// Converts one arena position into the native index the Brep records store.
 fn wire_index(position: usize) -> Result<i32, CodecError> {
-    i32::try_from(position).map_err(|_| {
-        CodecError::Malformed("Brep record index exceeds the native index range".into())
-    })
+    native_i32_count(
+        position,
+        "Brep record index exceeds the native index range".into(),
+    )
+}
+
+fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
+    i32::try_from(value).map_err(|_| CodecError::NotImplemented(message))
+}
+
+fn archive_body_len(value: u64) -> Result<i64, CodecError> {
+    i64::try_from(value)
+        .map_err(|_| CodecError::NotImplemented("3DM object table size overflow".into()))
+}
+
+fn archive_final_size(position: u64) -> Result<u64, CodecError> {
+    position
+        .checked_add(20)
+        .ok_or_else(|| CodecError::NotImplemented("3DM output size overflow".into()))
 }
 
 /// Converts a list of arena positions into the native indexes they store as.
@@ -1533,8 +1521,8 @@ fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
     let vertex_count = mesh.vertices().len();
     if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
-        return Err(CodecError::malformed(format_args!(
-            "mesh {} has invalid native counts",
+        return Err(CodecError::NotImplemented(format!(
+            "mesh {} counts are outside Rhino's native range",
             mesh.id
         )));
     }
@@ -1563,18 +1551,12 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         )));
     }
     if mesh.vertices().iter().any(|p| {
-        !p.is_finite()
-            || !(p.x as f32).is_finite()
-            || !(p.y as f32).is_finite()
-            || !(p.z as f32).is_finite()
+        !(p.x as f32).is_finite() || !(p.y as f32).is_finite() || !(p.z as f32).is_finite()
     }) || mesh.vertex_normals().iter().any(|n| {
-        !n.is_finite()
-            || !(n.x as f32).is_finite()
-            || !(n.y as f32).is_finite()
-            || !(n.z as f32).is_finite()
+        !(n.x as f32).is_finite() || !(n.y as f32).is_finite() || !(n.z as f32).is_finite()
     }) {
-        return Err(CodecError::malformed(format_args!(
-            "mesh {} contains non-finite native values",
+        return Err(CodecError::NotImplemented(format!(
+            "mesh {} values exceed Rhino's native finite range",
             mesh.id
         )));
     }
@@ -1743,7 +1725,7 @@ fn check_frame(
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "{family} {id} frame is not orthonormal to Rhino's tighter bound {EPS_WRITE_DEGENERATE}"
         )));
     }
@@ -1766,22 +1748,15 @@ fn check_nurbs_surface(
     let v_order = surface.v_degree() as usize + 1;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
-    let Ok(pole_count) = i32::try_from(surface.poles().len()) else {
-        return Err(CodecError::malformed(format_args!(
-            "surface {id} cannot be represented by Rhino NURBS counts"
-        )));
-    };
-    if u_order < 2
-        || v_order < 2
-        || i32::try_from(u_order).is_err()
-        || i32::try_from(v_order).is_err()
-        || i32::try_from(u_count).is_err()
-        || i32::try_from(v_count).is_err()
-    {
-        return Err(CodecError::malformed(format_args!(
-            "surface {id} cannot be represented by Rhino NURBS counts"
-        )));
+    let count_error = || format!("surface {id} cannot be represented by Rhino NURBS counts");
+    let pole_count = native_i32_count(surface.poles().len(), count_error())?;
+    if u_order < 2 || v_order < 2 {
+        return Err(CodecError::NotImplemented(count_error()));
     }
+    native_i32_count(u_order, count_error())?;
+    native_i32_count(v_order, count_error())?;
+    native_i32_count(u_count, count_error())?;
+    native_i32_count(v_count, count_error())?;
     check_knot_roundtrip(
         id,
         "surface U",
@@ -1807,11 +1782,12 @@ fn check_nurbs_curve(
 ) -> Result<(), CodecError> {
     let order = curve.degree() as usize + 1;
     let count = curve.control_points().len();
-    if i32::try_from(order).is_err() || i32::try_from(count).is_err() || order < 2 {
-        return Err(CodecError::malformed(format_args!(
-            "curve {id} cannot be represented by Rhino NURBS counts"
-        )));
+    let count_error = || format!("curve {id} cannot be represented by Rhino NURBS counts");
+    if order < 2 {
+        return Err(CodecError::NotImplemented(count_error()));
     }
+    native_i32_count(order, count_error())?;
+    native_i32_count(count, count_error())?;
     check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
     Ok(())
 }
@@ -1826,15 +1802,15 @@ fn check_knot_roundtrip(
 ) -> Result<(), CodecError> {
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
     let reconstructed = crate::surfaces::reconstruct_knots(stored, order, count)
-        .map_err(|error| CodecError::malformed(format_args!("{direction} {id}: {error}")))?;
+        .map_err(|error| CodecError::NotImplemented(format!("{direction} {id}: {error}")))?;
     let periodic = crate::surfaces::periodic_knots(stored, order, count);
     if reconstructed != full || periodic != declared_periodic {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::NotImplemented(format!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"
         )));
     }
@@ -2310,9 +2286,9 @@ fn framed_object_record(
 }
 
 fn check_object_attributes(identity: &str, name: Option<&str>) -> Result<(), CodecError> {
-    if identity.is_empty() || name.is_some_and(|value| value.contains('\0')) {
-        return Err(CodecError::malformed(format_args!(
-            "object {identity} has an invalid identity or name"
+    if name.is_some_and(|value| value.contains('\0')) {
+        return Err(CodecError::NotImplemented(format!(
+            "object {identity} name contains a null character"
         )));
     }
     Ok(())

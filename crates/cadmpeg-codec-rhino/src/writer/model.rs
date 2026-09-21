@@ -400,11 +400,9 @@ impl<'a> WritableModel<'a> {
                             vertex.point.as_str()
                         ))
                     })?;
-                if layout == Layout::MultiFace && !used_points.insert(point.id.as_str())
-                    || !point.position().is_finite()
-                {
+                if layout == Layout::MultiFace && !used_points.insert(point.id.as_str()) {
                     return Err(CodecError::malformed(format_args!(
-                        "vertex {} has a shared or invalid point",
+                        "vertex {} has a shared point",
                         vertex.id.as_str()
                     )));
                 }
@@ -444,9 +442,9 @@ impl<'a> WritableModel<'a> {
                 ))
             })?;
             let [lo, hi] = domain;
-            if !lo.is_finite() || !hi.is_finite() || lo >= hi {
-                return Err(CodecError::malformed(format_args!(
-                    "edge {} has an invalid parameter range",
+            if lo == hi {
+                return Err(CodecError::NotImplemented(format!(
+                    "edge {} has a zero-length parameter range",
                     edge.id.as_str()
                 )));
             }
@@ -455,8 +453,8 @@ impl<'a> WritableModel<'a> {
                     let origin = line.origin().get();
                     let direction = *line.direction().as_raw();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
-                        return Err(CodecError::malformed(format_args!(
-                            "edge {} has an invalid line parameterization",
+                        return Err(CodecError::NotImplemented(format!(
+                            "edge {} line parameterization exceeds Rhino's unit-direction bound",
                             edge.id.as_str()
                         )));
                     }

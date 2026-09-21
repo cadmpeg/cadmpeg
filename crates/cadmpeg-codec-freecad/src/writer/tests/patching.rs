@@ -6,12 +6,35 @@
 use super::super::target::retained_baseline;
 use crate::native::{PropertyRecord, ValueRecord};
 use crate::test_support::test_archive::CORE_DESIGN_PRODUCT;
-use crate::writer::{serialize_property, serialize_value};
+use crate::writer::{serialize_property, serialize_value, validate_entry_names};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
+
+#[test]
+fn admitted_unsafe_and_duplicate_entry_names_are_writer_limits() {
+    let entry = |name: &str| crate::native::EntryRecord {
+        id: format!("test:native:entry#{name}"),
+        name: name.into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data: Vec::new(),
+    };
+    let unsafe_error = validate_entry_names(&[entry("../Document.xml")])
+        .expect_err("unsafe output paths are refused");
+    let duplicate_error = validate_entry_names(&[entry("Document.xml"), entry("Document.xml")])
+        .expect_err("duplicate output paths are refused");
+    assert!(matches!(
+        unsafe_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+    assert!(matches!(
+        duplicate_error,
+        cadmpeg_core::CodecError::NotImplemented(_)
+    ));
+}
 
 #[test]
 fn property_edits_use_value_order_when_raw_xml_is_identical() {
