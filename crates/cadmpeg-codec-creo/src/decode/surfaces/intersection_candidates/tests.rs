@@ -146,3 +146,76 @@ fn intersection_candidate_multiplicity_is_invariant_under_length_scale() {
         );
     }
 }
+
+#[test]
+fn numerical_followup_carrier_candidates_follow_geometry_scale() {
+    use crate::decode::analytic::equations::{
+        CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation,
+        TorusEquation,
+    };
+    let axis = [0., 0., 1.];
+    let reference = [1., 0., 0.];
+    for r in [1e-200, 1e-13, 1e-10, 1.0, 1e100] {
+        let cone = |radius| {
+            CarrierEquation::Cone(
+                ConeEquation::new(
+                    [0.; 3],
+                    axis,
+                    reference,
+                    radius,
+                    1.,
+                    std::f64::consts::FRAC_PI_4,
+                )
+                .unwrap(),
+            )
+        };
+        let plane = |x| {
+            CarrierEquation::Plane(PlaneEquation {
+                origin: [x, 0., 0.],
+                normal: reference,
+            })
+        };
+        let cylinder = CarrierEquation::Cylinder(CylinderEquation {
+            origin: [0.; 3],
+            axis,
+            ref_direction: reference,
+            radius: r,
+        });
+        let torus = |x| {
+            CarrierEquation::Torus(TorusEquation {
+                center: [x, 0., 0.],
+                axis,
+                ref_direction: reference,
+                major_radius: 2. * r,
+                minor_radius: r,
+            })
+        };
+        assert_eq!(
+            super::coaxial_cone_cylinder_circle_candidates(cone(r), cylinder).len(),
+            2
+        );
+        let cones = super::coaxial_cones_section_candidates(cone(r), cone(2. * r));
+        assert_eq!(cones.len(), 1);
+        let circle = cones[0].0.solved().unwrap();
+        let cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle) = circle else {
+            panic!("circle")
+        };
+        assert!((circle.radius().get() / r - 0.5).abs() < 64. * f64::EPSILON);
+        assert_eq!(
+            super::apex_plane_cone_generator_candidates(plane(0.), cone(r)).len(),
+            2
+        );
+        assert!(super::apex_plane_cone_generator_candidates(plane(r), cone(r)).is_empty());
+        assert_eq!(
+            super::axis_containing_plane_torus_circle_candidates(plane(0.), torus(0.)).len(),
+            2
+        );
+        let sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [5. * r, 0., 0.],
+            ref_direction: reference,
+            radius: 2. * r,
+        });
+        assert!(super::coaxial_sphere_torus_circle_candidates(sphere, torus(0.)).is_empty());
+        assert!(super::coaxial_tori_circle_candidates(torus(0.), torus(5. * r)).is_empty());
+    }
+}

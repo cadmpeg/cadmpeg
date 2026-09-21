@@ -823,3 +823,25 @@ fn legacy_variable_round_dimension_withholds_radius() {
         None
     );
 }
+
+#[test]
+fn numerical_followup_slot_requires_one_tangent_radius() {
+    use crate::decode::analytic::equations::PlaneEquation;
+    let plane = |origin, normal| PlaneEquation { origin, normal };
+    let caps = [
+        plane([0., 0., 0.], [0., 0., 1.]),
+        plane([0., 0., 1.], [0., 0., 1.]),
+    ];
+    for radius in [1e-8, 1.0] {
+        for ratio in [1., 1.05] {
+            let supports = [
+                plane([-radius, 0., 0.], [1., 0., 0.]),
+                plane([radius, 0., 0.], [1., 0., 0.]),
+                plane([0., -ratio * radius, 0.], [0., 1., 0.]),
+                plane([0., ratio * radius, 0.], [0., 1., 0.]),
+            ];
+            let result = super::slot_fillet_cylinder(caps, &supports);
+            assert_eq!(result.is_some(), ratio == 1.);
+        }
+    }
+}

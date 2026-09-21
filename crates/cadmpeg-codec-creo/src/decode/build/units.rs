@@ -1844,10 +1844,16 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
         SketchGeometryDefinition::Parabola {
             vertex,
             focal_length,
+            bounds,
             ..
         } => {
             scale_point2(vertex, scale);
             scale_length(focal_length, scale)?;
+            if let Some(bounds) = bounds {
+                for parameter in bounds {
+                    *parameter *= scale;
+                }
+            }
         }
         SketchGeometryDefinition::Nurbs { curve } => {
             curve
@@ -1968,6 +1974,23 @@ fn scale_spatial_sketch_constraint_definition(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn numerical_followup_parabola_parameter_bounds_scale_as_lengths() {
+        use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
+        let mut geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
+            vertex: Point2::new(0., 0.),
+            axis_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+            focal_length: Length::new(2.).unwrap(),
+            bounds: Some([1., 2.]),
+        })
+        .unwrap();
+        super::scale_sketch_geometry(&mut geometry, 10.).unwrap();
+        assert!(
+            matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some([10.,20.]),focal_length,..} if focal_length.get()==20.)
+        );
+    }
+
     use super::{
         normalize_model_lengths, scale_curve_geometry, scale_face_motion, scale_feature_definition,
         scale_pattern_kind, scale_surface_geometry,

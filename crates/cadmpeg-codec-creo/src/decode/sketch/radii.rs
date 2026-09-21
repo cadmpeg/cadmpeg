@@ -212,10 +212,7 @@ pub(in crate::decode) fn resolved_section_radii(
         let Some(radius) = endpoint_radii.first().copied() else {
             continue;
         };
-        let scale = endpoint_radii
-            .iter()
-            .copied()
-            .fold(radius.max(1.0), f64::max);
+        let scale = endpoint_radii.iter().copied().fold(radius, f64::max);
         if endpoint_radii
             .iter()
             .all(|candidate| (*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
@@ -314,7 +311,7 @@ pub(in crate::decode) fn resolved_section_radii(
             .copied()
             .collect::<Vec<_>>();
         if let Some(value) = values.first().copied() {
-            let scale = values.iter().copied().fold(value.max(1.0), f64::max);
+            let scale = values.iter().copied().fold(value, f64::max);
             if !values
                 .iter()
                 .all(|candidate| (*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
@@ -674,6 +671,16 @@ pub(in crate::decode) fn trim_segment_id(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn numerical_followup_arc_radius_evidence_requires_matching_endpoints() {
+        for radius in [1e-6, 1.0] {
+            let equal = arc_radius_definition([radius, radius]);
+            assert_eq!(resolved_section_radii(&equal).get(&42), Some(&radius));
+            let unequal = arc_radius_definition([radius, 1.0005 * radius]);
+            assert!(!resolved_section_radii(&unequal).contains_key(&42));
+        }
+    }
+
     use super::{
         resolved_section_radii, section_proven_axis_line_carrier, section_skamp_radius_source,
         trim_segment_id, SectionRadiusSource,
@@ -794,9 +801,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
-        let definition = crate::feature::definitions::FeatureDefinition {
+    fn arc_radius_definition(radii: [f64; 2]) -> crate::feature::definitions::FeatureDefinition {
+        crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(917),
                 owner_feature_id: None,
@@ -819,13 +825,13 @@ mod tests {
                     },
                     crate::feature::definitions::FeatureSectionPoint {
                         point_id: 2,
-                        u: Some(3.0),
+                        u: Some(radii[0]),
                         v: Some(0.0),
                     },
                     crate::feature::definitions::FeatureSectionPoint {
                         point_id: 3,
                         u: Some(0.0),
-                        v: Some(3.0),
+                        v: Some(radii[1]),
                     },
                 ],
             )),
@@ -858,7 +864,12 @@ mod tests {
             relations: None,
             saved_section: None,
             offset: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
+        let definition = arc_radius_definition([3.0, 3.0]);
         assert!(!definition
             .segments
             .as_ref()

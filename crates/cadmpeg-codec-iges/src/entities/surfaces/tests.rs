@@ -1763,3 +1763,45 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
         );
     }
 }
+
+#[test]
+fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::math::Point3;
+    let line = |domain: [f64; 2], y| {
+        NurbsCurve::from_lanes(
+            1,
+            vec![domain[0], domain[0], domain[1], domain[1]],
+            vec![Point3::new(0., y, 0.), Point3::new(1., y, 0.)],
+            None,
+            false,
+        )
+        .unwrap()
+    };
+    let first = line([-1e308, 1e308], 0.);
+    let second = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 0.5, 1., 1.],
+        vec![
+            Point3::new(0., 1., 0.),
+            Point3::new(0.5, 1., 0.),
+            Point3::new(1., 1., 0.),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let pairs = super::aligned_homogeneous_spans(&first, &second).unwrap();
+    assert_eq!(pairs.len(), 2);
+    for (index, (a, b)) in pairs.into_iter().enumerate() {
+        assert_eq!(a.controls.len(), 2);
+        assert_eq!(b.controls.len(), 2);
+        for (pole, expected) in a
+            .controls
+            .iter()
+            .zip([0.5 * index as f64, 0.5 * (index + 1) as f64])
+        {
+            assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
+        }
+    }
+}

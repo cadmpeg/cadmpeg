@@ -221,3 +221,30 @@ fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
             && candidate.length.map(PositiveLength::get) == Some(6.0)
     }));
 }
+
+#[test]
+fn numerical_followup_radial_sample_must_match_encoded_radius() {
+    // Seven-byte IEEE forms preserve these dyadic values exactly.
+    let radius = 2.0_f64.powi(-14);
+    for radial in [radius, 1.0625 * radius] {
+        let mut body = Vec::new();
+        for _ in 0..2 {
+            body.push(0x2c);
+            body.extend_from_slice(&1.0_f64.to_be_bytes()[1..7]);
+            body.push(if body.len() == 7 { 0x18 } else { 0x0e });
+        }
+        body.push(0x2c);
+        body.extend_from_slice(&radial.to_be_bytes()[1..7]);
+        body.extend_from_slice(&[0x0f, 0x0f, 0x71]);
+        body.extend_from_slice(&radius.to_be_bytes()[1..7]);
+        body.extend_from_slice(&[0xe4, 0x0f, 0xf7, 0x19]);
+        let result = super::decode_axial_endpoint_radial_sample_cylinder_frame(
+            &body,
+            &scalar::ScalarCache::default(),
+        );
+        assert_eq!(result.is_some(), radial == radius);
+        if let Some(frame) = result {
+            assert_eq!(frame.radius(), radius);
+        }
+    }
+}

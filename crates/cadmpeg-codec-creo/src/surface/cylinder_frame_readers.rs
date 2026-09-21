@@ -472,9 +472,8 @@ fn decode_axial_endpoint_radial_sample_cylinder_frame(
         && length > EPS_SURFACE_NONZERO * scale
         && radial_x.abs() > EPS_SURFACE_NONZERO * scale
         && auxiliary_radial.abs() <= radius + tolerance
-        && (radial_x * radial_x + radial_z * radial_z - radius * radius).abs()
-            <= tolerance * radius.max(1.0))
-    .then_some(())?;
+        && (radial_x.hypot(radial_z) - radius).abs() <= EPS_SURFACE_AGREEMENT * radius)
+        .then_some(())?;
 
     PositionalCylinderFrame::new(
         [0.0, axial_start, 0.0],

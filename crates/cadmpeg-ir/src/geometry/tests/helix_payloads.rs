@@ -237,3 +237,23 @@ fn numerical_followup_circular_helix_admits_finite_radial_scales() {
         assert!(HelixPathConstruction::try_new([0., 1.], frame, 0.).is_ok());
     }
 }
+
+#[test]
+fn numerical_followup_helix_path_requires_two_equal_nonzero_radii() {
+    for radius in [1e-200, 1e-10, 1.0, 1e200] {
+        for ratio in [0.0, 0.5, 1.0] {
+            let result = HelixPathConstruction::try_new(
+                [0., 1.],
+                HelixFrame {
+                    center: Point3::new(0., 0., 0.),
+                    major: Vector3::new(radius, 0., 0.),
+                    minor: Vector3::new(0., ratio * radius, 0.),
+                    pitch: Vector3::new(0., 0., 1.),
+                    axis: Vector3::new(0., 0., 1.),
+                },
+                0.,
+            );
+            assert_eq!(result.is_ok(), ratio == 1.);
+        }
+    }
+}

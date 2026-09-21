@@ -7645,6 +7645,7 @@ fn standard_spline_line(
     if !length.is_finite() || length == 0.0 {
         return None;
     }
+    let direction = direction.unit_nonzero()?;
     let follows_carrier_line = match (&left.geometry, &right.geometry) {
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -7653,10 +7654,9 @@ fn standard_spline_line(
             let left_normal = plane_surface.normal();
             let right_normal = plane_surface_2.normal();
             let intersection = (*left_normal).cross(*right_normal);
-            let norm = intersection.x.hypot(intersection.y).hypot(intersection.z);
-            norm.is_finite()
-                && norm > 0.0
-                && direction.cross(intersection.scale(1.0 / norm)).norm() <= TOLERANCE
+            intersection
+                .unit_nonzero()
+                .is_some_and(|intersection| direction.cross(intersection).norm() <= TOLERANCE)
         }
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -7678,10 +7678,7 @@ fn standard_spline_line(
                 false
             } else {
                 let apex = origin.translated(*axis, -radius / tangent);
-                apex.vector_from(start)
-                    .cross(direction.scale(1.0 / length))
-                    .norm()
-                    <= TOLERANCE
+                apex.vector_from(start).cross(direction).norm() <= TOLERANCE
             }
         }
         _ => false,
@@ -7691,11 +7688,7 @@ fn standard_spline_line(
     }
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                start,
-                direction.scale(1.0 / length),
-            )
-            .ok()?,
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).ok()?,
         )),
         [0.0, length],
     ))

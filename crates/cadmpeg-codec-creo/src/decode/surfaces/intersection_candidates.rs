@@ -236,9 +236,9 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
     let axial = dot(relative, cone_axis);
     let transverse: [f64; 3] =
         std::array::from_fn(|index| relative[index] - axial * cone_axis[index]);
-    let scale = cone.radius().max(cylinder.radius).max(1.0);
+    let scale = cone.radius().max(cylinder.radius);
     let slope = cone.half_angle().tan();
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
+    if Vector3::from(transverse).norm() > EPS_GEOMETRY_AGREEMENT * scale
         || cylinder.radius <= EPS_RADIUS_NONZERO * scale
         || cone.radius() < 0.0
         || slope.abs() <= EPS_SLOPE_NONZERO
@@ -320,11 +320,14 @@ pub(in super::super) fn coaxial_cones_section_candidates(
     let second_origin_axial = dot(relative, first_axis);
     let transverse: [f64; 3] =
         std::array::from_fn(|index| relative[index] - second_origin_axial * first_axis[index]);
-    let scale = first.radius().max(second.radius()).max(1.0);
+    let scale = first
+        .radius()
+        .max(second.radius())
+        .max(second_origin_axial.abs());
     let first_slope = first.half_angle().tan();
     let second_slope = axis_alignment * second.half_angle().tan();
     let second_intercept = second.radius() - second_slope * second_origin_axial;
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
+    if Vector3::from(transverse).norm() > EPS_GEOMETRY_AGREEMENT * scale
         || first.radius() < 0.0
         || second.radius() < 0.0
         || first_slope.abs() <= EPS_SLOPE_NONZERO
@@ -341,8 +344,7 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         .radius()
         .max(scaled_first_radius.abs())
         .max(second_intercept.abs())
-        .max(second.radius())
-        .max(1.0);
+        .max(second.radius());
     for radial_sense in [-1.0, 1.0] {
         let denominator = scaled_first_slope - radial_sense * second_slope;
         let numerator = radial_sense * second_intercept - scaled_first_radius;
@@ -432,7 +434,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         normal,
         std::array::from_fn(|index| apex[index] - plane.origin[index]),
     );
-    let scale = cone.radius().max(1.0);
+    let scale = cone.radius().max((cone.radius() / slope).abs());
     if plane_distance.abs() > EPS_GEOMETRY_AGREEMENT * scale {
         return Vec::new();
     }
@@ -852,7 +854,7 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     let (Some(normal), Some(axis)) = (normalize(plane.normal), normalize(torus.axis)) else {
         return Vec::new();
     };
-    let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
+    let scale = torus.major_radius.max(torus.minor_radius);
     let center_offset: [f64; 3] =
         std::array::from_fn(|index| torus.center[index] - plane.origin[index]);
     if dot(normal, axis).abs() > EPS_AXIS_ORTHO
@@ -909,9 +911,8 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
     let scale = torus
         .major_radius
         .max(torus.minor_radius)
-        .max(sphere.radius)
-        .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
+        .max(sphere.radius);
+    if Vector3::from(transverse).norm() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let intersections = meridian_circle_intersections(
@@ -976,9 +977,8 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         .major_radius
         .max(first.minor_radius)
         .max(second.major_radius)
-        .max(second.minor_radius)
-        .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
+        .max(second.minor_radius);
+    if Vector3::from(transverse).norm() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let intersections = meridian_circle_intersections(

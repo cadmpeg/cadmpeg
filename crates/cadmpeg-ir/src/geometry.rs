@@ -2086,9 +2086,12 @@ impl HelixPathConstruction {
         } = frame;
         let major_length = major.norm();
         let minor_length = minor.norm();
-        if !(major_length > 0.0
+        if !(major_length.is_finite()
+            && minor_length.is_finite()
+            && major_length > 0.0
+            && minor_length > 0.0
             && (major_length - minor_length).abs()
-                <= EPS_HELIX_SURFACE_RADIUS_RELATIVE * major_length.max(1.0))
+                <= EPS_HELIX_SURFACE_RADIUS_RELATIVE * major_length.max(minor_length))
         {
             return Err("helix surface path major and minor must define a circular path");
         }

@@ -74,16 +74,16 @@ pub(in super::super) fn revolved_section_surface(
             let end = section_point_in_model(transform, [end.u, end.v]);
             let direction = normalize(std::array::from_fn(|index| end[index] - start[index]))?;
             let (mut on_axis, mut radial) = project(start);
-            let mut radius = dot(radial, radial).sqrt();
+            let mut radius = Vector3::from(radial).norm();
             if radius <= EPS_RADIUS_NONZERO {
                 (on_axis, radial) = project(end);
-                radius = dot(radial, radial).sqrt();
+                radius = Vector3::from(radial).norm();
             }
             let axial_rate = dot(direction, axis);
             let radial_rate =
                 std::array::from_fn(|index| direction[index] - axial_rate * axis[index]);
             let radial_speed = dot(radial_rate, radial_rate).sqrt();
-            let scale = radius.max(1.0);
+            let scale = radius;
             if radius > EPS_RADIUS_NONZERO {
                 let coplanar_residual = dot(cross(radial, radial_rate), axis).abs();
                 (coplanar_residual <= EPS_COPLANAR_RESIDUAL * scale).then_some(())?;
@@ -133,7 +133,7 @@ pub(in super::super) fn revolved_section_surface(
         | SketchGeometryDefinition::Circle { center, radius } => {
             let center = section_point_in_model(transform, [center.u, center.v]);
             let (on_axis, radial) = project(center);
-            let major_radius = dot(radial, radial).sqrt();
+            let major_radius = Vector3::from(radial).norm();
             let reference = normalize(radial).or_else(|| {
                 [transform.u_axis(), transform.v_axis()]
                     .into_iter()

@@ -982,7 +982,12 @@ fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
     } else {
         (0.5 * value - 0.5 * domain[0]) / (0.5 * domain[1] - 0.5 * domain[0])
     };
-    (1.0 - fraction) * extents[0] + fraction * extents[1]
+    let mapped = (1.0 - fraction) * extents[0] + fraction * extents[1];
+    if mapped.is_finite() {
+        mapped
+    } else {
+        (extents[1] - extents[0]).mul_add(fraction, extents[0])
+    }
 }
 
 fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {

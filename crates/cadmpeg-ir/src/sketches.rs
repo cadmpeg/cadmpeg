@@ -675,7 +675,9 @@ pub enum SketchGeometryDefinition {
         axis_angle: Angle,
         /// Distance from the vertex to the focus.
         focal_length: Length,
-        /// Parameter bounds for a branch; absent for the full curve.
+        /// Bounds on the local transverse coordinate `y`, in sketch length units.
+        /// The axial coordinate is `x = y² / (4 * focal_length)`.
+        /// Absent for the full curve.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",

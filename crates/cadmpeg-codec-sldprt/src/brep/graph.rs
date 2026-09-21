@@ -3250,7 +3250,7 @@ fn unique_inverse_parameter(
     });
     candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
     let parameter_tolerance =
-        INVERSE_PARAMETER_TOLERANCE * (1.0 + (parameter_domain[1] - parameter_domain[0]).abs());
+        INVERSE_PARAMETER_TOLERANCE * (parameter_domain[1] - parameter_domain[0]).abs();
     let mut unique = Vec::<(f64, f64)>::new();
     for candidate in candidates {
         if let Some(previous) = unique.last_mut() {
@@ -4456,8 +4456,7 @@ fn nurbs_strict_isocurve_pcurve(
                     + (point.z - (a.z + factor * (b.z - a.z))).powi(2)
             })
             .fold(0.0_f64, f64::max);
-        let parameter_tolerance =
-            INVERSE_PARAMETER_TOLERANCE * (1.0 + (fixed_max - fixed_min).abs());
+        let parameter_tolerance = INVERSE_PARAMETER_TOLERANCE;
         if !factor.is_finite()
             || factor < -parameter_tolerance
             || factor > 1.0 + parameter_tolerance
@@ -4821,7 +4820,7 @@ fn extended_nurbs_isocurve_axis_candidate(
         }
     }
     let parameter_tolerance =
-        INVERSE_PARAMETER_TOLERANCE * (1.0 + (fixed_domain[1] - fixed_domain[0]).abs());
+        INVERSE_PARAMETER_TOLERANCE * (fixed_domain[1] - fixed_domain[0]).abs();
     let mut unique_fixed_values = Vec::new();
     for value in fixed_values {
         if value.is_finite()
@@ -5901,6 +5900,29 @@ fn emit_curve(out: &mut Brep, carrier: &CurveCarrier) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn numerical_followup_inverse_ambiguity_is_independent_of_parameter_units() {
+        for domain in [1e-200, 1e-12, 1.0, 1e200] {
+            assert!(matches!(
+                super::unique_inverse_parameter(
+                    vec![(0.25 * domain, 0.), (0.75 * domain, 0.)],
+                    0.001,
+                    [0., domain]
+                ),
+                super::InverseResolution::Ambiguous
+            ));
+            assert!(matches!(
+                super::unique_inverse_parameter(
+                    vec![(0.25 * domain, 0.), (0.25 * domain, 0.)],
+                    0.001,
+                    [0., domain]
+                ),
+                super::InverseResolution::Unique(_)
+            ));
+        }
+    }
+
     use super::sphere_latitude;
     use super::unique_face_colors;
     use crate::brep::entity;

@@ -72,6 +72,34 @@ impl BlendSectionDomain {
 mod tests {
 
     #[test]
+    fn numerical_followup_pcurve_inverse_preserves_parameter_units_and_large_offsets() {
+        use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+        for domain in [1.0, 1e9, 1e200] {
+            let line = PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    1,
+                    vec![0., 0., domain, domain],
+                    vec![Point2::new(0., 0.), Point2::new(1., 0.)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            };
+            let result = super::closest_pcurve_parameter_from_seed(
+                &line,
+                Point2::new(0.5, 0.),
+                0.2 * domain,
+            )
+            .unwrap();
+            assert!((result / domain - 0.5).abs() < 16. * f64::EPSILON);
+            let coarse =
+                super::closest_pcurve_parameter_from_coarse_grid(&line, Point2::new(0.5, 1e200))
+                    .unwrap();
+            assert!((coarse / domain - 0.5).abs() < 16. * f64::EPSILON);
+        }
+    }
+
+    #[test]
     fn numerical_ranges_periodic_blend_parameter_avoids_difference_overflow() {
         assert_eq!(
             super::canonical_periodic_parameter([-1e308, 0.], true, 1e308),
@@ -2072,7 +2100,7 @@ fn closest_pcurve_parameter_from_coarse_grid(
         let parameter = domain[0]
             + (domain[1] - domain[0]) * index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64;
         let candidate = pcurve_uv(pcurve, parameter)?;
-        let distance = (candidate.u - point.u).powi(2) + (candidate.v - point.v).powi(2);
+        let distance = (candidate.u - point.u).hypot(candidate.v - point.v);
         if !distance.is_finite() {
             continue;
         }
@@ -2097,12 +2125,14 @@ fn closest_pcurve_parameter_from_seed(
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
         let candidate = pcurve_uv(pcurve, parameter)?;
         let tangent = pcurve_tangent(pcurve, parameter)?;
-        let speed_squared = tangent.u * tangent.u + tangent.v * tangent.v;
-        if !speed_squared.is_finite() || speed_squared <= f64::EPSILON {
+        let tangent_scale = tangent.u.abs().max(tangent.v.abs());
+        if !tangent_scale.is_finite() || tangent_scale == 0.0 {
             return None;
         }
+        let tangent = Point2::new(tangent.u / tangent_scale, tangent.v / tangent_scale);
+        let speed_squared = tangent.u * tangent.u + tangent.v * tangent.v;
         let gradient = (candidate.u - point.u) * tangent.u + (candidate.v - point.v) * tangent.v;
-        let step = gradient / speed_squared;
+        let step = cadmpeg_ir::math::product_quotient([gradient], [speed_squared, tangent_scale])?;
         if !step.is_finite() {
             return None;
         }
