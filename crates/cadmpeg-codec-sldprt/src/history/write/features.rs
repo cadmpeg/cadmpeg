@@ -158,7 +158,7 @@ fn allocate_feature_source_id(
 ) -> Result<u32, CodecError> {
     loop {
         let candidate = next.ok_or_else(|| {
-            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
         })?;
         *next = candidate.checked_add(1);
         if used.insert(candidate) {
@@ -411,7 +411,7 @@ pub(in crate::history) fn sync_neutral_features(
             properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
         let ordinal = u32::try_from(feature.ordinal)
-            .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
+            .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
             let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
@@ -851,7 +851,7 @@ mod tests {
         let error = super::allocate_feature_source_id(&mut used, &mut next)
             .expect_err("exhausted id space");
         assert!(
-            matches!(&error, CodecError::Malformed(message) if message.contains("exhausted")),
+            matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
             "{error:?}"
         );
     }
