@@ -872,14 +872,14 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
 fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], f64)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(7);
-        while values.len() < 7 {
+        let mut values = [0.0; 7];
+        for slot in &mut values {
             let (value, next) = coordinate(body, cursor, cache)?;
-            values.push(value);
+            *slot = value;
             cursor = next;
         }
-        let first: [f64; 3] = values[..3].try_into().ok()?;
-        let second: [f64; 3] = values[3..6].try_into().ok()?;
+        let first = [values[0], values[1], values[2]];
+        let second = [values[3], values[4], values[5]];
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let stored_length = values[6].abs();
@@ -976,16 +976,20 @@ pub(crate) fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
 }
 
 fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<ReferenceCircle> {
-    let scalar_run = |start: usize, count: usize| {
+    fn scalar_run<const COUNT: usize>(
+        body: &[u8],
+        start: usize,
+        cache: &ScalarCache,
+    ) -> Option<[f64; COUNT]> {
         let mut cursor = start;
-        let mut values = Vec::with_capacity(count);
-        while values.len() < count {
+        let mut values = [0.0; COUNT];
+        for slot in &mut values {
             let (value, next) = arc_z_coordinate(body, cursor, cache)?;
-            values.push(value);
+            *slot = value;
             cursor = next;
         }
         Some(values)
-    };
+    }
     let explicit_axis = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
         let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
         let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
@@ -1020,11 +1024,11 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
             .then(|| normal.map(|value| value / normal_length))
     };
     let explicit = (0..body.len()).filter_map(|start| {
-        let values = scalar_run(start, 10)?;
-        let center: [f64; 3] = values[..3].try_into().ok()?;
+        let values = scalar_run::<10>(body, start, cache)?;
+        let center = [values[0], values[1], values[2]];
         let radius = values[3].abs();
-        let first: [f64; 3] = values[4..7].try_into().ok()?;
-        let second: [f64; 3] = values[7..10].try_into().ok()?;
+        let first = [values[4], values[5], values[6]];
+        let second = [values[7], values[8], values[9]];
         let axis = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
             entity_id,
@@ -1038,10 +1042,10 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         })
     });
     let diametric = (0..body.len()).filter_map(|start| {
-        let values = scalar_run(start, 7)?;
+        let values = scalar_run::<7>(body, start, cache)?;
         let radius = values[0].abs();
-        let first: [f64; 3] = values[1..4].try_into().ok()?;
-        let second: [f64; 3] = values[4..7].try_into().ok()?;
+        let first = [values[1], values[2], values[3]];
+        let second = [values[4], values[5], values[6]];
         let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
