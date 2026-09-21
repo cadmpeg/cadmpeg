@@ -564,11 +564,11 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         for _ in 0..80 {
             let midpoint = 0.5 * (lower + upper);
             let midpoint_value = polynomial_value(&coefficients, midpoint);
-            if lower_value.is_sign_positive() != midpoint_value.is_sign_positive() {
-                upper = midpoint;
-            } else {
+            if lower_value.is_sign_positive() == midpoint_value.is_sign_positive() {
                 lower = midpoint;
                 lower_value = midpoint_value;
+            } else {
+                upper = midpoint;
             }
         }
         let value = 0.5 * (lower + upper);
