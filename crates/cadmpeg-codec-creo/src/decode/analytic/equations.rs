@@ -46,6 +46,13 @@ pub(in crate::decode) struct ConeEquation {
 
 impl ConeEquation {
     /// A cone with finite radius, positive finite ratio, and half-angle in [0, pi/2).
+    ///
+    /// The half angle enters the equation only through its tangent, so zero is in the domain:
+    /// it makes the quadric the cylinder of `radius`, which every consumer here evaluates.
+    /// This is a wider domain than [`crate::surface::valid_apex_cone_half_angle`], which admits
+    /// the half angle of an apex cone record, where a zero angle leaves the axis line and no
+    /// surface. A consumer that needs a nonzero slope states that itself, as `plane_cone_conic`
+    /// does.
     pub(in crate::decode) fn new(
         origin: [f64; 3],
         axis: [f64; 3],
