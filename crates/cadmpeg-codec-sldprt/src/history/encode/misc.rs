@@ -537,16 +537,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         )))
     }
 
-    pub(super) fn encode_explicitly_unsupported(
-        &self,
-    ) -> Result<NeutralFeatureEncoding, CodecError> {
-        let feature = self.feature;
-        Err(CodecError::NotImplemented(format!(
-            "SLDPRT feature {} uses semantics that cannot be written",
-            feature.id
-        )))
-    }
-
     pub(super) fn encode_unsupported(&self) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         Err(CodecError::NotImplemented(format!(
