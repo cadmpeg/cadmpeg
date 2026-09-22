@@ -56,6 +56,7 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<f64> {
 
 /// Distance to a closed segment, with projection from the nearer endpoint.
 /// Reversing that origin retains short offsets when the other endpoint is distant.
+/// Interior distances use the line determinant, without reconstructing a rounded point.
 pub fn point_segment_distance(point: Point2, mut start: Point2, mut end: Point2) -> f64 {
     if !point.is_finite() || !start.is_finite() || !end.is_finite() {
         return f64::NAN;
@@ -69,14 +70,22 @@ pub fn point_segment_distance(point: Point2, mut start: Point2, mut end: Point2)
     let Some(parameter) = line_projection_parameter(start, end, point) else {
         return first_distance.min(last_distance);
     };
-    let parameter = parameter.clamp(0.0, 1.0);
-    let Some(u) = super::interpolate(start.u, end.u, parameter) else {
+    if parameter <= 0.0 {
+        return distance(point, start);
+    }
+    if parameter >= 1.0 {
+        return distance(point, end);
+    }
+    let (direction, scale) = scaled_displacement(start, end, 0.0);
+    let mut length = ExactSignedSum::default();
+    length.add_product(direction.u.hypot(direction.v), scale);
+    let Some(length) = length.finish() else {
         return f64::NAN;
     };
-    let Some(v) = super::interpolate(start.v, end.v, parameter) else {
-        return f64::NAN;
-    };
-    distance(point, Point2::new(u, v))
+    line_offset_determinant(start, end, point)
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(length))
+        .map_or(f64::NAN, f64::abs)
 }
 
 /// Intersection of closed segments, with a distance tolerance for endpoint contact.
@@ -137,6 +146,21 @@ fn scaled_displacement(start: Point2, end: Point2, minimum_scale: f64) -> (Point
             scale,
         )
     }
+}
+
+fn line_offset_determinant(start: Point2, end: Point2, point: Point2) -> ExactSignedSum {
+    let mut determinant = ExactSignedSum::default();
+    for (left, right) in [
+        (end.u, start.v),
+        (-end.u, point.v),
+        (start.u, point.v),
+        (-end.v, start.u),
+        (end.v, point.u),
+        (-start.v, point.u),
+    ] {
+        determinant.add_product(left, right);
+    }
+    determinant
 }
 
 /// The half chord of a circle cut at a perpendicular distance, both lengths
@@ -207,17 +231,7 @@ pub fn line_circle_intersections(
     let segment = segment.finish()?;
     // Form the determinant from the original coordinates. Normalizing the
     // direction first can rotate a distant, exactly incident line off a small circle.
-    let mut determinant = ExactSignedSum::default();
-    for (left, right) in [
-        (end.u, start.v),
-        (-end.u, center.v),
-        (start.u, center.v),
-        (-end.v, start.u),
-        (end.v, center.u),
-        (-start.v, center.u),
-    ] {
-        determinant.add_product(left, right);
-    }
+    let determinant = line_offset_determinant(start, end, center);
     let perpendicular = determinant
         .finish()
         .map_or(Some(0.0), |value| value.quotient(segment))?;
@@ -672,6 +686,14 @@ mod tests {
                 0.
             );
         }
+        assert_eq!(
+            point_segment_distance(
+                Point2::new(-0.001, 0.),
+                Point2::new(-1., 0.),
+                Point2::new(1., 0.)
+            ),
+            0.
+        );
         let a = Point2::new(-1e20, 0.);
         let b = Point2::new(0., 0.);
         assert_eq!(point_segment_distance(Point2::new(-0.001, 0.), a, b), 0.);
