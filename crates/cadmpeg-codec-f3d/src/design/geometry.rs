@@ -643,21 +643,15 @@ fn analytic_segment_intersections(
             ProfileBoundarySegment::Line { start: a, end: b },
             ProfileBoundarySegment::Line { start: c, end: d },
         ) => {
-            let ab = Point2::new(b.u - a.u, b.v - a.v);
-            let cd = Point2::new(d.u - c.u, d.v - c.v);
-            let denominator = ab.u * cd.v - ab.v * cd.u;
-            if denominator == 0.0 {
-                return None;
+            let [parameter, other_parameter] =
+                cadmpeg_ir::math::planar::line_line_parameters(*a, *b, *c, *d)?;
+            if !(0.0..=1.0).contains(&parameter) || !(0.0..=1.0).contains(&other_parameter) {
+                return Some(Vec::new());
             }
-            let ac = Point2::new(c.u - a.u, c.v - a.v);
-            let parameter = (ac.u * cd.v - ac.v * cd.u) / denominator;
-            let other_parameter = (ac.u * ab.v - ac.v * ab.u) / denominator;
-            Some(
-                ((0.0..=1.0).contains(&parameter) && (0.0..=1.0).contains(&other_parameter))
-                    .then(|| Point2::new(a.u + parameter * ab.u, a.v + parameter * ab.v))
-                    .into_iter()
-                    .collect(),
-            )
+            Some(vec![Point2::new(
+                cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?,
+                cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?,
+            )])
         }
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
         | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
@@ -682,7 +676,6 @@ fn line_arc_intersection_points(
     else {
         return None;
     };
-    let direction = Point2::new(end.u - start.u, end.v - start.v);
     let offset = Point2::new(start.u - center.u, start.v - center.v);
     if start == end {
         return Some(
@@ -696,16 +689,12 @@ fn line_arc_intersection_points(
     }
     let mut points = Vec::new();
     let Some(parameters) =
-        cadmpeg_ir::math::planar::line_circle_parameters(start, end, *center, *radius)
+        cadmpeg_ir::math::planar::line_circle_intersections(start, end, *center, *radius)
     else {
         return Some(points);
     };
-    for parameter in parameters {
+    for (parameter, point) in parameters {
         if (0.0..=1.0).contains(&parameter) {
-            let point = Point2::new(
-                start.u + parameter * direction.u,
-                start.v + parameter * direction.v,
-            );
             let radial = (point.u - center.u).hypot(point.v - center.v);
             if (radial - radius).abs() <= 128.0 * f64::EPSILON * radius
                 && directed_angle_parameter(
@@ -768,15 +757,12 @@ fn arrangement_split_parameters(
     let mut parameters = vec![range[0], range[1]];
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
-            let direction = Point2::new(end.u - start.u, end.v - start.v);
-            let length_squared = direction.u * direction.u + direction.v * direction.v;
-            if length_squared <= tolerance * tolerance {
+            if point_distance(*start, *end) <= tolerance {
                 return None;
             }
             for point in nodes {
-                let parameter = ((point.u - start.u) * direction.u
-                    + (point.v - start.v) * direction.v)
-                    / length_squared;
+                let parameter =
+                    cadmpeg_ir::math::planar::line_projection_parameter(*start, *end, *point)?;
                 if parameter > 0.0
                     && parameter < 1.0
                     && point_segment_distance(*point, (*start, *end)) <= tolerance
@@ -2133,31 +2119,18 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
 /// error: it states that the point projects onto the supporting line beyond an
 /// end, and the nearest point of the segment is then that end.
 pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
-    let du = end.u - start.u;
-    let dv = end.v - start.v;
-    let scale = du.abs().max(dv.abs());
-    if scale == 0.0 {
-        return point_distance(point, start);
-    }
-    let u = du / scale;
-    let v = dv / scale;
-    let relative = Point2::new(point.u - start.u, point.v - start.v);
-    let relative_scale = relative.u.abs().max(relative.v.abs());
-    if relative_scale == 0.0 {
-        return 0.0;
-    }
-    let projection =
-        ((relative.u / relative_scale) * u + (relative.v / relative_scale) * v) / (u * u + v * v);
-    let parameter = cadmpeg_ir::math::multiply_divide(projection, relative_scale, scale)
-        .unwrap_or(f64::INFINITY.copysign(projection))
-        .clamp(0.0, 1.0);
-    point_distance(
-        point,
-        Point2::new(
-            (1.0 - parameter) * start.u + parameter * end.u,
-            (1.0 - parameter) * start.v + parameter * end.v,
-        ),
-    )
+    let Some(parameter) = cadmpeg_ir::math::planar::line_projection_parameter(start, end, point)
+    else {
+        return point_distance(point, start).min(point_distance(point, end));
+    };
+    let parameter = parameter.clamp(0.0, 1.0);
+    let (Some(u), Some(v)) = (
+        cadmpeg_ir::math::interpolate(start.u, end.u, parameter),
+        cadmpeg_ir::math::interpolate(start.v, end.v, parameter),
+    ) else {
+        return f64::INFINITY;
+    };
+    point_distance(point, Point2::new(u, v))
 }
 
 fn segment_distance(left: (Point2, Point2), right: (Point2, Point2)) -> f64 {

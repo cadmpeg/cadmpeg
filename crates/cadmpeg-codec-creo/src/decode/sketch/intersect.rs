@@ -91,24 +91,20 @@ pub(in crate::decode) fn intersect_section_line_arc(
     {
         return None;
     }
-    let parameters =
-        cadmpeg_ir::math::planar::line_circle_parameters(*start, *end, *center, radius.get())?;
-    let mut inside = parameters.into_iter().filter(|parameter| {
-        (-EPS_SKETCH_INTERSECTION_DEGENERATE..=1.0 + EPS_SKETCH_INTERSECTION_DEGENERATE)
-            .contains(parameter)
+    let intersections =
+        cadmpeg_ir::math::planar::line_circle_intersections(*start, *end, *center, radius.get())?;
+    let endpoint_tolerance = EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get();
+    let mut inside = intersections.into_iter().filter(|(parameter, point)| {
+        (0.0..=1.0).contains(parameter)
+            || (point.u - start.u).hypot(point.v - start.v) <= endpoint_tolerance
+            || (point.u - end.u).hypot(point.v - end.v) <= endpoint_tolerance
     });
-    let parameter = inside.next()?;
-    if inside.next().is_some_and(|other| other != parameter) {
+    let (_, point) = inside.next()?;
+    if inside.next().is_some_and(|(_, other)| other != point) {
         return None;
     }
-    let point = [
-        start.u + parameter * (end.u - start.u),
-        start.v + parameter * (end.v - start.v),
-    ];
-    let radial = (point[0] - center.u).hypot(point[1] - center.v);
-    (point.iter().all(|value| value.is_finite())
-        && (radial - radius.get()).abs() <= EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get())
-    .then_some(point)
+    let radial = (point.u - center.u).hypot(point.v - center.v);
+    ((radial - radius.get()).abs() <= endpoint_tolerance).then_some([point.u, point.v])
 }
 
 pub(in crate::decode) fn intersect_tangent_section_arcs(
@@ -635,7 +631,7 @@ mod tests {
         resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
     };
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
     use std::collections::BTreeMap;
 
     #[test]
@@ -900,5 +896,25 @@ mod tests {
             super::intersect_section_lines(&line([-r, 0.], [r, 0.]), &line([0., -r], [0., r])),
             Some([0., 0.])
         );
+    }
+    #[test]
+    fn numerical_0922b_section_unique_crossing() {
+        let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: Point2::new(0., 0.),
+            radius: cadmpeg_ir::scalar::Length::new(0.001).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap();
+        for x in [-1., -1e4, -1e8] {
+            let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(x, 0.),
+                end: Point2::new(0., 0.),
+            })
+            .unwrap();
+            let r = super::intersect_section_line_arc(&line, &arc);
+            println!("Creo one-sided line[{x},0],r=.001: {r:?}");
+            assert_eq!(r, Some([-0.001, 0.0]));
+        }
     }
 }

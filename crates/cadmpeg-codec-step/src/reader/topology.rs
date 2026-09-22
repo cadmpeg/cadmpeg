@@ -3856,12 +3856,21 @@ fn mapped_pcurve_closest(
         let Some(tangent) = evaluate_tangent(parameter) else {
             break;
         };
-        let denominator = tangent.dot(tangent);
-        if !denominator.is_finite() || denominator <= f64::EPSILON {
+        let tangent_scale = tangent.x.abs().max(tangent.y.abs()).max(tangent.z.abs());
+        if !tangent_scale.is_finite() || tangent_scale == 0.0 {
             break;
         }
+        let direction = Vector3::new(
+            tangent.x / tangent_scale,
+            tangent.y / tangent_scale,
+            tangent.z / tangent_scale,
+        );
         let residual = point.vector_from(target);
-        let step = residual.dot(tangent) / denominator;
+        let step = cadmpeg_ir::math::multiply_divide(
+            residual.dot(direction),
+            1.0 / direction.dot(direction),
+            tangent_scale,
+        )?;
         if !step.is_finite() {
             break;
         }
@@ -3874,7 +3883,7 @@ fn mapped_pcurve_closest(
             if candidate_error < error {
                 break;
             }
-            candidate = clamp_to_domain(0.5 * (candidate + parameter));
+            candidate = clamp_to_domain(cadmpeg_ir::math::interpolate(candidate, parameter, 0.5)?);
             let Some(candidate_point) = evaluate_point(candidate) else {
                 break;
             };

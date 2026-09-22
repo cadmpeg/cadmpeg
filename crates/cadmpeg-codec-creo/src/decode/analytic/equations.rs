@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::math::planar::line_circle_parameters;
+use cadmpeg_ir::math::planar::line_circle_intersections;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
@@ -1404,12 +1404,13 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     // line-circle error band. Its parameter runs from the foot of the radial
     // offset over one radius along `direction`, so a tangent states the same
     // parameter twice and collapses below.
-    let Some(parameters) = line_circle_parameters(
+    let Some(parameters) = line_circle_intersections(
         Point2::new(distance, 0.0),
         Point2::new(distance, radius),
         Point2::new(0.0, 0.0),
         radius,
-    ) else {
+    )
+    .map(|hits| hits.map(|(parameter, _)| parameter)) else {
         return Vec::new();
     };
     let nearest: [f64; 3] =

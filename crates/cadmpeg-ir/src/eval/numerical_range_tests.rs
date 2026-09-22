@@ -214,3 +214,30 @@ fn numerical_0922_sweep_evaluation_ignores_profile_units() {
         assert!(r.unwrap().distance(Point3::new(-0.5, 0.5, 0.25)) < 1e-14);
     }
 }
+
+#[test]
+fn numerical_0922b_finite_chord_bound() {
+    for s in [1., 1e200] {
+        let surf = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+            NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0., 0., 0.), Point3::new(0., s, 0.)],
+                    vec![Point3::new(s, 0., 0.), Point3::new(s, s, s)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap();
+        let r = nurbs_surface_parameter_segment_chord_bound(
+            &surf,
+            [Point2::new(0., 0.), Point2::new(1., 1.)],
+            [Point3::new(0., 0., 0.), Point3::new(s, s, s)],
+        );
+        println!("IR curved diagonal scale{s:e}:bound{r:?}");
+        let bound = r.unwrap() / s;
+        assert!(bound >= 0.25 && bound < 0.34);
+    }
+}

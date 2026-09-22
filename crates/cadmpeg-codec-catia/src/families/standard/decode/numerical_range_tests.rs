@@ -34,3 +34,39 @@ fn numerical_0922_finite_bezier_midpoint() {
         assert_eq!(result, Some(0.5));
     }
 }
+
+use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
+    NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![d[0], d[0], d[1], d[1]], false),
+        NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0., 0., 0.), Point3::new(0., s, 0.)],
+                vec![Point3::new(s, 0., 0.), Point3::new(s, s, 0.)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap()
+}
+#[test]
+fn numerical_0922b_surface_membership_wide_chart() {
+    for d in [[0., 1.], [-1e308, 1e308]] {
+        let r = point_on_nurbs_surface(Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
+        println!("CATIA plane chart{d:?}: {r:?}");
+        assert_eq!(r, Some(true));
+    }
+}
+#[test]
+fn numerical_0922b_surface_membership_large_plane() {
+    for scale in [1., 1e200] {
+        let r = point_on_nurbs_surface(
+            Point3::new(0.3 * scale, 0.7 * scale, 0.),
+            &audit_plane([0., 1.], scale),
+        );
+        println!("CATIA plane scale{scale:e}: {r:?}");
+        assert_eq!(r, Some(true));
+    }
+}

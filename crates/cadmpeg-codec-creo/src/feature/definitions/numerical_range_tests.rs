@@ -15,3 +15,13 @@ fn numerical_0922_trim_intersection_keeps_disjoint_and_secant_cases() {
         Some([0.0, 0.001])
     );
 }
+
+#[test]
+fn numerical_0922b_trim_unique_crossing() {
+    for start in [-1.0, -10000.0, -1e8] {
+        assert_eq!(
+            trim_line_circle_intersection([start, 0.], [0., 0.], [0., 0.], 0.001),
+            Some([-0.001, 0.])
+        );
+    }
+}

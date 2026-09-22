@@ -82,26 +82,6 @@ impl Coefficient {
     }
 }
 
-/// The exponent bits of an f64.
-const EXPONENT_MASK: u64 = 0x7ff0_0000_0000_0000;
-
-/// The power of two at a positive finite value: the largest power of two not
-/// above it, or the smallest normal power of two when it is subnormal.
-///
-/// Dividing by this is exact, where dividing by the value itself rounds every
-/// quotient. It keeps what the division is for: the quotient of the value
-/// itself is in `[1, 2)` for a normal value and below `1` for a subnormal one,
-/// so no scaled coefficient overflows, and every other coefficient's quotient
-/// is no smaller than it would be under division by the value, so no quotient
-/// underflows that would not have underflowed anyway.
-fn power_of_two_at(value: f64) -> f64 {
-    let exponent = f64::from_bits(value.to_bits() & EXPONENT_MASK);
-    if exponent == 0.0 {
-        return f64::MIN_POSITIVE;
-    }
-    exponent
-}
-
 /// Return finite real roots in ascending order.
 ///
 /// The discriminant is read against the error its coefficients carry, not
@@ -110,11 +90,9 @@ fn power_of_two_at(value: f64) -> f64 {
 /// from those three error bars states a repeated root, and only a discriminant
 /// below the band states that the equation has no real root.
 ///
-/// The three coefficients are divided by the power of two at the largest of
-/// them, which is exact, so every quotient carries its dividend's significand
-/// and a problem whose arithmetic is exact keeps exact roots. The decision
-/// `|discriminant| <= band` has both sides in the square of that divisor, so
-/// it is invariant under the divisor's choice.
+/// A power-of-two change of variable balances the quadratic and constant
+/// coefficients before common scaling. This preserves finite roots when the
+/// original coefficients span more than one f64 exponent range.
 pub(super) fn real_roots(
     quadratic: Coefficient,
     linear: Coefficient,
@@ -130,16 +108,38 @@ pub(super) fn real_roots(
         let root = -constant.value / linear.value;
         return root.is_finite().then_some(root).into_iter().collect();
     }
-    let scale = power_of_two_at(
-        quadratic
-            .value
-            .abs()
-            .max(linear.value.abs())
-            .max(constant.value.abs()),
-    );
-    let a = quadratic.value / scale;
-    let b = linear.value / scale;
-    let c = constant.value / scale;
+    use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two};
+    let exponent = |value: f64| power_of_two_bound(value).unwrap_or(0);
+    let variable_exponent = if constant.value != 0.0 {
+        (exponent(constant.value) - exponent(quadratic.value)).div_euclid(2)
+    } else if linear.value != 0.0 {
+        exponent(linear.value) - exponent(quadratic.value)
+    } else {
+        0
+    };
+    let coefficients = [quadratic, linear, constant];
+    let shifts = [2 * variable_exponent, variable_exponent, 0];
+    let scale_exponent = coefficients
+        .iter()
+        .zip(shifts)
+        .filter_map(|(coefficient, shift)| {
+            power_of_two_bound(coefficient.value.abs().max(coefficient.terms)).map(|e| e + shift)
+        })
+        .max()
+        .unwrap_or(0);
+    let mut values = [0.0; 3];
+    let mut errors = [0.0; 3];
+    for (index, (coefficient, shift)) in coefficients.into_iter().zip(shifts).enumerate() {
+        let Some(value) = scale_power_of_two(coefficient.value, shift - scale_exponent) else {
+            return Vec::new();
+        };
+        let Some(terms) = scale_power_of_two(coefficient.terms, shift - scale_exponent) else {
+            return Vec::new();
+        };
+        values[index] = value;
+        errors[index] = EPS_QUADRATIC_CANCELLATION * terms;
+    }
+    let [a, b, c] = values;
     let product = 4.0 * a * c;
     let discriminant = b.mul_add(b, -product);
     // With `e_x` the error bar of each scaled coefficient, `|b^2 - exact b^2|`
@@ -147,9 +147,7 @@ pub(super) fn real_roots(
     // `4 (|c| e_a + |a| e_c + e_a e_c)`. The last summand is the rounding of
     // the two multiplications and the fused add that form the discriminant
     // here, which is two products and one sum.
-    let error_quadratic = EPS_QUADRATIC_CANCELLATION * quadratic.terms / scale;
-    let error_linear = EPS_QUADRATIC_CANCELLATION * linear.terms / scale;
-    let error_constant = EPS_QUADRATIC_CANCELLATION * constant.terms / scale;
+    let [error_quadratic, error_linear, error_constant] = errors;
     let error = (2.0 * b.abs() + error_linear) * error_linear
         + 4.0
             * (c.abs() * error_quadratic
@@ -157,16 +155,19 @@ pub(super) fn real_roots(
                 + error_quadratic * error_constant)
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
-        let root = -b / (2.0 * a);
-        return root.is_finite().then_some(root).into_iter().collect();
+        return scale_power_of_two(-b / (2.0 * a), variable_exponent)
+            .into_iter()
+            .collect();
     }
     if discriminant < 0.0 {
         return Vec::new();
     }
     let root = discriminant.sqrt();
     let q = -0.5 * (b + root.copysign(b));
-    let mut roots = vec![q / a, c / q];
-    roots.retain(|root| root.is_finite());
+    let mut roots = [q / a, c / q]
+        .into_iter()
+        .filter_map(|root| scale_power_of_two(root, variable_exponent))
+        .collect::<Vec<_>>();
     roots.sort_by(f64::total_cmp);
     roots.dedup();
     roots
@@ -208,5 +209,20 @@ mod tests {
             Coefficient::single(1.0),
         );
         assert_eq!(roots, [1e-16, 1e16]);
+    }
+    #[test]
+    fn numerical_0922b_finite_quadratic_roots() {
+        for s in [1., 1e200] {
+            let roots = super::real_roots(
+                Coefficient::single(1. / s),
+                Coefficient::single(0.),
+                Coefficient::single(-s),
+            );
+            println!("Creo quadratic x^2/{s:e}-{s:e}: {roots:?}");
+            assert_eq!(roots.len(), 2);
+            for (root, expected) in roots.iter().zip([-s, s]) {
+                assert!((root / expected - 1.0).abs() <= 8.0 * f64::EPSILON);
+            }
+        }
     }
 }

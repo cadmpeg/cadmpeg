@@ -759,8 +759,7 @@ pub(crate) fn remap_nurbs_domain(
             .ok_or_else(|| error(offset, "curve knot vector is invalid"))?,
         curve.knots()[end_index],
     ];
-    let denominator = source[1] - source[0];
-    if !denominator.is_finite() || denominator <= 0.0 {
+    if !source[0].is_finite() || !source[1].is_finite() || source[0] >= source[1] {
         return Err(error(offset, "curve domain is invalid"));
     }
     if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
@@ -771,7 +770,8 @@ pub(crate) fn remap_nurbs_domain(
         .iter()
         .copied()
         .map(|knot| {
-            let fraction = (knot - source[0]) / denominator;
+            let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
+                .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
             let value = if fraction == 0.0 {
                 target[0]
             } else if fraction == 1.0 {
@@ -2285,6 +2285,22 @@ mod tests {
                 assert!((a.x / b.x - 1.).abs() <= 8. * f64::EPSILON);
                 assert!((a.y - b.y).abs() <= 8. * f64::EPSILON);
             }
+        }
+    }
+    #[test]
+    fn numerical_0922b_wide_curve_domain_remap() {
+        for domain in [[0., 1.], [-1e308, 1e308]] {
+            let n = NurbsCurve::from_lanes(
+                1,
+                vec![domain[0], domain[0], domain[1], domain[1]],
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                None,
+                false,
+            )
+            .unwrap();
+            let r = super::remap_nurbs_domain(n, [0., 1.], 0);
+            println!("Rhino remap{domain:?}: {r:?}");
+            assert_eq!(r.unwrap().knots(), &[0., 0., 1., 1.]);
         }
     }
 }

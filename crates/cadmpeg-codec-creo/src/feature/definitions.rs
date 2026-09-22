@@ -3466,26 +3466,24 @@ fn trim_line_circle_intersection(
     center: [f64; 2],
     radius: f64,
 ) -> Option<[f64; 2]> {
-    let parameters = cadmpeg_ir::math::planar::line_circle_parameters(
+    let intersections = cadmpeg_ir::math::planar::line_circle_intersections(
         cadmpeg_ir::math::Point2::new(start[0], start[1]),
         cadmpeg_ir::math::Point2::new(end[0], end[1]),
         cadmpeg_ir::math::Point2::new(center[0], center[1]),
         radius,
     )?;
-    let mut inside = parameters
-        .into_iter()
-        .filter(|parameter| (-TRIM_COORDINATE_EPS..=1.0 + TRIM_COORDINATE_EPS).contains(parameter));
-    let parameter = inside.next()?;
-    if inside.next().is_some_and(|other| other != parameter) {
+    let endpoint_tolerance = TRIM_COORDINATE_EPS * radius;
+    let mut inside = intersections.into_iter().filter(|(parameter, point)| {
+        (0.0..=1.0).contains(parameter)
+            || (point.u - start[0]).hypot(point.v - start[1]) <= endpoint_tolerance
+            || (point.u - end[0]).hypot(point.v - end[1]) <= endpoint_tolerance
+    });
+    let (_, point) = inside.next()?;
+    if inside.next().is_some_and(|(_, other)| other != point) {
         return None;
     }
-    let parameter = parameter.clamp(0.0, 1.0);
-    let point = [
-        cadmpeg_ir::math::interpolate(start[0], end[0], parameter)?,
-        cadmpeg_ir::math::interpolate(start[1], end[1], parameter)?,
-    ];
-    let radial = (point[0] - center[0]).hypot(point[1] - center[1]);
-    ((radial - radius).abs() <= TRIM_COORDINATE_EPS * radius).then_some(point)
+    let radial = (point.u - center[0]).hypot(point.v - center[1]);
+    ((radial - radius).abs() <= endpoint_tolerance).then_some([point.u, point.v])
 }
 
 fn trim_circle_circle_intersection(

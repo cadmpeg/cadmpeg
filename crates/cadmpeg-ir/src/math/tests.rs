@@ -208,3 +208,19 @@ fn audit_regression_power_scaling_preserves_extreme_finite_results() {
     );
     assert_eq!(scale_power_of_two(f64::NAN, 0), None);
 }
+
+#[test]
+fn numerical_0922b_parameter_fraction_preserves_finite_charts() {
+    for (parameter, start, end, expected) in [
+        (0.0, -1e308, 1e308, 0.5),
+        (-1e308, -1e308, 1e308, 0.0),
+        (1e308, -1e308, 1e308, 1.0),
+        (-2.0, 0.0, 1.0, -2.0),
+        (3.0, 0.0, 1.0, 3.0),
+    ] {
+        assert_eq!(
+            super::parameter_fraction(parameter, start, end),
+            Some(expected)
+        );
+    }
+}
