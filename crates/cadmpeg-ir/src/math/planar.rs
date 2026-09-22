@@ -166,7 +166,7 @@ pub fn line_circle_intersections(
     };
     let intersection = |sign| {
         let along = sign * half_chord * radial_scale;
-        let point = Point2::new(
+        let mut point = Point2::new(
             super::sum::finite_dot(
                 [1.0, -perpendicular, along],
                 [center.u, direction.v / length, direction.u / length],
@@ -176,6 +176,14 @@ pub fn line_circle_intersections(
                 [center.v, direction.u / length, direction.v / length],
             )?,
         );
+        // A constant line coordinate is exact input evidence. Retain it
+        // instead of rounding it through the determinant-distance quotient.
+        if start.u == end.u {
+            point.u = start.u;
+        }
+        if start.v == end.v {
+            point.v = start.v;
+        }
         Some((parameter(sign)?, point))
     };
     Some([intersection(-1.0)?, intersection(1.0)?])
@@ -553,6 +561,24 @@ mod tests {
                 0.001
             )
             .is_none());
+        }
+        for radius in [0.0001, 0.001, 1.0, 1e200] {
+            for (start, end, expected) in [
+                (
+                    Point2::new(-radius, radius),
+                    Point2::new(radius, radius),
+                    Point2::new(0., radius),
+                ),
+                (
+                    Point2::new(radius, -radius),
+                    Point2::new(radius, radius),
+                    Point2::new(radius, 0.),
+                ),
+            ] {
+                let hits =
+                    line_circle_intersections(start, end, Point2::new(0., 0.), radius).unwrap();
+                assert_eq!(hits.map(|(_, point)| point), [expected; 2]);
+            }
         }
     }
 }
