@@ -56,7 +56,10 @@ pub fn speed_bound<const N: usize>(
                 width.add_product(upper, 1.0);
                 width.add_product(lower, -1.0);
                 let width = width.finish()?;
-                let derivative = |delta| {
+                let derivative = |delta: f64| {
+                    if !delta.is_finite() {
+                        return None;
+                    }
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_product(delta, f64::from(degree));
                     numerator
@@ -73,6 +76,9 @@ pub fn speed_bound<const N: usize>(
             }
         }
         previous = Some(weighted);
+    }
+    if !maximum_radius.is_finite() {
+        return None;
     }
     let mut numerator = ExactSignedSum::default();
     numerator.add_product(maximum_radius, weight_speed);
@@ -116,5 +122,18 @@ mod tests {
         )
         .unwrap();
         assert!((speed * 1e308 - 0.5).abs() <= 8. * f64::EPSILON);
+    }
+    #[test]
+    fn numerical_audit_speed_bound_refuses_unrepresentable_control_differences() {
+        assert_eq!(
+            super::speed_bound(
+                1,
+                &[0., 0., 1., 1.],
+                &[[-1e308, 0.], [1e308, 0.]],
+                &[1., 1.],
+                [0., 0.]
+            ),
+            None
+        );
     }
 }
