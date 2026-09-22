@@ -43,8 +43,8 @@ assert!(report.is_ok());
 assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
-`CadIr::to_canonical_json` emits pretty JSON after the caller establishes
-canonical arena order. `CadIr::from_json` accepts exactly `ir_version: "7"`.
+`CadIr::to_canonical_json` clones and finalizes the document before it emits
+pretty JSON. `CadIr::from_json` accepts exactly `ir_version: "6"`.
 The `model.subds` arena is required, including when empty. `diff` compares
 units, tolerances, annotations, and entity arenas by stable identity.
 
