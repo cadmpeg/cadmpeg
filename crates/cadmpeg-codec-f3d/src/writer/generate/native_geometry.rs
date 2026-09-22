@@ -3765,15 +3765,10 @@ fn encode_native_revision_compound_loft(
     construction: &cadmpeg_ir::geometry::RevisionCompoundLoftConstruction,
     solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
-    if construction.revision() <= 0 {
-        return Err(CodecError::Malformed(
-            "revision-gated cl_loft_spl_sur requires a positive revision".into(),
-        ));
-    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
-    native_i64(bytes, construction.revision());
+    native_i64(bytes, i64::from(construction.revision().get()));
     native_revision_tail_head(
         bytes,
         "compound-loft surface",
@@ -3832,15 +3827,10 @@ fn encode_native_revision_g2_blend(
     construction: &cadmpeg_ir::geometry::RevisionG2BlendConstruction,
     solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
-    if construction.revision() <= 0 {
-        return Err(CodecError::Malformed(
-            "revision-gated g2_blend_spl_sur requires a positive revision".into(),
-        ));
-    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "g2_blend_spl_sur")?;
-    native_i64(bytes, construction.revision());
+    native_i64(bytes, i64::from(construction.revision().get()));
     for parameter in construction.leading_parameters() {
         native_f64(bytes, parameter);
     }
@@ -6503,12 +6493,7 @@ fn native_cache_first_curve_context(
     form: &cadmpeg_ir::geometry::CacheFirstCurveForm,
     solved_cache: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve>,
 ) -> Result<(), CodecError> {
-    if form.revision <= 0 {
-        return Err(CodecError::Malformed(
-            "cache-first intcurve context requires a positive serializer revision".into(),
-        ));
-    }
-    native_i64(bytes, form.revision);
+    native_i64(bytes, i64::from(form.revision.get()));
     match &form.cache {
         cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             native_enum(bytes, 0);

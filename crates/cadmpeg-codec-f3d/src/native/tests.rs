@@ -723,7 +723,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
         panic!("expected cache-first spring layout")
     };
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(form.extension, 7);
     assert_eq!(*direction, 4);
@@ -775,7 +775,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     else {
         panic!("expected surface-curve construction")
     };
-    assert_eq!(tail.form.revision(), 23100);
+    assert_eq!(tail.form.revision().get(), 23100);
     assert_eq!(tail.form.extension(), 7);
     assert!(tail.flags.flag);
     assert_eq!(tail.flags.second_flag, Some(false));
@@ -846,7 +846,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
     let form = cache_first
         .as_ref()
         .expect("cache-first surface-offset form");
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.extension, 7);
     assert_eq!(*base_u_range, [-1.0, 2.0]);
     assert_eq!(*base_v_range, [-3.0, 4.0]);

@@ -29,6 +29,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use std::num::NonZeroU32;
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
@@ -2080,8 +2081,9 @@ fn cache_first_curve_context(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<CacheFirstCurveContext> {
-    let revision = cur.take_long()?;
-    (revision > 0).then_some(())?;
+    let revision = u32::try_from(cur.take_long()?)
+        .ok()
+        .and_then(NonZeroU32::new)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
     // stores a bool-gated curve interval and a closed-form enum. No other value
@@ -3590,7 +3592,7 @@ mod cache_form_tests {
             // Every field of the context is read: the walk ends on the last
             // token of the ASM extension integer.
             assert_eq!(cur.pos(), toks.len());
-            assert_eq!(context.form.revision, 23_100);
+            assert_eq!(context.form.revision.get(), 23_100);
             assert!(context.form.cache.parameterization().is_some());
             let (context, form) =
                 context.into_intersection(nurbs_curve_parameter_domain(&solved).unwrap());

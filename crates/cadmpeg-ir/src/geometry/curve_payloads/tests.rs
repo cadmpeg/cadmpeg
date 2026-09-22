@@ -12,6 +12,7 @@ use crate::geometry::{
 };
 use crate::ids::CurveId;
 use crate::math::Point2;
+use std::num::NonZeroU32;
 
 fn context(range: [f64; 2]) -> IntcurveSupportContext {
     IntcurveSupportContext::try_new(
@@ -123,7 +124,7 @@ fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
         None => {}
     }
     CacheFirstCurveForm {
-        revision: 23_100,
+        revision: NonZeroU32::new(23_100).unwrap(),
         cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval,
             closed_form: 0,
@@ -132,6 +133,14 @@ fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
         solved_range,
         extension: 7,
     }
+}
+
+#[test]
+fn cache_first_curve_form_rejects_zero_revision_json() {
+    let form = cache_first_form(None);
+    let mut wire = serde_json::to_value(form).unwrap();
+    wire["revision"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<CacheFirstCurveForm>(wire).is_err());
 }
 
 fn surface_offset(
