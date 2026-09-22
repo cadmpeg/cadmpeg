@@ -4819,8 +4819,8 @@ impl RevisionG2BlendConstruction {
 
     /// Return the positive serializer-revision integer.
     #[must_use]
-    pub fn revision(&self) -> i64 {
-        i64::from(self.revision.get())
+    pub const fn revision(&self) -> NonZeroU32 {
+        self.revision
     }
 
     /// Return the two native scalars following the revision integer.
@@ -5040,8 +5040,8 @@ impl RevisionCompoundLoftConstruction {
 
     /// Return the positive serializer-revision integer.
     #[must_use]
-    pub fn revision(&self) -> i64 {
-        i64::from(self.revision.get())
+    pub const fn revision(&self) -> NonZeroU32 {
+        self.revision
     }
 
     /// Return the approximation-cache form.
@@ -6742,7 +6742,7 @@ impl TolerantIntersectionParameterization {
 #[serde(deny_unknown_fields)]
 pub struct CacheFirstCurveForm {
     /// Positive serializer-revision integer selecting the cache-first layout.
-    pub revision: i64,
+    pub revision: NonZeroU32,
     /// Approximation-cache form selected by the shared context enum.
     pub cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
@@ -7049,8 +7049,8 @@ impl SurfaceCurveTail {
 
     /// Serializer-revision integer opening the cache-first layout.
     #[must_use]
-    pub fn revision(&self) -> i64 {
-        i64::from(self.revision.get())
+    pub const fn revision(&self) -> NonZeroU32 {
+        self.revision
     }
 
     /// Approximation-cache form selected by the shared context enum.
