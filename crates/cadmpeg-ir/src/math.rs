@@ -61,7 +61,9 @@ impl Point3 {
 
     /// Squared Euclidean distance to another point (no square root).
     pub fn distance_squared(self, other: Point3) -> f64 {
-        (self.x - other.x).powi(2) + (self.y - other.y).powi(2) + (self.z - other.z).powi(2)
+        let delta = [self.x - other.x, self.y - other.y, self.z - other.z];
+        sum::finite_dot(delta, delta)
+            .unwrap_or_else(|| delta[0].powi(2) + delta[1].powi(2) + delta[2].powi(2))
     }
 
     /// Displacement from `origin` to `self`, i.e. `self - origin`.
@@ -73,9 +75,9 @@ impl Point3 {
     #[must_use]
     pub fn translated(self, vector: Vector3, scale: f64) -> Point3 {
         Point3::new(
-            self.x + scale * vector.x,
-            self.y + scale * vector.y,
-            self.z + scale * vector.z,
+            scale.mul_add(vector.x, self.x),
+            scale.mul_add(vector.y, self.y),
+            scale.mul_add(vector.z, self.z),
         )
     }
 }
@@ -124,16 +126,23 @@ impl Vector3 {
 
     /// Dot product with another vector.
     pub fn dot(self, other: Vector3) -> f64 {
-        self.x * other.x + self.y * other.y + self.z * other.z
+        match sum::finite_dot([self.x, self.y, self.z], [other.x, other.y, other.z]) {
+            Some(value) => value,
+            None => self.x * other.x + self.y * other.y + self.z * other.z,
+        }
     }
 
     /// Cross product with another vector.
     #[must_use]
     pub fn cross(self, other: Vector3) -> Vector3 {
+        let component = |a: f64, b: f64, c: f64, d: f64| match sum::finite_dot([a, -b], [c, d]) {
+            Some(value) => value,
+            None => a * c - b * d,
+        };
         Vector3::new(
-            self.y * other.z - self.z * other.y,
-            self.z * other.x - self.x * other.z,
-            self.x * other.y - self.y * other.x,
+            component(self.y, self.z, other.z, other.y),
+            component(self.z, self.x, other.x, other.z),
+            component(self.x, self.y, other.y, other.x),
         )
     }
 
@@ -164,10 +173,9 @@ impl Vector3 {
         if scale == 0.0 {
             return None;
         }
-        // Divide by the power of two the largest component states, not by the
-        // component. The division is then exact, so a direction whose
-        // components state an exact ratio keeps it, and the largest scaled
-        // component stays in `[0.5, 1)`, which is what the norm needs.
+        // Chart by the largest component's power of two so the norm stays in
+        // range. A charted subnormal may already be rounded or zero; form that
+        // final quotient from its original component instead.
         let exponent = sum::scaled_finite(scale)?.exponent();
         let scaled = Vector3::new(
             scale_power_of_two(self.x, -exponent)?,
@@ -175,10 +183,17 @@ impl Vector3 {
             scale_power_of_two(self.z, -exponent)?,
         );
         let length = scaled.norm();
+        let component = |value: f64, chart: f64| {
+            if value != 0.0 && chart.abs() < f64::MIN_POSITIVE {
+                sum::scaled_finite(value)?.quotient_shifted(sum::scaled_finite(length)?, -exponent)
+            } else {
+                Some(chart / length)
+            }
+        };
         Some(Vector3::new(
-            scaled.x / length,
-            scaled.y / length,
-            scaled.z / length,
+            component(self.x, scaled.x)?,
+            component(self.y, scaled.y)?,
+            component(self.z, scaled.z)?,
         ))
     }
 }
