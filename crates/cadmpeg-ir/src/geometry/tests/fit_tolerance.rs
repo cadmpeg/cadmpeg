@@ -152,7 +152,7 @@ fn parameterized_curve_definition() -> ProceduralCurveDefinition {
             tail: Some(SurfaceCurveCacheFirst {
                 form: SurfaceCurveTail::try_new(
                     7,
-                    23100,
+                    23_100,
                     RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
                         interval: [Some(0.0), Some(1.0)],
                         closed_form: 0,

@@ -16,7 +16,7 @@ use crate::units::FiniteVector;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroI64;
+use std::num::{NonZeroI64, NonZeroU32};
 
 pub mod analytic;
 pub mod nurbs;
@@ -4715,7 +4715,7 @@ pub struct VariableBlendConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "RevisionG2BlendConstructionWire")]
 pub struct RevisionG2BlendConstruction {
-    revision: i64,
+    revision: NonZeroU32,
     leading_parameters: [f64; 2],
     sides: Box<[RollingBallSide; 2]>,
     center: CurveId,
@@ -4745,7 +4745,7 @@ pub struct RevisionG2BlendConstruction {
 #[serde(deny_unknown_fields)]
 pub struct RevisionG2BlendConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: NonZeroU32,
     /// Two native scalars following the revision integer.
     pub leading_parameters: [f64; 2],
     /// Two ordered support-side graphs in the variable-blend side layout.
@@ -4819,8 +4819,8 @@ impl RevisionG2BlendConstruction {
 
     /// Return the positive serializer-revision integer.
     #[must_use]
-    pub const fn revision(&self) -> i64 {
-        self.revision
+    pub fn revision(&self) -> i64 {
+        i64::from(self.revision.get())
     }
 
     /// Return the two native scalars following the revision integer.
@@ -4956,7 +4956,7 @@ impl TryFrom<RevisionG2BlendConstructionWire> for RevisionG2BlendConstruction {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "RevisionCompoundLoftConstructionWire")]
 pub struct RevisionCompoundLoftConstruction {
-    revision: i64,
+    revision: NonZeroU32,
     cache: RevisionCacheForm,
     #[serde(default)]
     discontinuities: [Vec<f64>; 6],
@@ -4982,7 +4982,7 @@ pub struct RevisionCompoundLoftConstruction {
 #[serde(deny_unknown_fields)]
 pub struct RevisionCompoundLoftConstructionWire {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: NonZeroU32,
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm,
     /// Six ordered discontinuity arrays following the fit tolerance.
@@ -5040,8 +5040,8 @@ impl RevisionCompoundLoftConstruction {
 
     /// Return the positive serializer-revision integer.
     #[must_use]
-    pub const fn revision(&self) -> i64 {
-        self.revision
+    pub fn revision(&self) -> i64 {
+        i64::from(self.revision.get())
     }
 
     /// Return the approximation-cache form.
@@ -6956,8 +6956,7 @@ pub struct SurfaceCurveTail {
     /// Native integer following the discontinuity arrays.
     extension: i64,
     /// Positive serializer-revision integer opening the cache-first layout.
-    #[serde(default)]
-    revision: i64,
+    revision: NonZeroU32,
     /// Approximation-cache form selected by the shared context enum.
     cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
@@ -6976,8 +6975,7 @@ struct SurfaceCurveTailWire {
     /// Native integer following the discontinuity arrays.
     extension: i64,
     /// Positive serializer-revision integer opening the cache-first layout.
-    #[serde(default)]
-    revision: i64,
+    revision: NonZeroU32,
     /// Approximation-cache form selected by the shared context enum.
     cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
@@ -6995,7 +6993,7 @@ impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
     fn try_from(wire: SurfaceCurveTailWire) -> Result<Self, Self::Error> {
         Self::try_new(
             wire.extension,
-            wire.revision,
+            i64::from(wire.revision.get()),
             wire.cache,
             wire.support_bounds,
             wire.solved_range,
@@ -7012,6 +7010,10 @@ impl SurfaceCurveTail {
         support_bounds: [[Option<f64>; 4]; 2],
         solved_range: [Option<f64>; 2],
     ) -> Result<Self, &'static str> {
+        let revision = u32::try_from(revision)
+            .ok()
+            .and_then(NonZeroU32::new)
+            .ok_or("surface curve tail revision must be positive")?;
         let tail = Self {
             extension,
             revision,
@@ -7047,8 +7049,8 @@ impl SurfaceCurveTail {
 
     /// Serializer-revision integer opening the cache-first layout.
     #[must_use]
-    pub const fn revision(&self) -> i64 {
-        self.revision
+    pub fn revision(&self) -> i64 {
+        i64::from(self.revision.get())
     }
 
     /// Approximation-cache form selected by the shared context enum.

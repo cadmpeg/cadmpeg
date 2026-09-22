@@ -8,6 +8,7 @@ use crate::geometry::{
 };
 use crate::ids::CurveId;
 use crate::math::Vector3;
+use std::num::NonZeroU32;
 
 // One value per float field family the construction carries.
 struct Fields {
@@ -83,7 +84,7 @@ fn path(fields: &Fields) -> LoftPath {
 // accepts and the only shape the deserializer builds.
 fn stored(fields: &Fields) -> RevisionCompoundLoftConstructionWire {
     RevisionCompoundLoftConstructionWire {
-        revision: 1,
+        revision: NonZeroU32::MIN,
         cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
             u_interval: fields.u_interval,
             v_interval: fields.v_interval,
@@ -173,6 +174,27 @@ fn the_revision_compound_loft_admission_writes_every_scalar_it_admits() {
         definition
     );
     assert!(wire(&ADMITTED).is_ok());
+}
+
+#[test]
+fn the_revision_compound_loft_refuses_a_non_positive_revision() {
+    let definition = ProceduralSurfaceDefinition::RevisionCompoundLoft {
+        construction: Box::new(
+            RevisionCompoundLoftConstruction::admit(stored(&ADMITTED))
+                .expect("positive revision and finite scalars"),
+        ),
+    };
+    let value = serde_json::to_value(definition).expect("serialize the definition");
+
+    for revision in [0_i64, -1] {
+        assert!(u32::try_from(revision)
+            .ok()
+            .and_then(NonZeroU32::new)
+            .is_none());
+        let mut invalid = value.clone();
+        invalid["construction"]["revision"] = serde_json::json!(revision);
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
+    }
 }
 
 #[test]
