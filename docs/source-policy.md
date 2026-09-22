@@ -30,22 +30,23 @@ each violation by rule, file, line, and explanation.
   grants.
 - Every member of a serde wire mirror in `cadmpeg-ir`, `cadmpeg-core`,
   `cadmpeg-asm` and `cadmpeg-protein` carries a doc comment. The mirror is the
-  type a `#[serde(try_from = "…")]` or `#[serde(from = "…")]` container
-  attribute names, and its members are its fields, an enum's variants and the
-  fields of a struct-shaped variant. The published JSON schema reads each
+  type a serde conversion container attribute names with `try_from`, `from` or
+  `into`, and its members are its fields, an enum's variants and the fields of
+  a struct-shaped variant. The published JSON schema reads each
   member's doc as that property's `description`, so a member with no doc leaves
   the schema silent about the value the wire carries. A codec crate's own
   records stay outside the rule: they generate no schema and state their shape
-  through `NativeRecord`. The target name is resolved in the file that names it
-  and then across the crate, so a mirror held in a child module is reached and
-  a same-named type elsewhere is not. A member the mirror carries with
+  through `NativeRecord`. An unqualified target resolves in the file that names
+  it, through that file's `use` imports, and then to a unique crate-wide
+  declaration. An ambiguous unqualified target is unresolved. A qualified
+  target resolves along the `crate`, `self`, `super` or module path that it
+  names. A path whose leading segment is not a module of the crate names an
+  external crate and is not resolved. A member the mirror carries with
   `#[serde(flatten)]` publishes no property of its own; the properties are the
   members of the flattened type, so that type is a mirror as well and the rule
   repeats through a chain of flattened types. The flattened type's name is
-  resolved the same way, in the mirror's file and then across its crate. A type
-  named from another crate is not resolved, and a type the flattened type
-  reaches through anything other than a further `#[serde(flatten)]` is not
-  either.
+  resolved the same way. A type the flattened type reaches through anything
+  other than a further `#[serde(flatten)]` is not resolved.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and

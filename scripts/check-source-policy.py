@@ -708,8 +708,8 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
     return modules
 
 
-# A serde wire mirror is the type a `#[serde(try_from = "…")]` or
-# `#[serde(from = "…")]` container attribute names. The mirror spells the wire
+# A serde wire mirror is the type a serde conversion container attribute names.
+# The mirror spells the wire
 # shape of the admitted type, and its member documentation is what the
 # published JSON schema reads as each property's `description`. The rule covers
 # the shared crates a CADIR document states the shape of; a codec crate's own
@@ -719,11 +719,9 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
 # A member the mirror carries with `#[serde(flatten)]` publishes no property of
 # its own: the properties are the members of the flattened type, so that type is
 # a mirror as well and its members carry the same rule. The flattened type is
-# resolved by name, the declaration in the mirror's own file first and a
-# declaration elsewhere in the same crate next, which is the resolution a path
-# the attribute could spell would take. A type named from another crate is not
-# resolved, and neither is a type the flattened type reaches through anything
-# other than a further `#[serde(flatten)]`.
+# resolved as a Rust path by the same rules as the initial mirror. A type the
+# flattened type reaches through anything other than a further
+# `#[serde(flatten)]` is not resolved.
 WIRE_MIRROR_DOC_ROOTS = (
     "crates/cadmpeg-ir",
     "crates/cadmpeg-core",
@@ -731,10 +729,23 @@ WIRE_MIRROR_DOC_ROOTS = (
     "crates/cadmpeg-protein",
 )
 SERDE_ATTRIBUTE = re.compile(r"#\s*\[\s*serde\s*\(")
-SERDE_MIRROR_TARGET = re.compile(r"(?<![\w.])(?:try_from|from)\s*=\s*\"(?P<target>[^\"]+)\"")
+SERDE_MIRROR_TARGET = re.compile(
+    r"(?<![\w.])(?:try_from|from|into)\s*=\s*\"(?P<target>[^\"]+)\""
+)
 SERDE_FLATTEN = re.compile(r"(?<![\w.])flatten\b")
-TYPE_PATH = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*(?P<name>[A-Za-z_][A-Za-z0-9_]*)")
-NAMED_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+TYPE_PATH = re.compile(
+    r"(?P<path>(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*))"
+)
+RUST_TYPE_PATH = re.compile(
+    r"^(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$"
+)
+USE_IMPORT = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+"
+    r"(?P<path>(?:::)?[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)"
+    r"(?:\s+as\s+(?P<alias>[A-Za-z_][A-Za-z0-9_]*))?\s*;",
+    re.MULTILINE,
+)
 TYPE_DECL = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<kind>struct|enum)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
 )
@@ -785,8 +796,8 @@ def mirror_targets(attrs: tuple[str, ...]) -> set[str]:
         if SERDE_ATTRIBUTE.search(attr) is None:
             continue
         for match in SERDE_MIRROR_TARGET.finditer(attr):
-            target = match.group("target").rsplit("::", 1)[-1].strip()
-            if NAMED_TYPE.match(target):
+            target = re.sub(r"\s+", "", match.group("target"))
+            if RUST_TYPE_PATH.match(target):
                 targets.add(target)
     return targets
 
@@ -951,7 +962,7 @@ def flattened_member_types(lines: list[str], masked: list[str], kind: str, index
         if not flattened:
             continue
         for match in TYPE_PATH.finditer(member_type_text(masked, line, end)):
-            names.add(match.group("name"))
+            names.add(re.sub(r"\s+", "", match.group("path")))
     return names
 
 
@@ -971,38 +982,137 @@ def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
     """
     files = sorted(path for path in sources if is_production_rs(path))
     parsed: dict[Path, tuple[list[str], list[str]]] = {}
-    targets: dict[Path, set[str]] = {}
+    targets: list[tuple[Path, tuple[str, ...], str]] = []
     in_file: dict[Path, dict[str, list[tuple[str, int]]]] = {}
-    in_crate: dict[str, dict[str, list[tuple[Path, str, int]]]] = {}
+    in_crate: dict[str, dict[str, list[tuple[Path, tuple[str, ...], str, int]]]] = {}
+    by_module: dict[str, dict[tuple[str, ...], dict[str, list[tuple[Path, int]]]]] = {}
+    crate_modules: dict[str, set[tuple[str, ...]]] = {}
+    imports: dict[Path, list[tuple[str, str]]] = {}
+    declaration_modules: dict[tuple[Path, int], tuple[str, ...]] = {}
     kinds: dict[tuple[Path, int], str] = {}
+
+    def file_module(path: Path) -> tuple[str, ...]:
+        """The conventional module path of a Rust source file."""
+        parts = Path(relative_path(path)).parts
+        source = parts[parts.index("src") + 1:]
+        if not source or source[-1] in ("lib.rs", "main.rs"):
+            return ()
+        stem = Path(source[-1]).stem
+        if stem == "mod":
+            return tuple(source[:-1])
+        return tuple(source[:-1]) + (stem,)
+
+    def modules_by_line(masked: list[str], base: tuple[str, ...]) -> list[tuple[str, ...]]:
+        """Map declarations inside inline modules to their Rust module path."""
+        modules = [base] * len(masked)
+
+        def visit(start: int, stop: int, module: tuple[str, ...]) -> None:
+            index = start
+            while index < stop:
+                match = MOD_DECL_VIS.match(masked[index])
+                if match is None or match.group("marker") != "{":
+                    index += 1
+                    continue
+                end = find_matching_brace_end(masked, index)
+                child = module + (match.group("name"),)
+                for line in range(index + 1, min(end + 1, len(modules))):
+                    modules[line] = child
+                visit(index + 1, end, child)
+                index = end + 1
+
+        visit(0, len(masked), base)
+        return modules
+
     for path in files:
         lines = sources[path].splitlines()
         code, _ = production_source(sources[path])
         masked = code.splitlines()
         parsed[path] = (lines, masked)
         crate = relative_path(path).split("/")[1]
-        named: set[str] = set()
+        line_modules = modules_by_line(masked, file_module(path))
+        imported: list[tuple[str, str]] = []
+        for match in USE_IMPORT.finditer(code):
+            imported_path = match.group("path")
+            imported.append((match.group("alias") or imported_path.rsplit("::", 1)[-1], imported_path))
+        imports[path] = imported
         for kind, name, index, attrs in type_declarations(lines, masked):
-            named |= mirror_targets(attrs)
+            module = line_modules[index]
+            crate_modules.setdefault(crate, set()).add(module)
+            for depth in range(len(module)):
+                crate_modules[crate].add(module[:depth])
+            for target in mirror_targets(attrs):
+                targets.append((path, module, target))
             in_file.setdefault(path, {}).setdefault(name, []).append((kind, index))
-            in_crate.setdefault(crate, {}).setdefault(name, []).append((path, kind, index))
+            in_crate.setdefault(crate, {}).setdefault(name, []).append(
+                (path, module, kind, index)
+            )
+            by_module.setdefault(crate, {}).setdefault(module, {}).setdefault(name, []).append(
+                (path, index)
+            )
+            declaration_modules[(path, index)] = module
             kinds[(path, index)] = kind
-        targets[path] = named
-    # A target name is a type path the compiler resolves where the attribute
-    # stands, so the declaration in the same file answers first. A crate that
-    # holds its mirrors in child modules answers next, and nothing outside the
-    # crate can be named without a path the attribute would spell.
-    def resolve(path: Path, target: str) -> list[tuple[Path, int]]:
+
+    def resolve_qualified(
+        crate: str, owner_module: tuple[str, ...], target: str,
+    ) -> list[tuple[Path, int]]:
+        """Resolve a qualified target only when it names this crate's module tree."""
+        segments = tuple(part for part in target.removeprefix("::").split("::") if part)
+        if len(segments) < 2:
+            return []
+        if segments[0] == "crate":
+            module = segments[1:-1]
+        elif segments[0] == "self":
+            module = owner_module + segments[1:-1]
+        elif segments[0] == "super":
+            parent = owner_module
+            offset = 0
+            while offset < len(segments) - 1 and segments[offset] == "super":
+                if not parent:
+                    return []
+                parent = parent[:-1]
+                offset += 1
+            module = parent + segments[offset:-1]
+        else:
+            relative_module = owner_module + segments[:-1]
+            root_module = segments[:-1]
+            known = crate_modules.get(crate, set())
+            if relative_module in known:
+                module = relative_module
+            elif root_module in known:
+                module = root_module
+            else:
+                return []
+        return list(by_module.get(crate, {}).get(module, {}).get(segments[-1], []))
+
+    # An unqualified target follows file-local declarations, then imports, then
+    # a unique crate-wide declaration. A qualified target must select the exact
+    # module it names; an unknown leading segment names another crate.
+    def resolve(
+        path: Path, owner_module: tuple[str, ...], target: str,
+    ) -> list[tuple[Path, int]]:
+        crate = relative_path(path).split("/")[1]
+        if "::" in target:
+            return resolve_qualified(crate, owner_module, target)
         local = in_file.get(path, {}).get(target)
         if local is not None:
             return [(path, index) for _, index in local]
-        crate = relative_path(path).split("/")[1]
-        return [(other, index) for other, _, index in in_crate.get(crate, {}).get(target, [])]
+        imported_paths = [imported for alias, imported in imports.get(path, []) if alias == target]
+        imported_matches = {
+            found
+            for imported in imported_paths
+            for found in resolve_qualified(crate, owner_module, imported)
+        }
+        if imported_paths:
+            return list(imported_matches) if len(imported_matches) == 1 else []
+        crate_wide = in_crate.get(crate, {}).get(target, [])
+        if len(crate_wide) == 1:
+            other, _, _, index = crate_wide[0]
+            return [(other, index)]
+        return []
 
     mirrors: set[tuple[Path, int]] = set()
-    for path, named in targets.items():
-        for target in named:
-            mirrors.update(resolve(path, target))
+    for path, module, target in targets:
+        mirrors.update(resolve(path, module, target))
     # A flattened member publishes the flattened type's properties, so that type
     # is a mirror as well. The walk repeats until it finds nothing new, which
     # carries the rule through a mirror that flattens a type that flattens
@@ -1012,7 +1122,7 @@ def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
         path, index = pending.pop()
         lines, masked = parsed[path]
         for target in flattened_member_types(lines, masked, kinds[(path, index)], index):
-            for found in resolve(path, target):
+            for found in resolve(path, declaration_modules[(path, index)], target):
                 if found not in mirrors:
                     mirrors.add(found)
                     pending.append(found)
