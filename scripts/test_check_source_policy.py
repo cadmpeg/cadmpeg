@@ -10,6 +10,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -681,7 +682,7 @@ class WireMirrorDocs(TempSourceCase):
         self.assertEqual(self.findings("undocumented_wire_mirror"), [])
 
     def test_every_crate_in_scope_reports_an_undocumented_member(self) -> None:
-        for crate in ("cadmpeg-ir", "cadmpeg-core", "cadmpeg-asm", "cadmpeg-protein"):
+        for crate in ("cadmpeg-ir", "cadmpeg-core", "cadmpeg-asm"):
             with self.subTest(crate=crate):
                 self.write(f"crates/{crate}/src/shared.rs", '\n'.join([
                     '#[serde(try_from = "SharedWire")]', "pub struct Shared { value: u8 }",
@@ -692,6 +693,14 @@ class WireMirrorDocs(TempSourceCase):
                     (f"crates/{crate}/src/shared.rs", 5),
                 ])
                 (self.root / "crates" / crate / "src" / "shared.rs").unlink()
+
+    def test_a_crate_without_a_published_schema_is_outside_the_rule(self) -> None:
+        self.write("crates/cadmpeg-protein/src/property.rs", '\n'.join([
+            '#[serde(try_from = "PropertyWire")]',
+            "pub struct Property { value: u8 }", "",
+            "struct PropertyWire {", "    value: u8,", "}", "",
+        ]))
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
 
     def test_a_type_the_mirror_flattens_carries_the_rule(self) -> None:
         self.write(f"{self.IR}/flat.rs", '\n'.join([
@@ -726,6 +735,20 @@ class WireMirrorDocs(TempSourceCase):
                    "pub struct Demo { value: u8 }\n"
                    "struct DemoWire {\n    value: u8,\n}\n")
         self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+
+class WireMirrorPolicyScope(unittest.TestCase):
+    def test_roots_equal_crates_that_publish_schemars_schema(self) -> None:
+        expected = set()
+        for manifest in sorted(SCRIPT.parent.parent.glob("crates/*/Cargo.toml")):
+            with manifest.open("rb") as source:
+                package = tomllib.load(source)
+            features = package.get("features", {})
+            dependencies = package.get("dependencies", {})
+            if "schema" in features and "schemars" in dependencies:
+                self.assertIn("dep:schemars", features["schema"], manifest)
+                expected.add(str(manifest.parent.relative_to(SCRIPT.parent.parent)))
+        self.assertEqual(set(policy.WIRE_MIRROR_DOC_ROOTS), expected)
 
 
 class EndianExceptions(TempSourceCase):
