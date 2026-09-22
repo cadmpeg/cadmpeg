@@ -12,8 +12,6 @@ use crate::geometry::{
 };
 use crate::ids::CurveId;
 use crate::math::Point2;
-use std::num::NonZeroU32;
-
 fn context(range: [f64; 2]) -> IntcurveSupportContext {
     IntcurveSupportContext::try_new(
         std::array::from_fn(|_| IntcurveSupportSide {
@@ -124,7 +122,7 @@ fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
         None => {}
     }
     CacheFirstCurveForm {
-        revision: NonZeroU32::new(23_100).unwrap(),
+        revision: crate::scalar::PositiveI64::new(23_100).unwrap(),
         cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval,
             closed_form: 0,
@@ -136,11 +134,30 @@ fn cache_first_form(degenerate: Option<(usize, f64)>) -> CacheFirstCurveForm {
 }
 
 #[test]
-fn cache_first_curve_form_rejects_zero_revision_json() {
+fn cache_first_curve_form_admits_the_full_positive_revision_lane() {
     let form = cache_first_form(None);
-    let mut wire = serde_json::to_value(form).unwrap();
-    wire["revision"] = serde_json::json!(0);
-    assert!(serde_json::from_value::<CacheFirstCurveForm>(wire).is_err());
+    let wire = serde_json::to_value(form).unwrap();
+    for revision in [0_i64, -1] {
+        assert!(crate::scalar::PositiveI64::new(revision).is_none());
+        let mut invalid = wire.clone();
+        invalid["revision"] = serde_json::json!(revision);
+        assert!(serde_json::from_value::<CacheFirstCurveForm>(invalid).is_err());
+    }
+
+    let maximum = CacheFirstCurveForm {
+        revision: crate::scalar::PositiveI64::new(i64::MAX).expect("maximum is positive"),
+        ..cache_first_form(None)
+    };
+    assert_eq!(maximum.revision.get(), i64::MAX);
+    let mut maximum_wire = wire;
+    maximum_wire["revision"] = serde_json::json!(i64::MAX);
+    assert_eq!(
+        serde_json::from_value::<CacheFirstCurveForm>(maximum_wire)
+            .expect("maximum JSON revision is admitted")
+            .revision
+            .get(),
+        i64::MAX
+    );
 }
 
 fn surface_offset(

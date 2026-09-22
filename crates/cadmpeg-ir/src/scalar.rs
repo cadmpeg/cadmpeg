@@ -63,6 +63,42 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// A positive value in a native signed 64-bit integer lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "i64", into = "i64")]
+pub struct PositiveI64(i64);
+
+impl PositiveI64 {
+    /// Admit a positive signed 64-bit integer.
+    pub const fn new(value: i64) -> Option<Self> {
+        if value > 0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the signed 64-bit integer.
+    pub const fn get(&self) -> i64 {
+        self.0
+    }
+}
+
+impl TryFrom<i64> for PositiveI64 {
+    type Error = &'static str;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("PositiveI64 must be positive")
+    }
+}
+
+impl From<PositiveI64> for i64 {
+    fn from(value: PositiveI64) -> Self {
+        value.get()
+    }
+}
+
 macro_rules! checked_scalar {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*

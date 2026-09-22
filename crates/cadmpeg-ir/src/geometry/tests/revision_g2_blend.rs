@@ -7,7 +7,7 @@ use crate::geometry::{
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Point3;
-use std::num::NonZeroU32;
+use crate::scalar::PositiveI64;
 
 // One value per float field family the construction carries.
 struct Fields {
@@ -74,7 +74,7 @@ fn side(fields: &Fields) -> RollingBallSide {
 // accepts and the only shape the deserializer builds.
 fn stored(fields: &Fields) -> RevisionG2BlendConstructionWire {
     RevisionG2BlendConstructionWire {
-        revision: NonZeroU32::MIN,
+        revision: PositiveI64::new(1).expect("positive revision"),
         leading_parameters: [fields.leading_parameter, 2.0],
         sides: Box::new([side(fields), side(&ADMITTED)]),
         center: curve(),
@@ -156,7 +156,7 @@ fn the_revision_g2_blend_admission_writes_every_scalar_it_admits() {
 }
 
 #[test]
-fn the_revision_g2_blend_refuses_a_non_positive_revision() {
+fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
     let definition = ProceduralSurfaceDefinition::RevisionG2Blend {
         construction: Box::new(
             RevisionG2BlendConstruction::admit(stored(&ADMITTED))
@@ -166,14 +166,29 @@ fn the_revision_g2_blend_refuses_a_non_positive_revision() {
     let value = serde_json::to_value(definition).expect("serialize the definition");
 
     for revision in [0_i64, -1] {
-        assert!(u32::try_from(revision)
-            .ok()
-            .and_then(NonZeroU32::new)
-            .is_none());
+        assert!(PositiveI64::new(revision).is_none());
         let mut invalid = value.clone();
         invalid["construction"]["revision"] = serde_json::json!(revision);
         assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     }
+
+    let mut maximum = stored(&ADMITTED);
+    maximum.revision = PositiveI64::new(i64::MAX).expect("maximum is positive");
+    assert_eq!(
+        RevisionG2BlendConstruction::admit(maximum)
+            .expect("maximum revision is admitted")
+            .revision()
+            .get(),
+        i64::MAX
+    );
+    let mut maximum = value;
+    maximum["construction"]["revision"] = serde_json::json!(i64::MAX);
+    let parsed = serde_json::from_value::<ProceduralSurfaceDefinition>(maximum)
+        .expect("maximum JSON revision is admitted");
+    let ProceduralSurfaceDefinition::RevisionG2Blend { construction } = parsed else {
+        panic!("expected revision G2 blend")
+    };
+    assert_eq!(construction.revision().get(), i64::MAX);
 }
 
 #[test]

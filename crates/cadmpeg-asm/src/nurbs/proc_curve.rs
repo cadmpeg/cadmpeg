@@ -29,7 +29,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::num::NonZeroU32;
+use cadmpeg_ir::scalar::PositiveI64;
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
@@ -2081,9 +2081,7 @@ fn cache_first_curve_context(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<CacheFirstCurveContext> {
-    let revision = u32::try_from(cur.take_long()?)
-        .ok()
-        .and_then(NonZeroU32::new)?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
     // stores a bool-gated curve interval and a closed-form enum. No other value
