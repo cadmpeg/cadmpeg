@@ -4,6 +4,46 @@ use super::{Point2, Point3, Vector3};
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
 
 #[test]
+fn numerical_audit_translation_retains_finite_cancellation() {
+    assert_eq!(
+        Point3::new(-1e308, 0.0, 0.0).translated(Vector3::new(1e308, 0.0, 0.0), 2.0),
+        Point3::new(1e308, 0.0, 0.0)
+    );
+}
+
+#[test]
+fn numerical_audit_dot_retains_finite_cancellation() {
+    assert_eq!(
+        Vector3::new(1e308, 1e308, 0.0).dot(Vector3::new(2.0, -2.0, 0.0)),
+        0.0
+    );
+}
+
+#[test]
+fn numerical_audit_cross_of_parallel_large_vectors_is_zero() {
+    let vector = Vector3::new(1e200, 1e200, 1e200);
+    assert_eq!(vector.cross(vector), Vector3::new(0.0, 0.0, 0.0));
+}
+
+#[test]
+fn numerical_audit_unit_preserves_representable_subnormal_component() {
+    let tiny = f64::from_bits(1);
+    let vector = Vector3::new(1.0, tiny, 0.0);
+    assert_eq!(vector.unit_nonzero().unwrap().y.to_bits(), tiny.to_bits());
+    assert_eq!(vector.unit().unwrap().y.to_bits(), tiny.to_bits());
+}
+
+#[test]
+fn numerical_audit_squared_distance_accumulates_subnormal_squares() {
+    let component = 2.0_f64.powi(-538);
+    let point = Point3::new(component, component, component);
+    assert_eq!(
+        point.distance_squared(Point3::new(0.0, 0.0, 0.0)).to_bits(),
+        1
+    );
+}
+
+#[test]
 fn point_is_finite_rejects_a_nonfinite_coordinate_in_any_slot() {
     assert!(Point3::new(1.0, -2.0, 3.0).is_finite());
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {

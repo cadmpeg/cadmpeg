@@ -142,9 +142,17 @@ impl ScaledValue {
     }
 
     pub(crate) fn quotient(self, denominator: Self) -> Option<f64> {
+        self.quotient_shifted(denominator, 0)
+    }
+
+    /// Divide two scaled values, then apply a power of two without rounding
+    /// either operand into the binary64 range first.
+    pub(crate) fn quotient_shifted(self, denominator: Self, exponent_shift: i32) -> Option<f64> {
         super::scale_power_of_two(
             self.sign * denominator.sign * (self.mantissa / denominator.mantissa),
-            self.exponent.difference(denominator.exponent),
+            self.exponent
+                .difference(denominator.exponent)
+                .checked_add(exponent_shift)?,
         )
     }
 }

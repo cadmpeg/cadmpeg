@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Planar intersection arithmetic with scaled products.
 
-use super::{sum::ExactSignedSum, Point2};
+use super::{
+    sum::{fast_dot, ExactSignedSum},
+    Point2,
+};
 use std::cmp::Ordering;
 
 /// Orientation of three finite points. Returns `None` for nonfinite input.
@@ -288,12 +291,22 @@ pub fn line_projection_parameter(start: Point2, end: Point2, point: Point2) -> O
     }
     let delta = Point2::new(end.u - start.u, end.v - start.v);
     let relative = Point2::new(point.u - start.u, point.v - start.v);
-    let denominator = delta.u * delta.u + delta.v * delta.v;
-    let numerator = relative.u * delta.u + relative.v * delta.v;
-    if denominator.is_finite() && denominator > 0.0 && numerator.is_finite() {
-        let parameter = numerator / denominator;
-        if parameter.is_finite() {
-            return Some(parameter);
+    let denominator = fast_dot(
+        [delta.u, delta.v],
+        [delta.u, delta.v],
+        [delta.u * delta.u, delta.v * delta.v],
+    );
+    let numerator = fast_dot(
+        [relative.u, relative.v],
+        [delta.u, delta.v],
+        [relative.u * delta.u, relative.v * delta.v],
+    );
+    if let (Some(denominator), Some(numerator)) = (denominator, numerator) {
+        if denominator > 0.0 {
+            let parameter = numerator / denominator;
+            if parameter.is_finite() {
+                return Some(parameter);
+            }
         }
     }
     let mut numerator = ExactSignedSum::default();
@@ -323,16 +336,21 @@ pub fn line_line_parameters(a: Point2, b: Point2, c: Point2, d: Point2) -> Optio
     let ac = Point2::new(c.u - a.u, c.v - a.v);
     let positive = ab.u * cd.v;
     let negative = ab.v * cd.u;
-    let denominator = positive - negative;
-    if denominator.is_finite()
-        && denominator.abs() > 4.0 * f64::EPSILON * (positive.abs() + negative.abs())
-    {
-        let parameters = [
-            (ac.u * cd.v - ac.v * cd.u) / denominator,
-            (ac.u * ab.v - ac.v * ab.u) / denominator,
-        ];
-        if parameters.iter().all(|parameter| parameter.is_finite()) {
-            return Some(parameters);
+    let fast_cross = |first: Point2, second: Point2| {
+        fast_dot(
+            [first.u, -first.v],
+            [second.v, second.u],
+            [first.u * second.v, -(first.v * second.u)],
+        )
+    };
+    if let Some(denominator) = fast_cross(ab, cd) {
+        if denominator.abs() > 4.0 * f64::EPSILON * (positive.abs() + negative.abs()) {
+            if let (Some(first), Some(second)) = (fast_cross(ac, cd), fast_cross(ac, ab)) {
+                let parameters = [first / denominator, second / denominator];
+                if parameters.iter().all(|parameter| parameter.is_finite()) {
+                    return Some(parameters);
+                }
+            }
         }
     }
     let cross = |a: Point2, b: Point2, c: Point2, d: Point2| {
@@ -434,6 +452,56 @@ mod tests {
     use std::cmp::Ordering;
 
     use super::{circle_intersections, line_circle_intersections, orientation, Point2};
+
+    #[test]
+    fn numerical_audit_projection_preserves_underflowed_product_ratio() {
+        let expected = 1e-200 / 1e-150;
+        let actual = super::line_projection_parameter(
+            Point2::new(0.0, 0.0),
+            Point2::new(1e-150, 0.0),
+            Point2::new(1e-200, 0.0),
+        )
+        .unwrap();
+        assert!((actual / expected - 1.0).abs() <= 8.0 * f64::EPSILON);
+    }
+
+    #[test]
+    fn numerical_audit_collinear_interior_point_has_zero_segment_distance() {
+        assert_eq!(
+            super::point_segment_distance(
+                Point2::new(1e-200, 0.0),
+                Point2::new(0.0, 0.0),
+                Point2::new(1e-150, 0.0),
+            ),
+            0.0
+        );
+    }
+
+    #[test]
+    fn numerical_audit_closed_segment_contains_interior_point_segment() {
+        let point = Point2::new(1e-200, 0.0);
+        assert!(super::segments_intersect(
+            Point2::new(0.0, 0.0),
+            Point2::new(1e-150, 0.0),
+            point,
+            point,
+            0.0,
+        ));
+    }
+
+    #[test]
+    fn numerical_audit_line_intersection_preserves_underflowed_product_ratio() {
+        let expected = 1e-200 / 1e-150;
+        let actual = super::line_line_parameters(
+            Point2::new(0.0, 0.0),
+            Point2::new(1e-150, 0.0),
+            Point2::new(1e-200, -1e-150),
+            Point2::new(1e-200, 1e-150),
+        )
+        .unwrap();
+        assert!((actual[0] / expected - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert_eq!(actual[1], 0.5);
+    }
 
     fn line_circle_parameters(
         start: Point2,
