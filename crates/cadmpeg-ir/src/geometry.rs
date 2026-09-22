@@ -8,7 +8,10 @@
 
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
-use crate::math::{Point3, Vector3};
+use crate::math::{
+    sum::{fast_dot, ExactSignedSum},
+    Point3, Vector3,
+};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
@@ -590,10 +593,13 @@ pub enum CompositeCurveTransition {
 /// `axis`, then normalized. Degenerate axes fall back to global x.
 pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
     let norm = axis.norm();
-    if !norm.is_finite() || norm == 0.0 {
+    let axis = if norm.is_finite() && norm != 0.0 {
+        Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm)
+    } else if let Some(unit) = axis.unit_nonzero() {
+        unit
+    } else {
         return Vector3::new(1.0, 0.0, 0.0);
-    }
-    let axis = Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm);
+    };
     let basis = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
         Vector3::new(1.0, 0.0, 0.0)
     } else if axis.y.abs() <= axis.z.abs() {
@@ -2241,13 +2247,20 @@ impl HelixCurveConstruction {
         if angle_range[0] > angle_range[1] {
             return Err("helix curve angle_range must be ordered");
         }
-        if [major, minor, axis]
-            .iter()
-            .any(|vector| vector.norm() <= f64::EPSILON)
+        let major_radius = major.norm();
+        let minor_radius = minor.norm();
+        if major_radius <= f64::EPSILON
+            || minor_radius <= f64::EPSILON
+            || axis.norm() <= f64::EPSILON
         {
             return Err("helix curve major, minor, and axis must be non-degenerate");
         }
-        if (major.norm() - minor.norm()).abs() > EPS_HELIX_CURVE_RADIUS {
+        if major.is_finite()
+            && minor.is_finite()
+            && (!major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || (major_radius - minor_radius).abs() > EPS_HELIX_CURVE_RADIUS)
+        {
             return Err("helix curve major and minor radii must agree");
         }
 
@@ -2441,8 +2454,7 @@ impl HelixLineProfile {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(direction: Vector3) -> Result<Self, &'static str> {
         if !direction.is_finite()
-            || direction.x * direction.x + direction.y * direction.y + direction.z * direction.z
-                <= 0.0
+            || (direction.x == 0.0 && direction.y == 0.0 && direction.z == 0.0)
         {
             return Err("helix line profile direction must be finite and non-degenerate");
         }
@@ -5879,7 +5891,9 @@ impl LawExpression {
             Self::TransformVec { vectors, scale, .. } => {
                 scale.is_finite() && vectors.iter().all(Vector3::is_finite)
             }
-            Self::Edge { parameters, .. } => parameters.iter().all(|value| value.is_finite()),
+            Self::Edge { curve, parameters } => {
+                curve.values_are_finite() && parameters.iter().all(|value| value.is_finite())
+            }
             Self::Spline {
                 knots,
                 controls,
@@ -6407,23 +6421,34 @@ impl IntcurveSupportSide {
             return Some(pcurve_range[1]);
         }
         let offset = parameter - solved_parameter_range[0];
-        let fraction = if solved_span.is_finite() && offset.is_finite() {
-            offset / solved_span
-        } else {
-            // Halving before subtraction retains finite opposite-sign endpoints.
-            (parameter * 0.5 - solved_parameter_range[0] * 0.5)
-                / (solved_parameter_range[1] * 0.5 - solved_parameter_range[0] * 0.5)
-        };
-        if !fraction.is_finite() {
-            return None;
+        let mapped_span = pcurve_range[1] - pcurve_range[0];
+        if solved_span.is_finite() && offset.is_finite() && mapped_span.is_finite() {
+            let fraction = offset / solved_span;
+            let advance = fraction * mapped_span;
+            if fraction.is_normal() && advance.is_normal() {
+                if let Some(mapped) = fast_dot(
+                    [pcurve_range[0], advance],
+                    [1.0, 1.0],
+                    [pcurve_range[0], advance],
+                ) {
+                    return Some(mapped);
+                }
+            }
         }
-        let mapped = pcurve_range[0] + fraction * (pcurve_range[1] - pcurve_range[0]);
-        if mapped.is_finite() {
-            Some(mapped)
-        } else {
-            let mapped = (1.0 - fraction) * pcurve_range[0] + fraction * pcurve_range[1];
-            mapped.is_finite().then_some(mapped)
-        }
+        // Evaluate the affine numerator before division. A tiny fraction can
+        // underflow even when the final mapped parameter is representable.
+        let mut numerator = ExactSignedSum::default();
+        numerator.add_product(pcurve_range[0], solved_parameter_range[1]);
+        numerator.add_product(-pcurve_range[0], parameter);
+        numerator.add_product(pcurve_range[1], parameter);
+        numerator.add_product(-pcurve_range[1], solved_parameter_range[0]);
+        let mut denominator = ExactSignedSum::default();
+        denominator.add_product(solved_parameter_range[1], 1.0);
+        denominator.add_product(-solved_parameter_range[0], 1.0);
+        let denominator = denominator.finish()?;
+        numerator
+            .finish()
+            .map_or(Some(0.0), |value| value.quotient(denominator))
     }
 }
 

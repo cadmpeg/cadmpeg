@@ -5,6 +5,20 @@ use crate::geometry::{
 use crate::test_support::nurbs::pcurve;
 
 #[test]
+fn numerical_audit_identity_map_keeps_a_small_finite_parameter() {
+    let side = IntcurveSupportSide {
+        surface: None,
+        pcurve: Some(SupportPcurve::new(
+            PcurveGeometry::Nurbs { nurbs: pcurve() },
+            Some(DirectedParameterRange::new([0.0, 1e308]).unwrap()),
+        )),
+    };
+    let parameter = 1e-308;
+    let mapped = side.pcurve_parameter([0.0, 1e308], parameter).unwrap();
+    assert!((mapped / parameter - 1.0).abs() <= 8.0 * f64::EPSILON);
+}
+
+#[test]
 fn support_mapping_preserves_decreasing_parameter_direction() {
     for endpoints in [[0.0, 0.0], [0.0, f64::NAN], [f64::INFINITY, 0.0]] {
         assert!(DirectedParameterRange::new(endpoints).is_err());
