@@ -6813,7 +6813,7 @@ fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Opt
         }
         for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
             let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-            samples.push(lower + fraction * (upper - lower));
+            samples.push(cadmpeg_ir::math::interpolate(lower, upper, fraction)?);
         }
     }
     (!samples.is_empty()).then_some(samples)
@@ -6834,8 +6834,8 @@ fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> O
                 let u_fraction = u as f64 / (side - 1) as f64;
                 let v_fraction = v as f64 / (side - 1) as f64;
                 grid.push(Point2::new(
-                    domains[0][0] + u_fraction * (domains[0][1] - domains[0][0]),
-                    domains[1][0] + v_fraction * (domains[1][1] - domains[1][0]),
+                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?,
+                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?,
                 ));
             }
         }
@@ -6849,15 +6849,10 @@ fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> O
     )
 }
 
-fn nurbs_surface_point_distance_squared(
-    surface: &NurbsSurface,
-    point: Point3,
-    uv: Point2,
-) -> Option<f64> {
+fn nurbs_surface_point_distance(surface: &NurbsSurface, point: Point3, uv: Point2) -> Option<f64> {
     let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v)?;
-    let distance = position.vector_from(point);
-    let squared = distance.dot(distance);
-    squared.is_finite().then_some(squared)
+    let distance = position.distance(point);
+    distance.is_finite().then_some(distance)
 }
 
 fn refine_nurbs_surface_point(
@@ -6877,7 +6872,7 @@ fn refine_nurbs_surface_point(
             break;
         };
         let step = Point2::new(u, v);
-        let current = nurbs_surface_point_distance_squared(surface, point, parameters)?;
+        let current = nurbs_surface_point_distance(surface, point, parameters)?;
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
@@ -6885,7 +6880,7 @@ fn refine_nurbs_surface_point(
                 (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
                 (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
             );
-            let distance = nurbs_surface_point_distance_squared(surface, point, candidate)?;
+            let distance = nurbs_surface_point_distance(surface, point, candidate)?;
             if distance <= current {
                 accepted = Some((candidate, distance));
                 break;
@@ -6896,11 +6891,11 @@ fn refine_nurbs_surface_point(
             break;
         };
         parameters = candidate;
-        if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2) {
+        if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE {
             return Some(distance);
         }
     }
-    nurbs_surface_point_distance_squared(surface, point, parameters)
+    nurbs_surface_point_distance(surface, point, parameters)
 }
 
 fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Option<f64> {
@@ -6931,7 +6926,7 @@ fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool>
         }
     }
     let distance = nurbs_surface_witness_distance(surface, point)?;
-    (distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2)).then_some(true)
+    (distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE).then_some(true)
 }
 
 fn invariant_face_carrier_bindings(
@@ -9808,7 +9803,7 @@ mod circle_axis_tests {
         .expect("anisotropic nurbs surface");
         let residual = super::nurbs_surface_witness_distance(&surface, Point3::new(0.3, 0.4, 0.))
             .expect("witness distance for a point on the surface");
-        assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2));
+        assert!(residual <= super::NURBS_SURFACE_MEMBERSHIP_TOLERANCE);
     }
 }
 

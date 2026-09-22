@@ -19,6 +19,9 @@ use cadmpeg_ir::eval::{
     model_surface_partials_by_id_with_budget, model_surface_point_by_id_with_budget,
     pcurve_tangent, pcurve_uv, surface_point_with_budget,
 };
+use cadmpeg_ir::geometry::nurbs::bezier::{
+    homogeneous_spans, positive_controls, HomogeneousBezierSpan,
+};
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve},
     pcurve::PcurveGeometry,
@@ -2245,7 +2248,7 @@ pub(super) fn closest_pcurve_parameters(
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
-    spans: Vec<BezierSpan<DIMENSION>>,
+    spans: Vec<HomogeneousBezierSpan<DIMENSION>>,
     coordinate_tolerance: f64,
 }
 
@@ -2299,7 +2302,7 @@ fn homogeneous_pcurve_spans(
     if controls.iter().flatten().any(|value| !value.is_finite()) {
         return None;
     }
-    let spans = bezier_spans(degree, knots, controls)?;
+    let spans = homogeneous_spans(degree, knots, controls)?;
     Some(HomogeneousCurveSpans {
         spans,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
@@ -2513,6 +2516,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
     {
         parameters.push(span.domain[1]);
     }
+    let domain = span.domain;
     let mut intervals = vec![span];
     while let Some(span) = intervals.pop() {
         if !geometry_budget.charge() {
@@ -2521,7 +2525,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         if scalar_bernstein_sign_variations(&span.controls) == 0 {
             continue;
         }
-        let middle = span.domain[0] + (span.domain[1] - span.domain[0]) * 0.5;
+        let middle = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)?;
         if middle == span.domain[0] || middle == span.domain[1] {
             let parameter =
                 [span.domain[0], span.domain[1]]
@@ -2547,7 +2551,11 @@ pub(super) fn scalar_bezier_roots_with_budget(
     }
     parameters.sort_by(f64::total_cmp);
     parameters.dedup_by(|first, second| {
-        (*first - *second).abs() <= 64.0 * f64::EPSILON * first.abs().max(second.abs()).max(1.0)
+        let first = cadmpeg_ir::math::parameter_fraction(*first, domain[0], domain[1]);
+        let second = cadmpeg_ir::math::parameter_fraction(*second, domain[0], domain[1]);
+        first
+            .zip(second)
+            .is_some_and(|(first, second)| (first - second).abs() <= 64.0 * f64::EPSILON)
     });
     Some(ScalarBezierRoots::Isolated(parameters))
 }
@@ -2613,88 +2621,6 @@ fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f6
             .collect();
     }
     values[0]
-}
-
-#[derive(Clone)]
-pub(in crate::decode) struct BezierSpan<const DIMENSION: usize> {
-    pub(super) domain: [f64; 2],
-    pub(super) controls: Vec<[f64; DIMENSION]>,
-}
-
-pub(super) fn bezier_spans<const DIMENSION: usize>(
-    degree: usize,
-    knots: &[f64],
-    mut controls: Vec<[f64; DIMENSION]>,
-) -> Option<Vec<BezierSpan<DIMENSION>>> {
-    let mut knots = knots.to_vec();
-    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
-    let mut internal = knots[degree + 1..controls.len()]
-        .iter()
-        .copied()
-        .filter(|knot| domain[0] < *knot && *knot < domain[1])
-        .collect::<Vec<_>>();
-    internal.sort_by(f64::total_cmp);
-    internal.dedup();
-    for knot in internal {
-        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            insert_homogeneous_curve_knot(degree, &mut knots, &mut controls, knot)?;
-        }
-    }
-    let mut boundaries = knots[degree..=controls.len()].to_vec();
-    boundaries.sort_by(f64::total_cmp);
-    boundaries.dedup();
-    let spans = boundaries
-        .windows(2)
-        .enumerate()
-        .filter_map(|(index, domain)| {
-            (domain[0] < domain[1]).then(|| {
-                let start = index.checked_mul(degree)?;
-                Some(BezierSpan {
-                    domain: [domain[0], domain[1]],
-                    controls: controls.get(start..=start + degree)?.to_vec(),
-                })
-            })?
-        })
-        .collect::<Vec<_>>();
-    (!spans.is_empty()).then_some(spans)
-}
-
-fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
-    degree: usize,
-    knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; DIMENSION]>,
-    knot: f64,
-) -> Option<()> {
-    let count = controls.len();
-    let span = knots
-        .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])?;
-    let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
-    if multiplicity >= degree {
-        return Some(());
-    }
-    let inserted_count = count.checked_add(1)?;
-    let mut inserted = alloc_filled(
-        inserted_count,
-        [0.0; DIMENSION],
-        "nx inserted homogeneous curve controls",
-    )
-    .ok()?;
-    inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
-    inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
-    for index in span - degree + 1..=span - multiplicity {
-        let denominator = knots[index + degree] - knots[index];
-        if !denominator.is_finite() || denominator <= 0.0 {
-            return None;
-        }
-        let alpha = (knot - knots[index]) / denominator;
-        inserted[index] = std::array::from_fn(|axis| {
-            alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
-        });
-    }
-    knots.insert(span + 1, knot);
-    *controls = inserted;
-    Some(())
 }
 
 pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
@@ -3883,24 +3809,20 @@ fn closest_nurbs_curve_parameter_with_budget(
         .flat_map(|control| [control.x, control.y, control.z])
         .chain([point.x, point.y, point.z])
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let controls = curve
+    let residuals = curve
         .control_points()
         .iter()
-        .zip(weights)
-        .map(|(control, weight)| {
-            [
-                weight * (control.x - point.x),
-                weight * (control.y - point.y),
-                weight * (control.z - point.z),
-                weight,
-            ]
+        .map(|control| {
+            Point3::new(
+                control.x - point.x,
+                control.y - point.y,
+                control.z - point.z,
+            )
         })
         .collect::<Vec<_>>();
-    if controls.iter().flatten().any(|value| !value.is_finite()) {
-        return None;
-    }
+    let controls = positive_controls(&residuals, &weights)?;
     let homogeneous = HomogeneousCurveSpans {
-        spans: bezier_spans(degree, curve.knots(), controls)?,
+        spans: homogeneous_spans(degree, curve.knots(), controls)?,
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let parameters = closest_parameter_candidates(

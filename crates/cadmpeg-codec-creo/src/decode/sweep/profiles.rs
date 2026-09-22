@@ -651,23 +651,16 @@ pub(in super::super) fn line_arc_intersect(
         return false;
     }
     let parameter_tolerance = tolerance / length;
-    cadmpeg_ir::math::planar::line_circle_parameters(
+    cadmpeg_ir::math::planar::line_circle_intersections(
         start,
         end,
         Point2::new(arc.0[0], arc.0[1]),
         arc.1,
     )
     .is_some_and(|parameters| {
-        parameters.into_iter().any(|t| {
+        parameters.into_iter().any(|(t, point)| {
             (-parameter_tolerance..=1.0 + parameter_tolerance).contains(&t)
-                && point_on_profile_arc(
-                    [
-                        start.u + t * (end.u - start.u),
-                        start.v + t * (end.v - start.v),
-                    ],
-                    arc,
-                    tolerance,
-                )
+                && point_on_profile_arc([point.u, point.v], arc, tolerance)
         })
     })
 }

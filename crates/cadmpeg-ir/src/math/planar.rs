@@ -92,14 +92,16 @@ fn half_chord(radius: f64, perpendicular: f64) -> Option<f64> {
     Some(difference.sqrt() * (radius + perpendicular).sqrt())
 }
 
-/// Parameters on the infinite line `start + t * (end - start)` at a circle.
-/// A tangent returns the same parameter twice. Invalid, degenerate and disjoint inputs return `None`.
-pub fn line_circle_parameters(
+/// Parameters and points where an infinite line intersects a circle.
+/// Points are constructed in the circle frame, independently of rounded line
+/// parameters. A tangent returns the same pair twice. Invalid, degenerate,
+/// disjoint or unrepresentable inputs return `None`.
+pub fn line_circle_intersections(
     start: Point2,
     end: Point2,
     center: Point2,
     radius: f64,
-) -> Option<[f64; 2]> {
+) -> Option<[(f64, Point2); 2]> {
     if !start.is_finite()
         || !end.is_finite()
         || !center.is_finite()
@@ -141,14 +143,12 @@ pub fn line_circle_parameters(
     }
     let perpendicular = determinant
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(segment))?
-        .abs();
+        .map_or(Some(0.0), |value| value.quotient(segment))?;
     // Only radial quantities contribute to this comparison. A distant line origin
     // must not widen the circle into a false tangent.
-    let radial_scale = radius.max(perpendicular);
+    let radial_scale = radius.max(perpendicular.abs());
     let normalized_radius = radius / radial_scale;
-    let perpendicular = perpendicular / radial_scale;
-    let half_chord = half_chord(normalized_radius, perpendicular)?;
+    let half_chord = half_chord(normalized_radius, perpendicular.abs() / radial_scale)?;
     let parameter = |sign: f64| {
         let mut numerator = ExactSignedSum::default();
         for (coordinate, component) in [
@@ -164,7 +164,99 @@ pub fn line_circle_parameters(
             .finish()
             .map_or(Some(0.0), |value| value.quotient(denominator))
     };
-    Some([parameter(-1.0)?, parameter(1.0)?])
+    let intersection = |sign| {
+        let along = sign * half_chord * radial_scale;
+        let point = Point2::new(
+            super::sum::finite_dot(
+                [1.0, -perpendicular, along],
+                [center.u, direction.v / length, direction.u / length],
+            )?,
+            super::sum::finite_dot(
+                [1.0, perpendicular, along],
+                [center.v, direction.u / length, direction.v / length],
+            )?,
+        );
+        Some((parameter(sign)?, point))
+    };
+    Some([intersection(-1.0)?, intersection(1.0)?])
+}
+
+/// Projection parameter on a nondegenerate infinite line. Exact products retain
+/// the quotient when direction differences or their squares exceed f64 range.
+pub fn line_projection_parameter(start: Point2, end: Point2, point: Point2) -> Option<f64> {
+    if !start.is_finite() || !end.is_finite() || !point.is_finite() {
+        return None;
+    }
+    let delta = Point2::new(end.u - start.u, end.v - start.v);
+    let relative = Point2::new(point.u - start.u, point.v - start.v);
+    let denominator = delta.u * delta.u + delta.v * delta.v;
+    let numerator = relative.u * delta.u + relative.v * delta.v;
+    if denominator.is_finite() && denominator > 0.0 && numerator.is_finite() {
+        let parameter = numerator / denominator;
+        if parameter.is_finite() {
+            return Some(parameter);
+        }
+    }
+    let mut numerator = ExactSignedSum::default();
+    let mut denominator = ExactSignedSum::default();
+    for (start, end, point) in [(start.u, end.u, point.u), (start.v, end.v, point.v)] {
+        for (a, b) in [(point, end), (-point, start), (-start, end), (start, start)] {
+            numerator.add_product(a, b);
+        }
+        denominator.add_product(start, start);
+        denominator.add_product(end, end);
+        denominator.add_factors([-2.0, start, end]);
+    }
+    let denominator = denominator.finish()?;
+    numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(denominator))
+}
+
+/// Parameters at the intersection of two finite nonparallel infinite lines.
+/// Parallel, degenerate or unrepresentable intersections return `None`.
+pub fn line_line_parameters(a: Point2, b: Point2, c: Point2, d: Point2) -> Option<[f64; 2]> {
+    if [a, b, c, d].iter().any(|point| !point.is_finite()) {
+        return None;
+    }
+    let ab = Point2::new(b.u - a.u, b.v - a.v);
+    let cd = Point2::new(d.u - c.u, d.v - c.v);
+    let ac = Point2::new(c.u - a.u, c.v - a.v);
+    let positive = ab.u * cd.v;
+    let negative = ab.v * cd.u;
+    let denominator = positive - negative;
+    if denominator.is_finite()
+        && denominator.abs() > 4.0 * f64::EPSILON * (positive.abs() + negative.abs())
+    {
+        let parameters = [
+            (ac.u * cd.v - ac.v * cd.u) / denominator,
+            (ac.u * ab.v - ac.v * ab.u) / denominator,
+        ];
+        if parameters.iter().all(|parameter| parameter.is_finite()) {
+            return Some(parameters);
+        }
+    }
+    let cross = |a: Point2, b: Point2, c: Point2, d: Point2| {
+        let mut sum = ExactSignedSum::default();
+        for (x, y) in [
+            (b.u, d.v),
+            (-b.u, c.v),
+            (-a.u, d.v),
+            (a.u, c.v),
+            (-b.v, d.u),
+            (b.v, c.u),
+            (a.v, d.u),
+            (-a.v, c.u),
+        ] {
+            sum.add_product(x, y);
+        }
+        sum.finish()
+    };
+    let denominator = cross(a, b, c, d)?;
+    Some([
+        cross(a, c, c, d).map_or(Some(0.0), |value| value.quotient(denominator))?,
+        cross(a, c, a, b).map_or(Some(0.0), |value| value.quotient(denominator))?,
+    ])
 }
 
 /// The finite intersections of two positive-radius circles.
@@ -242,7 +334,17 @@ pub fn circle_intersections(
 mod tests {
     use std::cmp::Ordering;
 
-    use super::{circle_intersections, line_circle_parameters, orientation, Point2};
+    use super::{circle_intersections, line_circle_intersections, orientation, Point2};
+
+    fn line_circle_parameters(
+        start: Point2,
+        end: Point2,
+        center: Point2,
+        radius: f64,
+    ) -> Option<[f64; 2]> {
+        line_circle_intersections(start, end, center, radius)
+            .map(|hits| hits.map(|(parameter, _)| parameter))
+    }
     #[test]
     fn distant_diagonal_line_preserves_exact_circle_incidence() {
         const RADIUS: f64 = 1e-10;
@@ -427,6 +529,30 @@ mod tests {
                     assert!((point.v.abs() - 1.0).abs() <= 8.0 * f64::EPSILON);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn numerical_0922b_line_circle_points_preserve_distant_origin() {
+        for extent in [1.0, 1e4, 1e8, 1e200] {
+            let hits = line_circle_intersections(
+                Point2::new(-extent, 0.),
+                Point2::new(extent, 0.),
+                Point2::new(0., 0.),
+                0.001,
+            )
+            .unwrap();
+            assert_eq!(
+                hits.map(|(_, point)| point),
+                [Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
+            );
+            assert!(line_circle_intersections(
+                Point2::new(-extent, 0.002),
+                Point2::new(extent, 0.002),
+                Point2::new(0., 0.),
+                0.001
+            )
+            .is_none());
         }
     }
 }

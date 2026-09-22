@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
 use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
 use cadmpeg_test_support::edit;
 
@@ -10,9 +11,8 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
 
 use crate::decode::blend::{
-    bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
-    homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
-    surface_offset_lineage,
+    closest_nurbs_curve_parameter, closest_pcurve_parameters, homogeneous_residual_distance,
+    real_polynomial_roots, surface_contact_direction, surface_offset_lineage,
 };
 use crate::decode::build::{
     rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
@@ -1597,7 +1597,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         .zip(weights)
         .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
         .collect();
-    let spans = bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
+    let spans = homogeneous_spans(2, &knots, controls).expect("valid Bézier extraction");
 
     assert_eq!(spans.len(), 3);
     for span in spans {

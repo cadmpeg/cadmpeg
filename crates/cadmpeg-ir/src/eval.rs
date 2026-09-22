@@ -520,7 +520,7 @@ fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 2]) -> Opti
         if !weight.is_finite() || weight <= 0.0 {
             return None;
         }
-        let mut squared_residual = 0.0;
+        let mut residual_norm = 0.0_f64;
         for (axis, chord_coordinates) in [
             [chord[0].x, chord[1].x],
             [chord[0].y, chord[1].y],
@@ -540,10 +540,10 @@ fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 2]) -> Opti
             if !residual.is_finite() {
                 return None;
             }
-            squared_residual += residual * residual;
+            residual_norm = residual_norm.hypot(residual);
             coordinate_scale = coordinate_scale.max((coordinate / weight).abs());
         }
-        bound = bound.max(squared_residual.sqrt());
+        bound = bound.max(residual_norm);
     }
     let rounding_margin = 256.0 * f64::EPSILON * coordinate_scale.max(bound);
     (bound.is_finite() && rounding_margin.is_finite()).then_some(bound + rounding_margin)

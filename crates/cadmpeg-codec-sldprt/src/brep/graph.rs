@@ -3173,8 +3173,8 @@ where
     F: FnMut(f64) -> Option<f64>,
 {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let mut a = right - ratio * (right - left);
-    let mut b = left + ratio * (right - left);
+    let mut a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?;
+    let mut b = cadmpeg_ir::math::interpolate(left, right, ratio)?;
     let mut da = objective(a)?;
     let mut db = objective(b)?;
     for _ in 0..80 {
@@ -3182,17 +3182,17 @@ where
             right = b;
             b = a;
             db = da;
-            a = right - ratio * (right - left);
+            a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?;
             da = objective(a)?;
         } else {
             left = a;
             a = b;
             da = db;
-            b = left + ratio * (right - left);
+            b = cadmpeg_ir::math::interpolate(left, right, ratio)?;
             db = objective(b)?;
         }
     }
-    let parameter = (left + right) * 0.5;
+    let parameter = cadmpeg_ir::math::interpolate(left, right, 0.5)?;
     Some((parameter, objective(parameter)?))
 }
 
@@ -3214,14 +3214,13 @@ where
         if start >= end {
             continue;
         }
-        let step = (end - start) / INVERSE_SAMPLE_COUNT as f64;
         let mut samples = Vec::with_capacity(INVERSE_SAMPLE_COUNT + 1);
         for index in 0..=INVERSE_SAMPLE_COUNT {
-            let parameter = if index == INVERSE_SAMPLE_COUNT {
-                end
-            } else {
-                start + step * index as f64
-            };
+            let parameter = cadmpeg_ir::math::interpolate(
+                start,
+                end,
+                index as f64 / INVERSE_SAMPLE_COUNT as f64,
+            )?;
             samples.push((parameter, objective(parameter)?));
         }
         candidates.extend(samples.iter().copied());
@@ -3653,59 +3652,85 @@ fn derive_spherical_pcurves(
         let center = circle_curve.center().get();
         let axis = circle_curve.axis();
         let circle_radius = circle_curve.radius().get();
-        let axis_dot = axis.x * v_reference.x + axis.y * v_reference.y + axis.z * v_reference.z;
-        let geometry = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
-            let d = [
-                center.x - sphere_center.x,
-                center.y - sphere_center.y,
-                center.z - sphere_center.z,
-            ];
-            let height = d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z;
-            if ((radius * radius - height * height).max(0.0).sqrt() - circle_radius.abs()).abs()
-                > EPS_CIRCLE_RADIUS_MATCH
-            {
-                continue;
-            }
+        let axis_dot = axis.dot(v_reference);
+        let reference = circle_curve.ref_direction();
+        let tangent = v_reference.cross(u_reference);
+        let offset = center.vector_from(sphere_center);
+        // Allow rounding of the frame projections as well as the existing
+        // absolute carrier fit tolerance; never form squared radii.
+        let fit_tolerance = EPS_CIRCLE_RADIUS_MATCH + 64.0 * f64::EPSILON * radius;
+        let (origin, direction) = if axis_dot.abs() > 1.0 - EPS_AXIS_ALIGNMENT {
+            let height = offset.dot(v_reference);
+            let transverse = cadmpeg_ir::math::Vector3::new(
+                offset.x - height * v_reference.x,
+                offset.y - height * v_reference.y,
+                offset.z - height * v_reference.z,
+            );
             let Some(latitude) = sphere_latitude(height, radius) else {
                 continue;
             };
-            PcurveGeometry::Line(
-                match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    cadmpeg_ir::math::Point2::new(0.0, latitude),
-                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
+            let sine = (height / radius).clamp(-1.0, 1.0);
+            let section_radius = radius * ((1.0 - sine.abs()) * (1.0 + sine.abs())).sqrt();
+            if transverse.norm() > fit_tolerance
+                || (section_radius - circle_radius).abs() > fit_tolerance
+            {
+                continue;
+            }
+            let phase = reference.dot(tangent).atan2(reference.dot(u_reference));
+            (
+                cadmpeg_ir::math::Point2::new(phase, latitude),
+                cadmpeg_ir::math::Point2::new(axis_dot.signum(), 0.0),
             )
         } else if axis_dot.abs() < EPS_AXIS_ALIGNMENT
-            && (circle_radius.abs() - radius.abs()).abs() < EPS_CIRCLE_RADIUS_MATCH
+            && (circle_radius - radius).abs() <= fit_tolerance
+            && offset.norm() <= fit_tolerance
         {
-            let equator = cadmpeg_ir::math::Vector3::new(
-                axis.y * v_reference.z - axis.z * v_reference.y,
-                axis.z * v_reference.x - axis.x * v_reference.z,
-                axis.x * v_reference.y - axis.y * v_reference.x,
-            );
-            let tangent = cadmpeg_ir::math::Vector3::new(
-                v_reference.y * u_reference.z - v_reference.z * u_reference.y,
-                v_reference.z * u_reference.x - v_reference.x * u_reference.z,
-                v_reference.x * u_reference.y - v_reference.y * u_reference.x,
-            );
-            let u = (equator.x * tangent.x + equator.y * tangent.y + equator.z * tangent.z).atan2(
-                equator.x * u_reference.x + equator.y * u_reference.y + equator.z * u_reference.z,
-            );
-            PcurveGeometry::Line(
-                match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    cadmpeg_ir::math::Point2::new(u, 0.0),
-                    cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
+            // With equator = sphere_axis × circle_axis, increasing latitude
+            // follows the circle's positive orientation. Its reference fixes
+            // the initial latitude, including a reference at either pole.
+            let Some(equator) = v_reference.cross(axis).unit_nonzero() else {
+                continue;
+            };
+            let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));
+            let phase = reference.dot(v_reference).atan2(reference.dot(equator));
+            (
+                cadmpeg_ir::math::Point2::new(longitude, phase),
+                cadmpeg_ir::math::Point2::new(0.0, 1.0),
             )
         } else {
             continue;
         };
+        let Ok(line) = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) else {
+            continue;
+        };
+        let geometry = PcurveGeometry::Line(line);
+        // Verify both frame axes and their opposite points before assigning a
+        // derived support relation. Near-aligned frames still need a physical fit.
+        let fits = [
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            -std::f64::consts::FRAC_PI_2,
+        ]
+        .into_iter()
+        .all(|parameter| {
+            let Some(uv) = cadmpeg_ir::eval::pcurve_uv(&geometry, parameter) else {
+                return false;
+            };
+            let Some(lifted) = surface_point(&surface.geometry, uv.u, uv.v) else {
+                return false;
+            };
+            let Some(curve_point) = cadmpeg_ir::eval::curve_point(
+                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve.clone())),
+                parameter,
+            ) else {
+                return false;
+            };
+            lifted.distance(curve_point) <= fit_tolerance
+        });
+        if !fits {
+            continue;
+        }
         let id = PcurveId::compose(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key()),

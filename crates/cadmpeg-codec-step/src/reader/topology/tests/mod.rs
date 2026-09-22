@@ -4,3 +4,5 @@ pub(crate) mod faces;
 pub(crate) mod sheets;
 pub(crate) mod shells;
 mod wires;
+
+mod numerical_range;

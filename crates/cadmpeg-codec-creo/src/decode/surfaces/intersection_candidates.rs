@@ -3,7 +3,7 @@
 
 use crate::vecmath::normalize;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::math::{planar::line_circle_parameters, Point2, Point3, Vector3};
+use cadmpeg_ir::math::{planar::line_circle_intersections, Point2, Point3, Vector3};
 
 use crate::decode::analytic::equations::{circular_cone, CarrierEquation};
 use crate::vecmath::{cross, dot};
@@ -565,12 +565,13 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
         return Vec::new();
     }
     let radial_origin = cone.radius() / scale;
-    let Some(parameters) = line_circle_parameters(
+    let Some(parameters) = line_circle_intersections(
         Point2::new(radial_origin, 0.0),
         Point2::new(radial_origin + slope, 1.0),
         Point2::new(0.0, sphere_axial / scale),
         sphere.radius / scale,
-    ) else {
+    )
+    .map(|hits| hits.map(|(parameter, _)| parameter)) else {
         return Vec::new();
     };
     let Some(reference) = normalize(cone.ref_direction()) else {
@@ -654,12 +655,13 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
     let mut parameters = Vec::<f64>::new();
     for radial_sense in [-1.0, 1.0] {
         let radial_origin = radial_sense * cone.radius() / scale;
-        let Some(roots) = line_circle_parameters(
+        let Some(roots) = line_circle_intersections(
             Point2::new(radial_origin, 0.0),
             Point2::new(radial_origin + radial_sense * slope, 1.0),
             Point2::new(torus.major_radius / scale, torus_axial / scale),
             torus.minor_radius / scale,
-        ) else {
+        )
+        .map(|hits| hits.map(|(parameter, _)| parameter)) else {
             continue;
         };
         for root in roots {

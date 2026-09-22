@@ -6,11 +6,11 @@ use cadmpeg_core::decode::alloc_filled;
 
 /// One nonempty knot span and its homogeneous Bezier control polygon.
 #[derive(Clone, Debug)]
-pub struct HomogeneousBezierSpan {
+pub struct HomogeneousBezierSpan<const DIMENSION: usize = 4> {
     /// The span's original parameter interval.
     pub domain: [f64; 2],
-    /// Ordered `(w*x, w*y, w*z, w)` controls.
-    pub controls: Vec<[f64; 4]>,
+    /// Weighted coordinates followed by their weight, such as `(w*x, w*y, w*z, w)`.
+    pub controls: Vec<[f64; DIMENSION]>,
 }
 
 /// Form a positive-weight homogeneous polygon without common-scale overflow.
@@ -47,10 +47,10 @@ pub fn positive_controls(points: &[crate::math::Point3], weights: &[f64]) -> Opt
         .collect()
 }
 
-fn insert_knot(
+fn insert_knot<const DIMENSION: usize>(
     degree: usize,
     knots: &mut Vec<f64>,
-    controls: &mut Vec<[f64; 4]>,
+    controls: &mut Vec<[f64; DIMENSION]>,
     value: f64,
 ) -> Option<()> {
     let last = controls.len().checked_sub(1)?;
@@ -63,18 +63,14 @@ fn insert_knot(
     }
     let mut inserted = alloc_filled(
         controls.len().checked_add(1)?,
-        [0.0; 4],
+        [0.0; DIMENSION],
         "Bezier knot insertion",
     )
     .ok()?;
     inserted[..=first].copy_from_slice(&controls[..=first]);
     inserted[tail + 1..].copy_from_slice(&controls[tail..]);
     for index in first + 1..=tail {
-        let width = knots[index + degree] - knots[index];
-        if !width.is_finite() || width <= 0.0 {
-            return None;
-        }
-        let alpha = (value - knots[index]) / width;
+        let alpha = crate::math::parameter_fraction(value, knots[index], knots[index + degree])?;
         inserted[index] = std::array::from_fn(|axis| {
             (1.0 - alpha) * controls[index - 1][axis] + alpha * controls[index][axis]
         });
@@ -88,11 +84,11 @@ fn insert_knot(
 ///
 /// Knot multiplicity controls the control-point index of each span. A full
 /// internal multiplicity starts a new polygon without sharing an endpoint.
-pub fn homogeneous_spans(
+pub fn homogeneous_spans<const DIMENSION: usize>(
     degree: usize,
     knots: &[f64],
-    mut controls: Vec<[f64; 4]>,
-) -> Option<Vec<HomogeneousBezierSpan>> {
+    mut controls: Vec<[f64; DIMENSION]>,
+) -> Option<Vec<HomogeneousBezierSpan<DIMENSION>>> {
     let count = controls.len();
     if degree >= count
         || knots.len() != count.checked_add(degree)?.checked_add(1)?
@@ -254,6 +250,29 @@ mod tests {
             let b = [[0., 2.0 * w, 0., w], [w, 2.0 * w, 0., w]];
             assert_eq!(boundaries_within_resolution(&a, &b, 0.001), Some(false));
             assert_eq!(boundaries_within_resolution(&a, &a, 0.0), Some(true));
+        }
+    }
+
+    #[test]
+    fn numerical_0922b_bezier_insertion_preserves_wide_knot_units() {
+        let controls = vec![
+            [0., 0., 0., 1.],
+            [1., 0., 0., 1.],
+            [1., 1., 0., 1.],
+            [2., 1., 0., 1.],
+        ];
+        let expected =
+            homogeneous_spans(2, &[-1., -1., -1., 0., 1., 1., 1.], controls.clone()).unwrap();
+        let actual = homogeneous_spans(
+            2,
+            &[-1e308, -1e308, -1e308, 0., 1e308, 1e308, 1e308],
+            controls,
+        )
+        .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert_eq!(actual.controls, expected.controls);
+            assert_eq!(actual.domain.map(|t| t / 1e308), expected.domain);
         }
     }
 }

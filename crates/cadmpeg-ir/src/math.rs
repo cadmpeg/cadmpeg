@@ -332,6 +332,33 @@ pub fn interpolate(start: f64, end: f64, fraction: f64) -> Option<f64> {
     sum::finite_dot([1.0 - fraction, fraction], [start, end])
 }
 
+/// The finite fraction `(parameter - start) / (end - start)`.
+/// Exact differences retain finite quotients across overflowing widths. Fractions
+/// outside `[0, 1]` are retained for exterior knots of unclamped curves.
+pub fn parameter_fraction(parameter: f64, start: f64, end: f64) -> Option<f64> {
+    if ![parameter, start, end].into_iter().all(f64::is_finite) || start == end {
+        return None;
+    }
+    let numerator = parameter - start;
+    let denominator = end - start;
+    if numerator.is_finite() && denominator.is_finite() {
+        let fraction = numerator / denominator;
+        if fraction.is_finite() {
+            return Some(fraction);
+        }
+    }
+    let mut numerator = sum::ExactSignedSum::default();
+    numerator.add_product(parameter, 1.0);
+    numerator.add_product(start, -1.0);
+    let mut denominator = sum::ExactSignedSum::default();
+    denominator.add_product(end, 1.0);
+    denominator.add_product(start, -1.0);
+    let denominator = denominator.finish()?;
+    numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(denominator))
+}
+
 /// Map a finite parameter into the half-open finite interval `[start, end)`.
 /// A period wider than f64's range is evaluated in a half-scale chart.
 pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {

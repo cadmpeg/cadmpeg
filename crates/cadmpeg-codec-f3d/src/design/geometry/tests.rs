@@ -1215,3 +1215,72 @@ fn disparate_segment_and_point_scales_preserve_distance() {
     .unwrap()
     .is_empty());
 }
+
+const LARGE_LINE_TOLERANCE: f64 = 1e-6;
+#[test]
+fn numerical_0922b_line_arc_crossings() {
+    let arc = ProfileBoundarySegment::Arc {
+        center: Point2::new(0., 0.),
+        radius: 0.001,
+        start_angle: 0.,
+        end_angle: std::f64::consts::TAU,
+    };
+    for half in [0.001, 1., 1e4] {
+        let points = super::line_arc_intersection_points(
+            (Point2::new(-half, 0.), Point2::new(half, 0.)),
+            &arc,
+        )
+        .unwrap();
+        println!("Fusion line[-{half},{half}],r=.001 => {points:?}");
+        assert_eq!(
+            points,
+            vec![Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
+        );
+    }
+}
+#[test]
+fn numerical_0922b_large_line_crossing() {
+    for s in [1., 1e200] {
+        let a = ProfileBoundarySegment::Line {
+            start: Point2::new(-s, 0.),
+            end: Point2::new(s, 0.),
+        };
+        let b = ProfileBoundarySegment::Line {
+            start: Point2::new(0., -s),
+            end: Point2::new(0., s),
+        };
+        let r = analytic_segment_intersections(&a, &b).unwrap();
+        println!("Fusion crossing scale{s:e}: {r:?}");
+        assert_eq!(r, vec![Point2::new(0., 0.)]);
+    }
+}
+#[test]
+fn numerical_0922b_large_line_split() {
+    for scale in [1., 1e200] {
+        let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0., 0.),
+            end: Point2::new(scale, 0.),
+        })
+        .unwrap();
+        let r = super::arrangement_split_parameters(
+            &line,
+            [0., 1.],
+            &[Point2::new(0.5 * scale, 0.)],
+            LARGE_LINE_TOLERANCE,
+        )
+        .unwrap();
+        println!("Fusion split scale{scale:e}: {r:?}");
+        assert_eq!(r, vec![0., 0.5, 1.]);
+    }
+}
+#[test]
+fn numerical_0922b_wide_segment_incidence() {
+    for scale in [1., 1e308] {
+        let r = super::point_segment_distance(
+            Point2::new(0., 0.),
+            (Point2::new(-scale, 0.), Point2::new(scale, 0.)),
+        );
+        println!("Fusion segment[-{scale:e},{scale:e}],origin distance{r:e}");
+        assert_eq!(r, 0.);
+    }
+}
