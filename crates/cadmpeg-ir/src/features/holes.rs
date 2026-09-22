@@ -719,7 +719,10 @@ enum HoleThreadDepthWire {
     /// Thread follows the complete hole depth.
     HoleDepth {},
     /// Explicit thread length.
-    Blind { depth: PositiveLength },
+    Blind {
+        /// Explicit axial thread length.
+        depth: PositiveLength,
+    },
     /// Standard tapped-hole runout is subtracted from the hole depth.
     TappedStandard {},
 }

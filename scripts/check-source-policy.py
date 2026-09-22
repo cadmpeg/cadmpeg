@@ -741,7 +741,16 @@ TYPE_DECL = re.compile(
 DOC_COMMENT = re.compile(r"^\s*///")
 DOC_ATTRIBUTE = re.compile(r"^#\s*\[\s*doc\b")
 MIRROR_FIELD = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:")
-MIRROR_VARIANT = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\{|\(|=|,|$)")
+MIRROR_BODY_FIELD = re.compile(
+    r"(?:\s|#\s*\[[^]]*\])*?(?:pub(?:\([^)]*\))?\s+)?"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:",
+    re.DOTALL,
+)
+MIRROR_BODY_VARIANT = re.compile(
+    r"(?:\s|#\s*\[[^]]*\])*?(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*(?:\{|\(|=|,|})",
+    re.DOTALL,
+)
 
 
 def type_declarations(lines: list[str], masked: list[str]):
@@ -782,13 +791,17 @@ def mirror_targets(attrs: tuple[str, ...]) -> set[str]:
     return targets
 
 
-def member_has_doc(lines: list[str], masked: list[str], index: int, floor: int) -> bool:
+def member_has_doc(
+    lines: list[str], masked: list[str], index: int, start_line: int, floor: int
+) -> bool:
     """Whether a doc comment or `#[doc]` stands above the member at ``index``.
 
     The walk steps over blank lines, ordinary comments and whole attribute
     blocks, so a doc comment above a multi-line `#[serde(…)]` still documents
     the member below it.
     """
+    if start_line == index:
+        return False
     line = index - 1
     while line > floor:
         text = lines[line].strip()
@@ -826,24 +839,45 @@ def mirror_members(lines: list[str], masked: list[str], kind: str, index: int):
         body += 1
     if body >= len(masked):
         return
-    end = find_matching_brace_end(masked, body)
-    depth = 0
-    for line in range(body, end):
-        depth += masked[line].count("{") - masked[line].count("}")
-        after = line + 1
-        if after >= end:
-            break
-        inner = depth
+    text = "\n".join(masked)
+    body_offset = sum(len(line) + 1 for line in masked[:body]) + masked[body].index("{")
+    depth = 1
+    parentheses = 0
+    brackets = 0
+    candidates = [(body_offset + 1, depth)]
+    position = body_offset + 1
+    while position < len(text) and depth:
+        character = text[position]
+        if character == "{":
+            depth += 1
+            candidates.append((position + 1, depth))
+        elif character == "}":
+            depth -= 1
+        elif character == "(":
+            parentheses += 1
+        elif character == ")":
+            parentheses -= 1
+        elif character == "[":
+            brackets += 1
+        elif character == "]":
+            brackets -= 1
+        elif character == "," and parentheses == 0 and brackets == 0:
+            candidates.append((position + 1, depth))
+        position += 1
+
+    for start, inner in candidates:
         if inner == 1:
-            pattern = MIRROR_VARIANT if kind == "enum" else MIRROR_FIELD
-        elif inner == 2:
-            pattern = MIRROR_FIELD
+            pattern = MIRROR_BODY_VARIANT if kind == "enum" else MIRROR_BODY_FIELD
+        elif inner == 2 and kind == "enum":
+            pattern = MIRROR_BODY_FIELD
         else:
             continue
-        match = pattern.match(masked[after])
+        match = pattern.match(text, start)
         if match is None:
             continue
-        yield match.group("name"), after
+        name_start = match.start("name")
+        line = text.count("\n", 0, name_start)
+        yield match.group("name"), line, text.count("\n", 0, start)
 
 
 def member_attribute_blocks(lines: list[str], masked: list[str], index: int, floor: int):
@@ -909,7 +943,7 @@ def flattened_member_types(lines: list[str], masked: list[str], kind: str, index
         return set()
     end = find_matching_brace_end(masked, body)
     names: set[str] = set()
-    for _, line in mirror_members(lines, masked, kind, index):
+    for _, line, _ in mirror_members(lines, masked, kind, index):
         flattened = any(
             SERDE_ATTRIBUTE.search(block) is not None and SERDE_FLATTEN.search(block) is not None
             for block in member_attribute_blocks(lines, masked, line, index)
@@ -992,8 +1026,8 @@ def scan_wire_mirror_docs(sources: dict[Path, str]) -> list[Finding]:
             for kind, index in entries:
                 if (path, index) not in mirrors:
                     continue
-                for member, line in mirror_members(lines, masked, kind, index):
-                    if member_has_doc(lines, masked, line, index):
+                for member, line, start_line in mirror_members(lines, masked, kind, index):
+                    if member_has_doc(lines, masked, line, start_line, index):
                         continue
                     findings.append(Finding(
                         "undocumented_wire_mirror", relative, line + 1,

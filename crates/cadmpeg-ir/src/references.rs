@@ -71,9 +71,17 @@ enum ReferenceTargetWire {
     /// Explicit null reference.
     Null {},
     /// Identity within the current document.
-    Local { target: String },
+    Local {
+        /// Identity of the referenced object in the current document.
+        target: String,
+    },
     /// Identity within another document.
-    External { document: String, object: String },
+    External {
+        /// Identity of the referenced document.
+        document: String,
+        /// Identity of the referenced object in that document.
+        object: String,
+    },
 }
 
 impl From<ReferenceTargetWire> for ReferenceTarget {
