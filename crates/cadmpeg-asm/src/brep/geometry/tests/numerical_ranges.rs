@@ -76,3 +76,43 @@ fn numerical_followup_rolling_ball_requires_tangent_supports() {
         }
     }
 }
+
+#[test]
+fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
+    use crate::sab::{Record, Token};
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::math::Point2;
+    let points = vec![Point2::new(0., 0.), Point2::new(1., 0.)];
+    for d in [1., 1e-16] {
+        let c =
+            PcurveNurbs::from_lanes(1, vec![0., 0., d, d], points.clone(), None, false).unwrap();
+        let edge = Record {
+            index: 1,
+            name: "edge".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Double(2. * d),
+                Token::Ref(3),
+                Token::Double(3. * d),
+                Token::Ref(-1),
+                Token::Ref(4),
+                Token::False,
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        };
+        assert_eq!(
+            super::super::pcurve_ranges_on_domain(&c, Some(&edge)),
+            Some(vec![[0., d]])
+        );
+    }
+    let c = PcurveNurbs::from_lanes(1, vec![-1., 0., 1., 2.], points, None, false).unwrap();
+    assert_eq!(
+        super::super::pcurve_ranges_on_domain(&c, None),
+        Some(vec![[0., 1.]])
+    );
+}

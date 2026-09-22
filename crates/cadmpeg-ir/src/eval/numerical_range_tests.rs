@@ -241,3 +241,48 @@ fn numerical_0922b_finite_chord_bound() {
         assert!((0.25..0.34).contains(&bound));
     }
 }
+
+#[test]
+fn numerical_audit_membership_and_inverse_keep_wide_knot_domains() {
+    for [a, b] in [[0., 1.], [-1e308, 1e308]] {
+        let knots = [a, a, b, b];
+        let points = [Point2::new(0., 0.), Point2::new(1., 0.)];
+        assert_eq!(
+            nurbs_pcurve_contains_point(
+                1,
+                &knots,
+                &points,
+                None,
+                Point2::new(0.5, 0.),
+                CHORD_BOUND_TOLERANCE
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            nurbs_pcurve_contains_point(
+                1,
+                &knots,
+                &points,
+                None,
+                Point2::new(0.5, 2.),
+                CHORD_BOUND_TOLERANCE
+            ),
+            Some(false)
+        );
+    }
+}
+#[test]
+fn numerical_audit_plane_inverse_projects_before_displacement_overflow() {
+    let k = std::f64::consts::FRAC_1_SQRT_2;
+    let plane = SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(-1e308, 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(k, k, 0.),
+        )
+        .unwrap(),
+    );
+    let uv = analytic_surface_parameters_solved(&plane, Point3::new(1e308, 0., 0.)).unwrap();
+    assert!((uv.u / 1e308 - std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
+    assert!((uv.v / 1e308 + std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
+}

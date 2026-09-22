@@ -1062,7 +1062,10 @@ fn curve_on_parameter_range(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    if parameter_range_contains(source, target) {
+    if target
+        .into_iter()
+        .all(|value| cadmpeg_ir::math::parameter_in_domain(value, source, 64.0 * f64::EPSILON))
+    {
         return Some(curve);
     }
     let source_span = source[1] - source[0];
@@ -1130,16 +1133,6 @@ fn curve_on_parameter_range(
         }
         _ => None,
     }
-}
-
-fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
-    let scale = domain
-        .into_iter()
-        .chain(active)
-        .map(f64::abs)
-        .fold(1.0f64, f64::max);
-    let tolerance = 64.0 * f64::EPSILON * scale;
-    domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
 }
 
 pub(in crate::families) fn resolved_offset_surface(

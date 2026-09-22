@@ -787,22 +787,14 @@ fn mapped_pcurve_parameter_near_point(
         if error.is_finite() && error <= tolerance {
             return Some(parameter);
         }
-        let denominator = tangent.dot(tangent);
-        if !denominator.is_finite() || denominator <= f64::EPSILON {
-            return None;
-        }
-        let residual = point.vector_from(target);
-        let step = residual.dot(tangent) / denominator;
-        if !step.is_finite() {
-            return None;
-        }
+        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?;
         let mut candidate = clamp_to_domain(parameter - step);
         let mut candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
         for _ in 0..12 {
             if candidate_error <= error {
                 break;
             }
-            candidate = clamp_to_domain(0.5 * (candidate + parameter));
+            candidate = clamp_to_domain(candidate.midpoint(parameter));
             candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
         }
         if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {

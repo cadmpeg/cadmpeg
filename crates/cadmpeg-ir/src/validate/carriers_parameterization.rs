@@ -995,12 +995,12 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
-    // Independent serialization of a carrier and its use range can round the
-    // same boundary to adjacent floating-point values.
-    let scale = value.abs().max(lower.abs()).max(upper.abs()).max(1.0);
-    let tolerance = scale * EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12;
-    value >= lower - tolerance && value <= upper + tolerance
+fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
+    crate::math::parameter_in_domain(
+        value,
+        domain,
+        EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12,
+    )
 }
 
 /// Whether a carrier that states no parameter domain is defective.

@@ -78,3 +78,32 @@ fn numerical_0922_long_lines_keep_perpendicular_relation() {
         ));
     }
 }
+
+#[test]
+fn numerical_audit_midpoint_preserves_finite_large_origin() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    };
+    for x in [0., 1e308] {
+        let id = SketchId::mint("test:audit:sketch#1").unwrap();
+        let line = SketchEntity::new(
+            SketchEntityId::mint("test:audit:sketch-entity#1").unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(x, 0.),
+                end: Point2::new(x, 1.),
+            })
+            .unwrap(),
+        );
+        let point = SketchEntity::new(
+            SketchEntityId::mint("test:audit:sketch-entity#2").unwrap(),
+            id,
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(x, 0.5),
+            })
+            .unwrap(),
+        );
+        assert!(super::midpoint_constraint(&[&line, &point]).is_some());
+    }
+}

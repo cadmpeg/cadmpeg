@@ -231,3 +231,75 @@ fn numerical_0922b_common_weight_inverse() {
         assert_eq!(p, Some(0.));
     }
 }
+
+#[test]
+fn numerical_audit_pcurve_newton_converges_on_small_chart() {
+    for d in [1., 1e-16] {
+        let p = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                2,
+                vec![0., 0., 0., d, d, d],
+                vec![
+                    Point2::new(0., 0.),
+                    Point2::new(0., 0.),
+                    Point2::new(1., 0.),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        };
+        let t = closest_pcurve_parameter_from_seed(&p, Point2::new(0.25, 0.), 0.9 * d).unwrap();
+        assert!((pcurve_uv(&p, t).unwrap().u - 0.25).abs() < 64. * f64::EPSILON);
+    }
+}
+#[test]
+fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
+    for [a, b] in [[0., 1.], [-1e308, 1e308]] {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![a, a, b, b],
+            vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+            None,
+            false,
+        )
+        .unwrap();
+        let t = closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.3, 0., 0.),
+            None,
+            &GeometryWorkBudget::new(100_000),
+        )
+        .unwrap();
+        assert!(
+            (cadmpeg_ir::eval::nurbs_curve_point(
+                1,
+                curve.knots(),
+                &curve.control_points(),
+                None,
+                t
+            )
+            .unwrap()
+            .x - 0.3)
+                .abs()
+                < 64. * f64::EPSILON
+        );
+        let p = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                1,
+                vec![a, a, b, b],
+                vec![Point2::new(0., 0.), Point2::new(1., 0.)],
+                None,
+                false,
+            )
+            .unwrap(),
+        };
+        let t = closest_pcurve_parameter_from_coarse_grid(&p, Point2::new(0.3, 0.)).unwrap();
+        assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
+    }
+    assert_eq!(scalar_bezier_value(&[0., 1.], 0., [-1e308, 1e308]), 0.5);
+    assert_eq!(
+        homogeneous_residual_distance(&[[-0.5, 0., 1.], [0.5, 0., 1.]], 0., [-1e308, 1e308]),
+        0.
+    );
+}

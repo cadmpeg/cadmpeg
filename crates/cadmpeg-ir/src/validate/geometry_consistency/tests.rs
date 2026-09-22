@@ -1151,3 +1151,5 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
         Err("PlacedPcurve.basis nests past the admitted inline basis depth")
     );
 }
+
+mod parameter_scaling;

@@ -4359,7 +4359,7 @@ fn midpoint_constraint(
             }
             _ => return None,
         };
-    let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
+    let midpoint = Point2::new(start.u.midpoint(end.u), start.v.midpoint(end.v));
     ((position.u - midpoint.u).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
         && (position.v - midpoint.v).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9)
         .then(|| Definition::Midpoint {

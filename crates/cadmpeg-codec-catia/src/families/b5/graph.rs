@@ -3398,8 +3398,13 @@ fn parse_extrusion_surface_with_context(
             directrix,
         });
     }
-    let directrix_contains_active =
-        parameter_range_contains(directrix.parameter_range(), carrier.parameter_bounds[1]);
+    let directrix_contains_active = carrier.parameter_bounds[1].into_iter().all(|value| {
+        cadmpeg_ir::math::parameter_in_domain(
+            value,
+            directrix.parameter_range(),
+            64.0 * f64::EPSILON,
+        )
+    });
     let translated_chart = carrier.controls == [0x05, 0x11];
     if translated_chart {
         translated_directrix_span_count(
@@ -3556,16 +3561,6 @@ fn translated_directrix_span_count(
         .then_some(source_span_count)
 }
 
-fn parameter_range_contains(domain: [f64; 2], active: [f64; 2]) -> bool {
-    let scale = domain
-        .into_iter()
-        .chain(active)
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let tolerance = 64.0 * f64::EPSILON * scale;
-    domain[0] <= active[0] + tolerance && active[1] <= domain[1] + tolerance
-}
-
 fn parameter_spans_agree(left: f64, right: f64) -> bool {
     let scale = left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= 64.0 * f64::EPSILON * scale
@@ -3701,13 +3696,16 @@ fn parse_surface_curve_directrix(
             ))
         })?;
     let parameter_range = [start, end];
-    parameter_range_contains(pcurve_range, parameter_range).then_some(
-        B5ExtrusionDirectrix::SurfaceCurve {
+    parameter_range
+        .into_iter()
+        .all(|value| {
+            cadmpeg_ir::math::parameter_in_domain(value, pcurve_range, 64.0 * f64::EPSILON)
+        })
+        .then_some(B5ExtrusionDirectrix::SurfaceCurve {
             object_id: record.object_id,
             support: (surface, pcurve, parameter_range),
             parameter_range,
-        },
-    )
+        })
 }
 
 fn parse_offset_curve_directrix(

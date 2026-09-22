@@ -46,3 +46,23 @@ fn numerical_0922_finite_knot_domain_reverses() {
         assert_eq!(c.control_points()[0], Point3::new(1., 0., 0.));
     }
 }
+
+#[test]
+fn numerical_audit_full_edge_survives_small_knot_domain() {
+    for d in [1., 1e-14] {
+        let c = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., d, d],
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                None,
+                false,
+            )
+            .unwrap(),
+        ));
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(&c, [[0., 0., 0.], [1., 0., 0.]]),
+            Some([0., d])
+        );
+    }
+}

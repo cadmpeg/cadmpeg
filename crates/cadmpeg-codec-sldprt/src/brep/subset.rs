@@ -13,54 +13,6 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn nurbs_point(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve, parameter: f64) -> Option<Point3> {
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let last_control = curve.control_points().len().checked_sub(1)?;
-    let domain_start = *curve.knots().get(degree)?;
-    let domain_end = *curve.knots().get(last_control + 1)?;
-    if parameter < domain_start || parameter > domain_end {
-        return None;
-    }
-    let span = if parameter == domain_end {
-        last_control
-    } else {
-        (degree..=last_control).find(|index| {
-            curve.knots()[*index] <= parameter && parameter < curve.knots()[*index + 1]
-        })?
-    };
-    let mut poles = (span - degree..=span)
-        .map(|index| {
-            let point = curve.control_points()[index];
-            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
-            [point.x * weight, point.y * weight, point.z * weight, weight]
-        })
-        .collect::<Vec<_>>();
-    for level in 1..=degree {
-        for local in (level..=degree).rev() {
-            let knot = span - degree + local;
-            let denominator = curve.knots()[knot + degree - level + 1] - curve.knots()[knot];
-            let alpha = if denominator.abs() <= f64::EPSILON {
-                0.0
-            } else {
-                (parameter - curve.knots()[knot]) / denominator
-            };
-            let previous = poles[local - 1];
-            let current = poles[local];
-            poles[local] = std::array::from_fn(|coordinate| {
-                (1.0 - alpha) * previous[coordinate] + alpha * current[coordinate]
-            });
-        }
-    }
-    let result = poles[degree];
-    (result[3].is_finite() && result[3].abs() > f64::EPSILON).then(|| {
-        Point3::new(
-            result[0] / result[3],
-            result[1] / result[3],
-            result[2] / result[3],
-        )
-    })
-}
-
 fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -106,7 +58,23 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                     + minor_radius * parameter.sin() * minor_direction.z,
             ))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => nurbs_point(curve, parameter),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
+            let degree = usize::try_from(curve.degree()).ok()?;
+            let domain = [
+                curve.knots()[degree],
+                curve.knots()[curve.control_points().len()],
+            ];
+            if !(domain[0]..=domain[1]).contains(&parameter) {
+                return None;
+            }
+            cadmpeg_ir::eval::nurbs_curve_point(
+                curve.degree(),
+                curve.knots(),
+                &curve.control_points(),
+                curve.weights().as_deref(),
+                parameter,
+            )
+        }
         _ => None,
     }
 }
@@ -183,7 +151,7 @@ mod tests {
 
     use super::super::index::CarrierIndex;
     use super::super::CurveCarrier;
-    use super::{nurbs_point, scan, TAG};
+    use super::{point_at, scan, TAG};
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::math::Point3;
@@ -258,7 +226,29 @@ mod tests {
             false,
         )
         .expect("valid rational test NURBS");
-        let point = nurbs_point(&curve, 0.5).expect("valid NURBS parameter");
+        let point = point_at(
+            &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            0.5,
+        )
+        .expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn numerical_audit_subset_uses_shared_nurbs_evaluation() {
+        for (d, w) in [(1., 1.), (1e-16, 1.), (1., 1e-20)] {
+            let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0., 0., d, d],
+                    vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                    Some(vec![w, w]),
+                    false,
+                )
+                .unwrap(),
+            ));
+            assert_eq!(point_at(&curve, 0.75 * d), Some(Point3::new(0.75, 0., 0.)));
+            assert!(point_at(&curve, 2. * d).is_none());
+        }
     }
 }

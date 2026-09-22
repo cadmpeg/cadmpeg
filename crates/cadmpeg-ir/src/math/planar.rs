@@ -35,6 +35,76 @@ pub fn orientation(a: Point2, b: Point2, p: Point2) -> Option<Ordering> {
     }
 }
 
+/// Twice the signed area of a finite polygon. Exact products preserve small
+/// areas under translation and cancel intermediate products outside f64 range.
+pub fn polygon_area_twice(points: &[Point2]) -> Option<f64> {
+    if points.iter().any(|point| !point.is_finite()) {
+        return None;
+    }
+    let mut area = ExactSignedSum::default();
+    for (first, second) in points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+    {
+        area.add_product(first.u, second.v);
+        area.add_product(-first.v, second.u);
+    }
+    area.finish().map_or(Some(0.0), |value| value.finite())
+}
+
+/// Distance to a closed segment, with projection from the nearer endpoint.
+/// Reversing that origin retains short offsets when the other endpoint is distant.
+pub fn point_segment_distance(point: Point2, mut start: Point2, mut end: Point2) -> f64 {
+    if !point.is_finite() || !start.is_finite() || !end.is_finite() {
+        return f64::NAN;
+    }
+    let distance = |a: Point2, b: Point2| (a.u - b.u).hypot(a.v - b.v);
+    let first_distance = distance(point, start);
+    let last_distance = distance(point, end);
+    if last_distance < first_distance {
+        std::mem::swap(&mut start, &mut end);
+    }
+    let Some(parameter) = line_projection_parameter(start, end, point) else {
+        return first_distance.min(last_distance);
+    };
+    let parameter = parameter.clamp(0.0, 1.0);
+    let Some(u) = super::interpolate(start.u, end.u, parameter) else {
+        return f64::NAN;
+    };
+    let Some(v) = super::interpolate(start.v, end.v, parameter) else {
+        return f64::NAN;
+    };
+    distance(point, Point2::new(u, v))
+}
+
+/// Intersection of closed segments, with a distance tolerance for endpoint contact.
+/// Proper crossings use exact orientation signs independent of segment length.
+pub fn segments_intersect(a: Point2, b: Point2, c: Point2, d: Point2, tolerance: f64) -> bool {
+    if !tolerance.is_finite()
+        || tolerance < 0.0
+        || [a, b, c, d].iter().any(|point| !point.is_finite())
+    {
+        return false;
+    }
+    if point_segment_distance(a, c, d) <= tolerance
+        || point_segment_distance(b, c, d) <= tolerance
+        || point_segment_distance(c, a, b) <= tolerance
+        || point_segment_distance(d, a, b) <= tolerance
+    {
+        return true;
+    }
+    let opposite = |first, second| {
+        matches!(
+            (first, second),
+            (Some(Ordering::Less), Some(Ordering::Greater))
+                | (Some(Ordering::Greater), Some(Ordering::Less))
+        )
+    };
+    opposite(orientation(a, b, c), orientation(a, b, d))
+        && opposite(orientation(c, d, a), orientation(c, d, b))
+}
+
 // Scale differences before subtraction only when their finite subtraction overflows.
 fn scaled_displacement(start: Point2, end: Point2, minimum_scale: f64) -> (Point2, f64) {
     let delta = Point2::new(end.u - start.u, end.v - start.v);
@@ -579,6 +649,35 @@ mod tests {
                     line_circle_intersections(start, end, Point2::new(0., 0.), radius).unwrap();
                 assert_eq!(hits.map(|(_, point)| point), [expected; 2]);
             }
+        }
+    }
+
+    #[test]
+    fn numerical_audit_segment_distance_keeps_near_endpoint_offsets() {
+        use super::point_segment_distance;
+        for length in [1e-200, 1., 1e200] {
+            assert_eq!(
+                point_segment_distance(
+                    Point2::new(length * 0.5, 0.),
+                    Point2::new(0., 0.),
+                    Point2::new(length, 0.)
+                ),
+                0.
+            );
+        }
+        let a = Point2::new(-1e20, 0.);
+        let b = Point2::new(0., 0.);
+        assert_eq!(point_segment_distance(Point2::new(-0.001, 0.), a, b), 0.);
+        assert_eq!(point_segment_distance(Point2::new(0.001, 0.), a, b), 0.001);
+    }
+    #[test]
+    fn numerical_audit_polygon_area_keeps_translation_and_orientation() {
+        for offset in [0., 1e8] {
+            let mut p = [[0., 0.], [1., 0.], [1., 1.], [0., 1.]]
+                .map(|p| Point2::new(offset + p[0], offset + p[1]));
+            assert_eq!(super::polygon_area_twice(&p), Some(2.));
+            p.reverse();
+            assert_eq!(super::polygon_area_twice(&p), Some(-2.));
         }
     }
 }

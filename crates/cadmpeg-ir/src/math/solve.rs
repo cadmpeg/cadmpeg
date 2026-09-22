@@ -3,6 +3,28 @@
 
 use super::Vector3;
 
+/// Scalar least-squares step along a finite nonzero tangent. Exact products
+/// retain the quotient when either squared norms or projections overflow or underflow.
+pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<f64> {
+    if !tangent.is_finite() || !residual.is_finite() {
+        return None;
+    }
+    let mut numerator = super::sum::ExactSignedSum::default();
+    let mut denominator = super::sum::ExactSignedSum::default();
+    for (t, r) in [
+        (tangent.x, residual.x),
+        (tangent.y, residual.y),
+        (tangent.z, residual.z),
+    ] {
+        numerator.add_product(t, r);
+        denominator.add_product(t, t);
+    }
+    let denominator = denominator.finish()?;
+    numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(denominator))
+}
+
 /// Solve a two-column least-squares step without imposing an absolute rank scale.
 pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
     if !du.is_finite() || !dv.is_finite() || !residual.is_finite() {
@@ -63,5 +85,19 @@ mod tests {
             assert_eq!(super::least_squares_step(du, dv, dv), Some((0.0, 1.0)));
             assert_eq!(super::least_squares_step(du, du, dv), None);
         }
+    }
+
+    #[test]
+    fn numerical_audit_projection_step_preserves_tangent_units() {
+        for scale in [1e-200, 1., 1e200] {
+            let step =
+                super::projection_step(Vector3::new(scale, 0., 0.), Vector3::new(0.25, 0., 0.))
+                    .unwrap();
+            assert!((step * scale - 0.25).abs() <= 8. * f64::EPSILON);
+        }
+        assert_eq!(
+            super::projection_step(Vector3::new(0., 0., 0.), Vector3::new(1., 0., 0.)),
+            None
+        );
     }
 }

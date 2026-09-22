@@ -565,44 +565,36 @@ fn projected_loop_polygon(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let area_twice = (0..polygon.len())
-        .map(|index| {
-            let first = polygon[index];
-            let second = polygon[(index + 1) % polygon.len()];
-            first[0].mul_add(second[1], -(first[1] * second[0]))
-        })
-        .sum::<f64>();
-    let scale = polygon
-        .iter()
-        .flat_map(|point| point.iter())
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
-    (polygon.len() >= 3 && area_twice.abs() > EPS_NEAR_ZERO * scale * scale).then_some(polygon)
+    valid_parameter_polygon(&polygon).then_some(polygon)
 }
 
 fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
+    use cadmpeg_ir::math::{
+        planar::{orientation, point_segment_distance},
+        Point2,
+    };
+    use std::cmp::Ordering;
     if polygon.len() < 3 {
         return false;
     }
+    let point = Point2::new(point[0], point[1]);
     let mut inside = false;
     for index in 0..polygon.len() {
         let first = polygon[index];
         let second = polygon[(index + 1) % polygon.len()];
-        let edge = [second[0] - first[0], second[1] - first[1]];
-        let relative = [point[0] - first[0], point[1] - first[1]];
-        let cross = edge[0].mul_add(relative[1], -(edge[1] * relative[0]));
-        let scale = edge[0].abs().max(edge[1].abs()).max(1.0);
-        if cross.abs() <= EPS_AGREE * scale
-            && point[0] >= first[0].min(second[0]) - EPS_AGREE * scale
-            && point[0] <= first[0].max(second[0]) + EPS_AGREE * scale
-            && point[1] >= first[1].min(second[1]) - EPS_AGREE * scale
-            && point[1] <= first[1].max(second[1]) + EPS_AGREE * scale
-        {
+        let first = Point2::new(first[0], first[1]);
+        let second = Point2::new(second[0], second[1]);
+        let length = (second.u - first.u).hypot(second.v - first.v);
+        if point_segment_distance(point, first, second) <= EPS_AGREE * length {
             return false;
         }
-        if (first[1] > point[1]) != (second[1] > point[1]) {
-            let intersection = edge[0].mul_add((point[1] - first[1]) / edge[1], first[0]);
-            if point[0] < intersection {
+        if (first.v > point.v) != (second.v > point.v) {
+            let side = if second.v > first.v {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            };
+            if orientation(first, second, point) == Some(side) {
                 inside = !inside;
             }
         }
@@ -611,43 +603,17 @@ fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
 }
 
 fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> bool {
-    let orientation = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
-        let edge = [b[0] - a[0], b[1] - a[1]];
-        let relative = [c[0] - a[0], c[1] - a[1]];
-        edge[0].mul_add(relative[1], -(edge[1] * relative[0]))
-    };
+    use cadmpeg_ir::math::Point2;
     let points = [first[0], first[1], second[0], second[1]];
     let scale = (0..points.len())
         .flat_map(|first| {
             (first + 1..points.len()).map(move |second| {
-                (0..2)
-                    .map(|axis| (points[first][axis] - points[second][axis]).abs())
-                    .fold(0.0, f64::max)
+                (points[first][0] - points[second][0]).hypot(points[first][1] - points[second][1])
             })
         })
-        .fold(1.0, f64::max);
-    let tolerance = EPS_AGREE * scale * scale;
-    let orientations = [
-        orientation(first[0], first[1], second[0]),
-        orientation(first[0], first[1], second[1]),
-        orientation(second[0], second[1], first[0]),
-        orientation(second[0], second[1], first[1]),
-    ];
-    let on_segment = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
-        orientation(a, b, point).abs() <= tolerance
-            && point[0] >= a[0].min(b[0]) - EPS_AGREE * scale
-            && point[0] <= a[0].max(b[0]) + EPS_AGREE * scale
-            && point[1] >= a[1].min(b[1]) - EPS_AGREE * scale
-            && point[1] <= a[1].max(b[1]) + EPS_AGREE * scale
-    };
-    orientations[0].abs() <= tolerance && on_segment(first[0], first[1], second[0])
-        || orientations[1].abs() <= tolerance && on_segment(first[0], first[1], second[1])
-        || orientations[2].abs() <= tolerance && on_segment(second[0], second[1], first[0])
-        || orientations[3].abs() <= tolerance && on_segment(second[0], second[1], first[1])
-        || ((orientations[0] > tolerance && orientations[1] < -tolerance)
-            || (orientations[0] < -tolerance && orientations[1] > tolerance))
-            && ((orientations[2] > tolerance && orientations[3] < -tolerance)
-                || (orientations[2] < -tolerance && orientations[3] > tolerance))
+        .fold(0.0_f64, f64::max);
+    let [a, b, c, d] = points.map(|point| Point2::new(point[0], point[1]));
+    cadmpeg_ir::math::planar::segments_intersect(a, b, c, d, EPS_AGREE * scale)
 }
 
 fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> bool {
@@ -665,22 +631,30 @@ fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> 
 }
 
 fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
+    let Some(origin) = polygon.first() else {
+        return false;
+    };
     if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
         return false;
     }
-    let area_twice = (0..polygon.len())
-        .map(|index| {
-            let first = polygon[index];
-            let second = polygon[(index + 1) % polygon.len()];
-            first[0].mul_add(second[1], -(first[1] * second[0]))
-        })
-        .sum::<f64>();
     let scale = polygon
         .iter()
-        .flat_map(|point| point.iter())
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
-    area_twice.abs() > EPS_NEAR_ZERO * scale * scale
+        .flat_map(|point| (0..2).map(|axis| (point[axis] - origin[axis]).abs()))
+        .fold(0.0_f64, f64::max);
+    if scale == 0.0 || !scale.is_finite() {
+        return false;
+    }
+    let local = polygon
+        .iter()
+        .map(|point| {
+            cadmpeg_ir::math::Point2::new(
+                (point[0] - origin[0]) / scale,
+                (point[1] - origin[1]) / scale,
+            )
+        })
+        .collect::<Vec<_>>();
+    cadmpeg_ir::math::planar::polygon_area_twice(&local)
+        .is_some_and(|area| area.abs() > EPS_NEAR_ZERO)
 }
 
 fn ordered_contained_face_loops<'a>(

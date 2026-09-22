@@ -354,33 +354,33 @@ pub(super) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 
 /// Candidate edge-use intervals whose endpoints lie on this pcurve carrier.
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
-/// carrier's knot domain. The full knot domain is the final fallback.
+/// carrier's active knot domain. That active domain is the final fallback.
 pub(super) fn pcurve_ranges_on_domain(
     candidate: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
-    let (&first, &last) = (candidate.knots().first()?, candidate.knots().last()?);
-    let tolerance = EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9 * (last - first).abs().max(1.0);
+    let first = *candidate
+        .knots()
+        .get(usize::try_from(candidate.degree()).ok()?)?;
+    let last = *candidate.knots().get(candidate.control_points().len())?;
+    (first < last).then_some(())?;
     let mut ranges = edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()
         .flatten()
-        .filter_map(|mut range| {
-            if range
+        .filter_map(|range| {
+            range
                 .iter()
-                .all(|value| *value >= first - tolerance && *value <= last + tolerance)
-            {
-                for value in &mut range {
-                    if *value < first {
-                        *value = first;
-                    } else if *value > last {
-                        *value = last;
-                    }
-                }
-                Some(range)
-            } else {
-                None
-            }
+                .all(|value| {
+                    cadmpeg_ir::math::parameter_in_domain(
+                        *value,
+                        [first, last],
+                        EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9,
+                    )
+                })
+                .then_some(())?;
+            let range = range.map(|value| value.clamp(first, last));
+            (range[0] != range[1]).then_some(range)
         })
         .collect::<Vec<_>>();
     if !ranges.contains(&[first, last]) {

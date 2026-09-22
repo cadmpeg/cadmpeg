@@ -1292,17 +1292,9 @@ fn validate_nurbs_trim(
     ];
     let pcurve = explicit.source;
     let domain = edge.domain;
-    let uv_epsilon = EPS_WRITE_DEGENERATE
-        * u_domain
-            .into_iter()
-            .chain(v_domain)
-            .map(f64::abs)
-            .fold(1.0_f64, f64::max);
     let inside_domain = |u: f64, v: f64| {
-        u >= u_domain[0] - uv_epsilon
-            && u <= u_domain[1] + uv_epsilon
-            && v >= v_domain[0] - uv_epsilon
-            && v <= v_domain[1] + uv_epsilon
+        cadmpeg_ir::math::parameter_in_domain(u, u_domain, EPS_WRITE_DEGENERATE)
+            && cadmpeg_ir::math::parameter_in_domain(v, v_domain, EPS_WRITE_DEGENERATE)
     };
     let domain_extent_inside = explicit
         .domain_extent_points

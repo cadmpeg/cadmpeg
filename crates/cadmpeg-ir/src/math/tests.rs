@@ -224,3 +224,30 @@ fn numerical_0922b_parameter_fraction_preserves_finite_charts() {
         );
     }
 }
+
+#[test]
+fn numerical_audit_domains_do_not_admit_disjoint_parameter_ranges() {
+    for domain in [[0., 1.], [0., 1e-16], [-1e308, 1e308]] {
+        for value in [domain[0], domain[0].midpoint(domain[1]), domain[1]] {
+            assert!(super::parameter_in_domain(
+                value,
+                domain,
+                64. * f64::EPSILON
+            ));
+        }
+    }
+    for d in [1., 1e-16] {
+        assert!(!super::parameter_in_domain(
+            2. * d,
+            [0., d],
+            64. * f64::EPSILON
+        ));
+        assert!(!super::parameter_in_domain(-d, [0., d], 64. * f64::EPSILON));
+        assert!(super::parameter_in_domain(
+            d.next_up(),
+            [0., d],
+            64. * f64::EPSILON
+        ));
+    }
+    assert!(!super::parameter_in_domain(f64::NAN, [0., 1.], 0.));
+}

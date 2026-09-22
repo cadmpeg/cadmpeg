@@ -360,3 +360,12 @@ fn a_trim_and_an_offset_inherit_the_basis_bounded_domain_requirement() {
         [0.0, 1.0]
     )));
 }
+
+#[test]
+fn numerical_audit_parameter_domain_roundoff_is_relative_to_width() {
+    for d in [1., 1e-16] {
+        assert!(super::parameter_in_domain(0., [0., d]));
+        assert!(super::parameter_in_domain(d, [0., d]));
+        assert!(!super::parameter_in_domain(2. * d, [0., d]));
+    }
+}
