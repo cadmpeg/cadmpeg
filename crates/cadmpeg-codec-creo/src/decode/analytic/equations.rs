@@ -470,6 +470,48 @@ fn polynomial_sign(coefficients: &[BoundedCoefficient], parameter: f64) -> Optio
         .then_some(value.is_sign_positive())
 }
 
+fn polynomial_is_exactly_zero(coefficients: &[BoundedCoefficient], parameter: f64) -> bool {
+    if coefficients
+        .iter()
+        .any(|coefficient| coefficient.bound != 0.0)
+    {
+        return false;
+    }
+    let mut value = 0.0;
+    for coefficient in coefficients.iter().rev() {
+        let parameter_magnitude = parameter.abs();
+        let parameter_bits = parameter_magnitude.to_bits();
+        let parameter_exponent = parameter_bits & F64_EXPONENT_MASK;
+        let parameter_fraction = parameter_bits & !F64_EXPONENT_MASK;
+        let parameter_is_power_of_two = parameter_magnitude.is_finite()
+            && if parameter_exponent == 0 {
+                parameter_fraction.is_power_of_two()
+            } else {
+                parameter_fraction == 0
+            };
+        if value != 0.0 && parameter != 0.0 && !parameter_is_power_of_two {
+            return false;
+        }
+        let product = value * parameter;
+        if !product.is_finite()
+            || (value != 0.0 && parameter != 0.0 && product / parameter != value)
+        {
+            return false;
+        }
+        let sum = product + coefficient.value;
+        if !sum.is_finite() {
+            return false;
+        }
+        let product_part = sum - coefficient.value;
+        let coefficient_part = sum - product_part;
+        if (product - product_part) + (coefficient.value - coefficient_part) != 0.0 {
+            return false;
+        }
+        value = sum;
+    }
+    value == 0.0
+}
+
 /// A polynomial coefficient beside the bound on its distance from the exact
 /// coefficient of the exact polynomial.
 ///
@@ -494,23 +536,23 @@ struct BoundedCoefficient {
 /// that same ratio. The fifth multiple covers both.
 const POLYNOMIAL_ERROR_FACTOR: f64 = 5.0;
 
-/// A real root beside the distance from it inside which the exact root lies,
-/// and whether the derivative states zero there as well.
+/// A real-root candidate beside its certified or uncertain location interval.
 ///
-/// The three producers of a root state different accuracies, and a caller that
-/// reads a coordinate off the root cannot tell them apart from the value. A
-/// bisected root carries the polynomial value's bound divided by the lower
-/// magnitude of its derivative, as well as the final bracket width. `multiple`
-/// marks a root the polynomial shares with its derivative, which is a root of
-/// even order: two intersections that coincide rather than two that are apart.
+/// A certified candidate's interval contains a root of every exact polynomial
+/// admitted by the coefficient bounds. An uncertain derivative-station
+/// candidate spans the complete root bound and does not state that a root
+/// exists. `multiple` is true only when exact arithmetic states that the
+/// polynomial and its derivative both vanish at the candidate value.
 #[derive(Clone, Copy)]
 struct PolynomialRoot {
     value: f64,
     error: f64,
+    certified: bool,
+    stationary: bool,
     multiple: bool,
 }
 
-/// Return the finite real roots in ascending order.
+/// Return finite certified roots and derivative-station candidates in ascending order.
 ///
 /// The degree is stated by each leading coefficient against its own bound: a
 /// coefficient inside that bound is the rounding residue of a cancellation and
@@ -570,6 +612,8 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         return vec![PolynomialRoot {
             value,
             error,
+            certified: true,
+            stationary: false,
             multiple: false,
         }];
     }
@@ -582,12 +626,11 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
             bound: coefficient.bound * power as f64,
         })
         .collect::<Vec<_>>();
-    let leading = coefficients[degree].abs();
+    let leading = coefficients[degree].abs() - scaled[degree].bound;
     let bound = 1.0
-        + coefficients[..degree]
+        + scaled[..degree]
             .iter()
-            .copied()
-            .map(f64::abs)
+            .map(|coefficient| coefficient.value.abs() + coefficient.bound)
             .fold(0.0, f64::max)
             / leading;
     // Each derivative root partitions the polynomial into monotone intervals.
@@ -597,7 +640,7 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         .into_iter()
         .filter(|root| root.value.is_finite() && root.value > -bound && root.value < bound)
         .map(|root| PolynomialRoot {
-            multiple: true,
+            stationary: true,
             ..root
         })
         .collect::<Vec<_>>();
@@ -623,11 +666,42 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
         let (station_value, _) = polynomial_value_and_bound(&scaled, station.value);
         let station_value_bound =
             polynomial_interval_value_bound(&scaled, station.value, station.error);
-        if station_value.is_finite()
+        let station_lower_sign = polynomial_sign(&scaled, station_lower);
+        let station_upper_sign = polynomial_sign(&scaled, station_upper);
+        let certified_crossing = station_lower_sign
+            .zip(station_upper_sign)
+            .is_some_and(|(lower, upper)| lower != upper);
+        let certified_touch =
+            station_lower_sign
+                .zip(station_upper_sign)
+                .is_some_and(|(lower, upper)| {
+                    lower == upper
+                        && if lower {
+                            station_value + station_value_bound <= 0.0
+                        } else {
+                            station_value - station_value_bound >= 0.0
+                        }
+                });
+        let certified_multiple = polynomial_is_exactly_zero(&scaled, station.value)
+            && polynomial_is_exactly_zero(&derivative, station.value);
+        if certified_crossing || certified_touch || certified_multiple {
+            roots.push(PolynomialRoot {
+                certified: true,
+                multiple: certified_multiple,
+                ..station
+            });
+        } else if station_value.is_finite()
             && station_value_bound.is_finite()
             && station_value.abs() <= station_value_bound
         {
-            roots.push(station);
+            roots.push(PolynomialRoot {
+                error: (station.value + bound)
+                    .abs()
+                    .max((bound - station.value).abs()),
+                certified: false,
+                multiple: false,
+                ..station
+            });
         }
         gap_lower = gap_lower.max(station_upper);
         gap_lower_sign = polynomial_sign(&scaled, gap_lower);
@@ -676,6 +750,8 @@ fn real_polynomial_roots(coefficients: &[BoundedCoefficient]) -> Vec<PolynomialR
             error: (0.5 * (upper - lower).abs())
                 .max(coefficient_error)
                 .max(cancellation_bound(value)),
+            certified: true,
+            stationary: false,
             multiple: false,
         });
     }
@@ -1143,16 +1219,17 @@ pub(super) fn common_plane_conic_parameters(
         let first_v_roots = conic_v_roots(first, u);
         let second_v_roots = conic_v_roots(second, u);
         for v in first_v_roots.into_iter().chain(second_v_roots) {
-            // A root the resultant shares with its derivative is two
-            // intersections that coincide in u. They are two distinct points on
-            // a chord across the chart u axis, or one point where the conics
-            // touch. The refinement separates the two: a chord has a regular
-            // Jacobian at each of its points and converges, and a contact has
-            // the gradients parallel, so the pair of conics states no converged
-            // step there however near the start is. Only then is the contact
-            // solved for as such.
-            let mut refined = refine_plane_conic_intersection(first, second, u, v);
-            if refined.correction.is_none() && root.multiple {
+            // A derivative-station candidate can be two intersections that are
+            // close in u or one point where the conics touch. Ordinary
+            // intersection refinement separates a chord. If it does not
+            // converge, tangency refinement supplies another candidate. The
+            // residual checks below admit the result of either refinement.
+            let mut refined = if root.multiple {
+                refine_plane_conic_tangency(first, second, u, v)
+            } else {
+                refine_plane_conic_intersection(first, second, u, v)
+            };
+            if refined.correction.is_none() && root.stationary && !root.multiple {
                 refined = refine_plane_conic_tangency(first, second, u, v);
             }
             let candidate = refined.point;
@@ -1290,7 +1367,7 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
                 let coordinate = line_origin[index] + offset;
                 let coordinate_bound = direction[index].abs() * root.error
                     + cancellation_bound(line_origin[index].abs() + offset.abs());
-                if coordinate.abs() <= coordinate_bound {
+                if (root.certified || root.stationary) && coordinate.abs() <= coordinate_bound {
                     return 0.0;
                 }
                 coordinate
@@ -1642,6 +1719,32 @@ mod tests {
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].value, 1.0);
         assert!(roots[0].error <= super::cancellation_bound(1.0));
+    }
+
+    #[test]
+    fn polynomial_roots_bound_an_uncertain_derivative_station() {
+        let roots = super::real_polynomial_roots(&[
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 1.0,
+            },
+            BoundedCoefficient {
+                value: 0.0,
+                bound: 0.0,
+            },
+            BoundedCoefficient {
+                value: 1.0,
+                bound: 0.0,
+            },
+        ]);
+
+        assert_eq!(roots.len(), 1);
+        assert!(!roots[0].certified);
+        assert!(!roots[0].multiple);
+        assert!(
+            (roots[0].value - roots[0].error..=roots[0].value + roots[0].error).contains(&-1.0)
+        );
+        assert!((roots[0].value - roots[0].error..=roots[0].value + roots[0].error).contains(&1.0));
     }
 
     #[test]
