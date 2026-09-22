@@ -24,7 +24,8 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::num::{NonZeroI64, NonZeroU32};
+use cadmpeg_ir::scalar::PositiveI64;
+use std::num::NonZeroI64;
 
 /// The legacy and revision offset surface layouts.
 pub enum EmbeddedOffsetLayout {
@@ -328,7 +329,7 @@ impl DecodedProceduralSurfaceDefinition {
 /// Embedded revision-gated G2 blend before stable IR ids are assigned.
 pub struct EmbeddedRevisionG2Blend {
     /// The revision integer that gates the layout.
-    pub revision: NonZeroU32,
+    pub revision: PositiveI64,
     /// Two leading parameters serialized before the sides.
     pub leading_parameters: [f64; 2],
     /// Two ordered embedded support sides.
@@ -690,7 +691,7 @@ fn g2_blend_spl_sur(
         // shared tail, and three trailing integers. The modern name uses this
         // layout.
         (name == "g2_blend_spl_sur").then_some(())?;
-        let revision = NonZeroU32::new(u32::try_from(cur.take_long()?).ok()?)?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let leading_parameters = [cur.take_f64()?, cur.take_f64()?];
         let sides = Box::new([
             rolling_ball_side(&mut cur, resolver)?,
@@ -938,7 +939,7 @@ pub struct EmbeddedLoftPath {
 /// Embedded revision-gated compound loft before stable IR ids are assigned.
 pub struct EmbeddedRevisionCompoundLoft {
     /// The revision integer that gates the layout.
-    pub revision: NonZeroU32,
+    pub revision: PositiveI64,
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm,
     /// Six discontinuity arrays of the shared tail.
@@ -2127,7 +2128,7 @@ fn revision_compound_loft(
 ) -> Option<DecodedProceduralSurface> {
     let table = resolver?;
     let mut cur = Cur::at(span, 2);
-    let revision = NonZeroU32::new(u32::try_from(cur.take_long()?).ok()?)?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     let RevisionSurfaceTail {
         cache,
         discontinuities,

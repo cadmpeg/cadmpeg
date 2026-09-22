@@ -64,6 +64,28 @@ fn positive_lengths_reject_zero_negative_and_nonfinite_values() {
 }
 
 #[test]
+fn positive_i64_admits_the_full_positive_signed_lane() {
+    use crate::scalar::PositiveI64;
+
+    for value in [0_i64, -1] {
+        assert!(PositiveI64::new(value).is_none());
+        assert!(serde_json::from_value::<PositiveI64>(serde_json::json!(value)).is_err());
+    }
+    assert!(serde_json::from_value::<PositiveI64>(serde_json::json!(1.5)).is_err());
+
+    let maximum = PositiveI64::new(i64::MAX).unwrap();
+    assert_eq!(maximum.get(), i64::MAX);
+    assert_eq!(
+        serde_json::to_value(maximum).unwrap(),
+        serde_json::json!(i64::MAX)
+    );
+    assert_eq!(
+        serde_json::from_value::<PositiveI64>(serde_json::json!(i64::MAX)).unwrap(),
+        maximum
+    );
+}
+
+#[test]
 fn bounded_feature_scalars_reject_out_of_domain_values_on_every_admission_route() {
     use crate::scalar::{
         FiniteReal, Fraction, InteriorAngle, NonNegativeLength, NonZeroLength, NonZeroReal,

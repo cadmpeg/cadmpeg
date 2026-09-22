@@ -113,7 +113,7 @@ fn degenerate_tail(family: usize, value: f64) -> crate::geometry::SurfaceCurveTa
     }
     crate::geometry::SurfaceCurveTailWire {
         extension: 7,
-        revision: std::num::NonZeroU32::new(23_100).expect("positive revision"),
+        revision: crate::scalar::PositiveI64::new(23_100).expect("positive revision"),
         cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval,
             closed_form: 0,
@@ -147,7 +147,7 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
             let wire = degenerate_tail(family, value);
             assert!(SurfaceCurveTail::try_new(
                 wire.extension,
-                i64::from(wire.revision.get()),
+                wire.revision.get(),
                 wire.cache.clone(),
                 wire.support_bounds,
                 wire.solved_range,
@@ -178,4 +178,26 @@ fn the_surface_curve_tail_refuses_a_non_positive_revision() {
         invalid["revision"] = serde_json::json!(revision);
         assert!(serde_json::from_value::<SurfaceCurveTail>(invalid).is_err());
     }
+
+    let maximum = SurfaceCurveTail::try_new(
+        7,
+        i64::MAX,
+        RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+            interval: [None; 2],
+            closed_form: 0,
+        }),
+        [[None; 4]; 2],
+        [None; 2],
+    )
+    .expect("maximum revision is admitted");
+    assert_eq!(maximum.revision().get(), i64::MAX);
+    let mut maximum = value;
+    maximum["revision"] = serde_json::json!(i64::MAX);
+    assert_eq!(
+        serde_json::from_value::<SurfaceCurveTail>(maximum)
+            .expect("maximum JSON revision is admitted")
+            .revision()
+            .get(),
+        i64::MAX
+    );
 }
