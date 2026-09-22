@@ -7,6 +7,7 @@ use crate::geometry::{
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Point3;
+use std::num::NonZeroU32;
 
 // One value per float field family the construction carries.
 struct Fields {
@@ -73,7 +74,7 @@ fn side(fields: &Fields) -> RollingBallSide {
 // accepts and the only shape the deserializer builds.
 fn stored(fields: &Fields) -> RevisionG2BlendConstructionWire {
     RevisionG2BlendConstructionWire {
-        revision: 1,
+        revision: NonZeroU32::MIN,
         leading_parameters: [fields.leading_parameter, 2.0],
         sides: Box::new([side(fields), side(&ADMITTED)]),
         center: curve(),
@@ -152,6 +153,27 @@ fn the_revision_g2_blend_admission_writes_every_scalar_it_admits() {
         definition
     );
     assert!(wire(&ADMITTED).is_ok());
+}
+
+#[test]
+fn the_revision_g2_blend_refuses_a_non_positive_revision() {
+    let definition = ProceduralSurfaceDefinition::RevisionG2Blend {
+        construction: Box::new(
+            RevisionG2BlendConstruction::admit(stored(&ADMITTED))
+                .expect("positive revision and finite scalars"),
+        ),
+    };
+    let value = serde_json::to_value(definition).expect("serialize the definition");
+
+    for revision in [0_i64, -1] {
+        assert!(u32::try_from(revision)
+            .ok()
+            .and_then(NonZeroU32::new)
+            .is_none());
+        let mut invalid = value.clone();
+        invalid["construction"]["revision"] = serde_json::json!(revision);
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
+    }
 }
 
 #[test]

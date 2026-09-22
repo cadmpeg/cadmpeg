@@ -29,7 +29,7 @@ fn support_context() -> IntcurveSupportContext {
 fn tail() -> SurfaceCurveTail {
     SurfaceCurveTail::try_new(
         7,
-        23100,
+        23_100,
         RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval: [Some(0.0), Some(1.0)],
             closed_form: 0,
@@ -113,7 +113,7 @@ fn degenerate_tail(family: usize, value: f64) -> crate::geometry::SurfaceCurveTa
     }
     crate::geometry::SurfaceCurveTailWire {
         extension: 7,
-        revision: 23_100,
+        revision: std::num::NonZeroU32::new(23_100).expect("positive revision"),
         cache: RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
             interval,
             closed_form: 0,
@@ -147,7 +147,7 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
             let wire = degenerate_tail(family, value);
             assert!(SurfaceCurveTail::try_new(
                 wire.extension,
-                wire.revision,
+                i64::from(wire.revision.get()),
                 wire.cache.clone(),
                 wire.support_bounds,
                 wire.solved_range,
@@ -155,5 +155,27 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
             .is_err());
             assert!(SurfaceCurveTail::try_from(wire).is_err());
         }
+    }
+}
+
+#[test]
+fn the_surface_curve_tail_refuses_a_non_positive_revision() {
+    let value = serde_json::to_value(tail()).expect("serialize the tail");
+
+    for revision in [0_i64, -1] {
+        assert!(SurfaceCurveTail::try_new(
+            7,
+            revision,
+            RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+                interval: [None; 2],
+                closed_form: 0,
+            }),
+            [[None; 4]; 2],
+            [None; 2],
+        )
+        .is_err());
+        let mut invalid = value.clone();
+        invalid["revision"] = serde_json::json!(revision);
+        assert!(serde_json::from_value::<SurfaceCurveTail>(invalid).is_err());
     }
 }
