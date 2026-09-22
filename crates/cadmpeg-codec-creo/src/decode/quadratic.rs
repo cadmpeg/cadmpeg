@@ -3,6 +3,8 @@
 //! terms they were formed from, which is what states the degree of the problem
 //! and the sign of its discriminant.
 
+use cadmpeg_ir::math::{multiply_divide, power_of_two_bound, scale_power_of_two};
+
 /// The relative band inside which a sum of products states zero.
 ///
 /// A sum of n products in f64 carries one rounding per product and one per
@@ -108,7 +110,6 @@ pub(super) fn real_roots(
         let root = -constant.value / linear.value;
         return root.is_finite().then_some(root).into_iter().collect();
     }
-    use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two};
     let exponent = |value: f64| power_of_two_bound(value).unwrap_or(0);
     let variable_exponent = if constant.value != 0.0 {
         (exponent(constant.value) - exponent(quadratic.value)).div_euclid(2)
@@ -155,7 +156,7 @@ pub(super) fn real_roots(
                 + error_quadratic * error_constant)
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
-        return scale_power_of_two(-b / (2.0 * a), variable_exponent)
+        return multiply_divide(-linear.value, 0.5, quadratic.value)
             .into_iter()
             .collect();
     }
@@ -164,10 +165,26 @@ pub(super) fn real_roots(
     }
     let root = discriminant.sqrt();
     let q = -0.5 * (b + root.copysign(b));
-    let mut roots = [q / a, c / q]
-        .into_iter()
-        .filter_map(|root| scale_power_of_two(root, variable_exponent))
-        .collect::<Vec<_>>();
+    let scaled_quotient = |numerator: f64, denominator: f64, shift: i32| {
+        let denominator_exponent = power_of_two_bound(denominator)?;
+        if numerator == 0.0 {
+            return Some(0.0);
+        }
+        let numerator_exponent = power_of_two_bound(numerator)?;
+        let ratio = scale_power_of_two(numerator, -numerator_exponent)?
+            / scale_power_of_two(denominator, -denominator_exponent)?;
+        scale_power_of_two(ratio, numerator_exponent - denominator_exponent + shift)
+    };
+    // q is in the scaled variable's chart. Combine the chart exponent with
+    // each original coefficient before division can overflow or underflow.
+    // Original coefficients also retain bits lost by subnormal common scaling.
+    let mut roots = [
+        scaled_quotient(q, quadratic.value, scale_exponent - variable_exponent),
+        scaled_quotient(constant.value, q, variable_exponent - scale_exponent),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     roots.sort_by(f64::total_cmp);
     roots.dedup();
     roots
@@ -212,7 +229,7 @@ mod tests {
     }
     #[test]
     fn numerical_0922b_finite_quadratic_roots() {
-        for s in [1., 1e200] {
+        for s in [1., 1e200, 1e-200] {
             let roots = super::real_roots(
                 Coefficient::single(1. / s),
                 Coefficient::single(0.),
@@ -222,6 +239,24 @@ mod tests {
             assert_eq!(roots.len(), 2);
             for (root, expected) in roots.iter().zip([-s, s]) {
                 assert!((root / expected - 1.0).abs() <= 8.0 * f64::EPSILON);
+            }
+        }
+    }
+
+    #[test]
+    fn numerical_0922b_quadratic_rescaling_retains_finite_root() {
+        let smallest = f64::from_bits(1);
+        for (quadratic, constant) in [(1e308, smallest), (smallest, 1e308)] {
+            for sign in [-1.0, 1.0] {
+                let roots = super::real_roots(
+                    Coefficient::single(quadratic),
+                    Coefficient::single(sign * 1e308),
+                    Coefficient::single(constant),
+                );
+                assert!(roots.iter().all(|root| root.is_finite()));
+                assert!(roots
+                    .iter()
+                    .any(|root| (root + sign).abs() <= 8.0 * f64::EPSILON));
             }
         }
     }

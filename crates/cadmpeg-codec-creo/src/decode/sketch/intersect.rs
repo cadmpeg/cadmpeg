@@ -901,17 +901,18 @@ mod tests {
     fn numerical_0922b_section_unique_crossing() {
         let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0., 0.),
-            radius: cadmpeg_ir::scalar::Length::new(0.001).unwrap(),
-            start_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
-            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(0.001).expect("positive radius"),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.).expect("finite start angle"),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI)
+                .expect("finite end angle"),
         })
-        .unwrap();
+        .expect("valid arc");
         for x in [-1., -1e4, -1e8] {
             let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(x, 0.),
                 end: Point2::new(0., 0.),
             })
-            .unwrap();
+            .expect("valid line");
             let r = super::intersect_section_line_arc(&line, &arc);
             println!("Creo one-sided line[{x},0],r=.001: {r:?}");
             assert_eq!(r, Some([-0.001, 0.0]));
