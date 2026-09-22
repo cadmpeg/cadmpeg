@@ -419,21 +419,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_helical_sweep()
             }
             FeatureDefinition::Operation(FeatureOperation::Binder { .. }) => self.encode_binder(),
-            FeatureDefinition::Operation(
-                FeatureOperation::Unresolved {
-                    family:
-                        UnresolvedFamily::DatumPoint
-                        | UnresolvedFamily::DatumCoordinateSystem
-                        | UnresolvedFamily::Loft
-                        | UnresolvedFamily::FreeformSurface
-                        | UnresolvedFamily::Draft,
-                }
-                | FeatureOperation::Block { .. }
-                | FeatureOperation::ExtractBody { .. }
-                | FeatureOperation::FaceBlend { .. }
-                | FeatureOperation::SewBodies { .. }
-                | FeatureOperation::TrimBodies { .. },
-            ) => self.encode_explicitly_unsupported(),
             FeatureDefinition::Operation(_) => self.encode_unsupported(),
         }
     }
