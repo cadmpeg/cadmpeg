@@ -50,7 +50,8 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<f64> {
         area.add_product(first.u, second.v);
         area.add_product(-first.v, second.u);
     }
-    area.finish().map_or(Some(0.0), |value| value.finite())
+    area.finish()
+        .map_or(Some(0.0), super::sum::ScaledValue::finite)
 }
 
 /// Distance to a closed segment, with projection from the nearer endpoint.
@@ -85,6 +86,12 @@ pub fn segments_intersect(a: Point2, b: Point2, c: Point2, d: Point2, tolerance:
         || tolerance < 0.0
         || [a, b, c, d].iter().any(|point| !point.is_finite())
     {
+        return false;
+    }
+    let bounds_overlap = |a: f64, b: f64, c: f64, d: f64| {
+        a.min(b) <= c.max(d) + tolerance && c.min(d) <= a.max(b) + tolerance
+    };
+    if !bounds_overlap(a.u, b.u, c.u, d.u) || !bounds_overlap(a.v, b.v, c.v, d.v) {
         return false;
     }
     if point_segment_distance(a, c, d) <= tolerance
