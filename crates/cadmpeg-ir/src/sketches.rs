@@ -2252,9 +2252,15 @@ enum SketchInternalAlignmentWire {
     /// Parabola focus helper.
     ParabolaFocus {},
     /// B-spline control-point helper.
-    BsplineControlPoint { index: u32 },
+    BsplineControlPoint {
+        /// Zero-based control-point index.
+        index: u32,
+    },
     /// B-spline knot-point helper.
-    BsplineKnotPoint { index: u32 },
+    BsplineKnotPoint {
+        /// Zero-based knot-point index.
+        index: u32,
+    },
     /// Parabola focal-axis helper.
     ParabolaFocalAxis {},
 }

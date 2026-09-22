@@ -555,6 +555,42 @@ class WireMirrorDocs(TempSourceCase):
         self.assertIn("`width`", findings[0].message)
         self.assertIn("`TaggedWire`", findings[0].message)
 
+    def test_same_line_named_member_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(try_from = "InlineWire")]', "pub struct Inline { value: u8 }", "",
+            "struct InlineWire { undocumented: u8 }", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 4),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
+    def test_same_line_struct_variant_field_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(from = "InlineWire")]', "pub enum Inline { One }", "",
+            "enum InlineWire {", "    /// The one arm.",
+            "    One { undocumented: u8 },", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 6),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
+    def test_member_after_closing_brace_on_same_line_is_reported(self) -> None:
+        self.write(f"{self.IR}/inline.rs", '\n'.join([
+            '#[serde(from = "InlineWire")]', "pub enum Inline { One }", "",
+            "enum InlineWire {", "    /// The first arm.", "    First {",
+            "        /// The first value.", "        value: u8,",
+            "    }, undocumented,", "}", "",
+        ]))
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/inline.rs", 9),
+        ])
+        self.assertIn("`undocumented`", findings[0].message)
+
     def test_a_mirror_in_another_file_is_reached(self) -> None:
         self.write(f"{self.IR}/names.rs", '#[serde(try_from = "RemoteWire")]\n'
                                           "pub struct Named { value: u8 }\n")
