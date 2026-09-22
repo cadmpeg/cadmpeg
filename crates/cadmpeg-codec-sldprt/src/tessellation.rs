@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
+use cadmpeg_ir::math::planar::{point_segment_distance, segments_intersect};
+
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
@@ -2258,19 +2260,7 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
 }
 
 fn point_distance(left: Point2, right: Point2) -> f64 {
-    ((left.u - right.u).powi(2) + (left.v - right.v).powi(2)).sqrt()
-}
-
-fn point_segment_distance(point: Point2, start: Point2, end: Point2) -> f64 {
-    let du = end.u - start.u;
-    let dv = end.v - start.v;
-    let length_squared = du * du + dv * dv;
-    if length_squared <= f64::EPSILON {
-        return point_distance(point, start);
-    }
-    let t =
-        (((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared).clamp(0.0, 1.0);
-    point_distance(point, Point2::new(start.u + t * du, start.v + t * dv))
+    (left.u - right.u).hypot(left.v - right.v)
 }
 
 fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
@@ -2278,13 +2268,7 @@ fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
 }
 
 fn polygon_area_twice(polygon: &[Point2]) -> f64 {
-    (0..polygon.len())
-        .map(|index| {
-            let left = polygon[index];
-            let right = polygon[(index + 1) % polygon.len()];
-            left.u * right.v - left.v * right.u
-        })
-        .sum()
+    cadmpeg_ir::math::planar::polygon_area_twice(polygon).unwrap_or(f64::NAN)
 }
 
 fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
@@ -2328,9 +2312,7 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
             let previous = polygon[remaining[previous_position]];
             let current = polygon[remaining[*position]];
             let next = polygon[remaining[next_position]];
-            let scale = point_distance(previous, current)
-                .max(point_distance(current, next))
-                .max(1.0);
+            let scale = point_distance(previous, current).max(point_distance(current, next));
             let cross = signed_area_twice(previous, current, next);
             if !cross.is_finite() || orientation * cross <= tolerance * scale {
                 return false;
@@ -2383,62 +2365,11 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
     };
     let scale = point_distance(*first, *second)
         .max(point_distance(*second, *third))
-        .max(point_distance(*third, *first))
-        .max(1.0);
+        .max(point_distance(*third, *first));
     (signed_area_twice(*first, *second, *third).abs() > tolerance * scale).then(|| {
         triangles.push([*first, *second, *third]);
         triangles
     })
-}
-
-fn segments_intersect(
-    first_start: Point2,
-    first_end: Point2,
-    second_start: Point2,
-    second_end: Point2,
-    tolerance: f64,
-) -> bool {
-    let bounds_overlap = |left: f64, right: f64, other_left: f64, other_right: f64| {
-        left.min(right) <= other_left.max(other_right) + tolerance
-            && other_left.min(other_right) <= left.max(right) + tolerance
-    };
-    if !bounds_overlap(first_start.u, first_end.u, second_start.u, second_end.u)
-        || !bounds_overlap(first_start.v, first_end.v, second_start.v, second_end.v)
-    {
-        return false;
-    }
-    let scale = point_distance(first_start, first_end)
-        .max(point_distance(second_start, second_end))
-        .max(1.0);
-    let orientation_tolerance = tolerance * scale;
-    let first_left = signed_area_twice(first_start, first_end, second_start);
-    let first_right = signed_area_twice(first_start, first_end, second_end);
-    let second_left = signed_area_twice(second_start, second_end, first_start);
-    let second_right = signed_area_twice(second_start, second_end, first_end);
-    if first_left.abs() <= orientation_tolerance
-        && point_segment_distance(second_start, first_start, first_end) <= tolerance
-    {
-        return true;
-    }
-    if first_right.abs() <= orientation_tolerance
-        && point_segment_distance(second_end, first_start, first_end) <= tolerance
-    {
-        return true;
-    }
-    if second_left.abs() <= orientation_tolerance
-        && point_segment_distance(first_start, second_start, second_end) <= tolerance
-    {
-        return true;
-    }
-    if second_right.abs() <= orientation_tolerance
-        && point_segment_distance(first_end, second_start, second_end) <= tolerance
-    {
-        return true;
-    }
-    (first_left > orientation_tolerance && first_right < -orientation_tolerance
-        || first_left < -orientation_tolerance && first_right > orientation_tolerance)
-        && (second_left > orientation_tolerance && second_right < -orientation_tolerance
-            || second_left < -orientation_tolerance && second_right > orientation_tolerance)
 }
 
 fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {

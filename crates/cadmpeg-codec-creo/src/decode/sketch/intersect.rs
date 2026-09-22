@@ -94,10 +94,8 @@ pub(in crate::decode) fn intersect_section_line_arc(
     let intersections =
         cadmpeg_ir::math::planar::line_circle_intersections(*start, *end, *center, radius.get())?;
     let endpoint_tolerance = EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get();
-    let mut inside = intersections.into_iter().filter(|(parameter, point)| {
-        (0.0..=1.0).contains(parameter)
-            || (point.u - start.u).hypot(point.v - start.v) <= endpoint_tolerance
-            || (point.u - end.u).hypot(point.v - end.v) <= endpoint_tolerance
+    let mut inside = intersections.into_iter().filter(|(_, point)| {
+        cadmpeg_ir::math::planar::point_segment_distance(*point, *start, *end) <= endpoint_tolerance
     });
     let (_, point) = inside.next()?;
     if inside.next().is_some_and(|(_, other)| other != point) {
@@ -916,6 +914,30 @@ mod tests {
             let r = super::intersect_section_line_arc(&line, &arc);
             println!("Creo one-sided line[{x},0],r=.001: {r:?}");
             assert_eq!(r, Some([-0.001, 0.0]));
+        }
+    }
+
+    #[test]
+    fn numerical_audit_line_arc_clips_rounded_endpoint_roots() {
+        use cadmpeg_ir::math::Point2;
+        use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
+        let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: Point2::new(0., 0.),
+            radius: cadmpeg_ir::scalar::Length::new(0.001).unwrap(),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
+        })
+        .unwrap();
+        for start in [-1., -1e20] {
+            let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start, 0.),
+                end: Point2::new(0., 0.),
+            })
+            .unwrap();
+            assert_eq!(
+                super::intersect_section_line_arc(&line, &arc),
+                Some([-0.001, 0.])
+            );
         }
     }
 }

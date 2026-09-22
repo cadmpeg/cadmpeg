@@ -1961,3 +1961,5 @@ fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
     assert!(error > EPS_FOLLOWUP_ARC_SAGITTA);
     assert!((error / expected - 1.0).abs() <= 4.0 * f64::EPSILON);
 }
+
+mod geometry_predicates;

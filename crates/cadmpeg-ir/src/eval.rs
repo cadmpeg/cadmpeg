@@ -106,13 +106,21 @@ pub fn analytic_surface_parameters_solved(
     point: Point3,
 ) -> Option<Point2> {
     let components = |origin: Point3, axis: Vector3, reference: Vector3| {
-        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        let project = |direction: Vector3| {
+            crate::math::sum::finite_dot(
+                [point.x, point.y, point.z, -origin.x, -origin.y, -origin.z],
+                [
+                    direction.x,
+                    direction.y,
+                    direction.z,
+                    direction.x,
+                    direction.y,
+                    direction.z,
+                ],
+            )
+        };
         let transverse = axis.cross(reference);
-        (
-            delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
-            delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
-            delta.x * axis.x + delta.y * axis.y + delta.z * axis.z,
-        )
+        (project(reference), project(transverse), project(axis))
     };
     let result = match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
@@ -120,7 +128,7 @@ pub fn analytic_surface_parameters_solved(
             let normal = plane_surface.normal();
             let u_axis = plane_surface.u_axis();
             let (u, v, _) = components(origin, *normal, *u_axis);
-            Point2::new(u, v)
+            Point2::new(u?, v?)
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
@@ -128,6 +136,7 @@ pub fn analytic_surface_parameters_solved(
             let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
+            let (x, y, v) = (x?, y?, v?);
             Point2::new((y / radius).atan2(x / radius), v)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
@@ -138,6 +147,7 @@ pub fn analytic_surface_parameters_solved(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
+            let (x, y, v) = (x?, y?, v?);
             let local_radius = radius + v * half_angle.tan();
             if local_radius == 0.0 {
                 return None;
@@ -149,6 +159,7 @@ pub fn analytic_surface_parameters_solved(
             let axis = sphere_surface.axis();
             let ref_direction = sphere_surface.ref_direction();
             let (x, y, z) = components(center, *axis, *ref_direction);
+            let (x, y, z) = (x?, y?, z?);
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -158,6 +169,7 @@ pub fn analytic_surface_parameters_solved(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let (x, y, z) = components(center, *axis, *ref_direction);
+            let (x, y, z) = (x?, y?, z?);
             Point2::new(
                 y.atan2(x),
                 (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
@@ -1582,12 +1594,12 @@ pub fn nurbs_curve_parameter_near_point(
         if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
-        let middle = start + (end - start) * 0.5;
+        let middle = start.midpoint(end);
         let middle_distance = distance(middle)?;
         if middle_distance <= tolerance {
             return Some(middle);
         }
-        if middle_distance - speed_bound * (end - start) * 0.5 > tolerance
+        if middle_distance - speed_bound * (end - middle).max(middle - start) > tolerance
             || middle == start
             || middle == end
         {
@@ -2132,13 +2144,13 @@ pub fn nurbs_pcurve_contains_point(
         if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
-        let middle = start + (end - start) * 0.5;
+        let middle = start.midpoint(end);
         let curve_uv = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
         let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
         }
-        let travel_bound = speed_bound * (end - start) * 0.5;
+        let travel_bound = speed_bound * (end - middle).max(middle - start);
         if distance - travel_bound > tolerance {
             continue;
         }

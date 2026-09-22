@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounds for positive-weight rational control polygons.
 
-use crate::math::{multiply_divide, sum::ExactSignedSum};
+use crate::math::sum::ExactSignedSum;
 
 /// Global rational curve speed bound about `origin` over the active knot domain.
 /// Common weight scaling is removed before products are formed.
@@ -49,22 +49,27 @@ pub fn speed_bound<const N: usize>(
         }
         maximum_radius = maximum_radius.max(weighted.iter().fold(0.0_f64, |r, v| r.hypot(*v)));
         if let Some(first) = previous {
-            let width = knots[index + order] - knots[index];
-            if !width.is_finite() || width < 0.0 {
-                return None;
-            }
-            if width > 0.0 {
+            let lower = knots[index];
+            let upper = knots[index + order];
+            if upper > lower {
+                let mut width = ExactSignedSum::default();
+                width.add_product(upper, 1.0);
+                width.add_product(lower, -1.0);
+                let width = width.finish()?;
+                let derivative = |delta| {
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_product(delta, f64::from(degree));
+                    numerator
+                        .finish()
+                        .map_or(Some(0.0), |value| value.quotient(width))
+                };
                 let delta = weighted
                     .iter()
                     .zip(first)
                     .fold(0.0_f64, |r, (b, a)| r.hypot(b - a));
-                numerator_speed =
-                    numerator_speed.max(multiply_divide(delta, f64::from(degree), width)?);
-                weight_speed = weight_speed.max(multiply_divide(
-                    (weight - weights[index - 1] / scale).abs(),
-                    f64::from(degree),
-                    width,
-                )?);
+                numerator_speed = numerator_speed.max(derivative(delta)?);
+                weight_speed =
+                    weight_speed.max(derivative((weight - weights[index - 1] / scale).abs())?);
             }
         }
         previous = Some(weighted);
@@ -98,5 +103,18 @@ mod tests {
                 Some(1.0)
             );
         }
+    }
+
+    #[test]
+    fn numerical_audit_speed_bound_keeps_wide_finite_knots() {
+        let speed = super::speed_bound(
+            1,
+            &[-1e308, -1e308, 1e308, 1e308],
+            &[[0., 0.], [1., 0.]],
+            &[1., 1.],
+            [0., 0.],
+        )
+        .unwrap();
+        assert!((speed * 1e308 - 0.5).abs() <= 8. * f64::EPSILON);
     }
 }

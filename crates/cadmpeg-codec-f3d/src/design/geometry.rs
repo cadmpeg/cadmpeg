@@ -693,8 +693,10 @@ fn line_arc_intersection_points(
     else {
         return Some(points);
     };
-    for (parameter, point) in parameters {
-        if (0.0..=1.0).contains(&parameter) {
+    for (_, point) in parameters {
+        if cadmpeg_ir::math::planar::point_segment_distance(point, start, end)
+            <= 128.0 * f64::EPSILON * radius
+        {
             let radial = (point.u - center.u).hypot(point.v - center.v);
             if (radial - radius).abs() <= 128.0 * f64::EPSILON * radius
                 && directed_angle_parameter(
@@ -1241,14 +1243,7 @@ fn point_on_profile_boundary_use(
 }
 
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
-    vertices
-        .iter()
-        .copied()
-        .zip(vertices.iter().copied().cycle().skip(1))
-        .take(vertices.len())
-        .map(|(start, end)| start.u * end.v - end.u * start.v)
-        .sum::<f64>()
-        * 0.5
+    cadmpeg_ir::math::planar::polygon_area_twice(vertices).unwrap_or(f64::NAN) * 0.5
 }
 
 pub(super) fn region_containing_points(

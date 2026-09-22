@@ -1059,3 +1059,5 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
     }
     ir.finalize();
 }
+
+mod trim_domain;

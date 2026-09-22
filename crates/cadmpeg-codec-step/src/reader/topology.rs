@@ -3856,21 +3856,9 @@ fn mapped_pcurve_closest(
         let Some(tangent) = evaluate_tangent(parameter) else {
             break;
         };
-        let tangent_scale = tangent.x.abs().max(tangent.y.abs()).max(tangent.z.abs());
-        if !tangent_scale.is_finite() || tangent_scale == 0.0 {
-            break;
-        }
-        let direction = Vector3::new(
-            tangent.x / tangent_scale,
-            tangent.y / tangent_scale,
-            tangent.z / tangent_scale,
-        );
-        let residual = point.vector_from(target);
-        let Some(step) = cadmpeg_ir::math::multiply_divide(
-            residual.dot(direction),
-            1.0 / direction.dot(direction),
-            tangent_scale,
-        ) else {
+        let Some(step) =
+            cadmpeg_ir::math::solve::projection_step(tangent, point.vector_from(target))
+        else {
             break;
         };
         let mut candidate = clamp_to_domain(parameter - step);

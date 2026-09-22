@@ -1284,3 +1284,5 @@ fn numerical_0922b_wide_segment_incidence() {
         assert_eq!(r, 0.);
     }
 }
+
+mod predicates;

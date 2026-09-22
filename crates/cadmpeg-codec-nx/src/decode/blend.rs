@@ -2117,8 +2117,11 @@ fn closest_pcurve_parameter_from_coarse_grid(
     let (domain, _) = pcurve_domain(pcurve)?;
     let mut closest = None;
     for index in 0..=COARSE_PCURVE_SEARCH_INTERVALS {
-        let parameter = domain[0]
-            + (domain[1] - domain[0]) * index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64;
+        let parameter = cadmpeg_ir::math::interpolate(
+            domain[0],
+            domain[1],
+            index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64,
+        )?;
         let candidate = pcurve_uv(pcurve, parameter)?;
         let distance = (candidate.u - point.u).hypot(candidate.v - point.v);
         if !distance.is_finite() {
@@ -2161,7 +2164,12 @@ fn closest_pcurve_parameter_from_seed(
         } else {
             (parameter - step).clamp(domain[0], domain[1])
         };
-        if (next - parameter).abs() <= 64.0 * f64::EPSILON * (1.0 + parameter.abs()) {
+        if next == parameter
+            || (cadmpeg_ir::math::parameter_fraction(next, domain[0], domain[1])?
+                - cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])?)
+            .abs()
+                <= 64.0 * f64::EPSILON
+        {
             return Some(next);
         }
         parameter = next;
@@ -2585,7 +2593,7 @@ fn subdivide_scalar_bezier_span(
     while let Some(next) = levels.last().filter(|level| level.len() > 1).map(|level| {
         level
             .windows(2)
-            .map(|pair| (pair[0] + pair[1]) * 0.5)
+            .map(|pair| pair[0].midpoint(pair[1]))
             .collect::<Vec<_>>()
     }) {
         levels.push(next);
@@ -2612,7 +2620,8 @@ fn subdivide_scalar_bezier_span(
 }
 
 fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
-    let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
+    let fraction =
+        cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1]).unwrap_or(f64::NAN);
     let mut values = controls.to_vec();
     while values.len() > 1 {
         values = values
@@ -2628,7 +2637,8 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     parameter: f64,
     domain: [f64; 2],
 ) -> f64 {
-    let fraction = (parameter - domain[0]) / (domain[1] - domain[0]);
+    let fraction =
+        cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1]).unwrap_or(f64::NAN);
     let mut values = controls.to_vec();
     while values.len() > 1 {
         values = values

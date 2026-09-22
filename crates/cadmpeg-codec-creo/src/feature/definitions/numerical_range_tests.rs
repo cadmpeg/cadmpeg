@@ -25,3 +25,17 @@ fn numerical_0922b_trim_unique_crossing() {
         );
     }
 }
+
+#[test]
+fn numerical_audit_trim_line_circle_clips_rounded_endpoint_roots() {
+    for start in [-1., -1e20] {
+        assert_eq!(
+            super::trim_line_circle_intersection([start, 0.], [0., 0.], [0., 0.], 0.001),
+            Some([-0.001, 0.])
+        );
+    }
+    assert_eq!(
+        super::trim_line_circle_intersection([-1., 0.], [1., 0.], [0., 0.], 0.001),
+        None
+    );
+}

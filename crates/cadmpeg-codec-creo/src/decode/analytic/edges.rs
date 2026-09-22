@@ -171,8 +171,14 @@ fn nonperiodic_nurbs_edge_parameter_range(
         } else {
             [second, first]
         };
-        return (parameters[1] - parameters[0] > EPS_NEAR_ZERO * (range[1] - range[0]).max(1.0))
-            .then_some(parameters);
+        return (cadmpeg_ir::math::parameter_fraction(parameters[0], range[0], range[1])
+            .zip(cadmpeg_ir::math::parameter_fraction(
+                parameters[1],
+                range[0],
+                range[1],
+            ))
+            .is_some_and(|(first, second)| second - first > EPS_NEAR_ZERO))
+        .then_some(parameters);
     }
 
     let mapped = range.map(|parameter| {

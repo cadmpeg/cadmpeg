@@ -483,3 +483,5 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
     assert!(super::geometry_section_record(&scan, 15).is_none());
     assert!(super::geometry_section_record(&scan, 16).is_some());
 }
+
+mod predicates;

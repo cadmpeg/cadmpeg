@@ -359,6 +359,25 @@ pub fn parameter_fraction(parameter: f64, start: f64, end: f64) -> Option<f64> {
         .map_or(Some(0.0), |value| value.quotient(denominator))
 }
 
+/// Whether a finite parameter lies in an ordered domain, allowing roundoff
+/// relative to its width. No absolute parameter-unit floor is imposed.
+pub fn parameter_in_domain(value: f64, domain: [f64; 2], relative_tolerance: f64) -> bool {
+    if ![value, domain[0], domain[1], relative_tolerance]
+        .into_iter()
+        .all(f64::is_finite)
+        || domain[0] > domain[1]
+        || relative_tolerance < 0.0
+    {
+        return false;
+    }
+    if (domain[0]..=domain[1]).contains(&value) {
+        return true;
+    }
+    parameter_fraction(value, domain[0], domain[1]).is_some_and(|fraction| {
+        fraction >= -relative_tolerance && fraction - 1.0 <= relative_tolerance
+    })
+}
+
 /// Map a finite parameter into the half-open finite interval `[start, end)`.
 /// A period wider than f64's range is evaluated in a half-scale chart.
 pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
