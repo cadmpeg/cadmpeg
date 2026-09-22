@@ -30,7 +30,7 @@ pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     container_only: bool,
     budget: DecodeBudget,
-    next_space: Cell<usize>,
+    derived_spaces: Cell<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -141,7 +141,7 @@ impl<'a> DecodeContext<'a> {
             arena,
             container_only,
             budget: DecodeBudget::new(*policy, length),
-            next_space: Cell::new(1),
+            derived_spaces: Cell::new(0),
         };
         Ok((ctx, View::over_space(bytes, SpaceId::ROOT)))
     }
@@ -172,16 +172,19 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
-        let index = self.next_space.get();
-        let next = index.checked_add(1).ok_or_else(|| {
-            // Root owns zero; the remaining allocatable IDs count derived spaces.
-            self.refuse_codec_limit(
+        let used = self.derived_spaces.get();
+        let index = used.checked_add(1).ok_or_else(|| {
+            // Root owns zero; every other `usize` value identifies a derived space.
+            self.budget.refuse(
+                ResourceDimension::Codec("decode address spaces"),
+                ResourceFailure::BudgetExceeded,
+                usize::MAX as u64,
+                used as u64,
+                1,
                 "decode address spaces",
-                (usize::MAX - 1) as u64,
-                index as u64,
             )
         })?;
-        self.next_space.set(next);
+        self.derived_spaces.set(index);
         Ok(SpaceId::from_index(index))
     }
 
@@ -564,20 +567,20 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(b"x", &arena, &DecodePolicy::default())
             .expect("test input fits the policy");
-        ctx.next_space.set(usize::MAX - 1);
+        ctx.derived_spaces.set(usize::MAX - 1);
         let range = ByteRange { start: 0, end: 1 };
         let view = ctx
             .register_slice(root, range)
-            .expect("last allocatable id");
-        assert_eq!(view.space().index(), usize::MAX - 1);
+            .expect("maximum space id is allocatable");
+        assert_eq!(view.space().index(), usize::MAX);
         let error = ctx
             .register_slice(root, range)
             .expect_err("space IDs are exhausted");
         let crate::CodecError::ResourceLimit(limit) = error else {
             panic!("exhausted IDs return a resource refusal");
         };
-        assert_eq!(limit.limit, (usize::MAX - 1) as u64);
-        assert_eq!(limit.used, (usize::MAX - 1) as u64);
+        assert_eq!(limit.limit, usize::MAX as u64);
+        assert_eq!(limit.used, usize::MAX as u64);
         assert_eq!(limit.additional, 1);
         assert!(ctx.register_slice(root, range).is_err());
         assert!(ctx.finish_session().is_err());
