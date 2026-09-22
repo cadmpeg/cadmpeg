@@ -12,13 +12,14 @@ fn numerical_audit_disjoint_small_range_recharts_curve() {
                 None,
                 false,
             )
-            .unwrap(),
+            .expect("valid line carrier"),
         ));
         let mut refusals = crate::nurbs::LaneRefusals::new();
         let mapped =
             curve_on_parameter_range(curve, [0., d], [2. * d, 3. * d], &"test", &mut refusals)
-                .unwrap();
-        let point = cadmpeg_ir::eval::curve_point(&mapped, 2.5 * d).unwrap();
+                .expect("finite reparameterized curve");
+        let point =
+            cadmpeg_ir::eval::curve_point(&mapped, 2.5 * d).expect("point in target domain");
         assert!((point.x - 0.5).abs() <= 8. * f64::EPSILON);
     }
 }

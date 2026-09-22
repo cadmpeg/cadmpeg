@@ -58,7 +58,7 @@ fn numerical_audit_full_edge_survives_small_knot_domain() {
                 None,
                 false,
             )
-            .unwrap(),
+            .expect("valid degree-one carrier"),
         ));
         assert_eq!(
             nonperiodic_nurbs_edge_parameter_range(&c, [[0., 0., 0.], [1., 0., 0.]]),

@@ -923,17 +923,17 @@ mod tests {
         use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
         let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0., 0.),
-            radius: cadmpeg_ir::scalar::Length::new(0.001).unwrap(),
-            start_angle: cadmpeg_ir::scalar::Angle::new(0.).unwrap(),
-            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
+            radius: cadmpeg_ir::scalar::Length::new(0.001).expect("positive radius"),
+            start_angle: cadmpeg_ir::scalar::Angle::new(0.).expect("finite angle"),
+            end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).expect("finite angle"),
         })
-        .unwrap();
+        .expect("valid sketch geometry");
         for start in [-1., -1e20] {
             let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start, 0.),
                 end: Point2::new(0., 0.),
             })
-            .unwrap();
+            .expect("valid sketch geometry");
             assert_eq!(
                 super::intersect_section_line_arc(&line, &arc),
                 Some([-0.001, 0.])
