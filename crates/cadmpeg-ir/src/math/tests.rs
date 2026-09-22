@@ -227,7 +227,7 @@ fn numerical_0922b_parameter_fraction_preserves_finite_charts() {
 
 #[test]
 fn numerical_audit_domains_do_not_admit_disjoint_parameter_ranges() {
-    for domain in [[0., 1.], [0., 1e-16], [-1e308, 1e308]] {
+    for domain in [[0.0_f64, 1.], [0., 1e-16], [-1e308, 1e308]] {
         for value in [domain[0], domain[0].midpoint(domain[1]), domain[1]] {
             assert!(super::parameter_in_domain(
                 value,

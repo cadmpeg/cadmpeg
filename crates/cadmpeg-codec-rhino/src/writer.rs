@@ -1356,11 +1356,7 @@ fn validate_nurbs_trim(
                     pcurve.id.as_str()
                 ))
             })?;
-            if uv.u < u_domain[0] - uv_epsilon
-                || uv.u > u_domain[1] + uv_epsilon
-                || uv.v < v_domain[0] - uv_epsilon
-                || uv.v > v_domain[1] + uv_epsilon
-            {
+            if !inside_domain(uv.u, uv.v) {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} leaves its NURBS surface parameter domain",
                     pcurve.id.as_str()
