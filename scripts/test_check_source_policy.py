@@ -598,6 +598,17 @@ class WireMirrorDocs(TempSourceCase):
         self.assertEqual([(f.path, f.line) for f in self.findings(
             "undocumented_wire_mirror")], [("crates/cadmpeg-ir/src/remote.rs", 2)])
 
+    def test_an_into_target_is_a_wire_mirror(self) -> None:
+        self.write(f"{self.IR}/value.rs", '#[serde(into = "ValueWire")]\n'
+                                           "pub struct Value { value: u8 }\n"
+                                           "struct ValueWire {\n"
+                                           "    value: u8,\n"
+                                           "}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/value.rs", 4),
+        ])
+
     def test_a_same_named_type_elsewhere_is_not_the_mirror(self) -> None:
         self.write(f"{self.IR}/local.rs", '\n'.join([
             '#[serde(try_from = "Wire")]', "pub struct Local { value: u8 }", "",
@@ -605,6 +616,68 @@ class WireMirrorDocs(TempSourceCase):
             "}", "",
         ]))
         self.write(f"{self.IR}/other.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_module_qualified_target_selects_only_that_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "left::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_an_external_qualified_target_does_not_select_an_in_crate_type(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "outside::ExternalWire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/local.rs", "struct ExternalWire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_crate_qualified_target_selects_the_named_module(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "crate::left::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/left.rs", 2),
+        ])
+
+    def test_a_qualified_target_selects_an_inline_module_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "left::nested::Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "mod nested {\n"
+                                           "    struct Wire {\n"
+                                           "        /// The nested value.\n"
+                                           "        value: u8,\n"
+                                           "    }\n"
+                                           "}\n"
+                                           "struct Wire {\n"
+                                           "    value: u8,\n"
+                                           "}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_a_super_qualified_target_selects_the_parent_module(self) -> None:
+        self.write(f"{self.IR}/outer/holder.rs", '#[serde(try_from = "super::Wire")]\n'
+                                                   "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/outer.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/other.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        findings = self.findings("undocumented_wire_mirror")
+        self.assertEqual([(f.path, f.line) for f in findings], [
+            ("crates/cadmpeg-ir/src/outer.rs", 2),
+        ])
+
+    def test_an_unqualified_import_selects_the_imported_declaration(self) -> None:
+        self.write(f"{self.IR}/holder.rs", "use crate::left::Wire;\n"
+                                             '#[serde(try_from = "Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    /// The value.\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.assertEqual(self.findings("undocumented_wire_mirror"), [])
+
+    def test_an_ambiguous_unqualified_target_is_unresolved(self) -> None:
+        self.write(f"{self.IR}/holder.rs", '#[serde(try_from = "Wire")]\n'
+                                             "pub struct Holder { value: u8 }\n")
+        self.write(f"{self.IR}/left.rs", "struct Wire {\n    value: u8,\n}\n")
+        self.write(f"{self.IR}/right.rs", "struct Wire {\n    value: u8,\n}\n")
         self.assertEqual(self.findings("undocumented_wire_mirror"), [])
 
     def test_every_crate_in_scope_reports_an_undocumented_member(self) -> None:
