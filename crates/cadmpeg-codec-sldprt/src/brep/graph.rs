@@ -3635,9 +3635,9 @@ fn derive_spherical_pcurves(
         let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
             continue;
         };
-        let sphere_center = sphere_surface.center();
-        let v_reference = sphere_surface.axis();
-        let u_reference = sphere_surface.ref_direction();
+        let sphere_center = sphere_surface.center().get();
+        let v_reference = *sphere_surface.axis();
+        let u_reference = *sphere_surface.ref_direction();
         let radius = sphere_surface.radius().get();
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
@@ -3650,10 +3650,10 @@ fn derive_spherical_pcurves(
             continue;
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
+        let axis = *circle_curve.axis();
         let circle_radius = circle_curve.radius().get();
         let axis_dot = axis.dot(v_reference);
-        let reference = circle_curve.ref_direction();
+        let reference = *circle_curve.ref_direction();
         let tangent = v_reference.cross(u_reference);
         let offset = center.vector_from(sphere_center);
         // Allow rounding of the frame projections as well as the existing
