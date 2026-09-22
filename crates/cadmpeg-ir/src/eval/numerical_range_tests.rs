@@ -238,6 +238,6 @@ fn numerical_0922b_finite_chord_bound() {
         );
         println!("IR curved diagonal scale{s:e}:bound{r:?}");
         let bound = r.unwrap() / s;
-        assert!(bound >= 0.25 && bound < 0.34);
+        assert!((0.25..0.34).contains(&bound));
     }
 }

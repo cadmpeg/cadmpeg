@@ -118,7 +118,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
             0.,
         )
         .unwrap();
-        let budget = GeometryWorkBudget::new(100000);
+        let budget = GeometryWorkBudget::new(100_000);
         let p = closest_nurbs_curve_parameter_with_budget(&curve, target, None, &budget).unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
@@ -159,7 +159,7 @@ fn numerical_0922b_small_domain_inverse() {
             0.75 * d,
         )
         .unwrap();
-        let budget = GeometryWorkBudget::new(100000);
+        let budget = GeometryWorkBudget::new(100_000);
         let p = closest_nurbs_curve_parameter_with_budget(&curve, target, None, &budget).unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
@@ -195,7 +195,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         &curve,
         target,
         None,
-        &GeometryWorkBudget::new(100000),
+        &GeometryWorkBudget::new(100_000),
     )
     .unwrap();
     let actual = cadmpeg_ir::eval::nurbs_curve_point(
@@ -220,7 +220,7 @@ fn numerical_0922b_common_weight_inverse() {
             false,
         )
         .unwrap();
-        let budget = GeometryWorkBudget::new(100000);
+        let budget = GeometryWorkBudget::new(100_000);
         let p = closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0., 0., 0.),

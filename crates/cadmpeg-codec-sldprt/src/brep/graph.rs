@@ -3721,7 +3721,7 @@ fn derive_spherical_pcurves(
                 return false;
             };
             let Some(curve_point) = cadmpeg_ir::eval::curve_point(
-                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve.clone())),
+                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
                 parameter,
             ) else {
                 return false;
