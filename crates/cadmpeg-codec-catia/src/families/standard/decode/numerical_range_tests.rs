@@ -49,7 +49,7 @@ fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
         ),
         false,
     )
-    .unwrap()
+    .expect("valid bilinear surface")
 }
 #[test]
 fn numerical_0922b_surface_membership_wide_chart() {
