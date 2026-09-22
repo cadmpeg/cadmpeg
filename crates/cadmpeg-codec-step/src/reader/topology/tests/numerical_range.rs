@@ -41,3 +41,23 @@ fn numerical_0922b_pcurve_knot_units() {
         assert!((r.1 / d - 0.3).abs() < 1e-14);
     }
 }
+
+#[test]
+fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
+    let (ir, id) = plane();
+    let index = ModelIndex::new_model_only(&ir);
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![0., 0., 1., 1.],
+            vec![Point2::new(0., 0.), Point2::new(1e-200, 0.)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    assert_eq!(
+        mapped_pcurve_closest(&index, &id, &pcurve, Point3::new(1e200, 0., 0.), 0.),
+        Some((1e200, 0.))
+    );
+}

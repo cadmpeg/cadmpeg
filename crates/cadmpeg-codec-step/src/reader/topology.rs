@@ -3866,14 +3866,13 @@ fn mapped_pcurve_closest(
             tangent.z / tangent_scale,
         );
         let residual = point.vector_from(target);
-        let step = cadmpeg_ir::math::multiply_divide(
+        let Some(step) = cadmpeg_ir::math::multiply_divide(
             residual.dot(direction),
             1.0 / direction.dot(direction),
             tangent_scale,
-        )?;
-        if !step.is_finite() {
+        ) else {
             break;
-        }
+        };
         let mut candidate = clamp_to_domain(parameter - step);
         let Some(candidate_point) = evaluate_point(candidate) else {
             break;
