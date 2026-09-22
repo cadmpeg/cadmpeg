@@ -712,9 +712,9 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
 # The mirror spells the wire
 # shape of the admitted type, and its member documentation is what the
 # published JSON schema reads as each property's `description`. The rule covers
-# the shared crates a CADIR document states the shape of; a codec crate's own
-# records stay outside it, because they generate no schema and state their
-# shape through `NativeRecord`.
+# the shared crates that publish JSON Schema through their `schema` features. A
+# codec crate's own records stay outside it because they generate no schema and
+# state their shape through `NativeRecord`.
 #
 # A member the mirror carries with `#[serde(flatten)]` publishes no property of
 # its own: the properties are the members of the flattened type, so that type is
@@ -726,7 +726,6 @@ WIRE_MIRROR_DOC_ROOTS = (
     "crates/cadmpeg-ir",
     "crates/cadmpeg-core",
     "crates/cadmpeg-asm",
-    "crates/cadmpeg-protein",
 )
 SERDE_ATTRIBUTE = re.compile(r"#\s*\[\s*serde\s*\(")
 SERDE_MIRROR_TARGET = re.compile(

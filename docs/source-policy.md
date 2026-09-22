@@ -28,20 +28,21 @@ each violation by rule, file, line, and explanation.
   types stay outside the rule: the compiler can require the wider marker for
   them. A module named by a non-private `use` keeps the reach the re-export
   grants.
-- Every member of a serde wire mirror in `cadmpeg-ir`, `cadmpeg-core`,
-  `cadmpeg-asm` and `cadmpeg-protein` carries a doc comment. The mirror is the
-  type a serde conversion container attribute names with `try_from`, `from` or
-  `into`, and its members are its fields, an enum's variants and the fields of
-  a struct-shaped variant. The published JSON schema reads each
-  member's doc as that property's `description`, so a member with no doc leaves
-  the schema silent about the value the wire carries. A codec crate's own
-  records stay outside the rule: they generate no schema and state their shape
-  through `NativeRecord`. An unqualified target resolves in the file that names
-  it, through that file's `use` imports, and then to a unique crate-wide
-  declaration. An ambiguous unqualified target is unresolved. A qualified
-  target resolves along the `crate`, `self`, `super` or module path that it
-  names. A path whose leading segment is not a module of the crate names an
-  external crate and is not resolved. A member the mirror carries with
+- Every member of a serde wire mirror in `cadmpeg-ir`, `cadmpeg-core` and
+  `cadmpeg-asm` carries a doc comment. These crates publish JSON Schema through
+  their `schema` features. The mirror is the type a serde conversion container
+  attribute names with `try_from`, `from` or `into`, and its members are its
+  fields, an enum's variants and the fields of a struct-shaped variant. The
+  published JSON schema reads each member's doc as that property's
+  `description`, so a member with no doc leaves the schema silent about the
+  value the wire carries. A codec crate's own records stay outside the rule:
+  they generate no schema and state their shape through `NativeRecord`. An
+  unqualified target resolves in the file that names it, through that file's
+  `use` imports, and then to a unique crate-wide declaration. An ambiguous
+  unqualified target is unresolved. A qualified target resolves along the
+  `crate`, `self`, `super` or module path that it names. A path whose leading
+  segment is not a module of the crate names an external crate and is not
+  resolved. A member the mirror carries with
   `#[serde(flatten)]` publishes no property of its own; the properties are the
   members of the flattened type, so that type is a mirror as well and the rule
   repeats through a chain of flattened types. The flattened type's name is
