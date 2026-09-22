@@ -23,6 +23,31 @@ fn curve(radius: f64) -> HelixCurveConstruction {
 }
 
 #[test]
+fn numerical_audit_helix_curve_rejects_overflowing_unequal_radii() {
+    let maximum = f64::MAX;
+    assert!(HelixCurveConstruction::try_new(
+        [0.0, 1.0],
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(maximum, maximum, 0.0),
+            minor: Vector3::new(maximum, maximum, maximum),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        0.0,
+        None,
+    )
+    .is_err());
+}
+
+#[test]
+fn numerical_audit_helix_line_admits_finite_nonzero_small_directions() {
+    for magnitude in [1e-200, f64::from_bits(1)] {
+        assert!(HelixLineProfile::try_new(Vector3::new(magnitude, 0.0, 0.0)).is_ok());
+    }
+}
+
+#[test]
 fn helix_curve_admission_rejects_the_validator_numeric_states() {
     let valid = curve(1.0);
     let range = *valid.angle_range();

@@ -534,6 +534,37 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
     assert!(error.contains("recursion limit exceeded"), "{error}");
 }
 
+#[test]
+fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
+    use crate::geometry::{FiniteLawFormula, LawExpression, LoftPathCurve};
+
+    for endpoints in [None, Some([None, Some(1.0)]), Some([Some(0.0), None])] {
+        let formula = named_law(LawExpression::Edge {
+            curve: LoftPathCurve {
+                id: source(),
+                endpoints,
+            },
+            parameters: [0.0, 1.0],
+        });
+        assert!(FiniteLawFormula::try_new(formula).is_ok());
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for slot in 0..2 {
+            let mut endpoints = [Some(0.0), Some(1.0)];
+            endpoints[slot] = Some(invalid);
+            let formula = named_law(LawExpression::Edge {
+                curve: LoftPathCurve {
+                    id: source(),
+                    endpoints: Some(endpoints),
+                },
+                parameters: [0.0, 1.0],
+            });
+            assert!(!formula.values_are_finite());
+            assert!(FiniteLawFormula::try_new(formula).is_err());
+        }
+    }
+}
+
 /// The recursion bound the law-expression walk states.
 const LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST: usize = 64;
 
