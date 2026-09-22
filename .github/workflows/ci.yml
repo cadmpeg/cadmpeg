@@ -227,6 +227,10 @@ jobs:
         # Per-codec optional deps must keep a one-feature binary compiling.
         run: cargo build -q -p cadmpeg --no-default-features --features sldprt
 
+      - name: STEP-only low-confidence regression
+        # This test target only exists when STEP is enabled without FCStd or F3D.
+        run: cargo test -q -p cadmpeg --no-default-features --features step --test low_confidence_inspect
+
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:
