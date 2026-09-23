@@ -58,6 +58,21 @@
 //! use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 //! let _: PositiveReal = PositiveLength::new(2.0).unwrap().into();
 //! ```
+//!
+//! A dimensionless value takes a quantity family only through a named assignment
+//! that its caller's context justifies:
+//!
+//! ```compile_fail
+//! use cadmpeg_ir::scalar::{FiniteReal, Length};
+//! let _: Length = FiniteReal::ZERO.into();
+//! ```
+//!
+//! ```
+//! use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
+//! let value = FiniteReal::new(-2.5).unwrap();
+//! assert_eq!(Length::from_assigned_real(value).get(), -2.5);
+//! assert_eq!(Angle::from_assigned_real(value).get(), -2.5);
+//! ```
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -292,6 +307,19 @@ impl Length {
     pub const fn abs(self) -> Self {
         Self(self.0.abs())
     }
+
+    /// Assign the length family to a dimensionless value in canonical
+    /// millimeters.
+    ///
+    /// A `FiniteReal` carries no quantity family, so no conversion gives it
+    /// one. The caller calls this route only where its own context states that
+    /// the value is a length, for example a parameter definition that declares
+    /// a length kind. Both domains admit every finite value, so the assignment
+    /// keeps the value and cannot refuse.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Self {
+        Self(value.0)
+    }
 }
 
 impl Angle {
@@ -305,6 +333,18 @@ impl Angle {
     #[must_use]
     pub const fn abs(self) -> Self {
         Self(self.0.abs())
+    }
+
+    /// Assign the angle family to a dimensionless value in canonical radians.
+    ///
+    /// A `FiniteReal` carries no quantity family, so no conversion gives it
+    /// one. The caller calls this route only where its own context states that
+    /// the value is an angle, for example a parameter definition or a relation
+    /// that declares an angle kind. Both domains admit every finite value, so
+    /// the assignment keeps the value and cannot refuse.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Self {
+        Self(value.0)
     }
 }
 

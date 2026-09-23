@@ -544,12 +544,33 @@ impl SphereSurface {
         ref_direction: Vector3,
         radius: f64,
     ) -> Result<Self, &'static str> {
-        let frame = OrthonormalFrame3::new(axis, ref_direction)
-            .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
-        let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
+        let (center, frame) = Self::admit_placement(center, axis, ref_direction)?;
         let radius =
             NonZeroLength::new(radius).ok_or("SphereSurface.radius must be finite and nonzero")?;
         Ok(Self::new(center, frame, radius))
+    }
+
+    /// Admit the center and frame around an admitted radius. The frame and
+    /// center refusals are those of [`SphereSurface::try_new`].
+    pub fn try_with_radius(
+        center: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+        radius: NonZeroLength,
+    ) -> Result<Self, &'static str> {
+        let (center, frame) = Self::admit_placement(center, axis, ref_direction)?;
+        Ok(Self::new(center, frame, radius))
+    }
+
+    fn admit_placement(
+        center: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+    ) -> Result<(FinitePoint3, OrthonormalFrame3), &'static str> {
+        let frame = OrthonormalFrame3::new(axis, ref_direction)
+            .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
+        let center = FinitePoint3::new(center).ok_or("SphereSurface.center must be finite")?;
+        Ok((center, frame))
     }
 
     /// Return the center.

@@ -565,15 +565,11 @@ pub(crate) fn type_display_relation_parameters(
         };
         match family {
             FeatureInputRelationFamily::Angle => {
+                // Every relation that owns the parameter is an angle relation.
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
-                    let value = value.get();
-                    parameter.expression = crate::history::literals::format_angle_rad(value);
+                    parameter.expression = crate::history::literals::format_angle_rad(value.get());
                     parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
-                        cadmpeg_ir::scalar::Angle::new(value).ok_or_else(|| {
-                            cadmpeg_core::CodecError::Malformed(
-                                "SolidWorks projected angle must be finite".into(),
-                            )
-                        })?,
+                        cadmpeg_ir::scalar::Angle::from_assigned_real(value),
                     ));
                 }
             }

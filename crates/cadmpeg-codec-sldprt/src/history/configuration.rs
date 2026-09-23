@@ -1194,6 +1194,8 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
         let Some(canonical) = parameter_kinds.get(parameter) else {
             continue;
         };
+        // The canonical parameter definition declares the kind of each
+        // override, and so the quantity family of an untyped real override.
         let aligned = match (&**canonical, &*value) {
             (ParameterValue::Length(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer)
@@ -1201,7 +1203,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                     .map(ParameterValue::Length)
             }
             (ParameterValue::Length(_), ParameterValue::Real(real)) => {
-                Length::new(real.get()).map(ParameterValue::Length)
+                Some(ParameterValue::Length(Length::from_assigned_real(*real)))
             }
             (ParameterValue::Angle(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer)
@@ -1209,7 +1211,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                     .map(ParameterValue::Angle)
             }
             (ParameterValue::Angle(_), ParameterValue::Real(real)) => {
-                Angle::new(real.get()).map(ParameterValue::Angle)
+                Some(ParameterValue::Angle(Angle::from_assigned_real(*real)))
             }
             (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
                 exact_integer_f64(*integer)
