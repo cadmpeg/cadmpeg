@@ -3,7 +3,7 @@
 
 use cadmpeg_core::text::NonBlankString;
 
-use crate::checked::PositiveFinite;
+use cadmpeg_ir::scalar::PositiveLength;
 use serde::{Deserialize, Serialize};
 
 use super::CatiaAllocationReferenceEncoding;
@@ -261,7 +261,7 @@ pub(super) enum CatiaOwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: PositiveFinite,
+        construction_radius: PositiveLength,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -367,7 +367,7 @@ impl CatiaOwnerChartBridgeWire {
                         "owner-chart bridge framing controls do not match carrier".to_owned()
                     );
                 }
-                let construction_radius = PositiveFinite::new(construction_radius)
+                let construction_radius = PositiveLength::new(construction_radius)
                     .ok_or_else(|| "construction_radius must be finite and positive".to_owned())?;
                 let middle_controls = [
                     CatiaOwnerChartMiddleControl::from_byte(controls[2])
