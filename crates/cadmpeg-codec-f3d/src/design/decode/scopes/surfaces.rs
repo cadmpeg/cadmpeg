@@ -339,8 +339,7 @@ pub(super) fn exact_surface_stitch_operation(
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
         return None;
     }
-    let gap_tolerance =
-        crate::records::feature::sheet_metal::DesignPositiveScalar::new(scalar.value)?;
+    let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?;
     Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,

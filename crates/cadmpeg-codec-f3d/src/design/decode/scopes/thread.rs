@@ -10,7 +10,6 @@ use crate::layout::thread_standard_legacy_construction_tail as thread_standard_l
 use crate::layout::thread_standard_scope_prefix as thread_standard;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::sheet_metal;
 use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
@@ -175,7 +174,7 @@ pub(super) fn parse_thread_payload(
         designation: cadmpeg_core::text::NonBlankString::new(designation)?,
         nominal_size,
         profile: cadmpeg_core::text::NonBlankString::new(profile)?,
-        pitch: sheet_metal::DesignPositiveScalar::new(pitch)?,
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(pitch)?,
         face_group_record_indices,
         diameters: thread::DesignThreadDiameters::new(
             major_diameter,

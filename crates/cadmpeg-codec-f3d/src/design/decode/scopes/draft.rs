@@ -9,7 +9,6 @@ use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::sheet_metal;
 use crate::records::parameters::DesignParameterOwner;
 
 pub(super) fn exact_draft_operation_with_owners(
@@ -74,7 +73,7 @@ pub(super) fn exact_draft_operation_with_owners(
         return None;
     }
     Some(DesignDraftOperation {
-        angle: sheet_metal::DesignFiniteScalar::new(*angle)?,
+        angle: cadmpeg_ir::scalar::Angle::new(*angle)?,
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,

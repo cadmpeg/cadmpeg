@@ -4,6 +4,7 @@
 use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_ir::assets::AssetId;
+use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -1002,42 +1003,59 @@ impl DesignMeshBody {
     }
 }
 
-/// A finite, nonsingular row-major affine map.
+/// A finite, nonsingular row-major affine map. The IR transform holds the
+/// three affine rows; the stored bottom row keeps the source spelling of the
+/// constant row, including the sign of each zero.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
-pub(crate) struct MeshAffineTransform([f64; 16]);
+pub(crate) struct MeshAffineTransform {
+    affine: Transform,
+    bottom: [f64; 4],
+}
 
 impl MeshAffineTransform {
     /// Check finite coefficients, an affine last row, and a nonzero finite determinant.
     pub(crate) fn new(cells: [f64; 16]) -> Result<Self, String> {
-        let value = Self(cells);
-        let rows = value.rows();
-        if !cells.iter().all(|cell| cell.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
-            return Err("transform must be finite and affine".into());
-        }
+        let rows: [[f64; 4]; 4] = std::array::from_fn(|row| {
+            [
+                cells[4 * row],
+                cells[4 * row + 1],
+                cells[4 * row + 2],
+                cells[4 * row + 3],
+            ]
+        });
+        let affine = (rows[3] == [0.0, 0.0, 0.0, 1.0])
+            .then(|| Transform::affine([rows[0], rows[1], rows[2]]))
+            .flatten()
+            .ok_or("transform must be finite and affine")?;
         let determinant = rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
             - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
             + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]);
         if !determinant.is_finite() || determinant == 0.0 {
             return Err("transform must have a nonzero finite determinant".into());
         }
-        Ok(value)
+        Ok(Self {
+            affine,
+            bottom: rows[3],
+        })
     }
 
     /// Row-major coefficients.
     pub(crate) fn cells(self) -> [f64; 16] {
-        self.0
+        let rows = self.rows();
+        std::array::from_fn(|cell| rows[cell / 4][cell % 4])
+    }
+
+    /// The affine map. Admission checked every coefficient, so no second
+    /// admission is needed.
+    pub(crate) fn transform(self) -> Transform {
+        self.affine
     }
 
     /// Four row-major rows.
     fn rows(self) -> [[f64; 4]; 4] {
-        let cells = self.0;
-        [
-            [cells[0], cells[1], cells[2], cells[3]],
-            [cells[4], cells[5], cells[6], cells[7]],
-            [cells[8], cells[9], cells[10], cells[11]],
-            [cells[12], cells[13], cells[14], cells[15]],
-        ]
+        let [first, second, third] = self.affine.affine_rows();
+        [first, second, third, self.bottom]
     }
 }
 

@@ -1380,10 +1380,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 crate::records::identity::ReferenceRun::unlocated(vec![100, 200, 300, 301]);
             draft.payload = crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
                 DesignSurfaceStitchOperation {
-                    gap_tolerance: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                        0.01,
-                    )
-                    .unwrap(),
+                    gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
                     gap_tolerance_offset: 40,
                     tolerance_record_index: 300,
                     settings_record_index: 301,

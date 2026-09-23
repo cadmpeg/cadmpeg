@@ -151,20 +151,11 @@ impl MeshAffineTransform {
     /// map. The determinant sign keeps the normal aligned with the unchanged
     /// triangle tuple under a reflection.
     fn transform_normal(self, normal: [f64; 3]) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
-        let c = self.cells();
-        let transform = cadmpeg_ir::transform::Transform::affine([
-            [c[0], c[1], c[2], c[3]],
-            [c[4], c[5], c[6], c[7]],
-            [c[8], c[9], c[10], c[11]],
-        ]);
+        let transform = self.transform();
         transform
-            .and_then(|transform| {
-                Some(
-                    transform
-                        .apply_normal(cadmpeg_ir::math::Vector3::from(normal))?
-                        .scale(transform.orientation()?),
-                )
-            })
+            .apply_normal(cadmpeg_ir::math::Vector3::from(normal))
+            .zip(transform.orientation())
+            .map(|(normal, orientation)| normal.scale(orientation))
             .ok_or_else(|| CodecError::malformed("F3D mesh placement produces a degenerate normal"))
     }
 }

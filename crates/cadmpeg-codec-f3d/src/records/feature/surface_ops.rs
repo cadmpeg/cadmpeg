@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface operations: stitch, extend, offset, trim, rule and patch.
 
-use super::sheet_metal::DesignPositiveScalar;
 use crate::records::{
     identity::NonEmptyVec, mesh::DesignRelaxedGuidText, references::DesignClassTag,
 };
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
-    pub(crate) gap_tolerance: DesignPositiveScalar,
+    pub(crate) gap_tolerance: PositiveReal,
     /// Byte offset of `gap_tolerance`.
     pub(crate) gap_tolerance_offset: u64,
     /// Indexed tolerance-record identity.

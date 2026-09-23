@@ -70,7 +70,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     let expected = Some(DesignDraftOperation {
-        angle: crate::records::feature::sheet_metal::DesignFiniteScalar::new(0.4).unwrap(),
+        angle: cadmpeg_ir::scalar::Angle::new(0.4).unwrap(),
         angle_record_index: 175,
         angle_offset: (draft_start + 40) as u64,
         opposite_angle_record_index: 176,
@@ -530,8 +530,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (revolve_start + 25) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(3.5)
-                    .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(3.5).unwrap(),
                 angle_record_index: 1_779,
                 angle_offset: (revolve_scalar_start + 40) as u64,
                 opposite_angle: Some(crate::records::identity::Located {
@@ -609,10 +608,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (indexed_revolve_start + 21) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    std::f64::consts::TAU
-                )
-                .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: 45,
                 opposite_angle: None,
@@ -676,10 +672,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (class403_start + 21) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    std::f64::consts::TAU
-                )
-                .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: (class403_start + 40) as u64,
                 opposite_angle: None,
@@ -768,10 +761,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    std::f64::consts::TAU
-                )
-                .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -811,10 +801,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    std::f64::consts::TAU
-                )
-                .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,
@@ -852,10 +839,7 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (legacy_revolve_start + 25) as u64,
-                angle: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    std::f64::consts::TAU
-                )
-                .unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 opposite_angle: None,

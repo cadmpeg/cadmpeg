@@ -5898,9 +5898,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
     let extent = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.get())?,
-        },
+        termination: AngularTermination::Angle { angle: *angle },
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {

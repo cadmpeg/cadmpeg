@@ -21,7 +21,6 @@ use crate::records::{
         scope::{
             DesignFeatureKind, DesignParameterScopeDraft, DesignScopePayload, DesignScopePayloadMut,
         },
-        sheet_metal::DesignFiniteScalar,
         surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
     },
     identity::{Located, ReferenceRun},
@@ -701,7 +700,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         .unwrap();
     if let DesignScopePayloadMut::Draft(slot) = scope.payload_mut() {
         *slot = Some(DesignDraftOperation {
-            angle: DesignFiniteScalar::new(-0.25).unwrap(),
+            angle: cadmpeg_ir::scalar::Angle::new(-0.25).unwrap(),
             angle_record_index: 90,
             angle_offset: 0,
             opposite_angle_record_index: 91,

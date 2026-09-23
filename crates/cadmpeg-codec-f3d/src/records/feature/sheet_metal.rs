@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sheet-metal features: base flange, edge flange and hem, with the bend and width forms they state.
 
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
-    pub(crate) thickness: DesignPositiveScalar,
+    pub(crate) thickness: PositiveReal,
     /// Byte offset of `thickness`.
     pub(crate) thickness_offset: u64,
     /// Counted sketch-profile operand group.
@@ -351,65 +352,6 @@ impl DesignEdgeFlangeEdge {
     }
 }
 
-/// A positive finite source scalar.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub(crate) struct DesignPositiveScalar(f64);
-
-impl DesignPositiveScalar {
-    /// Admit a positive finite scalar.
-    pub(crate) fn new(value: f64) -> Option<Self> {
-        (value.is_finite() && value > 0.0).then_some(Self(value))
-    }
-
-    /// The source scalar value.
-    pub(crate) fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl TryFrom<f64> for DesignPositiveScalar {
-    type Error = &'static str;
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or("scalar must be positive and finite")
-    }
-}
-
-impl From<DesignPositiveScalar> for f64 {
-    fn from(value: DesignPositiveScalar) -> Self {
-        value.get()
-    }
-}
-
-/// A finite source scalar with unrestricted sign.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f64", into = "f64")]
-pub(crate) struct DesignFiniteScalar(f64);
-
-impl DesignFiniteScalar {
-    /// Admit a finite scalar.
-    pub(crate) fn new(value: f64) -> Option<Self> {
-        value.is_finite().then_some(Self(value))
-    }
-    /// The source scalar value.
-    pub(crate) fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl TryFrom<f64> for DesignFiniteScalar {
-    type Error = &'static str;
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or("scalar must be finite")
-    }
-}
-
-impl From<DesignFiniteScalar> for f64 {
-    fn from(value: DesignFiniteScalar) -> Self {
-        value.get()
-    }
-}
-
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -430,7 +372,7 @@ pub(crate) struct DesignEdgeFlangeOperation {
     /// Indexed operation-settings record.
     pub(crate) settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub(crate) bend_radius: DesignPositiveScalar,
+    pub(crate) bend_radius: PositiveReal,
     /// Byte offset of `bend_radius`.
     pub(crate) bend_radius_offset: u64,
     /// Face pair the flange height is measured from.
@@ -533,7 +475,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
+            bend_radius: PositiveReal::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
             height_datum: wire.height_datum,
@@ -646,7 +588,7 @@ pub(crate) struct DesignHemOperation {
     /// Indexed operation-settings record.
     pub(crate) settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
-    pub(crate) bend_radius: DesignPositiveScalar,
+    pub(crate) bend_radius: PositiveReal,
     /// Byte offset of `bend_radius`.
     pub(crate) bend_radius_offset: u64,
 }
@@ -718,7 +660,7 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             aggregate_group_record_index: wire.aggregate_group_record_index.try_into()?,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignPositiveScalar::new(wire.bend_radius)
+            bend_radius: PositiveReal::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
         })

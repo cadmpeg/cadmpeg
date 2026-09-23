@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Thread constructions, forms, diameters and nominal sizes.
 
-use super::sheet_metal::DesignPositiveScalar;
 use crate::records::identity::Located;
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize, Serializer};
 use std::num::NonZeroU32;
 
@@ -46,7 +46,7 @@ pub(crate) struct DesignThreadConstruction {
     /// Ordered physical thread diameters in Design length units.
     pub(crate) diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
-    pub(crate) pitch: DesignPositiveScalar,
+    pub(crate) pitch: PositiveReal,
     /// Ordered counted face-selection groups referenced by the scope.
     pub(crate) face_group_record_indices: Vec<u32>,
 }
@@ -54,17 +54,17 @@ pub(crate) struct DesignThreadConstruction {
 /// Positive finite thread diameters ordered from minor through pitch to major.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignThreadDiameters {
-    major: DesignPositiveScalar,
-    minor: DesignPositiveScalar,
-    pitch: DesignPositiveScalar,
+    major: PositiveReal,
+    minor: PositiveReal,
+    pitch: PositiveReal,
 }
 
 impl DesignThreadDiameters {
     /// Admit strictly ordered positive finite thread diameters.
     pub(crate) fn new(major: f64, minor: f64, pitch: f64) -> Option<Self> {
-        let major = DesignPositiveScalar::new(major)?;
-        let minor = DesignPositiveScalar::new(minor)?;
-        let pitch = DesignPositiveScalar::new(pitch)?;
+        let major = PositiveReal::new(major)?;
+        let minor = PositiveReal::new(minor)?;
+        let pitch = PositiveReal::new(pitch)?;
         (minor.get() < pitch.get() && pitch.get() < major.get()).then_some(Self {
             major,
             minor,
@@ -250,7 +250,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             profile: cadmpeg_core::text::NonBlankString::new(value.profile).ok_or("profile must not be empty")?,
             diameters: DesignThreadDiameters::new(value.major_diameter, value.minor_diameter, value.pitch_diameter)
                 .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
-            pitch: DesignPositiveScalar::new(value.pitch).ok_or("pitch must be positive finite")?,
+            pitch: PositiveReal::new(value.pitch).ok_or("pitch must be positive finite")?,
             face_group_record_indices: value.face_group_record_indices,
         })
     }
