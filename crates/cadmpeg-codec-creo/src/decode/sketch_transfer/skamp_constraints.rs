@@ -617,8 +617,35 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
-        SketchConstraintDefinitionInput::Midpoint { point, entity }
-        | SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
+        // The neutral midpoint target is a bounded curve. A solved reference
+        // line has no extent, so a type-35 incidence on it retains its native
+        // form. Geometry without a neutral kind stays admitted.
+        SketchConstraintDefinitionInput::Midpoint { point, entity } => {
+            locus_compatible(point)
+                && geometry.get(entity).is_some_and(|geometry| {
+                    matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                            | SketchGeometryDefinition::Arc { .. }
+                            | SketchGeometryDefinition::Ellipse {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Hyperbola {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Parabola {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Nurbs { .. }
+                            | SketchGeometryDefinition::ExternalReference { .. }
+                            | SketchGeometryDefinition::Native { .. }
+                    )
+                })
+        }
+        SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
             locus_compatible(point) && geometry.contains_key(entity)
         }
         SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
@@ -663,9 +690,20 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::Fixed { entity }
         | SketchConstraintDefinitionInput::Radius { entity, .. }
         | SketchConstraintDefinitionInput::Diameter { entity, .. }
-        | SketchConstraintDefinitionInput::ArcAngle { entity, .. }
         | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => {
             geometry.contains_key(entity)
+        }
+        // A fixed arc angle needs a circular arc. Geometry without a neutral
+        // kind stays admitted.
+        SketchConstraintDefinitionInput::ArcAngle { entity, .. } => {
+            geometry.get(entity).is_some_and(|geometry| {
+                matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Arc { .. }
+                        | SketchGeometryDefinition::ExternalReference { .. }
+                        | SketchGeometryDefinition::Native { .. }
+                )
+            })
         }
         SketchConstraintDefinitionInput::AtIntersection {
             point,
@@ -744,5 +782,175 @@ mod tests {
         assert!(sketch_constraint_loci_compatible_with_policy(
             &projected, &complete, false,
         ));
+    }
+
+    #[test]
+    fn midpoint_and_arc_angle_targets_admit_only_their_neutral_entity_kinds() {
+        use cadmpeg_ir::scalar::{Angle, Length, PositiveAngle};
+
+        let entity = |name: &str| {
+            SketchEntityId::mint(format!("synthetic:test:target#{name}"))
+                .expect("valid test fixture")
+        };
+        let target = entity("target");
+        let point = entity("point");
+        let with_target = |definition: SketchGeometryDefinition| {
+            BTreeMap::from([
+                (
+                    point.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                        position: Point2::new(0.0, 0.0),
+                    })
+                    .expect("valid test fixture"),
+                ),
+                (
+                    target.clone(),
+                    SketchGeometry::try_from(definition).expect("valid test fixture"),
+                ),
+            ])
+        };
+        let line = with_target(SketchGeometryDefinition::Line {
+            start: Point2::new(-1.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        });
+        let reference_line = with_target(SketchGeometryDefinition::ReferenceLine {
+            origin: Point2::new(-1.0, 0.0),
+            direction: Point2::new(2.0, 0.0),
+        });
+        let native_line = with_target(SketchGeometryDefinition::Native {
+            native_kind: cadmpeg_core::text::NonBlankString::new("reference_line")
+                .expect("valid test fixture"),
+        });
+        let arc = with_target(SketchGeometryDefinition::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(1.0).expect("valid test fixture"),
+            start_angle: Angle::new(0.0).expect("valid test fixture"),
+            end_angle: Angle::new(1.0).expect("valid test fixture"),
+        });
+        let circle = with_target(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(1.0).expect("valid test fixture"),
+        });
+
+        let midpoint = SketchConstraintDefinitionInput::Midpoint {
+            point: SketchLocus::Entity(point.clone()),
+            entity: target.clone(),
+        };
+        for (geometry, admitted) in [
+            (&line, true),
+            (&arc, true),
+            (&native_line, true),
+            (&reference_line, false),
+            (&circle, false),
+        ] {
+            assert_eq!(
+                sketch_constraint_loci_compatible_with_policy(&midpoint, geometry, false),
+                admitted,
+                "{geometry:?}"
+            );
+        }
+        let arc_angle = SketchConstraintDefinitionInput::ArcAngle {
+            entity: target.clone(),
+            angle: PositiveAngle::QUARTER_TURN,
+        };
+        for (geometry, admitted) in [(&arc, true), (&native_line, true), (&circle, false)] {
+            assert_eq!(
+                sketch_constraint_loci_compatible_with_policy(&arc_angle, geometry, false),
+                admitted,
+                "{geometry:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_midpoint_incidence_on_a_solved_reference_line_retains_its_native_form() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        const X: [u8; 8] = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
+        let mut payload =
+            b"feat_defs_40\0var_arr\0\xf8\x06\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+        for (variable_type, point, value, uvar) in [
+            (1, 7, &[0xe4][..], 1),
+            (2, 7, &[0xe4][..], 2),
+            (1, 8, &[0xe4][..], 3),
+            (2, 8, &X[..], 4),
+            (1, 9, &X[..], 5),
+            (2, 9, &[0xe4][..], 6),
+        ] {
+            payload.extend_from_slice(&[variable_type, point]);
+            payload.extend_from_slice(value);
+            payload.extend_from_slice(&[0x0f, 1, 0, uvar, 0xe2]);
+        }
+        payload.extend_from_slice(b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2");
+        payload.extend_from_slice(&[25, 0, 0, 0, 7, 8, 0xf6, 0, 0xf6, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&[5, 0, 0, 0, 9, 0xf6, 0xf6, 0, 0xf6, 0xf6, 0xf6, 43, 0xe2]);
+        payload.extend_from_slice(
+            b"relat_ptr\0\xf8\x01\xf7\x6a\xfb\xe2\
+              skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+              \xe0\x01id\0\x05\xe0\x01type\0\x23\xe0\x01flags\0\x00\
+              \xe0\x01status\0\x01\xe0\x01items\0\xf8\x02\xf7\x6c\xfb\xe2\
+              \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x00\xf1\xf7\x6c\xe2\
+              \x2b\x00\xf3\xf7\x6b\xe2\
+              dimtab_ptr\0",
+        );
+        let result = crate::CreoCodec
+            .decode(
+                &mut std::io::Cursor::new(crate::test_support::build_prt(
+                    "c",
+                    &[("FeatDefs", payload)],
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("decode");
+        let model = &result.ir().model;
+        let reference_line = model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::ReferenceLine { .. }
+                )
+            })
+            .expect("solved reference line");
+        let point = model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+            })
+            .expect("solved point");
+        let [relation] = model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| {
+                !matches!(
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::Native { native_kind, .. }
+                        if native_kind == "creo:segtab:verhor"
+                )
+            })
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one solver relation: {:#?}", model.sketch_constraints);
+        };
+        let SketchConstraintDefinitionInput::Native {
+            native_kind,
+            entities,
+            ..
+        } = relation.definition.kind()
+        else {
+            panic!("type-35 relation on a reference line: {relation:#?}");
+        };
+        assert_eq!(native_kind, "creo:skamp:35");
+        assert_eq!(
+            entities,
+            &vec![reference_line.id().clone(), point.id().clone()]
+        );
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{validation:#?}");
     }
 }
