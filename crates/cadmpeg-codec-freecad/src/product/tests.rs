@@ -101,7 +101,7 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
             .element_scales()
             .iter()
             .copied()
-            .map(crate::native::frame::FiniteVec3::values)
+            .map(cadmpeg_ir::units::FiniteVector::get)
             .collect::<Vec<_>>(),
         &[[1.0; 3], [2.0; 3]]
     );

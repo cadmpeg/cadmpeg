@@ -81,7 +81,10 @@ pub(crate) fn transfer(
             linked_target(&owned, "LinkCopyOnChangeGroup", "App::PropertyLink", "Link")?;
         let copy_on_change_touched = bool_property(&owned, "LinkCopyOnChangeTouched")?;
         let scale = scale_property(&owned)?
-            .map(crate::native::frame::FiniteVec3::try_from)
+            .map(|values| {
+                cadmpeg_ir::units::FiniteVector::new(values)
+                    .ok_or("scale vector components must be finite")
+            })
             .transpose()
             .map_err(malformed)?;
         let element_visibility = bool_list(&owned, "VisibilityList")?;
@@ -325,7 +328,7 @@ pub(crate) fn transfer_neutral(
                 .element_scales()
                 .get(index)
                 .copied()
-                .map_or([1.0; 3], crate::native::frame::FiniteVec3::values);
+                .map_or([1.0; 3], cadmpeg_ir::units::FiniteVector::get);
             let base_scale = record.scale().unwrap_or([1.0; 3]);
             let scale: [f64; 3] =
                 std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
@@ -658,7 +661,7 @@ fn parse_placement_list(
 fn parse_vector_list(
     properties: &[&PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
-) -> Result<Vec<crate::native::frame::FiniteVec3>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::units::FiniteVector<3>>, CodecError> {
     let Some(property) = sole_named_property("product", properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
@@ -668,8 +671,8 @@ fn parse_vector_list(
     list_layout::<3>(view, "ScaleList")?
         .map(|positions| {
             let [x, y, z] = positions.map(read_real);
-            crate::native::frame::FiniteVec3::try_from([x?, y?, z?])
-                .map_err(|error| malformed(format!("element_scales: {error}")))
+            cadmpeg_ir::units::FiniteVector::new([x?, y?, z?])
+                .ok_or_else(|| malformed("element_scales: scale vector components must be finite"))
         })
         .collect()
 }

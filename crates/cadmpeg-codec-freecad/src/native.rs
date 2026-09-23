@@ -6,7 +6,8 @@ pub(crate) mod frame;
 pub(crate) mod joint;
 
 use crate::attachment::MapModeIndex;
-use frame::{FiniteFrame, FiniteVec3};
+use cadmpeg_ir::units::FiniteVector;
+use frame::FiniteFrame;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -1511,7 +1512,7 @@ pub(crate) struct LinkOccurrence {
     /// Copy-on-change policy and its payload.
     pub(crate) copy_on_change: Option<CopyOnChange>,
     /// Base scale vector applied to every occurrence element.
-    pub(crate) scale: Option<FiniteVec3>,
+    pub(crate) scale: Option<FiniteVector<3>>,
 }
 
 /// Independently optional array carriers with a common element count.
@@ -1519,7 +1520,7 @@ pub(crate) struct LinkOccurrence {
 pub(crate) struct LinkArray {
     count: Option<u64>,
     transforms: Vec<FiniteFrame>,
-    scales: Vec<FiniteVec3>,
+    scales: Vec<FiniteVector<3>>,
     visibility: Vec<bool>,
     objects: Vec<String>,
 }
@@ -1542,7 +1543,7 @@ impl LinkArray {
     pub(crate) fn try_new(
         count: Option<u64>,
         transforms: Vec<FiniteFrame>,
-        scales: Vec<FiniteVec3>,
+        scales: Vec<FiniteVector<3>>,
         visibility: Vec<bool>,
         objects: Vec<String>,
     ) -> Result<Self, String> {
@@ -1741,7 +1742,7 @@ impl ProductNodeRecord {
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub(crate) fn element_scales(&self) -> &[FiniteVec3] {
+    pub(crate) fn element_scales(&self) -> &[FiniteVector<3>] {
         self.occurrence()
             .map_or(&[], |node| node.array.scales.as_slice())
     }
@@ -1802,7 +1803,7 @@ impl ProductNodeRecord {
     pub(crate) fn scale(&self) -> Option<[f64; 3]> {
         self.occurrence()
             .and_then(|node| node.scale)
-            .map(FiniteVec3::values)
+            .map(FiniteVector::get)
     }
 
     /// Explicit per-element application objects in array order.
@@ -1853,11 +1854,11 @@ impl Serialize for FrameRowsOut<'_> {
 }
 
 /// Writes admitted scale vectors as the component triples the wire carries.
-struct Vec3ValuesOut<'a>(&'a [FiniteVec3]);
+struct Vec3ValuesOut<'a>(&'a [FiniteVector<3>]);
 
 impl Serialize for Vec3ValuesOut<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().copied().map(FiniteVec3::values))
+        serializer.collect_seq(self.0.iter().copied().map(FiniteVector::get))
     }
 }
 
@@ -1991,7 +1992,10 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                         .map_err(|error| format!("element_transforms: {error}"))?,
                     wire.element_scales
                         .into_iter()
-                        .map(FiniteVec3::try_from)
+                        .map(|values| {
+                            FiniteVector::new(values)
+                                .ok_or("scale vector components must be finite")
+                        })
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|error| format!("element_scales: {error}"))?,
                     wire.element_visibility,
@@ -2008,7 +2012,9 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                 )?,
                 scale: wire
                     .scale
-                    .map(FiniteVec3::try_from)
+                    .map(|values| {
+                        FiniteVector::new(values).ok_or("scale vector components must be finite")
+                    })
                     .transpose()
                     .map_err(|error| format!("scale: {error}"))?,
             }),
