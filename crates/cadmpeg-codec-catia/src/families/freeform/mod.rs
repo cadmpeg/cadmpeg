@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry},
@@ -16,7 +17,9 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::units::OrthonormalFrame3;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -91,14 +94,17 @@ pub(super) fn append_consolidated_revolutions(
             ),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            direction_x,
-            direction_y,
-            profile.radius.get(),
+        let (Some(admitted_center), Some(frame)) = (
+            FinitePoint3::new(center),
+            OrthonormalFrame3::new(direction_x, direction_y),
         ) else {
             continue;
         };
+        let payload = cadmpeg_ir::geometry::analytic::CircleCurve::new(
+            admitted_center,
+            frame,
+            profile.radius,
+        );
         annotate(
             annotations,
             &directrix,
@@ -154,16 +160,14 @@ pub(super) fn append_consolidated_revolutions(
                     center.y - radial.y,
                     center.z - radial.z,
                 );
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    torus_center,
-                    axis,
-                    ref_direction,
-                    major_radius,
-                    profile.radius.get(),
-                )
-                .ok()
-                .map(SolvedSurfaceGeometry::Torus)
-                .map(SurfaceGeometry::Solved)
+                Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                    cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                        FinitePoint3::new(torus_center)?,
+                        OrthonormalFrame3::new(axis, ref_direction)?,
+                        PositiveLength::new(major_radius)?,
+                        NonZeroLength::from(profile.radius),
+                    ),
+                )))
             })
             .flatten();
         annotate(
@@ -658,13 +662,14 @@ pub(super) fn try_decode_freeform_surfaces(
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    circle.center,
-                    cadmpeg_ir::math::Vector3::from(circle.axis.get()),
-                    cadmpeg_ir::math::Vector3::from(circle.ref_direction.get()),
-                    circle.radius.get(),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(circle.center)?,
+                    OrthonormalFrame3::new(
+                        cadmpeg_ir::math::Vector3::from(circle.axis.get()),
+                        cadmpeg_ir::math::Vector3::from(circle.ref_direction.get()),
+                    )?,
+                    circle.radius,
+                ),
             )),
             source_object: Some(cgm_source_key(
                 "b2-spatial-circle-frame",
@@ -4248,15 +4253,14 @@ mod tests {
     /// record decoder emits is already proven finite and strictly increasing.
     #[test]
     fn a_refused_revolution_construction_names_the_interval() {
-        use crate::checked::{ExactUnitVector3, OrderedInterval, PositiveFinite};
+        use crate::checked::{ExactUnitVector3, OrderedInterval};
         use crate::families::b2::records::{B2Circle, B2ResolvedRevolution, B2Revolution};
         use crate::native::{CatiaCircleLayout, CatiaRevolutionReferenceToken};
+        use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 
         let unit = |value: [f64; 3]| {
             ExactUnitVector3::new(value).expect("fixture direction is a unit vector")
         };
-        let positive =
-            |value: f64| PositiveFinite::new(value).expect("fixture scalar is finite positive");
         let interval = |value: [f64; 2]| {
             OrderedInterval::new(value).expect("fixture interval is finite and increasing")
         };
@@ -4273,7 +4277,7 @@ mod tests {
                 // The one lane the record decoder does not prove by type.
                 angular_range: [1.0, 1.0],
                 profile_range: interval([0.0, 1.0]),
-                angular_scale: positive(1.0),
+                angular_scale: PositiveReal::new(1.0).expect("fixture scalar is finite positive"),
             },
             profile: B2Circle {
                 pos: 0,
@@ -4281,7 +4285,7 @@ mod tests {
                 record_id: 1,
                 frame_token: 0x08,
                 center_pair: [2.0, 0.0],
-                radius: positive(1.0),
+                radius: PositiveLength::new(1.0).expect("fixture scalar is finite positive"),
                 range: interval([0.0, 1.0]),
                 chart_shift: 0.0,
             },

@@ -391,7 +391,7 @@ pub(crate) struct CatiaConsolidatedCone {
     /// Native slant-coordinate interval, including zero at the apex.
     slant_range: crate::checked::OrderedInterval,
     /// Scale from azimuth to stored U parameter.
-    angular_scale: crate::checked::PositiveFinite,
+    angular_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Full-turn azimuth chart domain.
     angular_domain: [f64; 2],
 }
@@ -453,7 +453,7 @@ pub(crate) struct CatiaConsolidatedCircle {
     /// Two centre coordinates in the host-implied carrier plane.
     pub(crate) center_pair: [f64; 2],
     /// Circle radius in millimetres.
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length parameter interval.
     pub(crate) range: crate::checked::OrderedInterval,
     /// Length-valued angular chart shift.
@@ -474,7 +474,7 @@ struct CatiaConsolidatedCircleWire {
     record_id: u32,
     frame_token: u8,
     center_pair: [f64; 2],
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     range: crate::checked::OrderedInterval,
     full_circle: bool,
     chart_shift: f64,
@@ -575,7 +575,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
     /// Cylinder-axis origin.
     origin: [f64; 3],
     /// Cylinder radius.
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length circumferential interval.
     u_range: crate::checked::OrderedInterval,
     /// Axial interval.
@@ -590,7 +590,7 @@ struct CatiaConsolidatedCylinderWire {
     byte_offset: u64,
     layout: u8,
     origin: [f64; 3],
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     u_range: crate::checked::OrderedInterval,
     v_range: crate::checked::OrderedInterval,
     payload: CatiaConsolidatedCylinderPayloadWire,
@@ -730,7 +730,7 @@ pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     /// Cylinder-axis origin.
     origin: [f64; 3],
     /// Cylinder radius.
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     /// Full-turn arc-length circumferential interval.
     u_range: crate::checked::OrderedInterval,
     /// Axial interval.
@@ -1050,7 +1050,7 @@ pub(crate) struct CatiaConsolidatedSphere {
     /// Sphere-axis unit direction.
     axis: crate::checked::ExactHypotUnitVector3,
     /// Sphere radius.
-    radius: crate::checked::PositiveFinite,
+    radius: cadmpeg_ir::scalar::PositiveLength,
     /// Active azimuth interval.
     azimuth_range: [f64; 2],
     /// Active latitude interval.
@@ -1073,9 +1073,9 @@ pub(crate) struct CatiaConsolidatedTorus {
     /// Torus-axis unit direction.
     axis: crate::checked::ExactUnitVector3,
     /// Major radius.
-    major_radius: crate::checked::PositiveFinite,
+    major_radius: cadmpeg_ir::scalar::PositiveLength,
     /// Minor radius.
-    minor_radius: crate::checked::PositiveFinite,
+    minor_radius: cadmpeg_ir::scalar::PositiveLength,
     /// Active major-angle interval.
     major_angular_range: [f64; 2],
     /// Full-turn major-angle chart domain.
@@ -1085,9 +1085,9 @@ pub(crate) struct CatiaConsolidatedTorus {
     /// Full-turn minor-angle chart domain.
     minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
-    major_scale: crate::checked::PositiveFinite,
+    major_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Scale from minor angle to stored V parameter.
-    minor_scale: crate::checked::PositiveFinite,
+    minor_scale: cadmpeg_ir::scalar::PositiveReal,
 }
 
 /// One exact consolidated B-family metric line profile.
@@ -1163,7 +1163,7 @@ pub(crate) struct CatiaConsolidatedRevolution {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile_circle: Option<String>,
     /// Positive scale from revolution angle to stored angular parameter.
-    angular_scale: crate::checked::PositiveFinite,
+    angular_scale: cadmpeg_ir::scalar::PositiveReal,
 }
 
 /// One structurally complete consolidated class-`0x61` record.

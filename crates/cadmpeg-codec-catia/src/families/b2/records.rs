@@ -8,16 +8,18 @@
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
     CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
-    OrderedInterval, PositiveFinite, RelaxedHypotUnitVector3, RelaxedUnitVector2,
-    RelaxedUnitVector3,
+    OrderedInterval, RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
@@ -308,7 +310,7 @@ pub(crate) enum B2OwnerChartBridge {
         /// Independent terminal control.
         terminal_control: CatiaOwnerChartTerminalControl,
         /// Positive construction radius.
-        construction_radius: crate::checked::PositiveFinite,
+        construction_radius: PositiveLength,
     },
     /// Eight-reference A-family production without an assigned object role.
     Extended {
@@ -1124,7 +1126,7 @@ fn owner_chart_bridge(
     at += 1;
     if count == 5 {
         let unit_token = *data.get(at)?;
-        let construction_radius = crate::checked::PositiveFinite::new(f64_le(data, at + 1)?)?;
+        let construction_radius = PositiveLength::new(f64_le(data, at + 1)?)?;
         let middle_controls = [
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
@@ -1878,7 +1880,7 @@ pub(crate) struct B2Circle {
     /// Two center coordinates in the host-implied carrier plane.
     pub(crate) center_pair: [f64; 2],
     /// Circle radius in millimetres.
-    pub(crate) radius: PositiveFinite,
+    pub(crate) radius: PositiveLength,
     /// Arc-length parameter interval.
     pub(crate) range: OrderedInterval,
     /// Length-valued angular chart shift.
@@ -1918,7 +1920,7 @@ pub(in crate::families) struct B2SpatialCircle {
     /// Unit radial reference direction.
     pub(in crate::families) ref_direction: ExactNormUnitVector3,
     /// Positive radius in millimetres.
-    pub(in crate::families) radius: PositiveFinite,
+    pub(in crate::families) radius: PositiveLength,
     /// Stored arc-length interval.
     pub(in crate::families) range: OrderedInterval,
     /// Stored chart shift.
@@ -1966,7 +1968,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     }
     let ref_direction =
         ExactNormUnitVector3::new([stored_reference.x, stored_reference.y, stored_reference.z])?;
-    let radius = PositiveFinite::new(radius)?;
+    let radius = PositiveLength::new(radius)?;
     let range = OrderedInterval::new(range)?;
     Some(B2SpatialCircle {
         pos: frame.pos,
@@ -2091,7 +2093,7 @@ pub(crate) struct B2Cylinder {
     /// Unit direction from which the circumferential parameter is measured.
     pub(crate) reference_direction: RelaxedHypotUnitVector3,
     /// Cylinder radius.
-    pub(crate) radius: PositiveFinite,
+    pub(crate) radius: PositiveLength,
     /// Arc-length circumferential range.
     pub(crate) u_range: OrderedInterval,
     /// Axial range.
@@ -2127,13 +2129,14 @@ impl B2Cylinder {
 
     pub(in crate::families) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::from(self.origin),
-                Vector3::from(self.axis.get()),
-                Vector3::from(self.reference_direction.get()),
-                self.radius.get(),
-            )
-            .ok()?,
+            cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                FinitePoint3::new(Point3::from(self.origin))?,
+                OrthonormalFrame3::new(
+                    Vector3::from(self.axis.get()),
+                    Vector3::from(self.reference_direction.get()),
+                )?,
+                self.radius,
+            ),
         )))
     }
 }
@@ -2160,7 +2163,7 @@ pub(crate) struct B2Cone {
     /// Native slant-coordinate range.
     pub(crate) slant_range: OrderedInterval,
     /// Divisor mapping the stored U coordinate to azimuth.
-    pub(crate) angular_scale: PositiveFinite,
+    pub(crate) angular_scale: PositiveReal,
     /// Full-turn azimuth chart domain.
     pub(crate) angular_domain: [f64; 2],
 }
@@ -2187,7 +2190,7 @@ pub(crate) struct B2Revolution {
     /// Stored profile parameter interval.
     pub(crate) profile_range: OrderedInterval,
     /// Positive angular chart scale.
-    pub(crate) angular_scale: PositiveFinite,
+    pub(crate) angular_scale: PositiveReal,
 }
 
 /// One revolution record whose profile interval identifies exactly one
@@ -2229,7 +2232,7 @@ pub(crate) struct B2Sphere {
     /// Sphere-axis unit direction.
     pub(crate) axis: ExactHypotUnitVector3,
     /// Sphere radius.
-    pub(crate) radius: PositiveFinite,
+    pub(crate) radius: PositiveLength,
     /// Active azimuth interval.
     pub(crate) azimuth_range: [f64; 2],
     /// Active latitude interval.
@@ -2250,9 +2253,9 @@ pub(crate) struct B2Torus {
     /// Torus-axis unit direction.
     pub(crate) axis: ExactUnitVector3,
     /// Major radius.
-    pub(crate) major_radius: PositiveFinite,
+    pub(crate) major_radius: PositiveLength,
     /// Minor radius.
-    pub(crate) minor_radius: PositiveFinite,
+    pub(crate) minor_radius: PositiveLength,
     /// Active major-angle interval.
     pub(crate) major_angular_range: [f64; 2],
     /// Full-turn major-angle chart domain.
@@ -2262,9 +2265,9 @@ pub(crate) struct B2Torus {
     /// Full-turn minor-angle chart domain.
     pub(crate) minor_angular_domain: [f64; 2],
     /// Scale from major angle to stored U parameter.
-    pub(crate) major_scale: PositiveFinite,
+    pub(crate) major_scale: PositiveReal,
     /// Scale from minor angle to stored V parameter.
-    pub(crate) minor_scale: PositiveFinite,
+    pub(crate) minor_scale: PositiveReal,
 }
 
 /// Constant `b2 03 65` separator preceding a typed group opener.
@@ -2474,7 +2477,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         };
         let (Some(slant_range), Some(angular_scale)) = (
             OrderedInterval::new(slant_range),
-            PositiveFinite::new(angular_scale),
+            PositiveReal::new(angular_scale),
         ) else {
             continue;
         };
@@ -2568,7 +2571,7 @@ pub(crate) fn b2_revolutions_from_records(
         };
         let (Some(profile_range), Some(angular_scale)) = (
             OrderedInterval::new([bounds[2], bounds[3]]),
-            PositiveFinite::new(angular_scale),
+            PositiveReal::new(angular_scale),
         ) else {
             continue;
         };
@@ -2729,10 +2732,10 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let direction_x = ExactUnitVector3::new(direction_x)?;
             let direction_y = ExactUnitVector3::new(direction_y)?;
             let axis = ExactUnitVector3::new(axis)?;
-            let major_radius = PositiveFinite::new(major_radius)?;
-            let minor_radius = PositiveFinite::new(minor_radius)?;
-            let major_scale = PositiveFinite::new(major_scale)?;
-            let minor_scale = PositiveFinite::new(minor_scale)?;
+            let major_radius = PositiveLength::new(major_radius)?;
+            let minor_radius = PositiveLength::new(minor_radius)?;
+            let major_scale = PositiveReal::new(major_scale)?;
+            let minor_scale = PositiveReal::new(minor_scale)?;
             (dot(direction_x.get(), direction_y.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
                 && dot(direction_x.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
                 && dot(direction_y.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
@@ -2800,7 +2803,7 @@ pub(crate) fn b2_spheres_from_records(
                         * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI))
                         .to_bits())
             .then_some(())?;
-            let radius = PositiveFinite::new(radius)?;
+            let radius = PositiveLength::new(radius)?;
             let unit_direction =
                 |stored: [f64; 3]| ExactHypotUnitVector3::from_scaled(stored, radius.get());
             let direction_x = unit_direction(stored_x)?;
@@ -2899,11 +2902,11 @@ pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeom
 #[must_use]
 pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+        cadmpeg_ir::geometry::analytic::SphereSurface::try_with_radius(
             Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
             Vector3::from(sphere.axis.get()),
             Vector3::from(sphere.direction_x.get()),
-            sphere.radius.get(),
+            NonZeroLength::from(sphere.radius),
         )
         .ok()?,
     )))
@@ -2913,14 +2916,15 @@ pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<Surfa
 #[must_use]
 pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-            Point3::new(torus.center[0], torus.center[1], torus.center[2]),
-            Vector3::from(torus.axis.get()),
-            Vector3::from(torus.direction_x.get()),
-            torus.major_radius.get(),
-            torus.minor_radius.get(),
-        )
-        .ok()?,
+        cadmpeg_ir::geometry::analytic::TorusSurface::new(
+            FinitePoint3::new(Point3::from(torus.center))?,
+            OrthonormalFrame3::new(
+                Vector3::from(torus.axis.get()),
+                Vector3::from(torus.direction_x.get()),
+            )?,
+            torus.major_radius,
+            NonZeroLength::from(torus.minor_radius),
+        ),
     )))
 }
 
@@ -2970,7 +2974,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 return None;
             }
             let vector = RelaxedUnitVector2::from_hypot(vector)?;
-            let radius = PositiveFinite::new(radius)?;
+            let radius = PositiveLength::new(radius)?;
             let u_range = OrderedInterval::new(u_range)?;
             let v_range = OrderedInterval::new(v_range)?;
             let axis = match frame_token {
@@ -3006,7 +3010,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             {
                 return None;
             }
-            let radius = PositiveFinite::new(radius)?;
+            let radius = PositiveLength::new(radius)?;
             let u_range = OrderedInterval::new(u_range)?;
             let v_range = OrderedInterval::new(v_range)?;
             Some(B2Cylinder {
@@ -3037,7 +3041,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 return None;
             }
             let vector = RelaxedUnitVector2::from_hypot(vector)?;
-            let radius = PositiveFinite::new(radius)?;
+            let radius = PositiveLength::new(radius)?;
             let u_range = OrderedInterval::new(u_range)?;
             let v_range = OrderedInterval::new(v_range)?;
             Some(B2Cylinder {
@@ -3101,7 +3105,7 @@ pub(crate) fn b2_circles_from_records(
         };
         let [c1, c2, radius, lo, hi] = values;
         let (Some(radius), Some(range)) =
-            (PositiveFinite::new(radius), OrderedInterval::new([lo, hi]))
+            (PositiveLength::new(radius), OrderedInterval::new([lo, hi]))
         else {
             continue;
         };

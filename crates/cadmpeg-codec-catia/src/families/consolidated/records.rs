@@ -1800,7 +1800,7 @@ mod tests {
             record_id: 1,
             frame_token: 0,
             center_pair: [0.0; 2],
-            radius: crate::checked::PositiveFinite::new(span).expect("positive span"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(span).expect("positive span"),
             range: crate::checked::OrderedInterval::new([0.0, span]).expect("increasing span"),
             chart_shift: 0.0,
         };
