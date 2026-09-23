@@ -604,6 +604,26 @@ impl OrthonormalFrame3 {
             reference,
         })
     }
+    /// The unit direction of `axis × reference`, which completes the
+    /// right-handed frame.
+    ///
+    /// The squared length of the cross product is
+    /// `|axis|²·|reference|² − (axis · reference)²`. Both lengths are within
+    /// `1e-9` of one and every route into the type holds
+    /// `|axis · reference|` at most `1e-9`, so the length is within about
+    /// `3e-9` of one, finite and nonzero, and the quotients have a norm
+    /// within rounding of one, which keeps the admission of
+    /// [`UnitVector3::new`].
+    #[must_use]
+    pub fn binormal(&self) -> UnitVector3 {
+        let cross = self.axis.0.cross(self.reference.0);
+        let length = cross.norm();
+        UnitVector3(Vector3::new(
+            cross.x / length,
+            cross.y / length,
+            cross.z / length,
+        ))
+    }
     /// Borrow the admitted first direction. A caller that moves it into
     /// another model object keeps the unit-length guarantee and performs no
     /// new admission.
@@ -1215,6 +1235,36 @@ mod tests {
                 admitted
             );
         }
+    }
+
+    #[test]
+    fn a_frame_binormal_is_the_unit_cross_product_of_its_directions() {
+        use super::OrthonormalFrame3;
+
+        assert_eq!(OrthonormalFrame3::IDENTITY.binormal(), UnitVector3::Y_AXIS);
+        let (cosine, sine) = (0.696_706_709_347_165_3_f64, 0.717_356_090_899_522_8_f64);
+        let axis = UnitVector3::new(Vector3::new(sine * 0.6, cosine * 0.6, 0.8)).expect("unit");
+        let reference = UnitVector3::new(Vector3::new(cosine, -sine, 0.0)).expect("unit");
+        let frame = OrthonormalFrame3::from_units(axis, reference).expect("perpendicular");
+        let binormal = frame.binormal();
+        let cross = axis.as_raw().cross(*reference.as_raw());
+        assert_eq!(
+            *binormal.as_raw(),
+            Vector3::new(
+                cross.x / cross.norm(),
+                cross.y / cross.norm(),
+                cross.z / cross.norm()
+            )
+        );
+        assert_eq!(UnitVector3::new(*binormal.as_raw()), Some(binormal));
+        assert!(binormal.as_raw().dot(*axis.as_raw()).abs() <= 4.0 * f64::EPSILON);
+        assert!(binormal.as_raw().dot(*reference.as_raw()).abs() <= 4.0 * f64::EPSILON);
+        // A frame at the 1e-9 perpendicularity limit of from_units.
+        let skewed = UnitVector3::new(Vector3::new(1.0e-9, 1.0, 0.0)).expect("unit");
+        let binormal = OrthonormalFrame3::from_units(UnitVector3::X_AXIS, skewed)
+            .expect("perpendicular to 1e-9")
+            .binormal();
+        assert_eq!(UnitVector3::new(*binormal.as_raw()), Some(binormal));
     }
 
     #[test]
