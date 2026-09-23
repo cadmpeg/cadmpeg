@@ -864,16 +864,14 @@ fn flag_or_label_valid(
             && (1..=4).all(|index| finite(record, index))
             && note
                 .and_then(|sequence| records.get(&sequence))
-                .and_then(|note| note.count(1))
-                .is_some_and(|strings| {
-                    (0..strings)
-                        .map(|offset| {
-                            note.and_then(|sequence| records.get(&sequence))
-                                .and_then(|note| note.integer(2 + offset * 12))
-                                .unwrap_or_default()
-                        })
-                        .sum::<i64>()
-                        <= 10
+                .is_some_and(|note| {
+                    note.count(1).is_some_and(|strings| {
+                        (0..strings)
+                            .try_fold(0_i64, |total, offset| {
+                                total.checked_add(note.integer(2 + offset * 12).unwrap_or_default())
+                            })
+                            .is_some_and(|total| total <= 10)
+                    })
                 })
     } else {
         count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count))

@@ -12,8 +12,8 @@ use cadmpeg_ir::math::Vector3;
 
 use super::{
     base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
-    enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
-    DeclaredInterval, DeclaredTransformFrameError,
+    enforce_transform_depth, is_finite_nonzero_vector, normal_matches_plane,
+    validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
@@ -31,6 +31,21 @@ use crate::test_support::test_owned::{
 use crate::IgesCodec;
 
 const EPS_RADIUS_COMPARISON: f64 = 1.0e-12;
+
+#[test]
+fn plane_normal_match_uses_direction_on_both_sides() {
+    let normal = Vector3::new(0.0, 0.0, 1.0);
+    assert!(!normal_matches_plane(normal, Vector3::new(0.0, 0.0, 0.0)));
+    assert!(normal_matches_plane(
+        normal,
+        Vector3::new(0.0, 0.0, 1.0e-300)
+    ));
+    assert!(normal_matches_plane(
+        normal,
+        Vector3::new(0.0, 0.0, 1.0e300)
+    ));
+    assert!(!normal_matches_plane(normal, Vector3::new(1.0, 0.0, 0.0)));
+}
 
 fn transform_entry(sequence: u32, transform: i64) -> crate::directory::DirectoryEntry {
     crate::directory::DirectoryEntry {

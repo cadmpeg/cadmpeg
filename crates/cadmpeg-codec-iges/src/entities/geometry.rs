@@ -1002,10 +1002,11 @@ fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> b
 }
 
 fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
-    let norm = normal.norm();
-    norm.is_finite()
-        && norm > 0.0
-        && normal.scale(1.0 / norm).cross(plane_normal).norm() <= CURVE_PLANE_NORMAL_EPSILON
+    let (Some(normal), Some(plane_normal)) = (normal.unit_nonzero(), plane_normal.unit_nonzero())
+    else {
+        return false;
+    };
+    normal.cross(plane_normal).norm() <= CURVE_PLANE_NORMAL_EPSILON
 }
 
 fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {

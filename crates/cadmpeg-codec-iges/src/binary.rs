@@ -1173,7 +1173,12 @@ fn render_parameter_line(
     directory_sequence: u32,
     sequence: u32,
 ) -> Result<(), CodecError> {
-    if data.len() > PARAMETER_DATA_WIDTH || sequence == 0 || sequence > MAX_SEQUENCE {
+    if data.len() > PARAMETER_DATA_WIDTH
+        || directory_sequence == 0
+        || directory_sequence > MAX_SEQUENCE
+        || sequence == 0
+        || sequence > MAX_SEQUENCE
+    {
         return Err(malformed("normalized Parameter Data card is out of range"));
     }
     let mut card = [b' '; CARD_WIDTH];
@@ -1236,6 +1241,13 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parameter_card_refuses_an_unrenderable_directory_sequence() {
+        let mut output = Vec::new();
+        assert!(super::render_parameter_line(&mut output, b"116;", 100_000_000, 1).is_err());
+        assert!(output.is_empty());
+    }
+
     #[test]
     fn numerical_audit_binary_real_keeps_representable_exponent_boundary() {
         for negative in [0, 1] {

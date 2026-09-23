@@ -2710,7 +2710,7 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
         } else {
             None
         };
-        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        let minimum = header_end.unwrap_or(field.len());
         if minimum > 64 {
             return Err(CodecError::Malformed(
                 "IGES generated Parameter Data field exceeds one card".into(),

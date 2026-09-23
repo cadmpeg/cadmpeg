@@ -39,11 +39,60 @@ use crate::global::GlobalTable;
 
 use super::{
     dimension_enclosure_type_allowed, fill_pattern_valid_for_global_table, fixed_or_variable_valid,
-    general_note_string_count_valid, general_note_text_valid_for_global_table,
+    flag_or_label_valid, general_note_string_count_valid, general_note_text_valid_for_global_table,
     general_symbol_note_valid, justification_valid, leader_valid_for_global_table,
     mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
     sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
+
+#[test]
+fn malformed_flag_note_width_sum_refuses_without_overflow() {
+    let mut flag = leader_entry(0);
+    flag.entity_type = 208;
+    let mut note_entry = leader_entry(0);
+    note_entry.sequence = 3;
+    note_entry.entity_type = 212;
+    let entries = BTreeMap::from([(3, &note_entry)]);
+    let record = |sequence, values: Vec<TokenValue>| {
+        ParameterRecord::from_test_tokens(
+            sequence,
+            1..2,
+            Vec::new(),
+            values.len(),
+            values
+                .into_iter()
+                .map(|value| Token { value, span: 0..0 })
+                .collect(),
+            Vec::new(),
+        )
+    };
+    let flag_record = record(
+        1,
+        vec![
+            TokenValue::Integer(208),
+            TokenValue::Real(0.0),
+            TokenValue::Real(0.0),
+            TokenValue::Real(0.0),
+            TokenValue::Real(0.0),
+            TokenValue::Integer(3),
+            TokenValue::Integer(0),
+        ],
+    );
+    let mut note_values = vec![TokenValue::Omitted; 15];
+    note_values[0] = TokenValue::Integer(212);
+    note_values[1] = TokenValue::Integer(2);
+    note_values[2] = TokenValue::Integer(i64::MAX);
+    note_values[14] = TokenValue::Integer(i64::MAX);
+    let note_record = record(3, note_values);
+    let records = BTreeMap::from([(3, &note_record)]);
+    assert!(!flag_or_label_valid(
+        &flag,
+        &flag_record,
+        &entries,
+        &records,
+        GlobalTable::V5_0,
+    ));
+}
 
 #[test]
 fn general_note_forms_follow_the_section_4_60_string_minima() {

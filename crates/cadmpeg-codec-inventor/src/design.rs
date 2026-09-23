@@ -577,7 +577,11 @@ fn render_expression<'a>(
             {
                 return None;
             }
-            let scalar = format_scalar(value / unit.scale_to_internal);
+            let scalar = value / unit.scale_to_internal;
+            if !scalar.is_finite() {
+                return None;
+            }
+            let scalar = format_scalar(scalar);
             if unit.symbol.is_empty() {
                 scalar
             } else {
@@ -842,10 +846,15 @@ fn base_unit(type_id: [u8; 16]) -> Option<(PmDcUnitDimension, &'static str, f64)
         INCH_TYPE => Some((PmDcUnitDimension::Length, "in", 2.54)),
         FOOT_TYPE => Some((PmDcUnitDimension::Length, "ft", 30.48)),
         RADIAN_TYPE => Some((PmDcUnitDimension::Angle, "rad", 1.0)),
-        DEGREE_TYPE | GRAD_TYPE => Some((
+        DEGREE_TYPE => Some((
             PmDcUnitDimension::Angle,
             "deg",
             std::f64::consts::PI / 180.0,
+        )),
+        GRAD_TYPE => Some((
+            PmDcUnitDimension::Angle,
+            "grad",
+            std::f64::consts::PI / 200.0,
         )),
         DIMENSIONLESS_TYPE => Some((PmDcUnitDimension::Dimensionless, "", 1.0)),
         _ => None,
@@ -930,10 +939,11 @@ impl RecordPayload for PmDcUnitPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        close_parameter_graph, parse_binary_expression, parse_parameter, parse_unary_expression,
-        parse_unit_definition, parse_value_expression, project_parameters, DesignInventory,
-        PmDcBinaryOperation, PmDcExpressionKind, PmDcExpressionPayload, PmDcParameterPayload,
-        PmDcUnaryOperation, PmDcUnitDimension, PmDcUnitKind, PmDcUnitPayload,
+        base_unit, close_parameter_graph, parse_binary_expression, parse_parameter,
+        parse_unary_expression, parse_unit_definition, parse_value_expression, project_parameters,
+        render_expression, DesignInventory, PmDcBinaryOperation, PmDcExpressionKind,
+        PmDcExpressionPayload, PmDcParameterPayload, PmDcUnaryOperation, PmDcUnitDimension,
+        PmDcUnitKind, PmDcUnitPayload, GRAD_TYPE,
     };
     use crate::pmdc::{PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
@@ -941,9 +951,68 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::Length;
+    use std::collections::{HashMap, HashSet};
 
     const fn reference(index: u32, qualified: bool) -> PmDcReference {
         PmDcReference { index, qualified }
+    }
+
+    #[test]
+    fn grad_units_use_a_four_hundredth_turn_and_the_grad_symbol() {
+        let (dimension, symbol, scale) = base_unit(GRAD_TYPE).expect("grad unit is supported");
+        assert_eq!(dimension, PmDcUnitDimension::Angle);
+        assert_eq!(symbol, "grad");
+        assert_eq!(scale, std::f64::consts::PI / 200.0);
+    }
+
+    #[test]
+    fn overflowing_unit_quotient_is_not_rendered_as_an_expression() {
+        let token = cadmpeg_ir::identity_key!("segment");
+        let unit = Located::new(
+            PmDcUnitPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                kind: PmDcUnitKind::Base {
+                    dimension: PmDcUnitDimension::Length,
+                    symbol: "mm".into(),
+                    scale_to_internal: 1.0e-308,
+                    magnitude: 1.0,
+                    factor: 1.0,
+                },
+            },
+            String::new(),
+            &token,
+            0,
+        );
+        let expression = Located::new(
+            PmDcExpressionPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                unit: reference(1, false),
+                kind: PmDcExpressionKind::Value {
+                    value: 1.0e308,
+                    value_type: 0,
+                    state: 0,
+                },
+            },
+            String::new(),
+            &token,
+            0,
+        );
+        let expressions = HashMap::from([((token.as_str(), 0), &expression)]);
+        let units = HashMap::from([((token.as_str(), 0), &unit)]);
+        assert!(render_expression(
+            token.as_str(),
+            1,
+            &expressions,
+            &units,
+            &HashMap::new(),
+            &mut Vec::new(),
+            &mut HashSet::new(),
+        )
+        .is_none());
     }
 
     #[test]
