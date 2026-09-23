@@ -498,7 +498,6 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = geometry else {
         return None;
     };
-    let origin = cone_surface.origin().get();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
@@ -508,7 +507,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     {
         return None;
     }
-    let origin = FinitePoint3::new(Point3::new(-origin.x, -origin.y, -origin.z))?;
+    let origin = cone_surface.origin().negated();
     let mut frame = cone_surface.frame();
     frame.reverse_axis();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(

@@ -135,14 +135,13 @@ fn curve_expression_helix_feature_definition(
     let ProceduralCurveDefinition::Helix(helix_payload) = procedural else {
         return None;
     };
-    let center = helix_payload.center();
     let pitch = helix_payload.pitch();
     let axis = helix_payload.axis();
 
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
     let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Operation(IrFeatureOperation::Helix {
-        axis_origin: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+        axis_origin: helix_payload.finite_center(),
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
         radius: helix.radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },

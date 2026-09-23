@@ -302,3 +302,35 @@ fn numerical_followup_helix_path_requires_two_equal_nonzero_radii() {
         }
     }
 }
+
+#[test]
+fn helix_curve_finite_center_returns_the_admitted_center() {
+    use crate::features::FinitePoint3;
+
+    for center in [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(-0.0, 1.5, -2.0e300),
+        Point3::new(f64::MAX, 5.0e-324, -f64::MAX),
+    ] {
+        let helix = HelixCurveConstruction::try_new(
+            [0.0, 1.0],
+            HelixFrame {
+                center,
+                major: Vector3::new(1.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 1.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 1.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+            None,
+        )
+        .unwrap();
+        let finite = helix.finite_center();
+        assert_eq!(
+            [finite.x, finite.y, finite.z].map(f64::to_bits),
+            [center.x, center.y, center.z].map(f64::to_bits)
+        );
+        assert_eq!(finite.as_raw(), helix.center());
+        assert_eq!(FinitePoint3::new(center), Some(finite));
+    }
+}
