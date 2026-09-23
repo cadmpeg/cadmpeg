@@ -297,6 +297,8 @@ pub(in super::super) fn solver_only_section_entities(
 pub(in super::super) enum SectionEntityIncidenceFamily {
     Point,
     BoundedCurve,
+    /// A bounded line or arc, as the target of a type-35 midpoint relation.
+    LineOrArc,
     Line,
     Arc,
     Circular,
@@ -405,8 +407,8 @@ enum SolverRoles {
     Strict,
     /// The strict roles and the type-zero point role.
     WithoutType35Target,
-    /// The strict roles, the type-zero point role and the type-35 target line
-    /// role.
+    /// The strict roles, the type-zero point role and the type-35 target
+    /// line-or-arc role.
     Extended,
 }
 
@@ -439,7 +441,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
             }
         }
         if matches!(solver_roles, SolverRoles::Extended) {
-            let type35_line_role =
+            let type35_target_role =
                 |target: &crate::feature::definitions::FeatureSkampItem,
                  point: &crate::feature::definitions::FeatureSkampItem| {
                     if target.sense != 0
@@ -453,10 +455,10 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                         || solver_only_section_entities(definition).contains_key(&target.entity_id)
                 };
             if let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) {
-                if (first.entity_id == entity_id && type35_line_role(first, second))
-                    || (second.entity_id == entity_id && type35_line_role(second, first))
+                if (first.entity_id == entity_id && type35_target_role(first, second))
+                    || (second.entity_id == entity_id && type35_target_role(second, first))
                 {
-                    evidence.insert(SectionEntityIncidenceFamily::Line);
+                    evidence.insert(SectionEntityIncidenceFamily::LineOrArc);
                 }
             }
         }
@@ -540,16 +542,25 @@ pub(in super::super) fn unique_section_incidence_curve_family_without_type35_tar
     )
 }
 
+/// Narrow the endpoint-bearing families. Line evidence narrows a bounded
+/// curve or a line-or-arc to a line. Circular evidence narrows them to an arc.
+/// A line-or-arc narrows a bounded curve.
 pub(in super::super) fn normalize_section_incidence_curve_family_evidence(
     evidence: &mut BTreeSet<SectionEntityIncidenceFamily>,
 ) {
     if evidence.contains(&SectionEntityIncidenceFamily::Line) {
         evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
+        evidence.remove(&SectionEntityIncidenceFamily::LineOrArc);
     } else if evidence.contains(&SectionEntityIncidenceFamily::Circular)
-        && evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve)
+        && (evidence.contains(&SectionEntityIncidenceFamily::BoundedCurve)
+            || evidence.contains(&SectionEntityIncidenceFamily::LineOrArc))
     {
+        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
+        evidence.remove(&SectionEntityIncidenceFamily::LineOrArc);
         evidence.remove(&SectionEntityIncidenceFamily::Circular);
         evidence.insert(SectionEntityIncidenceFamily::Arc);
+    } else if evidence.contains(&SectionEntityIncidenceFamily::LineOrArc) {
+        evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
     }
 }
 
@@ -573,6 +584,7 @@ pub(in super::super) fn solver_only_section_entity_family(
         normalize_section_incidence_curve_family_evidence(&mut evidence);
     }
     if !evidence.contains(&SectionEntityIncidenceFamily::Line)
+        && !evidence.contains(&SectionEntityIncidenceFamily::LineOrArc)
         && complete_section_skamps(definition).any(|skamp| {
             let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
                 return false;
@@ -724,22 +736,114 @@ mod tests {
     }
 
     #[test]
-    fn type35_point_locus_establishes_unique_native_line_family() {
+    fn type35_point_locus_establishes_unique_native_line_or_arc_family() {
         let opaque_target = definition(101, true);
         assert_eq!(
             unique_section_incidence_curve_family(&opaque_target, 101),
-            Some(SectionEntityIncidenceFamily::Line)
+            Some(SectionEntityIncidenceFamily::LineOrArc)
         );
 
         let solver_only_target = definition(201, false);
         assert_eq!(
             unique_section_incidence_curve_family(&solver_only_target, 201),
-            Some(SectionEntityIncidenceFamily::Line)
+            Some(SectionEntityIncidenceFamily::LineOrArc)
         );
         assert_eq!(
             solver_only_section_entity_family(&solver_only_target, 201),
-            Some(SectionEntityIncidenceFamily::Line)
+            Some(SectionEntityIncidenceFamily::LineOrArc)
         );
+    }
+
+    /// The type-35 fixture with one further incidence of `kind` whose items
+    /// select `target` with `sense` and, for a two-item kind, the point 7.
+    fn with_target_role(
+        target: u32,
+        opaque_target: bool,
+        kind: u32,
+        sense: u32,
+    ) -> crate::feature::definitions::FeatureDefinition {
+        let mut definition = definition(target, opaque_target);
+        let mut items = vec![crate::feature::definitions::FeatureSkampItem {
+            entity_id: target,
+            sense,
+        }];
+        if kind == 0 {
+            items.push(crate::feature::definitions::FeatureSkampItem {
+                entity_id: 7,
+                sense: 0,
+            });
+        }
+        let relations = definition.relations.as_mut().expect("relations");
+        crate::decode::tests::declared_solver_rows(&mut relations.skamps).push(
+            crate::feature::definitions::FeatureSkamp {
+                id: target + 1,
+                kind,
+                flags: 0,
+                status: 0,
+                items,
+                offset: target as usize + 1,
+            },
+        );
+        crate::decode::tests::synchronize_skamp_count(&mut definition);
+        definition
+    }
+
+    /// The unique family of `target` in the opaque-row and solver-only forms.
+    fn target_families(kind: u32, sense: u32) -> [Option<SectionEntityIncidenceFamily>; 3] {
+        let opaque_target = with_target_role(101, true, kind, sense);
+        let solver_only_target = with_target_role(201, false, kind, sense);
+        [
+            unique_section_incidence_curve_family(&opaque_target, 101),
+            unique_section_incidence_curve_family(&solver_only_target, 201),
+            solver_only_section_entity_family(&solver_only_target, 201),
+        ]
+    }
+
+    #[test]
+    fn an_endpoint_role_keeps_the_type35_line_or_arc_family() {
+        // An inactive type-0 incidence selects the first endpoint of the target.
+        assert_eq!(
+            target_families(0, 2),
+            [Some(SectionEntityIncidenceFamily::LineOrArc); 3]
+        );
+    }
+
+    #[test]
+    fn a_unary_line_role_narrows_the_type35_family_to_line() {
+        // An inactive unary horizontal incidence on the target.
+        assert_eq!(
+            target_families(1, 0),
+            [Some(SectionEntityIncidenceFamily::Line); 3]
+        );
+    }
+
+    #[test]
+    fn a_center_role_narrows_the_type35_family_to_arc() {
+        // An inactive type-0 incidence selects the center of the target.
+        assert_eq!(
+            target_families(0, 4),
+            [Some(SectionEntityIncidenceFamily::Arc); 3]
+        );
+    }
+
+    #[test]
+    fn a_type35_target_is_a_curve_entity_and_not_a_line() {
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917".to_string())
+            .expect("valid test fixture");
+        for (definition, target) in [(definition(101, true), 101), (definition(201, false), 201)] {
+            let item = crate::feature::definitions::FeatureSkampItem {
+                entity_id: target,
+                sense: 0,
+            };
+            assert!(!super::super::loci::section_skamp_is_line(
+                &definition,
+                &item
+            ));
+            assert!(
+                super::super::loci::section_skamp_curve_entity(&definition, &sketch, &item)
+                    .is_some()
+            );
+        }
     }
 
     #[test]

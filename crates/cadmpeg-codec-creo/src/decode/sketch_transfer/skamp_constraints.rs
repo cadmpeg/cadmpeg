@@ -136,20 +136,25 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 geometry?.get(&entity)
             };
             let inactive_curve_entity = |item: &crate::feature::definitions::FeatureSkampItem| {
-                (!active && item.sense == 0 && item_geometry(item).is_some_and(|geometry| {
-                    matches!(
-                        geometry.definition(),
-                        SketchGeometryDefinition::Line { .. }
-                            | SketchGeometryDefinition::ReferenceLine { .. }
-                            | SketchGeometryDefinition::Circle { .. }
-                            | SketchGeometryDefinition::Arc { .. }
-                            | SketchGeometryDefinition::Nurbs { .. }
-                    ) || matches!((
-                        geometry).definition(),
-                        SketchGeometryDefinition::Native { native_kind }
-                            if matches!(native_kind.as_str(), "line" | "arc" | "circle" | "spline")
-                    )
-                }))
+                (!active
+                    && item.sense == 0
+                    && item_geometry(item).is_some_and(|geometry| {
+                        matches!(
+                            geometry.definition(),
+                            SketchGeometryDefinition::Line { .. }
+                                | SketchGeometryDefinition::ReferenceLine { .. }
+                                | SketchGeometryDefinition::Circle { .. }
+                                | SketchGeometryDefinition::Arc { .. }
+                                | SketchGeometryDefinition::Nurbs { .. }
+                        ) || matches!((
+                            geometry).definition(),
+                            SketchGeometryDefinition::Native { native_kind }
+                                if matches!(
+                                    native_kind.as_str(),
+                                    "line_or_arc" | "line" | "arc" | "circle" | "spline"
+                                )
+                        )
+                    }))
                 .then(|| sketch_entity_id(sketch, item.entity_id))
                 .flatten()
             };
@@ -579,7 +584,7 @@ fn sketch_constraint_loci_compatible_with_policy(
                         SketchGeometryDefinition::Native { native_kind }
                             if !(matches!(
                                 native_kind.as_str(),
-                                "bounded_curve" | "line" | "arc" | "spline"
+                                "bounded_curve" | "line_or_arc" | "line" | "arc" | "spline"
                             ) || allow_unknown_native_endpoints
                                 && native_kind == "solver_only_section_entity")
                 )
@@ -1144,6 +1149,36 @@ mod tests {
             &[b"\x06\x00\x00\x00\xf8\x02\xf7\x6c\xfb\xe2\x2a\x02\xe2\x2b\x00"],
         );
         assert_type35_retains_its_native_form(&result, entity_42(&result));
+    }
+
+    /// The native kind of entity 42, after the document validates.
+    fn native_kind_42(result: &cadmpeg_ir::codec::DecodeResult) -> &str {
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{validation:#?}");
+        let entity = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id().as_str().ends_with(":42"))
+            .expect("entity 42");
+        let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
+            panic!("a native entity 42: {entity:#?}");
+        };
+        native_kind.as_str()
+    }
+
+    #[test]
+    fn a_type35_target_role_labels_an_opaque_row_line_or_arc() {
+        let result = decode_type35_section(&POINT_9, opaque_row(42), &[]);
+        assert_eq!(native_kind_42(&result), "line_or_arc");
+    }
+
+    #[test]
+    fn a_type35_target_role_labels_a_solver_only_entity_line_or_arc() {
+        // Entity 42 has no `segtab` row; the row is entity 44.
+        let result = decode_type35_section(&POINT_9, opaque_row(44), &[]);
+        assert_eq!(native_kind_42(&result), "line_or_arc");
     }
 
     #[test]

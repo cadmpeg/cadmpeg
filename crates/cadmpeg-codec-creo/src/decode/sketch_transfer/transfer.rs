@@ -534,6 +534,7 @@ pub(in super::super) fn transfer_sketches(
                             match solver_only_section_entity_family(definition, external_id) {
                                 Some(SectionEntityIncidenceFamily::Point) => "point",
                                 Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
+                                Some(SectionEntityIncidenceFamily::LineOrArc) => "line_or_arc",
                                 Some(SectionEntityIncidenceFamily::Line) => "line",
                                 Some(SectionEntityIncidenceFamily::Arc) => "arc",
                                 Some(SectionEntityIncidenceFamily::Circular) => "circle",
