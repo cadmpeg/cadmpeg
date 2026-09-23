@@ -908,7 +908,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         object_id: 11,
         carrier_surface: 8,
         source_surface: 10,
-        distance: -1.5,
+        distance: crate::test_support::test_b5::finite(-1.5),
         carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
         parameter_bounds: crate::test_support::test_b5::finite_bounds([[-5.0, 6.0], [2.0, 9.0]]),
     };
@@ -956,7 +956,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
     );
 
     let mut wrong_distance = offset_construction.clone();
-    wrong_distance.distance = -1.0;
+    wrong_distance.distance = crate::test_support::test_b5::finite(-1.0);
     assert_eq!(
         parse_extrusion_surface_with_context(
             &carrier,

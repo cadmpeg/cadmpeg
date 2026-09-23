@@ -1035,7 +1035,7 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -0.5,
+            distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
             parameter_bounds: crate::test_support::test_b5::finite_bounds([
                 [-2.0, 3.0],
@@ -1090,7 +1090,7 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -6.5,
+            distance: crate::test_support::test_b5::finite(-6.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Sphere,
             parameter_bounds: crate::test_support::test_b5::finite_bounds([
                 [0.0, 2.0],
@@ -1376,7 +1376,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             object_id: 9,
             carrier_surface: 2,
             source_surface: 3,
-            distance: -0.5,
+            distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Cache,
             parameter_bounds: crate::test_support::test_b5::finite_bounds([
                 [-2.0, 3.0],
