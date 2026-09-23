@@ -3416,11 +3416,7 @@ fn revolution_definition(
         false
     };
     if reversed {
-        axis.direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-            -axis.direction.x,
-            -axis.direction.y,
-            -axis.direction.z,
-        ))?;
+        axis.direction = axis.direction.reversed();
     }
     let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
         .iter()
@@ -4140,9 +4136,7 @@ fn extrusion_shape(
         let cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } = &mut direction else {
             return None;
         };
-        *vector = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-            -vector.x, -vector.y, -vector.z,
-        ))?;
+        *vector = vector.reversed();
     }
     let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
     let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);

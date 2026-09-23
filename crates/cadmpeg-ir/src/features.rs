@@ -134,6 +134,16 @@ impl From<UnitVector3> for FeatureDirection3 {
     }
 }
 
+impl FeatureDirection3 {
+    /// Reverse all components. Each product of two components keeps its
+    /// value under negation, so the squared norm is unchanged and the result
+    /// stays admitted.
+    #[must_use]
+    pub fn reversed(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+
 checked_feature_geometry!(
     /// A finite right-handed rigid feature placement.
     FeatureRigidPlacement, Transform, value, value.is_proper_rigid(),
