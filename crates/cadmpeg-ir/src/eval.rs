@@ -2126,21 +2126,102 @@ fn nurbs_pcurve_differential(
     };
     let base = sum(&basis)?;
     let point = base.project(base, &[])?;
-    let first_sum =
-        bspline_basis_derivative(knots, degree, span, t).and_then(|values| sum(&values));
+    let uv = |p: [f64; 3]| Point2::new(p[0], p[1]);
+    let point_only = || PcurveDifferential {
+        point: uv(point),
+        tangent: None,
+        acceleration: None,
+    };
+    let Some(mut first_basis) = bspline_basis_derivative(knots, degree, span, t) else {
+        return Some(point_only());
+    };
+    let mut second_basis = bspline_basis_second_derivative(knots, degree, span, t);
+    let scale = if first_basis.iter().all(|value| value.is_finite())
+        && second_basis
+            .as_ref()
+            .is_none_or(|values| values.iter().all(|value| value.is_finite()))
+    {
+        1.0
+    } else {
+        let scale = knots[span + 1] - knots[span];
+        if !scale.is_finite() || scale <= 0.0 {
+            return Some(point_only());
+        }
+        if degree == 1 {
+            let poles = [
+                Point3::new(control_points[span - 1].u, control_points[span - 1].v, 0.0),
+                Point3::new(control_points[span].u, control_points[span].v, 0.0),
+            ];
+            let local_weights = weights.map(|weights| {
+                [
+                    weights.get(span - 1).copied().unwrap_or(1.0),
+                    weights.get(span).copied().unwrap_or(1.0),
+                ]
+            });
+            let tangent = linear_nurbs_derivative(
+                &basis,
+                &poles,
+                local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                1,
+                scale,
+                false,
+            );
+            let acceleration = linear_nurbs_derivative(
+                &basis,
+                &poles,
+                local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                1,
+                scale,
+                true,
+            );
+            return Some(PcurveDifferential {
+                point: uv(point),
+                tangent: tangent.map(|vector| Point2::new(vector.x, vector.y)),
+                acceleration: acceleration.map(|vector| Point2::new(vector.x, vector.y)),
+            });
+        }
+        let Some(scaled) = bspline_basis_scaled_derivatives(knots, degree, span, t, scale) else {
+            return Some(point_only());
+        };
+        first_basis = scaled.0;
+        second_basis = Some(scaled.1);
+        scale
+    };
+    let first_sum = sum(&first_basis);
     let first = first_sum.and_then(|sum| sum.project(base, &[(sum, point)]));
     let second = first_sum.zip(first).and_then(|(first_sum, first)| {
-        let second_sum = sum(&bspline_basis_second_derivative(knots, degree, span, t)?)?;
+        let second_sum = sum(second_basis.as_ref()?)?;
         second_sum.project(
             base,
             &[(second_sum, point), (first_sum, first), (first_sum, first)],
         )
     });
-    let uv = |p: [f64; 3]| Point2::new(p[0], p[1]);
+    let unscale = |value: f64, twice: bool| {
+        if scale == 1.0 {
+            Some(value)
+        } else {
+            let value = difference_quotient(value, 0.0, scale, 0.0)?;
+            if twice {
+                difference_quotient(value, 0.0, scale, 0.0)
+            } else {
+                Some(value)
+            }
+        }
+    };
     Some(PcurveDifferential {
         point: uv(point),
-        tangent: first.map(uv),
-        acceleration: second.map(uv),
+        tangent: first.and_then(|value| {
+            Some(Point2::new(
+                unscale(value[0], false)?,
+                unscale(value[1], false)?,
+            ))
+        }),
+        acceleration: second.and_then(|value| {
+            Some(Point2::new(
+                unscale(value[0], true)?,
+                unscale(value[1], true)?,
+            ))
+        }),
     })
 }
 
