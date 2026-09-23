@@ -1401,7 +1401,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         sphere_body_projection(&ir, &[]),
         Some((
             body.clone(),
-            Point3::new(1., 2., 3.),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                .expect("literal sphere center is finite"),
             Length::new(f64::EPSILON).unwrap()
         ))
     );
@@ -1409,7 +1410,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         sphere_body_projection(&ir, std::slice::from_ref(&body)),
         Some((
             body.clone(),
-            Point3::new(1., 2., 3.),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
+                .expect("literal sphere center is finite"),
             Length::new(f64::EPSILON).unwrap()
         ))
     );

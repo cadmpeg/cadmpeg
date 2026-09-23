@@ -3462,7 +3462,7 @@ fn attach_feature_operations(
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
                 FeatureOperation::Sphere {
-                    center: cadmpeg_ir::features::FinitePoint3::new(*center)?,
+                    center: *center,
                     radius: cadmpeg_ir::scalar::PositiveLength::try_from(*radius).ok()?,
                     op: sphere_op,
                 },
@@ -6026,7 +6026,10 @@ fn block_placement(
 /// projection therefore accepts only one connected solid body with exactly
 /// one face whose surface is a finite positive-radius sphere. With no native
 /// output relation, the candidate must also be unique across the model.
-fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Point3, Length)> {
+fn sphere_body_projection(
+    ir: &CadIr,
+    outputs: &[BodyId],
+) -> Option<(BodyId, cadmpeg_ir::features::FinitePoint3, Length)> {
     let body = match outputs {
         [body] => body.clone(),
         [] => {
@@ -6068,7 +6071,7 @@ fn sphere_body_projection(ir: &CadIr, outputs: &[BodyId]) -> Option<(BodyId, Poi
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         return None;
     };
-    let center = sphere_surface.center().get();
+    let center = sphere_surface.center();
     let radius = sphere_surface.radius();
     (radius.get() > 0.0).then_some((body, center, Length::from(radius)))
 }
