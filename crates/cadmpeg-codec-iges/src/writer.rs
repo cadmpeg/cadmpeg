@@ -4684,7 +4684,7 @@ impl RevolutionSweep {
         let sweep = terminate_angle - start_angle;
         if !sweep.is_finite() {
             return Err(CodecError::InvalidInput(format!(
-                "IGES Type 120 angular_interval [{start_angle}, {terminate_angle}] is not finite"
+                "IGES Type 120 angular_interval [{start_angle}, {terminate_angle}] sweep overflows"
             )));
         }
         if sweep > TAU + ANGULAR_TOLERANCE {
