@@ -4567,13 +4567,10 @@ fn draft_definition(
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
             plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
-            pull: match pull_direction {
-                Some(direction) => Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-                    plane: None,
-                }),
-                None => None,
-            },
+            pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
+                direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                plane: None,
+            }),
         },
         angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
             if reversed { -angle } else { angle }.to_radians(),
