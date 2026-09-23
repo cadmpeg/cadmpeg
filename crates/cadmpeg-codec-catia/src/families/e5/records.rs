@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::families::e5::graph::Sign;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
@@ -218,15 +219,16 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
             if let (Some(origin), Some(frame_u), Some(frame_v), Some(radius)) =
                 (origin, frame_u, frame_v, radius)
             {
-                if radius.is_finite() && radius > 0.0 {
+                let (frame_u, frame_v) = (frame_u.get(), frame_v.get());
+                if radius.get() > 0.0 {
                     if let Some(axis) = frame_u.cross(frame_v).unit() {
                         let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            origin,
+                            origin.get(),
                             axis,
                             frame_u.unit().unwrap_or_else(|| {
                                 cadmpeg_ir::geometry::derive_reference_direction(axis)
                             }),
-                            radius,
+                            radius.get(),
                         ) else {
                             continue;
                         };
@@ -258,18 +260,19 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
             continue;
         };
         let scalar_count = (record.size - 58) / 8;
-        let scalars_finite = (0..scalar_count)
-            .all(|index| f64_le(data, pos + 39 + 8 * index).is_some_and(f64::is_finite));
+        let scalars_finite =
+            (0..scalar_count).all(|index| f64_le(data, pos + 39 + 8 * index).is_some());
         let Some(bounds) = read_f64_array::<4>(data, record.end() - 32) else {
             continue;
         };
-        if !scalars_finite || origin.iter().chain(&bounds).any(|value| !value.is_finite()) {
+        if !scalars_finite {
             continue;
         }
+        let bounds = bounds.map(FiniteReal::get);
         out.push(E5Plane {
             pos,
             record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
-            origin,
+            origin: origin.map(FiniteReal::get),
             #[cfg(test)]
             u_range: [bounds[0], bounds[1]],
             #[cfg(test)]
@@ -329,12 +332,10 @@ pub(in crate::families) fn e5_surfaces(
                     .then_some((geometry, parameter_scale))
             }),
             0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
-                let u_scale = f64_le(data, pos + 158)?;
-                let v_scale = f64_le(data, pos + 166)?;
+                let u_scale = f64_le(data, pos + 158)?.get();
+                let v_scale = f64_le(data, pos + 166)?.get();
                 let parameter_scale = [1.0 / u_scale, half_angle.cos() / v_scale];
-                (u_scale.is_finite()
-                    && u_scale != 0.0
-                    && v_scale.is_finite()
+                (u_scale != 0.0
                     && v_scale != 0.0
                     && parameter_scale.into_iter().all(f64::is_finite))
                 .then_some((geometry, parameter_scale))
@@ -720,7 +721,8 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    if !radius.is_finite() || radius <= 0.0 {
+    let radius = radius.get();
+    if radius <= 0.0 {
         return None;
     }
     Some((geometry, radius))
@@ -729,12 +731,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
 fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
-    if !(radius.is_finite()
-        && radius > 0.0
-        && half_angle.is_finite()
-        && half_angle > 0.0
-        && half_angle < std::f64::consts::FRAC_PI_2)
-    {
+    if !(radius.get() > 0.0 && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
         return None;
     }
     Some((geometry, half_angle))
@@ -743,11 +740,8 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
 fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    if !(major_radius.is_finite()
-        && major_radius > 0.0
-        && minor_radius.is_finite()
-        && minor_radius > 0.0)
-    {
+    let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
+    if !(major_radius > 0.0 && minor_radius > 0.0) {
         return None;
     }
     Some((geometry, major_radius, minor_radius))

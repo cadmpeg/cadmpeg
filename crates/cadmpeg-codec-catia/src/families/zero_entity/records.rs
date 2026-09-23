@@ -431,11 +431,7 @@ fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
     }
     let knots = [67usize, 75, 83, 91, 99].map(|offset| f64_le(data, record.checked_add(offset)?));
     let knots = knots.into_iter().collect::<Option<Vec<_>>>()?;
-    if !knots
-        .windows(2)
-        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
-        || !knots.last().is_some_and(|knot| knot.is_finite())
-    {
+    if !knots.windows(2).all(|pair| pair[0] < pair[1]) {
         return None;
     }
     for (index, multiplicity) in [4u32, 2, 2, 2, 4].into_iter().enumerate() {
@@ -449,7 +445,7 @@ fn zero_entity_2118_logical_end(data: &[u8], record: usize) -> Option<usize> {
     }
     for index in 0usize..10 {
         let pole = record.checked_add(132usize.checked_add(index.checked_mul(16)?)?)?;
-        if !f64_le(data, pole)?.is_finite() || !f64_le(data, pole.checked_add(8)?)?.is_finite() {
+        if f64_le(data, pole).is_none() || f64_le(data, pole.checked_add(8)?).is_none() {
             return None;
         }
     }
@@ -633,8 +629,8 @@ fn zero_entity_nurbs_knot_lane(
     let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
     let mut distinct = Vec::with_capacity(distinct_count);
     for index in 0..distinct_count {
-        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
-        if !value.is_finite() || distinct.last().is_some_and(|last| value <= *last) {
+        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?.get();
+        if distinct.last().is_some_and(|last| value <= *last) {
             return None;
         }
         distinct.push(value);
@@ -1187,8 +1183,8 @@ fn zero_entity_support_occurrence(
                 return None;
             }
             values[index] = [
-                f64_le(data, absolute)?,
-                f64_le(data, absolute.checked_add(8)?)?,
+                f64_le(data, absolute)?.get(),
+                f64_le(data, absolute.checked_add(8)?)?.get(),
             ];
         }
         Some(values)
@@ -1299,13 +1295,9 @@ fn zero_entity_support_pcurve(
     }
     let distinct_knots = knot_offsets
         .iter()
-        .map(|offset| f64_le(data, record.pos.checked_add(*offset)?))
+        .map(|offset| Some(f64_le(data, record.pos.checked_add(*offset)?)?.get()))
         .collect::<Option<Vec<_>>>()?;
-    if !distinct_knots
-        .windows(2)
-        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
-        || !distinct_knots.last().is_some_and(|knot| knot.is_finite())
-    {
+    if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
         return None;
     }
     let multiplicities = (0..distinct_knots.len())
@@ -1335,8 +1327,10 @@ fn zero_entity_support_pcurve(
             let at = record
                 .pos
                 .checked_add(pole_start + index.checked_mul(16)?)?;
-            let point = Point2::new(f64_le(data, at)?, f64_le(data, at.checked_add(8)?)?);
-            point.is_finite().then_some(point)
+            Some(Point2::new(
+                f64_le(data, at)?.get(),
+                f64_le(data, at.checked_add(8)?)?.get(),
+            ))
         })
         .collect::<Option<Vec<_>>>()?;
     let weights = if let Some(weight_start) = weight_start {
@@ -1348,8 +1342,9 @@ fn zero_entity_support_pcurve(
                         record
                             .pos
                             .checked_add(weight_start + index.checked_mul(8)?)?,
-                    )?;
-                    (weight.is_finite() && weight > 0.0).then_some(weight)
+                    )?
+                    .get();
+                    (weight > 0.0).then_some(weight)
                 })
                 .collect::<Option<Vec<_>>>()?,
         )
@@ -2093,10 +2088,8 @@ fn zero_entity_nurbs_surface(
         crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)?;
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
-        control_points.push(f64_point(
-            data,
-            layout.grid.checked_add(pole.checked_mul(24)?)?,
-        )?);
+        control_points
+            .push(f64_point(data, layout.grid.checked_add(pole.checked_mul(24)?)?)?.get());
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         crate::nurbs::note_refusal(
@@ -2128,11 +2121,11 @@ fn zero_entity_nurbs_surface(
 
 fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = f64_point(payload, 10)?;
-    let row0 = f64_vector(payload, 34)?;
-    let row1 = f64_vector(payload, 58)?;
+    let row0 = f64_vector(payload, 34)?.get();
+    let row1 = f64_vector(payload, 58)?.get();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            origin,
+            origin.get(),
             row0.cross(row1).unit()?,
             row0.unit()?,
         )
@@ -2147,7 +2140,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     let origin = c.point3()?;
     c.skip(1)?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    if !(radius.is_finite() && radius > 0.0) {
+    if radius.get() <= 0.0 {
         return None;
     }
     Some(geometry)
@@ -2156,12 +2149,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
-    if !(radius.is_finite()
-        && radius > 0.0
-        && half_angle.is_finite()
-        && half_angle > 0.0
-        && half_angle < std::f64::consts::FRAC_PI_2)
-    {
+    if !(radius.get() > 0.0 && half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
         return None;
     }
     Some(geometry)
@@ -2170,11 +2158,7 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    if !(major_radius.is_finite()
-        && major_radius > 0.0
-        && minor_radius.is_finite()
-        && minor_radius > 0.0)
-    {
+    if !(major_radius.get() > 0.0 && minor_radius.get() > 0.0) {
         return None;
     }
     Some(geometry)

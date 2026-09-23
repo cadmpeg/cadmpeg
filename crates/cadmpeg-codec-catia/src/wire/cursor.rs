@@ -7,7 +7,9 @@
 //! frame readers in `analytic.rs`.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// A cursor over a CATIA record payload, tracking an absolute byte offset.
 #[derive(Debug, Clone, Copy)]
@@ -111,25 +113,32 @@ impl Cursor<'_> {
     }
 
     /// Reads a finite eight-byte little-endian `f64`, rejecting NaN/infinity.
-    pub(crate) fn f64(&mut self) -> Option<f64> {
-        let value = self.f64_raw()?;
-        value.is_finite().then_some(value)
+    pub(crate) fn f64(&mut self) -> Option<FiniteReal> {
+        FiniteReal::new(self.f64_raw()?)
     }
 
     /// Reads three finite `f64` components as a point.
-    pub(crate) fn point3(&mut self) -> Option<Point3> {
-        Some(Point3::new(self.f64()?, self.f64()?, self.f64()?))
+    pub(crate) fn point3(&mut self) -> Option<FinitePoint3> {
+        FinitePoint3::new(Point3::new(
+            self.f64_raw()?,
+            self.f64_raw()?,
+            self.f64_raw()?,
+        ))
     }
 
     /// Reads three finite `f64` components as a vector, without normalising.
-    pub(crate) fn vector3(&mut self) -> Option<Vector3> {
-        Some(Vector3::new(self.f64()?, self.f64()?, self.f64()?))
+    pub(crate) fn vector3(&mut self) -> Option<FiniteVector3> {
+        FiniteVector3::new(Vector3::new(
+            self.f64_raw()?,
+            self.f64_raw()?,
+            self.f64_raw()?,
+        ))
     }
 
     /// Reads three finite `f64` components and normalises them to a unit
     /// direction, failing on a degenerate (near-zero-length) vector.
     pub(crate) fn unit3(&mut self) -> Option<Vector3> {
-        self.vector3()?.unit()
+        self.vector3()?.get().unit()
     }
 }
 

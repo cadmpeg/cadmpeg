@@ -31,8 +31,8 @@ use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTe
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
-    AllocationReferenceEncoding,
+    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array,
+    u32_le_24, AllocationReferenceEncoding,
 };
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
@@ -771,10 +771,10 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
         let Some(half_angle) = f64_le(data, scalar_at + 8) else {
             continue;
         };
+        let (angular_scale, half_angle) = (angular_scale.get(), half_angle.get());
         if header_token == 5
             && program.first() == Some(&0x85)
             && program.ends_with(&[0x03, 0x11])
-            && angular_scale.is_finite()
             && 0.0 < half_angle
             && half_angle < std::f64::consts::FRAC_PI_2
         {
@@ -807,7 +807,7 @@ pub(crate) fn b2_reference_lists_from_records(
         .filter_map(|frame| {
             if frame.header_token != 5
                 || !matches!(frame.end - frame.payload, 0x22 | 0x24 | 0x26)
-                || f64_le(data, frame.end.checked_sub(8)?)? != 1.0
+                || f64_le(data, frame.end.checked_sub(8)?)? != FiniteReal::ONE
             {
                 return None;
             }
@@ -1130,7 +1130,7 @@ fn owner_chart_bridge(
     at += 1;
     if count == 5 {
         let unit_token = *data.get(at)?;
-        let construction_radius = PositiveLength::new(f64_le(data, at + 1)?)?;
+        let construction_radius = PositiveLength::new(f64_le(data, at + 1)?.get())?;
         let middle_controls = [
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 9)?)?,
             CatiaOwnerChartMiddleControl::from_byte(*data.get(at + 10)?)?,
@@ -1320,7 +1320,7 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
         return None;
     }
 
-    let values = read_f64_array::<4>(data, 5)?;
+    let values = read_f64_array::<4>(data, 5)?.map(FiniteReal::get);
     let lower = [values[0], values[1]];
     let upper = [values[2], values[3]];
     if data.get(37) != Some(&0x01) {
@@ -1422,8 +1422,8 @@ pub(crate) fn b2_long_61_from_records(
                 *reference = View::u16_le_at(data, at + 1)?;
                 at += 3;
             }
-            let scalar = f64_le(data, at)?;
-            if !scalar.is_finite() || at + 9 != frame.end {
+            let scalar = f64_le(data, at)?.get();
+            if at + 9 != frame.end {
                 return None;
             }
             Some(B2Long61 {
@@ -1620,34 +1620,24 @@ pub(crate) fn b2_parameter_points_from_records(
             let at = frame.payload + 2;
             let payload = match layout {
                 0x0a => B2ParameterPointPayload::Scalar {
-                    value: f64_le(data, at)?,
+                    value: f64_le(data, at)?.get(),
                 },
                 0x12 => B2ParameterPointPayload::Uv {
-                    uv: read_f64_array::<2>(data, at)?,
+                    uv: read_f64_array::<2>(data, at)?.map(FiniteReal::get),
                 },
                 0x1a => {
-                    let values = read_f64_array::<3>(data, at)?;
+                    let values = read_f64_array::<3>(data, at)?.map(FiniteReal::get);
                     B2ParameterPointPayload::StationUv {
                         station: values[0],
                         uv: [values[1], values[2]],
                     }
                 }
                 0x2a => B2ParameterPointPayload::FiveScalars {
-                    values: read_f64_array::<5>(data, at)?,
+                    values: read_f64_array::<5>(data, at)?.map(FiniteReal::get),
                 },
                 _ => return None,
             };
-            let finite = match &payload {
-                B2ParameterPointPayload::Scalar { value } => value.is_finite(),
-                B2ParameterPointPayload::Uv { uv } => uv.iter().all(|v| v.is_finite()),
-                B2ParameterPointPayload::StationUv { station, uv } => {
-                    station.is_finite() && uv.iter().all(|v| v.is_finite())
-                }
-                B2ParameterPointPayload::FiveScalars { values } => {
-                    values.iter().all(|v| v.is_finite())
-                }
-            };
-            finite.then_some(B2ParameterPoint {
+            Some(B2ParameterPoint {
                 pos: frame.pos,
                 end: frame.end,
                 prefix,
@@ -1684,9 +1674,12 @@ pub(crate) fn b2_plane_carriers_from_records(
                 0xe4 => {
                     (lane.len() == 7 * size_of::<f64>()).then_some(())?;
                     let values = read_f64_array::<7>(lane, 0)?;
-                    let tail = [values[4], values[5], values[6]];
-                    let (origin, frame) =
-                        b2_plane_chart([values[0], values[1]], [values[2], values[3], 0.0], tail)?;
+                    let tail = [values[4], values[5], values[6]].map(FiniteReal::get);
+                    let (origin, frame) = b2_plane_chart(
+                        [values[0], values[1]],
+                        [values[2].get(), values[3].get(), 0.0],
+                        tail,
+                    )?;
                     B2PlaneCarrierPayload::PointDirection2 {
                         origin,
                         frame,
@@ -1696,10 +1689,10 @@ pub(crate) fn b2_plane_carriers_from_records(
                 0xc4 => {
                     (lane.len() == 8 * size_of::<f64>()).then_some(())?;
                     let values = read_f64_array::<8>(lane, 0)?;
-                    let tail = [values[5], values[6], values[7]];
+                    let tail = [values[5], values[6], values[7]].map(FiniteReal::get);
                     let (origin, frame) = b2_plane_chart(
                         [values[0], values[1]],
-                        [values[2], values[3], values[4]],
+                        [values[2], values[3], values[4]].map(FiniteReal::get),
                         tail,
                     )?;
                     B2PlaneCarrierPayload::PointDirection3 {
@@ -1709,7 +1702,8 @@ pub(crate) fn b2_plane_carriers_from_records(
                     }
                 }
                 0xec => {
-                    let values: [f64; 6] = finite_f64_lane(lane)?.try_into().ok()?;
+                    let values: [FiniteReal; 6] = finite_f64_lane(lane)?.try_into().ok()?;
+                    let values = values.map(FiniteReal::get);
                     B2PlaneCarrierPayload::PointTail {
                         point: [values[0], values[1]],
                         tail: [values[2], values[3], values[4], values[5]],
@@ -1720,7 +1714,10 @@ pub(crate) fn b2_plane_carriers_from_records(
                     if values.is_empty() {
                         return None;
                     }
-                    B2PlaneCarrierPayload::ScalarLane { selector, values }
+                    B2PlaneCarrierPayload::ScalarLane {
+                        selector,
+                        values: values.into_iter().map(FiniteReal::get).collect(),
+                    }
                 }
             };
             Some(B2PlaneCarrier {
@@ -1741,11 +1738,11 @@ pub(crate) fn b2_plane_carriers_from_records(
 /// final pair. The origin is the point with a zero third coordinate, the u
 /// axis is the direction and the normal is `unit(u_axis × Z)`.
 fn b2_plane_chart(
-    point: [f64; 2],
+    [x, y]: [FiniteReal; 2],
     direction: [f64; 3],
     tail: [f64; 3],
 ) -> Option<(FinitePoint3, OrthonormalFrame3)> {
-    let origin = FinitePoint3::new(Point3::new(point[0], point[1], 0.0))?;
+    let origin = FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO);
     let u_axis = RelaxedHypotUnitVector3::new(direction)?;
     (direction[2].abs() <= EPS_B2_RECORD_GEOMETRY && tail[0] > 0.0 && tail[1] < tail[2])
         .then_some(())?;
@@ -1789,11 +1786,11 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
                 return None;
             }
             let values = finite_f64_lane(data.get(at..frame.end)?)?;
-            matches!(values.len(), 2 | 3).then_some(B2Class25Descriptor {
+            matches!(values.len(), 2 | 3).then(|| B2Class25Descriptor {
                 pos: frame.pos,
                 record_id,
                 control,
-                values,
+                values: values.into_iter().map(FiniteReal::get).collect(),
             })
         })
         .collect()
@@ -1967,7 +1964,8 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     if frame.end.checked_sub(frame.payload)? != 14 * size_of::<f64>() {
         return None;
     }
-    let center = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
+    let center = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+    let values = values.map(FiniteReal::get);
     let radius = values[9];
     let range = [values[10], values[11]];
     if values[12].to_bits() != 1.0f64.to_bits() {
@@ -2027,43 +2025,33 @@ fn parse_b2_nurbs_curve(
         return None;
     }
     at += 1;
-    let knot_start = f64_le(data, at)?;
-    let knot_end = f64_le(data, at + 8)?;
+    let knot_start = f64_le(data, at)?.get();
+    let knot_end = f64_le(data, at + 8)?.get();
     at += 16;
-    if !knot_start.is_finite()
-        || !knot_end.is_finite()
-        || knot_start >= knot_end
-        || compact_int(data, &mut at)? != 1
-    {
+    if knot_start >= knot_end || compact_int(data, &mut at)? != 1 {
         return None;
     }
     let control_points = (0..control_count)
         .map(|_| {
-            let x = f64_le(data, at)?;
-            let y = f64_le(data, at + 8)?;
-            let z = f64_le(data, at + 16)?;
-            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-                return None;
-            }
-            let point = Point3::new(x, y, z);
+            let point = f64_point(data, at)?.get();
             at += 24;
             Some(point)
         })
         .collect::<Option<Vec<_>>>()?;
     let weights = (0..control_count)
         .map(|_| {
-            let weight = f64_le(data, at)?;
+            let weight = f64_le(data, at)?.get();
             at += 8;
-            (weight.is_finite() && weight > 0.0).then_some(weight)
+            (weight > 0.0).then_some(weight)
         })
         .collect::<Option<Vec<_>>>()?;
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {
         return None;
     }
-    let repeated_start = f64_le(data, at)?;
-    let repeated_end = f64_le(data, at + 8)?;
-    let scale = f64_le(data, at + 16)?;
-    let offset = f64_le(data, at + 24)?;
+    let repeated_start = f64_le(data, at)?.get();
+    let repeated_end = f64_le(data, at + 8)?.get();
+    let scale = f64_le(data, at + 16)?.get();
+    let offset = f64_le(data, at + 24)?.get();
     at += 32;
     if repeated_start.to_bits() != knot_start.to_bits()
         || repeated_end.to_bits() != knot_end.to_bits()
@@ -2419,8 +2407,8 @@ fn b2_construction_offset_supports_from_records(
         if kind != 0x01 || at + 41 != frame.end {
             continue;
         }
-        let (Some(distance), Some(u_range), Some(v_range)) = (
-            FiniteReal::new(distance),
+        let fields = fields.map(FiniteReal::get);
+        let (Some(u_range), Some(v_range)) = (
             IncreasingParameterInterval::new([fields[0], fields[1]]),
             IncreasingParameterInterval::new([fields[2], fields[3]]),
         ) else {
@@ -2453,9 +2441,12 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         if frame.end - p != 0xb8 {
             continue;
         }
-        let Some(values) = read_f64_array::<23>(data, p) else {
+        let Some(stored) = read_f64_array::<23>(data, p) else {
             continue;
         };
+        let apex = FinitePoint3::from_coordinates(stored[0], stored[1], stored[2]);
+        let half_angle = Angle::from_assigned_real(stored[12]);
+        let values = stored.map(FiniteReal::get);
         let t1: [f64; 3] = [values[3], values[4], values[5]];
         let t2: [f64; 3] = [values[6], values[7], values[8]];
         let axis: [f64; 3] = [values[9], values[10], values[11]];
@@ -2477,9 +2468,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         ) else {
             continue;
         };
-        let (Some(apex), Some(half_angle), Some(frame), Some(slant_start)) = (
-            FinitePoint3::new(Point3::new(values[0], values[1], values[2])),
-            Angle::new(values[12]),
+        let (Some(frame), Some(slant_start)) = (
             UnitFrame3::right_handed(axis, t1, t2),
             NonNegativeLength::new(slant_range.lower()),
         ) else {
@@ -2547,9 +2536,9 @@ pub(crate) fn b2_revolutions_from_records(
         };
         if frame.end - p != 0xae
             || data.get(p + 131..p + 133) != Some(&[0x05, 0x05])
-            || f64_le(data, p + 141) != Some(1.0)
-            || f64_le(data, p + 149) != Some(1.0)
-            || f64_le(data, p + 157) != Some(0.0)
+            || f64_le(data, p + 141) != Some(FiniteReal::ONE)
+            || f64_le(data, p + 149) != Some(FiniteReal::ONE)
+            || f64_le(data, p + 157) != Some(FiniteReal::ZERO)
             || data.get(p + 165) != Some(&0x01)
         {
             continue;
@@ -2569,16 +2558,17 @@ pub(crate) fn b2_revolutions_from_records(
         let Some(mean_angle_parameter) = f64_le(data, p + 166) else {
             continue;
         };
+        let origin = FinitePoint3::from_coordinates(axis_frame[0], axis_frame[1], axis_frame[2]);
+        let axis_frame = axis_frame.map(FiniteReal::get);
+        let bounds = bounds.map(FiniteReal::get);
+        let mean_angle_parameter = mean_angle_parameter.get();
         let direction_x: [f64; 3] = [axis_frame[3], axis_frame[4], axis_frame[5]];
         let direction_y: [f64; 3] = [axis_frame[6], axis_frame[7], axis_frame[8]];
         let axis: [f64; 3] = [axis_frame[9], axis_frame[10], axis_frame[11]];
         let unit = ExactUnitVector3::new;
-        let (Some(origin), Some(direction_x), Some(direction_y), Some(axis)) = (
-            FinitePoint3::new(Point3::new(axis_frame[0], axis_frame[1], axis_frame[2])),
-            unit(direction_x),
-            unit(direction_y),
-            unit(axis),
-        ) else {
+        let (Some(direction_x), Some(direction_y), Some(axis)) =
+            (unit(direction_x), unit(direction_y), unit(axis))
+        else {
             continue;
         };
         // The cyclic form of the right-handed frame (direction_x,
@@ -2590,7 +2580,7 @@ pub(crate) fn b2_revolutions_from_records(
         let (Some(angular_range), Some(profile_range), Some(angular_scale)) = (
             IncreasingParameterInterval::new([bounds[0], bounds[1]]),
             IncreasingParameterInterval::new([bounds[2], bounds[3]]),
-            PositiveReal::new(angular_scale),
+            PositiveReal::new(angular_scale.get()),
         ) else {
             continue;
         };
@@ -2696,7 +2686,8 @@ pub(crate) fn b2_line_profiles_from_records(
                 return None;
             }
             let values = read_f64_array::<9>(data, frame.payload)?;
-            let origin = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
+            let origin = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+            let values = values.map(FiniteReal::get);
             let direction: [f64; 3] = [values[3], values[4], values[5]];
             let direction = ExactUnitVector3::new(direction)?;
             let range = IncreasingParameterInterval::new([values[7], values[8]])?;
@@ -2725,6 +2716,8 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(200)).then_some(())?;
             let values = read_f64_array::<25>(data, p)?;
+            let center = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+            let values = values.map(FiniteReal::get);
             let direction_x: [f64; 3] = [values[3], values[4], values[5]];
             let direction_y: [f64; 3] = [values[6], values[7], values[8]];
             let axis: [f64; 3] = [values[9], values[10], values[11]];
@@ -2736,11 +2729,6 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let minor_angular_domain = [values[20], values[21]];
             let major_scale = values[22];
             let minor_scale = values[23];
-            values[3..]
-                .iter()
-                .all(|value| value.is_finite())
-                .then_some(())?;
-            let center = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
             let direction_x = ExactUnitVector3::new(direction_x)?;
             let direction_y = ExactUnitVector3::new(direction_y)?;
             let axis = ExactUnitVector3::new(axis)?;
@@ -2788,6 +2776,8 @@ pub(crate) fn b2_spheres_from_records(
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(152)).then_some(())?;
             let values = read_f64_array::<19>(data, p)?;
+            let center = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+            let values = values.map(FiniteReal::get);
             let stored_x: [f64; 3] = [values[3], values[4], values[5]];
             let stored_y: [f64; 3] = [values[6], values[7], values[8]];
             let stored_axis: [f64; 3] = [values[9], values[10], values[11]];
@@ -2796,15 +2786,13 @@ pub(crate) fn b2_spheres_from_records(
             let latitude_range = [values[15], values[16]];
             let construction_radius = values[17];
             let chart_origin = values[18];
-            (values[3..].iter().all(|value| value.is_finite())
-                && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
+            (sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && construction_radius.to_bits() == radius.to_bits()
                 && chart_origin.to_bits()
                     == (radius
                         * ((azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI))
                         .to_bits())
             .then_some(())?;
-            let center = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
             let radius = PositiveLength::new(radius)?;
             let unit_direction =
                 |stored: [f64; 3]| ExactHypotUnitVector3::from_scaled(stored, radius.get());
@@ -2922,18 +2910,18 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
     let pos = frame.pos;
     let layout = u8::try_from(frame.end.checked_sub(frame.payload)?).ok()?;
     let p = frame.payload;
-    let origin = FinitePoint3::new(Point3::from(read_f64_array::<3>(data, p)?))?;
+    let origin = f64_point(data, p)?;
     let frame_token = *data.get(p + 24)?;
     match layout {
         0x5a => {
             if data.get(p + 89) != Some(&0x07) {
                 return None;
             }
-            let vector = read_f64_array::<2>(data, p + 25)?;
-            let one = f64_le(data, p + 41)?;
-            let radius = f64_le(data, p + 49)?;
-            let u_range = read_f64_array::<2>(data, p + 57)?;
-            let v_range = read_f64_array::<2>(data, p + 73)?;
+            let vector = read_f64_array::<2>(data, p + 25)?.map(FiniteReal::get);
+            let one = f64_le(data, p + 41)?.get();
+            let radius = f64_le(data, p + 49)?.get();
+            let u_range = read_f64_array::<2>(data, p + 57)?.map(FiniteReal::get);
+            let v_range = read_f64_array::<2>(data, p + 73)?.map(FiniteReal::get);
             if one != 1.0 || !circle_range_is_full_turn(radius, u_range) {
                 return None;
             }
@@ -2958,15 +2946,15 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
         }
         0x52 => {
             if frame_token != 0x1d
-                || f64_le(data, p + 25)? != 1.0
-                || f64_le(data, p + 33)? != 1.0
+                || f64_le(data, p + 25)? != FiniteReal::ONE
+                || f64_le(data, p + 33)? != FiniteReal::ONE
                 || data.get(p + 81) != Some(&0x07)
             {
                 return None;
             }
-            let radius = f64_le(data, p + 41)?;
-            let u_range = read_f64_array::<2>(data, p + 49)?;
-            let v_range = read_f64_array::<2>(data, p + 65)?;
+            let radius = f64_le(data, p + 41)?.get();
+            let u_range = read_f64_array::<2>(data, p + 49)?.map(FiniteReal::get);
+            let v_range = read_f64_array::<2>(data, p + 65)?.map(FiniteReal::get);
             if !circle_range_is_full_turn(radius, u_range) {
                 return None;
             }
@@ -2984,15 +2972,14 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
-            let vector = read_f64_array::<2>(data, p + 25)?;
-            let one = f64_le(data, p + 41)?;
-            let radius = f64_le(data, p + 49)?;
-            let u_range = read_f64_array::<2>(data, p + 57)?;
-            let v_range = read_f64_array::<2>(data, p + 73)?;
-            let range_origin = f64_le(data, p + 90)?;
+            let vector = read_f64_array::<2>(data, p + 25)?.map(FiniteReal::get);
+            let one = f64_le(data, p + 41)?.get();
+            let radius = f64_le(data, p + 49)?.get();
+            let u_range = read_f64_array::<2>(data, p + 57)?.map(FiniteReal::get);
+            let v_range = read_f64_array::<2>(data, p + 73)?.map(FiniteReal::get);
+            let range_origin = f64_le(data, p + 90)?.get();
             let expected_range_origin = cylinder_range_origin(radius, u_range);
             if one != 1.0
-                || !range_origin.is_finite()
                 || range_origin.to_bits() != expected_range_origin.to_bits()
                 || !circle_range_is_within_full_turn(radius, u_range)
             {
@@ -3060,18 +3047,15 @@ pub(crate) fn b2_circles_from_records(
         let Some(chart_shift) = f64_le(data, values_end + 1) else {
             continue;
         };
-        let [c1, c2, radius, lo, hi] = values;
+        let chart_shift = chart_shift.get();
+        let [c1, c2, radius, lo, hi] = values.map(FiniteReal::get);
         let (Some(radius), Some(range)) = (
             PositiveLength::new(radius),
             IncreasingParameterInterval::new([lo, hi]),
         ) else {
             continue;
         };
-        if values.iter().all(|v| v.is_finite())
-            && c1.abs() <= 1e6
-            && c2.abs() <= 1e6
-            && chart_shift.is_finite()
-        {
+        if c1.abs() <= 1e6 && c2.abs() <= 1e6 {
             out.push(B2Circle {
                 pos,
                 layout,
@@ -3118,8 +3102,8 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
         let Some(values) = read_f64_array::<9>(data, frame.payload + 6) else {
             continue;
         };
-        if values.iter().all(|v| v.is_finite())
-            && values[0] < values[1]
+        let values = values.map(FiniteReal::get);
+        if values[0] < values[1]
             && values[0] == values[3]
             && values[0] == values[6]
             && values[1] == values[4]
@@ -3166,13 +3150,13 @@ pub(in crate::families) fn b2_offset_supports_from_records(
                 }
                 _ => return None,
             };
-            let values = read_f64_array::<5>(data, at)?;
+            let [distance, u0, v0, u1, v1] = read_f64_array::<5>(data, at)?;
             Some(B2OffsetSupport {
                 pos: frame.pos,
                 support_id,
-                distance: FiniteReal::new(values[0])?,
-                u_range: IncreasingParameterInterval::new([values[1], values[3]])?,
-                v_range: IncreasingParameterInterval::new([values[2], values[4]])?,
+                distance,
+                u_range: IncreasingParameterInterval::new([u0.get(), u1.get()])?,
+                v_range: IncreasingParameterInterval::new([v0.get(), v1.get()])?,
             })
         })
         .collect::<Vec<_>>();

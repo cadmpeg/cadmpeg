@@ -3,10 +3,12 @@
 //! Decodes `a5`/`a8` NURBS surface carriers, common-form and consolidated
 //! rolling-ball jets, guide-curve jets, and object-stream UV pcurves.
 
-use super::knot_lane::{strictly_increasing_finite, A8KnotLane};
+use super::knot_lane::A8KnotLane;
 use crate::math::distance;
 use crate::nurbs::{expand_knots, pole_count};
-use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+use crate::wire::bytes::{
+    compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array, u32_le_24,
+};
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
 use crate::wire::records::{
@@ -19,6 +21,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use std::ops::Range;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
@@ -272,9 +275,8 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     {
         return None;
     }
-    let parameters = read_f64_array::<8>(tail, 4)?;
-    if parameters.iter().any(|value| !value.is_finite())
-        || parameters[0] >= parameters[1]
+    let parameters = read_f64_array::<8>(tail, 4)?.map(FiniteReal::get);
+    if parameters[0] >= parameters[1]
         || parameters[2] >= parameters[3]
         || parameters[4] == 0.0
         || parameters[6] == 0.0
@@ -283,19 +285,11 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     }
     let continuation_start = 71;
     let continuation_end = continuation_start + continuation_bytes;
-    let mut continuation_view =
-        View::over_retained(tail.get(continuation_start..continuation_end)?);
-    let mut continuation = Vec::new();
-    while !continuation_view.is_empty() {
-        continuation.push(continuation_view.f64_le()?);
-    }
-    if continuation.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
+    let continuation = finite_f64_lane(tail.get(continuation_start..continuation_end)?)?;
     let suffix = &tail[continuation_end..];
     let valid_suffix = match (tail_len, &tail[68..71]) {
         (133, [0x01, 0x01, 0x01]) => {
-            continuation.iter().all(|value| *value == 0.0)
+            continuation.iter().all(|value| value.get() == 0.0)
                 && suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
         }
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => matches!(
@@ -697,25 +691,16 @@ fn parse_a5_nurbs_curve(
     }
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
-        distinct_knots.push(f64_le(data, at)?);
+        distinct_knots.push(f64_le(data, at)?.get());
         at += 8;
     }
-    if distinct_knots.iter().any(|knot| !knot.is_finite())
-        || !knots_strictly_increasing(&distinct_knots)
-        || data.get(at) != Some(&0x01)
-    {
+    if !knots_strictly_increasing(&distinct_knots) || data.get(at) != Some(&0x01) {
         return None;
     }
     at += 1;
     let control_points = (0..control_count)
         .map(|_| {
-            let x = f64_le(data, at)?;
-            let y = f64_le(data, at + 8)?;
-            let z = f64_le(data, at + 16)?;
-            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
-                return None;
-            }
-            let point = Point3::new(x, y, z);
+            let point = f64_point(data, at)?.get();
             at += 24;
             Some(point)
         })
@@ -723,10 +708,10 @@ fn parse_a5_nurbs_curve(
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
         return None;
     }
-    let range_origin = f64_le(data, at)?;
-    let repeated_end = f64_le(data, at + 8)?;
-    let scale = f64_le(data, at + 16)?;
-    let offset = f64_le(data, at + 24)?;
+    let range_origin = f64_le(data, at)?.get();
+    let repeated_end = f64_le(data, at + 8)?.get();
+    let scale = f64_le(data, at + 16)?.get();
+    let offset = f64_le(data, at + 24)?.get();
     at += 32;
     if range_origin.to_bits() != 0.0f64.to_bits()
         || repeated_end.to_bits() != distinct_knots.last()?.to_bits()
@@ -794,7 +779,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
         return None;
     }
     let knots = f64_values(data, &mut at, count, frame.end)?;
-    if knots.iter().any(|knot| !knot.is_finite()) || !knots_strictly_increasing(&knots) {
+    if !knots_strictly_increasing(&knots) {
         return None;
     }
     if at
@@ -806,13 +791,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     }
     let block = |start: usize| -> Option<Vec<[f64; 6]>> {
         (0..count)
-            .map(|site| {
-                let values = read_f64_array::<6>(data, start + site * 48)?;
-                values
-                    .iter()
-                    .all(|value| value.is_finite())
-                    .then_some(values)
-            })
+            .map(|site| Some(read_f64_array::<6>(data, start + site * 48)?.map(FiniteReal::get)))
             .collect()
     };
     let positions = block(at)?;
@@ -966,14 +945,14 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
-        knots.push(f64_le(data, at)?);
+        knots.push(f64_le(data, at)?.get());
         at += 8;
     }
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
         multiplicities.push(compact_int(data, &mut at)?);
     }
-    if knots.iter().any(|v| !v.is_finite()) || !knots_strictly_increasing(&knots) {
+    if !knots_strictly_increasing(&knots) {
         return None;
     }
     let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
@@ -989,13 +968,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {
         (0..count)
-            .map(|site| {
-                let mut values = [0.0; 10];
-                for (channel, value) in values.iter_mut().enumerate() {
-                    *value = f64_le(data, start + site * 80 + channel * 8)?;
-                }
-                values.iter().all(|v| v.is_finite()).then_some(values)
-            })
+            .map(|site| Some(read_f64_array::<10>(data, start + site * 80)?.map(FiniteReal::get)))
             .collect()
     };
     let positions = block(at)?;
@@ -1074,21 +1047,15 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
-        knots.push(f64_le(data, at)?);
+        knots.push(f64_le(data, at)?.get());
         at += 8;
     }
-    if knots.iter().any(|v| !v.is_finite()) || !knots_strictly_increasing(&knots) {
+    if !knots_strictly_increasing(&knots) {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {
         (0..count)
-            .map(|site| {
-                let mut values = [0.0; 10];
-                for (channel, value) in values.iter_mut().enumerate() {
-                    *value = f64_le(data, start + site * 80 + channel * 8)?;
-                }
-                values.iter().all(|v| v.is_finite()).then_some(values)
-            })
+            .map(|site| Some(read_f64_array::<10>(data, start + site * 80)?.map(FiniteReal::get)))
             .collect()
     };
     let positions = block(at)?;
@@ -1198,7 +1165,7 @@ fn parse_object_stream_pcurve(
     let read = |at: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
-            values.push(f64_le(data, *at)?);
+            values.push(f64_le(data, *at)?.get());
             *at += 8;
         }
         Some(values)
@@ -1226,7 +1193,7 @@ fn parse_object_stream_pcurve(
     at += 1;
     let ddu = read(&mut at)?;
     let ddv = read(&mut at)?;
-    let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
+    let range = [f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()];
     at += 16;
     if data.get(at) != Some(&0x07)
         || mode % 4 != 1
@@ -1238,16 +1205,6 @@ fn parse_object_stream_pcurve(
             .any(|multiplicity| *multiplicity != 3)
         || range[0] >= range[1]
         || end != at + 1
-        || knots
-            .iter()
-            .chain(&u)
-            .chain(&v)
-            .chain(&du)
-            .chain(&dv)
-            .chain(&ddu)
-            .chain(&ddv)
-            .chain(&range)
-            .any(|x| !x.is_finite())
     {
         return None;
     }
@@ -1484,25 +1441,17 @@ fn a8_external_grid_candidates(
                 complete = false;
                 break;
             };
-            control_points.push(point);
+            control_points.push(point.get());
             at += 24;
         }
-        if !complete
-            || control_points
-                .iter()
-                .flat_map(|point| [point.x, point.y, point.z])
-                .any(|coordinate| !coordinate.is_finite())
-        {
+        if !complete {
             continue;
         }
         let weights = if header.rational {
             let Some(values) = f64_values(data, &mut at, poles, end) else {
                 continue;
             };
-            if values
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight == 0.0)
-            {
+            if values.iter().any(|weight| *weight == 0.0) {
                 continue;
             }
             Some(values)
@@ -1562,7 +1511,7 @@ fn a5_surface(
     let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
     let mode = *data.get(at)?;
     at += 1;
-    if !strictly_increasing_finite(&u_distinct) || !strictly_increasing_finite(&v_distinct) {
+    if !knots_strictly_increasing(&u_distinct) || !knots_strictly_increasing(&v_distinct) {
         return None;
     }
     let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
@@ -1573,15 +1522,8 @@ fn a5_surface(
     }
     let mut control_points = Vec::with_capacity(poles);
     for _ in 0..poles {
-        control_points.push(f64_point(data, at)?);
+        control_points.push(f64_point(data, at)?.get());
         at += 24;
-    }
-    if control_points
-        .iter()
-        .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite())
-    {
-        return None;
     }
     let weights = match mode {
         0x01 => None,
@@ -1746,21 +1688,14 @@ fn a8_surface_from_parsed(
     }
     let mut control_points = Vec::with_capacity(poles);
     for _ in 0..poles {
-        control_points.push(f64_point(data, pole_start)?);
+        control_points.push(f64_point(data, pole_start)?.get());
         pole_start += 24;
-    }
-    if control_points
-        .iter()
-        .flat_map(|point| [point.x, point.y, point.z])
-        .any(|coordinate| !coordinate.is_finite())
-    {
-        return None;
     }
     let weights = if rational {
         let values = f64_values(data, &mut pole_start, poles, end)?;
         values
             .iter()
-            .all(|weight| weight.is_finite() && *weight != 0.0)
+            .all(|weight| *weight != 0.0)
             .then_some(values)?
     } else {
         Vec::new()
@@ -1826,13 +1761,14 @@ fn consume_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
+/// Read `count` finite little-endian `f64` values that end at or before `end`.
 fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<Vec<f64>> {
     if at.checked_add(count.checked_mul(8)?)? > end {
         return None;
     }
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        values.push(f64_le(bytes, *at)?);
+        values.push(f64_le(bytes, *at)?.get());
         *at += 8;
     }
     Some(values)
@@ -1884,11 +1820,8 @@ fn a5_weights(
     let count = rows.checked_mul(cols)?;
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
-        return f64_values(bytes, at, count, end).filter(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight != 0.0)
-        });
+        return f64_values(bytes, at, count, end)
+            .filter(|weights| weights.iter().all(|weight| *weight != 0.0));
     }
     if bytes.get(*at) != Some(&0x01) {
         return None;
@@ -1919,7 +1852,7 @@ fn a5_weights(
     }
     weights
         .iter()
-        .all(|weight| weight.is_finite() && *weight != 0.0)
+        .all(|weight| *weight != 0.0)
         .then_some(weights)
 }
 

@@ -20,12 +20,13 @@ impl A8KnotLane {
     }
 
     pub(super) fn try_new(distinct: Vec<f64>, multiplicities: Vec<u32>) -> Option<Self> {
-        (distinct.len() == multiplicities.len() && strictly_increasing_finite(&distinct)).then_some(
-            Self {
-                distinct,
-                multiplicities,
-            },
-        )
+        (distinct.len() == multiplicities.len()
+            && distinct.iter().all(|value| value.is_finite())
+            && knots_strictly_increasing(&distinct))
+        .then_some(Self {
+            distinct,
+            multiplicities,
+        })
     }
 
     pub(super) fn expanded(&self) -> Option<Vec<f64>> {
@@ -35,10 +36,6 @@ impl A8KnotLane {
     pub(super) fn pole_count(&self, degree: u32) -> Option<u32> {
         pole_count(&self.multiplicities, degree)
     }
-}
-
-pub(super) fn strictly_increasing_finite(values: &[f64]) -> bool {
-    values.iter().all(|value| value.is_finite()) && knots_strictly_increasing(values)
 }
 
 #[cfg(test)]
