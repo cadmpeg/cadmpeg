@@ -52,6 +52,27 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length::new(5.0).unwrap()),
         Some(&LinearTermination::ThroughAll {}),
     ));
+    let short =
+        cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0e-13)).unwrap();
+    for placement in [
+        HolePlacement::Directed {
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            direction: short,
+        },
+        HolePlacement::Axis {
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            axis: short,
+        },
+    ] {
+        assert!(!hole_feature_is_incomplete(
+            None,
+            None,
+            Some(std::slice::from_ref(&placement)),
+            (&HoleKind::Simple, None),
+            Some(Length::new(5.0).unwrap()),
+            Some(&LinearTermination::ThroughAll {}),
+        ));
+    }
     let axis = HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
         axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
