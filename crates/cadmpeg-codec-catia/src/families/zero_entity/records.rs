@@ -1453,7 +1453,7 @@ fn zero_entity_model_curve(
             })
             .then_some(value)
     };
-    match surface {
+    let (curve, parameters) = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.normal();
@@ -1666,7 +1666,11 @@ fn zero_entity_model_curve(
             ))
         }
         _ => None,
-    }
+    }?;
+    parameters
+        .iter()
+        .all(|parameter| parameter.is_finite())
+        .then_some((curve, parameters))
 }
 
 /// Keep the surface frame, with the reference reversed when the circle
@@ -2691,6 +2695,31 @@ mod tests {
             assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
             assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
         }
+    }
+
+    #[test]
+    fn zero_entity_model_curve_refuses_unrepresentable_circle_parameters() {
+        use cadmpeg_ir::math::Vector3;
+
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                f64::from_bits(1),
+            )
+            .expect("finite positive radius"),
+        ));
+        let endpoints = [[0.0, 0.0], [1.0, 0.0]];
+        let pcurve = test_pcurve(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]);
+        assert!(zero_entity_model_curve(
+            &surface,
+            &pcurve,
+            endpoints,
+            &"test support record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_none());
     }
 
     #[test]
