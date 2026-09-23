@@ -7079,19 +7079,6 @@ impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
 }
 
 impl SurfaceCurveTail {
-    /// Admit a cache-first surface-curve tail whose scalars are all finite.
-    pub fn try_new(
-        extension: i64,
-        revision: i64,
-        cache: RevisionCacheForm<CacheFirstCurveParameterization>,
-        support_bounds: [[Option<f64>; 4]; 2],
-        solved_range: [Option<f64>; 2],
-    ) -> Result<Self, &'static str> {
-        let revision =
-            PositiveI64::new(revision).ok_or("surface curve tail revision must be positive")?;
-        Self::new(extension, revision, cache, support_bounds, solved_range)
-    }
-
     /// Admit a cache-first surface-curve tail around an admitted revision
     /// whose remaining scalars are all finite.
     pub fn new(

@@ -4,7 +4,7 @@
 use super::nurbs::{
     require_curve_cardinality, require_nondecreasing_knots, NurbsCurve, NurbsError, NurbsPoles3,
 };
-use super::{CacheContractError, FitTolerance, MAX_GEOMETRY_NESTING};
+use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -1929,12 +1929,6 @@ impl PcurveInlineForm {
         self.fit_tolerance.get()
     }
 
-    /// Replace the fit tolerance while retaining its previous value on rejection.
-    pub fn set_fit_tolerance(&mut self, value: f64) -> Result<(), CacheContractError> {
-        self.fit_tolerance = FitTolerance::try_new(value)?;
-        Ok(())
-    }
-
     /// Replace the fit tolerance with an admitted one.
     pub fn set_admitted_fit_tolerance(&mut self, value: FitTolerance) {
         self.fit_tolerance = value;
@@ -2021,12 +2015,6 @@ impl PcurveGeneralForm {
     #[must_use]
     pub fn fit_tolerance(&self) -> Option<f64> {
         self.fit_tolerance.map(FitTolerance::get)
-    }
-
-    /// Replace the fit tolerance while retaining its previous value on rejection.
-    pub fn set_fit_tolerance(&mut self, value: Option<f64>) -> Result<(), CacheContractError> {
-        self.fit_tolerance = value.map(FitTolerance::try_new).transpose()?;
-        Ok(())
     }
 
     /// Replace the fit tolerance with an admitted one, or clear it.
