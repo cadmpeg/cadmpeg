@@ -1699,3 +1699,34 @@ fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
         FinitePoint3::new(Point3::new(f64::MAX, 0.0, 1.0))
     );
 }
+
+#[test]
+fn feature_geometry_constants_are_the_admitted_literals() {
+    use crate::features::{FeatureDirection3, FinitePoint3};
+
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    assert_eq!(FinitePoint3::new(origin), Some(FinitePoint3::ZERO));
+    assert_eq!(
+        [
+            FinitePoint3::ZERO.x,
+            FinitePoint3::ZERO.y,
+            FinitePoint3::ZERO.z
+        ]
+        .map(f64::to_bits),
+        [origin.x, origin.y, origin.z].map(f64::to_bits)
+    );
+    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+    assert_eq!(
+        FeatureDirection3::new(z_axis),
+        Some(FeatureDirection3::Z_AXIS)
+    );
+    assert_eq!(
+        [
+            FeatureDirection3::Z_AXIS.x,
+            FeatureDirection3::Z_AXIS.y,
+            FeatureDirection3::Z_AXIS.z
+        ]
+        .map(f64::to_bits),
+        [z_axis.x, z_axis.y, z_axis.z].map(f64::to_bits)
+    );
+}

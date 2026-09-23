@@ -3592,9 +3592,9 @@ fn part_construction_geometry_definition(
             let legacy_angles = property(properties, "Angle0").is_some();
             Some(FeatureDefinition::Operation(
                 FeatureOperation::CircularArc {
-                    arc: cadmpeg_ir::features::FeatureCircularArc::new(
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
+                    arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
+                        cadmpeg_ir::features::FinitePoint3::ZERO,
+                        cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
                         cadmpeg_ir::scalar::PositiveLength::new(scalar_named(
                             properties, "Radius",
                         )?)?,
@@ -3603,7 +3603,7 @@ fn part_construction_geometry_definition(
                             angle(if legacy_angles { "Angle1" } else { "Angle2" })?.get(),
                         ])
                         .ok()?,
-                    )?,
+                    ),
                 },
             ))
         }
@@ -3736,8 +3736,8 @@ fn parametric_helix_definition(
         )
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Helix {
-        axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))?,
-        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))?,
+        axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
+        axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
         shape,
         revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
