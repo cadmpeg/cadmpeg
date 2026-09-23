@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use crate::document::CadIr;
+use crate::features::FinitePoint3;
 use crate::geometry::{
     derive_reference_direction, Curve, CurveGeometry, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
@@ -21,6 +22,7 @@ use crate::subd::{
 use crate::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use crate::units::{OrthonormalFrame3, UnitVector3};
 
 const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
 
@@ -296,30 +298,14 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         Curve {
             id: v2_id!(CurveId, "curve", crate::identity_key!("u")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .map_err(|_| {
-                    crate::geometry::ProceduralGeometryError::Payload(
-                        "invalid directed SubD example curve",
-                    )
-                })?,
+                crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS),
             )),
             source_object: None,
         },
         Curve {
             id: v2_id!(CurveId, "curve", crate::identity_key!("v")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                )
-                .map_err(|_| {
-                    crate::geometry::ProceduralGeometryError::Payload(
-                        "invalid directed SubD example curve",
-                    )
-                })?,
+                crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::Y_AXIS),
             )),
             source_object: None,
         },
@@ -334,16 +320,10 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::ProceduralGeometryE
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: Some(SolvedSurfaceGeometry::Plane(
-                crate::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .map_err(|_| {
-                    crate::geometry::ProceduralGeometryError::Payload(
-                        "invalid directed SubD example surface",
-                    )
-                })?,
+                crate::geometry::analytic::PlaneSurface::new(
+                    FinitePoint3::ZERO,
+                    OrthonormalFrame3::IDENTITY,
+                ),
             )),
         },
         source_object: None,

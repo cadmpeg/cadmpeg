@@ -222,6 +222,24 @@ const EPS_UNIT_FRAME: f64 = 1.0e-9;
 pub struct UnitVector3(Vector3);
 
 impl UnitVector3 {
+    /// The unit +x direction.
+    pub const X_AXIS: Self = Self(Vector3 {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    });
+    /// The unit +y direction.
+    pub const Y_AXIS: Self = Self(Vector3 {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    });
+    /// The unit +z direction.
+    pub const Z_AXIS: Self = Self(Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    });
     /// Admit a unit direction.
     pub fn new(value: Vector3) -> Option<Self> {
         ((value.norm() - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
@@ -255,6 +273,11 @@ pub struct OrthonormalFrame3 {
     reference: UnitVector3,
 }
 impl OrthonormalFrame3 {
+    /// The model coordinate frame: first direction +z, second direction +x.
+    pub const IDENTITY: Self = Self {
+        axis: UnitVector3::Z_AXIS,
+        reference: UnitVector3::X_AXIS,
+    };
     /// Admit two perpendicular unit directions.
     pub fn new(axis: Vector3, reference: Vector3) -> Option<Self> {
         let axis = UnitVector3::new(axis)?;
@@ -419,6 +442,38 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&value).expect("serialize"),
             r#"{"linear":0.25,"angular":0.5}"#
+        );
+    }
+
+    #[test]
+    fn unit_axis_constants_and_the_identity_frame_are_the_admitted_literals() {
+        use super::{OrthonormalFrame3, UnitVector3};
+        use crate::math::Vector3;
+
+        for (constant, literal) in [
+            (UnitVector3::X_AXIS, Vector3::new(1.0, 0.0, 0.0)),
+            (UnitVector3::Y_AXIS, Vector3::new(0.0, 1.0, 0.0)),
+            (UnitVector3::Z_AXIS, Vector3::new(0.0, 0.0, 1.0)),
+        ] {
+            assert_eq!(UnitVector3::new(literal), Some(constant));
+            assert_eq!(
+                [
+                    constant.as_raw().x,
+                    constant.as_raw().y,
+                    constant.as_raw().z
+                ]
+                .map(f64::to_bits),
+                [literal.x, literal.y, literal.z].map(f64::to_bits)
+            );
+        }
+        assert_eq!(
+            OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        assert_eq!(OrthonormalFrame3::IDENTITY.unit_axis(), UnitVector3::Z_AXIS);
+        assert_eq!(
+            OrthonormalFrame3::IDENTITY.unit_reference(),
+            UnitVector3::X_AXIS
         );
     }
 
