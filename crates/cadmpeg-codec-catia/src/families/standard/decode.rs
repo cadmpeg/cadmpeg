@@ -629,12 +629,12 @@ fn refine_consolidated_analytic_surfaces(
                 let origin = cylinder_surface.origin().get();
                 let axis = cylinder_surface.axis();
                 let radius = cylinder_surface.radius().get();
-                exactly_one(cylinders.iter().filter_map(|cylinder| {
-                    (same_point(origin, cylinder.origin)
+                exactly_one(cylinders.iter().filter(|cylinder| {
+                    same_point(origin, cylinder.origin.get().into())
                         && same_axis(*axis, cylinder.frame.axis().get())
-                        && radius.to_bits() == quantized(cylinder.radius.get()).to_bits())
-                    .then_some((cylinder.surface_geometry()?, cylinder.pos))
+                        && radius.to_bits() == quantized(cylinder.radius.get()).to_bits()
                 }))
+                .map(|cylinder| (cylinder.surface_geometry(), cylinder.pos))
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
@@ -647,22 +647,22 @@ fn refine_consolidated_analytic_surfaces(
                 let axis = cone_surface.axis();
                 let half_angle = cone_surface.half_angle().get();
                 exactly_one(cones.iter().filter(|cone| {
-                    same_point(origin, cone.apex)
+                    same_point(origin, cone.apex.get().into())
                         && same_axis(*axis, cone.axis.get())
-                        && half_angle.to_bits() == quantized(cone.half_angle).to_bits()
+                        && half_angle.to_bits() == quantized(cone.half_angle.get()).to_bits()
                 }))
                 .and_then(|cone| {
                     Some((
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::analytic::ConeSurface::new(
-                                cadmpeg_ir::features::FinitePoint3::new(Point3::from(cone.apex))?,
+                                cone.apex,
                                 cadmpeg_ir::units::OrthonormalFrame3::from_units(
                                     cone.axis.into(),
                                     cone.t1.into(),
                                 )?,
                                 cadmpeg_ir::scalar::NonNegativeLength::ZERO,
                                 cadmpeg_ir::scalar::PositiveReal::ONE,
-                                cadmpeg_ir::scalar::Angle::new(cone.half_angle)?,
+                                cone.half_angle,
                             ),
                         )),
                         cone.pos,
@@ -673,14 +673,14 @@ fn refine_consolidated_analytic_surfaces(
                 let center = sphere_surface.center().get();
                 let radius = sphere_surface.radius().get();
                 exactly_one(spheres.iter().filter(|sphere| {
-                    same_point(center, sphere.center)
+                    same_point(center, sphere.center.get().into())
                         && radius.to_bits() == quantized(sphere.radius.get()).to_bits()
                 }))
-                .and_then(|sphere| {
-                    Some((
-                        crate::families::b2::records::b2_sphere_geometry(sphere)?,
+                .map(|sphere| {
+                    (
+                        crate::families::b2::records::b2_sphere_geometry(sphere),
                         sphere.pos,
-                    ))
+                    )
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
@@ -689,16 +689,16 @@ fn refine_consolidated_analytic_surfaces(
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
                 exactly_one(tori.iter().filter(|torus| {
-                    same_point(center, torus.center)
+                    same_point(center, torus.center.get().into())
                         && same_axis(*axis, torus.frame.axis().get())
                         && major_radius.to_bits() == quantized(torus.major_radius.get()).to_bits()
                         && minor_radius.to_bits() == quantized(torus.minor_radius.get()).to_bits()
                 }))
-                .and_then(|torus| {
-                    Some((
-                        crate::families::b2::records::b2_torus_geometry(torus)?,
+                .map(|torus| {
+                    (
+                        crate::families::b2::records::b2_torus_geometry(torus),
                         torus.pos,
-                    ))
+                    )
                 })
             }
             _ => None,

@@ -20,7 +20,7 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
         panic!("one spatial circle");
     };
     assert_eq!(
-        circle.center,
+        circle.center.get(),
         cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
     );
     assert!((circle.axis.get()[2] - 1.0).abs() < 1.0e-12);

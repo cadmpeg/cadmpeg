@@ -194,19 +194,15 @@ pub(super) fn append_consolidated_revolutions(
         let _attached = ir.model.add_procedural_surface(
             surface,
             RevolutionSurfaceConstruction::admit_angular_interval([
-                revolution.angular_range[0] / revolution.angular_scale.get(),
-                revolution.angular_range[1] / revolution.angular_scale.get(),
+                revolution.angular_range.lower() / revolution.angular_scale.get(),
+                revolution.angular_range.upper() / revolution.angular_scale.get(),
             ])
             .and_then(|angular_interval| {
                 RevolutionSurfaceConstruction::try_from_intervals(
                     directrix,
                     (revolution.origin, revolution.axis.into()),
                     angular_interval,
-                    Some(
-                        RevolutionSurfaceConstruction::admit_angular_parameter_interval(
-                            revolution.angular_range,
-                        )?,
-                    ),
+                    Some(revolution.angular_range),
                     Some(revolution.profile_range),
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
@@ -670,7 +666,7 @@ pub(super) fn try_decode_freeform_surfaces(
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    FinitePoint3::new(circle.center)?,
+                    circle.center,
                     OrthonormalFrame3::from_units(circle.axis.into(), circle.ref_direction.into())?,
                     circle.radius,
                 ),
@@ -1106,32 +1102,22 @@ fn freeform_surface_carriers(
     surfaces.extend(
         crate::families::b2::records::b2_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| {
-                Ok(FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry: surface.surface_geometry().ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("invalid freeform surface geometry")
-                    })?,
-                    source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
-                    source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
-                })
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: surface.surface_geometry(),
+                source_object: cgm_source_key("b2-03-28-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_28:frame_offset:{:010}", surface.pos),
+            }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
             .into_iter()
-            .map(|surface| {
-                Ok(FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry: surface.cylinder.surface_geometry().ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed("invalid freeform surface geometry")
-                    })?,
-                    source_object: cgm_source("surface", surface.object_id),
-                    source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
-                })
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: surface.cylinder.surface_geometry(),
+                source_object: cgm_source("surface", surface.object_id),
+                source_tag: format!("b2_03_60:object_id:{:08x}", surface.object_id),
+            }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_cones_from_records(data, records)
@@ -1151,34 +1137,22 @@ fn freeform_surface_carriers(
     surfaces.extend(
         crate::families::b2::records::b2_spheres_from_records(data, records)
             .into_iter()
-            .map(|surface| {
-                Ok(FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry: crate::families::b2::records::b2_sphere_geometry(&surface)
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("invalid freeform surface geometry")
-                        })?,
-                    source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
-                    source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
-                })
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_sphere_geometry(&surface),
+                source_object: cgm_source_key("b2-03-2a-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_2a:frame_offset:{:010}", surface.pos),
+            }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_tori_from_records(data, records)
             .into_iter()
-            .map(|surface| {
-                Ok(FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry: crate::families::b2::records::b2_torus_geometry(&surface)
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed("invalid freeform surface geometry")
-                        })?,
-                    source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
-                    source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
-                })
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_torus_geometry(&surface),
+                source_object: cgm_source_key("b2-03-2b-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
+            }),
     );
     Ok(surfaces)
 }
@@ -1649,7 +1623,7 @@ impl ConsolidatedCarrierChart<'_> {
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [
                 u / cone.angular_scale.get(),
-                (v - cone.slant_range.lower()) * cone.half_angle.cos(),
+                (v - cone.slant_range.lower()) * cone.half_angle.get().cos(),
             ],
             Self::Torus { torus } => [u / torus.major_scale.get(), v / torus.minor_scale.get()],
             Self::Rigid { linear, offset } => [
@@ -1663,7 +1637,10 @@ impl ConsolidatedCarrierChart<'_> {
         match self {
             Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
-            Self::Cone { cone } => [u / cone.angular_scale.get(), v * cone.half_angle.cos()],
+            Self::Cone { cone } => [
+                u / cone.angular_scale.get(),
+                v * cone.half_angle.get().cos(),
+            ],
             Self::Torus { torus } => [u / torus.major_scale.get(), v / torus.minor_scale.get()],
             Self::Rigid { linear, .. } => [
                 linear[0][0] * u + linear[0][1] * v,
@@ -2041,7 +2018,7 @@ fn append_resolved_consolidated_surface_curves(
                     let Some(cylinder) = standalone.get(pos) else {
                         continue;
                     };
-                    let Some(carrier) = cylinder.surface_geometry() else { continue; };
+                    let carrier = cylinder.surface_geometry();
                     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = carrier else {
                         continue;
                     };
@@ -2059,7 +2036,7 @@ fn append_resolved_consolidated_surface_curves(
                 let Some(value) = embedded.get(pos) else {
                     continue;
                 };
-                let Some(carrier) = value.cylinder.surface_geometry() else { continue; };
+                let carrier = value.cylinder.surface_geometry();
                 let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = carrier else {
                     continue;
                 };
@@ -2077,9 +2054,6 @@ fn append_resolved_consolidated_surface_curves(
                 let Some(cone) = cones.get(pos) else {
                     continue;
                 };
-                if !cone.half_angle.is_finite() {
-                    continue;
-                }
                 (
                     (*pos, None),
                     match crate::families::b2::records::b2_cone_geometry(cone) { Some(carrier) => carrier, None => continue },
@@ -2095,7 +2069,7 @@ fn append_resolved_consolidated_surface_curves(
                 };
                 (
                     (*pos, None),
-                    match crate::families::b2::records::b2_sphere_geometry(sphere) { Some(carrier) => carrier, None => continue },
+                    crate::families::b2::records::b2_sphere_geometry(sphere),
                     None,
                     ConsolidatedCarrierChart::Identity,
                     "consolidated_b2_03_2a_sphere",
@@ -2108,7 +2082,7 @@ fn append_resolved_consolidated_surface_curves(
                 };
                 (
                     (*pos, None),
-                    match crate::families::b2::records::b2_torus_geometry(torus) { Some(carrier) => carrier, None => continue },
+                    crate::families::b2::records::b2_torus_geometry(torus),
                     None,
                     ConsolidatedCarrierChart::Torus { torus },
                     "consolidated_b2_03_2b_torus",
@@ -3575,8 +3549,7 @@ mod tests {
             .into_iter()
             .next()
             .expect("one exact cylinder")
-            .surface_geometry()
-            .expect("valid cylinder fixture");
+            .surface_geometry();
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(
@@ -4253,8 +4226,9 @@ mod tests {
 
     /// The `Err` arm of `append_consolidated_revolutions` names the interval
     /// the IR refused, so the freeform route can state a cause instead of
-    /// dropping the family. No byte input reaches this arm: every interval the
-    /// record decoder emits is already proven finite and strictly increasing.
+    /// dropping the family. No byte input reaches this arm: the record decoder
+    /// admits a revolution only when its scaled lower angle is 0.5 and its
+    /// scaled span is 2π, so both scaled angles are finite and increasing.
     #[test]
     fn a_refused_revolution_construction_names_the_interval() {
         use crate::checked::ExactUnitVector3;
@@ -4281,10 +4255,11 @@ mod tests {
                 direction_x: unit([1.0, 0.0, 0.0]),
                 direction_y: unit([0.0, 1.0, 0.0]),
                 axis: unit([0.0, 0.0, 1.0]),
-                // The one lane the record decoder does not prove by type.
-                angular_range: [1.0, 1.0],
+                angular_range: interval([1.0, 2.0]),
                 profile_range: interval([0.0, 1.0]),
-                angular_scale: PositiveReal::new(1.0).expect("fixture scalar is finite positive"),
+                // The upper scaled angle is 2e308, which is not finite.
+                angular_scale: PositiveReal::new(1.0e-308)
+                    .expect("fixture scalar is finite positive"),
             },
             profile: B2Circle {
                 pos: 0,
@@ -4301,7 +4276,7 @@ mod tests {
         let mut annotations = AnnotationBuilder::default();
         let Err(error) = append_consolidated_revolutions(&mut ir, &mut annotations, &resolved)
         else {
-            panic!("an equal-endpoint angular interval is refused");
+            panic!("a non-finite scaled angular interval is refused");
         };
         assert!(
             error

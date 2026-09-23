@@ -959,7 +959,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records[0].direction_y.get(), [0.0, 1.0, 0.0]);
         assert_eq!(records[0].axis.get(), [0.0, 0.0, 1.0]);
         assert_eq!(
-            records[0].angular_range,
+            records[0].angular_range.endpoints(),
             [2.0 * 0.5, 2.0 * (0.5 + std::f64::consts::TAU)]
         );
         assert_eq!(records[0].profile_range.endpoints(), [-4.0, 9.0]);
@@ -1112,7 +1112,7 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
         panic!("one B2 torus")
     };
     assert_eq!(torus.pos, 0);
-    assert_eq!(torus.center, [1.0, 2.0, 3.0]);
+    assert_eq!(<[f64; 3]>::from(torus.center.get()), [1.0, 2.0, 3.0]);
     assert_eq!(torus.frame.reference().get(), [1.0, 0.0, 0.0]);
     assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(torus.frame.axis().get(), [0.0, 0.0, 1.0]);
@@ -1157,6 +1157,108 @@ fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
     assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
 }
 
+/// Overwrite the `index`th f64 of a single consolidated record's payload.
+fn set_record_value(stream: &mut [u8], index: usize, value: f64) {
+    stream[5 + index * 8..5 + (index + 1) * 8].copy_from_slice(&value.to_le_bytes());
+}
+
+#[test]
+fn b2_torus_parser_gates_the_axis_by_the_euclidean_right_handed_cross_product() {
+    let long = 1.0 + 4.0e-13;
+    let mut stream = b2_torus_stream();
+    set_record_value(&mut stream, 7, long);
+    set_record_value(&mut stream, 10, 1.0e-12);
+    set_record_value(&mut stream, 11, long);
+    let [torus] = crate::families::b2::records::b2_tori(&stream)
+        .try_into()
+        .expect("the cross product deviates from the axis by 1e-12");
+    let [y, axis] = [torus.direction_y.get(), torus.frame.axis().get()];
+    assert!((y[0] * axis[0] + y[1] * axis[1] + y[2] * axis[2]).abs() > 1.0e-12);
+    assert_eq!(torus.frame.reference().get(), [1.0, 0.0, 0.0]);
+    assert_eq!(axis, [0.0, 1.0e-12, long]);
+
+    let quarter = 2.0_f64.powi(-40);
+    for (index, value) in [(10, 2.0e-12), (11, -1.0)] {
+        let mut stream = b2_torus_stream();
+        set_record_value(&mut stream, index, value);
+        assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+    }
+    let mut stream = b2_torus_stream();
+    set_record_value(&mut stream, 9, quarter);
+    set_record_value(&mut stream, 10, quarter);
+    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+}
+
+#[test]
+fn b2_sphere_parser_gates_the_axis_by_the_componentwise_right_handed_cross_product() {
+    let quarter = 2.0_f64.powi(-40);
+    let mut stream = b2_sphere_stream();
+    set_record_value(&mut stream, 9, 5.0 * quarter);
+    set_record_value(&mut stream, 10, 5.0 * quarter);
+    let [sphere] = crate::families::b2::records::b2_spheres(&stream)
+        .try_into()
+        .expect("each cross-product component is within 1e-12 of the axis");
+    assert_eq!(sphere.frame.axis().get(), [quarter, quarter, 1.0]);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
+
+    for (index, value) in [(10, 5.0 * 2.0e-12), (11, -5.0)] {
+        let mut stream = b2_sphere_stream();
+        set_record_value(&mut stream, index, value);
+        assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+    }
+}
+
+#[test]
+fn b2_centres_and_the_cone_half_angle_are_admitted_when_the_record_is_read() {
+    for index in 0..3 {
+        let mut stream = b2_torus_stream();
+        set_record_value(&mut stream, index, f64::NAN);
+        assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+        let mut stream = b2_sphere_stream();
+        set_record_value(&mut stream, index, f64::INFINITY);
+        assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
+        let mut stream = b2_cone_stream();
+        set_record_value(&mut stream, index, f64::NAN);
+        assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+    }
+    let mut stream = b2_cone_stream();
+    set_record_value(&mut stream, 12, f64::NAN);
+    assert!(crate::families::b2::records::b2_cones(&stream).is_empty());
+
+    let [torus] = crate::families::b2::records::b2_tori(&b2_torus_stream())
+        .try_into()
+        .expect("one torus");
+    let [sphere] = crate::families::b2::records::b2_spheres(&b2_sphere_stream())
+        .try_into()
+        .expect("one sphere");
+    let [cone] = crate::families::b2::records::b2_cones(&b2_cone_stream())
+        .try_into()
+        .expect("one cone");
+    for (geometry, center) in [
+        (
+            crate::families::b2::records::b2_torus_geometry(&torus),
+            torus.center,
+        ),
+        (
+            crate::families::b2::records::b2_sphere_geometry(&sphere),
+            sphere.center,
+        ),
+    ] {
+        let carried = match geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(surface)) => surface.center(),
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(surface)) => surface.center(),
+            other => panic!("expected a torus or a sphere, got {other:?}"),
+        };
+        assert_eq!(carried, center);
+    }
+    match crate::families::b2::records::b2_cone_geometry(&cone) {
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(surface))) => {
+            assert_eq!(surface.half_angle(), cone.half_angle);
+        }
+        other => panic!("expected a cone, got {other:?}"),
+    }
+}
+
 #[test]
 fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
     let records = crate::families::b2::records::b2_spheres(&b2_sphere_stream());
@@ -1164,7 +1266,7 @@ fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
         panic!("one B2 sphere")
     };
     assert_eq!(sphere.pos, 0);
-    assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
+    assert_eq!(<[f64; 3]>::from(sphere.center.get()), [1.0, 2.0, 3.0]);
     assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
     assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
@@ -1412,7 +1514,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
         [0.0, 4.0 * std::f64::consts::PI]
     );
     assert_eq!(cylinders[0].v_range.endpoints(), [-4.0, 5.0]);
-    match cylinders[0].surface_geometry().unwrap() {
+    match cylinders[0].surface_geometry() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
@@ -1436,8 +1538,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     large[70..78].copy_from_slice(&(std::f64::consts::TAU * radius).to_le_bytes());
     assert!(
         matches!(crate::families::b2::records::b2_cylinders(&large)[0]
-        .surface_geometry()
-        .unwrap(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        .surface_geometry(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { cylinder_surface.radius().get() == 2_000_000.0 })
     );
 
@@ -1488,7 +1589,7 @@ fn consolidated_cylinder_parser_reads_width2_frame() {
         crate::families::b2::records::B2CylinderLayout::Full5a { .. }
     ));
     assert!(matches!(
-        cylinders[0].surface_geometry().unwrap(),
+        cylinders[0].surface_geometry(),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
     ));
 }
@@ -1518,7 +1619,7 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
         crate::families::b2::records::B2CylinderLayout::Full52
     ));
     assert!(
-        matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        matches!(cylinders[0].surface_geometry(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
             let axis = cylinder_surface.axis();
             [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
@@ -1589,7 +1690,7 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
             if stored_vector.get() == [0.0, 1.0]
     ));
     assert!(
-        matches!(cylinders[0].surface_geometry().unwrap(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
+        matches!(cylinders[0].surface_geometry(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let axis = cylinder_surface.axis();
         let ref_direction = cylinder_surface.ref_direction();
@@ -1616,9 +1717,9 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
 fn b2_cone_parser_reads_orthonormal_slant_chart() {
     let cones = crate::families::b2::records::b2_cones(&b2_cone_stream());
     assert_eq!(cones.len(), 1);
-    assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
+    assert_eq!(<[f64; 3]>::from(cones[0].apex.get()), [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].axis.get(), [0.0, 0.0, 1.0]);
-    assert_eq!(cones[0].half_angle, 0.25);
+    assert_eq!(cones[0].half_angle.get(), 0.25);
     assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cones[0].slant_range.endpoints(), [2.0, 8.0]);
