@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Operand and selection completeness predicates.
 
-use super::{positive_feature_length, unit_feature_direction};
+use super::positive_feature_length;
 use cadmpeg_ir::{
     features::{
         holes::HoleKind,
@@ -131,7 +131,6 @@ pub(super) fn revolve_feature_is_incomplete(
     };
     planar_profile_ref_is_incomplete(profile)
         || planar_profile_dependency_is_incomplete(profile, dependencies)
-        || !unit_feature_direction(axis.direction.get())
         || {
             let side_is_incomplete = |termination: &AngularTermination| {
                 angular_termination_is_incomplete(termination)
