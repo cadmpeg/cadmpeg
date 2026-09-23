@@ -1015,8 +1015,8 @@ fn chamfer_cone_equation(
         return None;
     };
     let origin = cone_surface.origin().get();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();

@@ -121,6 +121,7 @@ fn closed_cylinder_anchors_sentinel_vertices_to_the_surface_branch() {
             .find(|point| point.id == vertex.point)
             .unwrap()
             .position()
+            .get()
     });
     assert_eq!(
         positions[0],
@@ -173,7 +174,11 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         .find(|point| point.id == vertex.point)
         .unwrap();
     assert_eq!(
-        [point.position().x, point.position().y, point.position().z],
+        [
+            point.position().get().x,
+            point.position().get().y,
+            point.position().get().z
+        ],
         [1500.0, 2000.0, 0.0]
     );
     assert!(
@@ -265,8 +270,8 @@ fn coaxial_cone_circle_preserves_parameter_direction() {
     else {
         panic!("expected line pcurve");
     };
-    let origin = *line_pcurve.origin();
-    let direction = *line_pcurve.direction();
+    let origin = *line_pcurve.origin().as_raw();
+    let direction = *line_pcurve.direction().as_raw();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - 1000.0).abs() < 1.0e-9);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
@@ -303,8 +308,8 @@ fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
     else {
         panic!("expected line pcurve");
     };
-    let origin = *line_pcurve.origin();
-    let direction = *line_pcurve.direction();
+    let origin = *line_pcurve.origin().as_raw();
+    let direction = *line_pcurve.direction().as_raw();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
@@ -334,8 +339,8 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert!(
         matches!(pole.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
                 if {
-                    let origin = line_pcurve.origin();
-        let direction = line_pcurve.direction();
+                    let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
                     *origin == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
                         && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
                 })
@@ -386,7 +391,11 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .find(|point| point.id == vertex.point)
         .unwrap();
     assert_eq!(
-        [point.position().x, point.position().y, point.position().z],
+        [
+            point.position().get().x,
+            point.position().get().y,
+            point.position().get().z
+        ],
         [0.0, 0.0, 1000.0]
     );
 }
@@ -439,7 +448,7 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
         .expect("sphere seam pole point");
 
     assert_eq!(
-        point.position(),
+        point.position().get(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
     );
 }
@@ -505,7 +514,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             == Some("derived_nurbs_isoparametric_pcurve")
             && matches!(pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
             if {
-                let direction = line_pcurve.direction();
+                let direction = line_pcurve.direction().as_raw();
                 direction.v == 0.0 && direction.u != 0.0
             })
     }));

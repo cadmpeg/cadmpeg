@@ -452,7 +452,7 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
         .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
         .collect();
     for (point, value) in ir.model.points.iter_mut().zip(edge_values.iter().cycle()) {
-        let moved = point.position();
+        let moved = point.position().get();
         point
             .set_position(Point3::new(*value, moved.y, moved.z))
             .expect("a finite position is a point");
@@ -461,10 +461,10 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     let parsed = crate::CadIr::from_json(&json).unwrap();
     for (before, after) in ir.model.points.iter().zip(&parsed.model.points) {
         assert_eq!(
-            before.position().x.to_bits(),
-            after.position().x.to_bits(),
+            before.position().get().x.to_bits(),
+            after.position().get().x.to_bits(),
             "JSON round-trip changed {} by at least one ULP",
-            before.position().x
+            before.position().get().x
         );
     }
 }

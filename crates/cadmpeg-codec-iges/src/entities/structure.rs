@@ -1353,7 +1353,7 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
     let vertex = index.vertices(vertex.as_str())?;
     index
         .points(vertex.point.as_str())
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
 }
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
@@ -1361,7 +1361,7 @@ fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vecto
     match surface.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some((origin, *normal))
         }
         _ => None,

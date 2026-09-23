@@ -459,7 +459,7 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         return None;
     }
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position();
+    let moved = edited.model.points[0].position().get();
     edited.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
@@ -845,7 +845,7 @@ fn an_edit_survives_the_patch_writer() {
                 let Some(point) = ir.model.points.first_mut() else {
                     return false;
                 };
-                let moved = point.position();
+                let moved = point.position().get();
                 point
                     .set_position(cadmpeg_ir::math::Point3::new(
                         moved.x + MUTATION_MM,
@@ -860,8 +860,8 @@ fn an_edit_survives_the_patch_writer() {
                     let round_trip = decode_result(bytes).unwrap_or_else(|error| {
                         panic!("fixture `{name}`: patched output does not decode: {error}")
                     });
-                    let moved = edited.model.points[0].position().x;
-                    let returned = round_trip.ir().model.points[0].position().x;
+                    let moved = edited.model.points[0].position().get().x;
+                    let returned = round_trip.ir().model.points[0].position().get().x;
                     assert!(
                         (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \

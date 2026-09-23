@@ -141,7 +141,7 @@ fn curve_expression_helix_feature_definition(
     let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
     let pitch = cadmpeg_ir::scalar::NonZeroLength::new(axial_pitch)?;
     Some(IrFeatureDefinition::Operation(IrFeatureOperation::Helix {
-        axis_origin: helix_payload.finite_center(),
+        axis_origin: *helix_payload.center(),
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
         radius: helix.radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },

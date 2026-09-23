@@ -215,8 +215,8 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
 pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
     Some(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             let point = point2(e, *origin);
             let magnitude = direction.u.hypot(direction.v);
             if !magnitude.is_finite() {
@@ -434,15 +434,15 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let pl = placement(e, origin, *normal, *u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let pl = placement(e, origin, *axis, *ref_direction);
             e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(radius)))
@@ -459,8 +459,8 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         // against the surface this arm emits, in that chart.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let pl = placement(e, origin, *axis, *ref_direction);
@@ -471,8 +471,8 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             let pl = placement(e, center, *axis, *ref_direction);
             e.emit(
@@ -482,8 +482,8 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let pl = placement(e, center, *axis, *ref_direction);
@@ -534,16 +534,16 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let pl = placement(e, center, *axis, *ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", real(radius)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let pl = placement(e, center, *axis, *major_direction);
@@ -554,16 +554,16 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
+            let axis = parabola_curve.frame().axis().as_raw();
+            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             let pl = placement(e, vertex, *axis, *major_direction);
             e.emit("PARABOLA", &format!("'',{pl},{}", real(focal_distance)))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
+            let axis = hyperbola_curve.frame().axis().as_raw();
+            let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             let pl = placement(e, center, *axis, *major_direction);

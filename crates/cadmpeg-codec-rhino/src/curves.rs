@@ -635,7 +635,7 @@ fn scale_decoded_curve(
                     })?;
                 *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
-                    circle_curve.frame(),
+                    *circle_curve.frame(),
                     radius,
                 );
             }
@@ -700,8 +700,8 @@ pub(crate) fn exact_nurbs(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(nurbs.clone()),
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center().get();
-                let axis = circle_curve.axis();
-                let ref_direction = circle_curve.ref_direction();
+                let axis = circle_curve.frame().axis().as_raw();
+                let ref_direction = circle_curve.frame().reference().as_raw();
                 let radius = circle_curve.radius().get();
                 let yaxis = axis.cross(*ref_direction);
                 let circle = Circle {

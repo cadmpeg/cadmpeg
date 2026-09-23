@@ -316,7 +316,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[1].position();
+    let moved = decoded.ir_mut().model.points[1].position().get();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
         .expect("a finite position is a point");
@@ -334,7 +334,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
             .unwrap(),
     );
 
-    assert_eq!(regenerated.ir().model.points[1].position().x, 1_250.0);
+    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_250.0);
     assert!(matches!(
         regenerated.ir().model.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
@@ -382,7 +382,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .annotations
         .provenance
         .contains_key(&point_id));
-    let moved = decoded.ir_mut().model.points[1].position();
+    let moved = decoded.ir_mut().model.points[1].position().get();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
         .expect("a finite position is a point");
@@ -455,8 +455,8 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
             unreachable!()
         };
         let origin = plane_surface.origin();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         let mut origin = *origin;
         origin.x = 25.0;
         *plane_surface =
@@ -725,7 +725,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .iter()
         .any(|link| link.as_str() == curve.id.as_str()));
 
-    let moved = decoded.ir_mut().model.points[1].position();
+    let moved = decoded.ir_mut().model.points[1].position().get();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_500.0, moved.y, moved.z))
         .expect("a finite position is a point");
@@ -740,7 +740,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(regenerated.ir().model.points[1].position().x, 1_500.0);
+    assert_eq!(regenerated.ir().model.points[1].position().get().x, 1_500.0);
     assert!(regenerated.ir().model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
@@ -800,7 +800,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[1].position();
+    let moved = decoded.ir_mut().model.points[1].position().get();
     decoded.ir_mut().model.points[1]
         .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
         .expect("a finite position is a point");

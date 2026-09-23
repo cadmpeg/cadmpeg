@@ -1030,7 +1030,7 @@ fn patch_helix_definition(
     definition: &cadmpeg_ir::geometry::HelixCurveConstruction,
 ) -> Result<(), CodecError> {
     let angle_range = definition.angle_range();
-    let center = definition.center();
+    let center = definition.center().as_raw();
     let major = definition.major();
     let minor = definition.minor();
     let pitch = definition.pitch();

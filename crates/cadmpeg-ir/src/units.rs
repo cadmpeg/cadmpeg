@@ -457,25 +457,17 @@ impl OrthonormalFrame3 {
         };
         admitted.then_some(Self { axis, reference })
     }
-    /// Return the admitted first direction. A caller that moves it into
+    /// Borrow the admitted first direction. A caller that moves it into
     /// another model object keeps the unit-length guarantee and performs no
     /// new admission.
-    pub const fn unit_axis(&self) -> UnitVector3 {
-        self.axis
+    pub const fn axis(&self) -> &UnitVector3 {
+        &self.axis
     }
-    /// Return the admitted second direction. A caller that moves it into
+    /// Borrow the admitted second direction. A caller that moves it into
     /// another model object keeps the unit-length guarantee and performs no
     /// new admission.
-    pub const fn unit_reference(&self) -> UnitVector3 {
-        self.reference
-    }
-    /// Borrow the first direction.
-    pub const fn axis(&self) -> &Vector3 {
-        self.axis.as_raw()
-    }
-    /// Borrow the second direction.
-    pub const fn reference(&self) -> &Vector3 {
-        self.reference.as_raw()
+    pub const fn reference(&self) -> &UnitVector3 {
+        &self.reference
     }
     /// Reverse the first direction.
     pub fn reverse_axis(&mut self) {
@@ -675,9 +667,9 @@ mod tests {
             OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)),
             Some(OrthonormalFrame3::IDENTITY)
         );
-        assert_eq!(OrthonormalFrame3::IDENTITY.unit_axis(), UnitVector3::Z_AXIS);
+        assert_eq!(*OrthonormalFrame3::IDENTITY.axis(), UnitVector3::Z_AXIS);
         assert_eq!(
-            OrthonormalFrame3::IDENTITY.unit_reference(),
+            *OrthonormalFrame3::IDENTITY.reference(),
             UnitVector3::X_AXIS
         );
     }
@@ -738,21 +730,24 @@ mod tests {
             let planar = UnitVector2::new(value).expect("planar direction inside the band");
             let [first, second] = planar.get();
             let xy = OrthonormalFrame3::in_xy_plane(planar);
-            assert_eq!(bits(xy.axis()), [first, second, 0.0].map(f64::to_bits));
             assert_eq!(
-                bits(xy.reference()),
+                bits(xy.axis().as_raw()),
+                [first, second, 0.0].map(f64::to_bits)
+            );
+            assert_eq!(
+                bits(xy.reference().as_raw()),
                 [-second, first, 0.0].map(f64::to_bits)
             );
             let about_y = OrthonormalFrame3::about_y_axis(planar);
-            assert_eq!(about_y.unit_axis(), UnitVector3::Y_AXIS);
+            assert_eq!(*about_y.axis(), UnitVector3::Y_AXIS);
             assert_eq!(
-                bits(about_y.reference()),
+                bits(about_y.reference().as_raw()),
                 [first, 0.0, second].map(f64::to_bits)
             );
             for frame in [xy, about_y] {
-                assert_eq!(frame.axis().dot(*frame.reference()), 0.0);
+                assert_eq!(frame.axis().as_raw().dot(*frame.reference().as_raw()), 0.0);
                 assert_eq!(
-                    OrthonormalFrame3::new(*frame.axis(), *frame.reference()),
+                    OrthonormalFrame3::new(*frame.axis().as_raw(), *frame.reference().as_raw()),
                     Some(frame)
                 );
             }
@@ -833,7 +828,7 @@ mod tests {
             assert_eq!(frame.is_some(), admitted);
             if let Some(frame) = frame {
                 assert_eq!(
-                    (frame.unit_axis(), frame.unit_reference()),
+                    (*frame.axis(), *frame.reference()),
                     (axis, UnitVector3::X_AXIS)
                 );
                 assert_eq!(
@@ -854,7 +849,7 @@ mod tests {
         )
         .expect("the cross product is within the band");
         assert!(binormal.as_raw().dot(*axis.as_raw()).abs() > 1.0e-12);
-        assert!(frame.axis().dot(*frame.reference()).abs() <= 2.0e-12);
+        assert!(frame.axis().as_raw().dot(*frame.reference().as_raw()).abs() <= 2.0e-12);
     }
 
     #[test]

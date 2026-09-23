@@ -824,7 +824,7 @@ pub(crate) fn assign_unique_surface_owners(
     let points = model
         .points
         .iter()
-        .map(|point| (&point.id, point.position()))
+        .map(|point| (&point.id, point.position().get()))
         .collect::<HashMap<_, _>>();
     let curves = model
         .curves
@@ -1441,7 +1441,7 @@ fn closed_planar_circle(
         return None;
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     let axis = axis.unit()?;
     let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
@@ -1476,8 +1476,8 @@ fn planar_boundary_samples(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let axis = axis.unit()?;
             let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
@@ -1526,8 +1526,8 @@ fn planar_boundary_samples(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let axis = axis.unit()?;
@@ -1889,8 +1889,8 @@ fn cylindrical_trim(
         return None;
     };
     let origin = cylinder_surface.origin().get();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     let axis = axis.unit()?;
     if radius <= EPS_DISPLAY_QUANTIZATION {
@@ -1921,7 +1921,7 @@ fn cylindrical_trim(
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                let curve_axis = circle_curve.axis();
+                let curve_axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                 if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                     || (curve_radius - radius).abs() > tolerance
@@ -1993,8 +1993,8 @@ fn conical_trim(
         return None;
     };
     let origin = cone_surface.origin().get();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
@@ -2044,8 +2044,8 @@ fn conical_trim(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = ellipse_curve.center().get();
-                let curve_axis = ellipse_curve.axis();
-                let major_direction = ellipse_curve.major_direction();
+                let curve_axis = ellipse_curve.frame().axis().as_raw();
+                let major_direction = ellipse_curve.frame().reference().as_raw();
                 let major_radius = ellipse_curve.major_radius().get();
                 let minor_radius = ellipse_curve.minor_radius().get();
                 let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
@@ -2077,7 +2077,7 @@ fn conical_trim(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center().get();
-                let curve_axis = circle_curve.axis();
+                let curve_axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                 if (ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
                     || curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
@@ -2241,8 +2241,8 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
     let (origin, normal, u_axis) = match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             (origin, *normal, *u_axis)
         }
         SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
@@ -2629,12 +2629,12 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
     };
     match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             normal.unit()
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let axis = axis.unit()?;
             let delta = subtract(point, origin);
             let radial = delta - axis.scale(delta.dot(axis));
@@ -2646,7 +2646,7 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let axis = axis.unit()?;
             let delta = subtract(point, center);
@@ -2657,8 +2657,8 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -2706,12 +2706,12 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
     match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some(subtract(point, origin).dot(*normal).abs() / normal.norm())
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             let delta = subtract(point, origin);
             let axis_length = axis.norm();
@@ -2730,7 +2730,7 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let delta = subtract(point, center);
@@ -2748,8 +2748,8 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();

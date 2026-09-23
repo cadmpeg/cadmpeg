@@ -668,8 +668,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         matches!(directrix.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
                     (circle_curve.radius().get() == 3.0)
                         && (center == cadmpeg_ir::math::Point3::new(1.0, 4.0, -2.0)
                             && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -693,8 +693,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
             && matches!(surface.geometry.solved_cache(), Some(SolvedSurfaceGeometry::Torus(torus_surface))
                     if {
                         let center = torus_surface.center();
-                        let axis = torus_surface.axis();
-                        let ref_direction = torus_surface.ref_direction();
+                        let axis = torus_surface.frame().axis().as_raw();
+                        let ref_direction = torus_surface.frame().reference().as_raw();
                         (torus_surface.major_radius().get() == 2.0)
                             && (torus_surface.minor_radius().get() == 3.0)
                             && (*center == cadmpeg_ir::math::Point3::new(1.0, 2.0, -2.0)
@@ -705,7 +705,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     assert!(match revolution.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
-            matches!((matched_payload.angular_interval(), &matched_payload.parameter_interval(),), (angular_interval, Some([-4.0, 9.0]),) if *angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),
+            matches!((matched_payload.angular_interval().endpoints(), &matched_payload.parameter_interval().map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),), (angular_interval, Some([-4.0, 9.0]),) if angular_interval == [0.5, 0.5 + std::f64::consts::TAU]),
         _ => false,
     });
     assert_eq!(

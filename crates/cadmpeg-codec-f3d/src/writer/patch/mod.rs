@@ -418,7 +418,7 @@ pub(crate) fn write_semantic(
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str().to_owned(), point.position()))
+        .map(|point| (point.id.as_str().to_owned(), point.position().get()))
         .collect::<BTreeMap<_, _>>();
     let lines = target
         .model
@@ -442,8 +442,8 @@ pub(crate) fn write_semantic(
         .filter_map(|curve| match curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center().get();
-                let axis = *circle_curve.axis();
-                let ref_direction = *circle_curve.ref_direction();
+                let axis = *circle_curve.frame().axis().as_raw();
+                let ref_direction = *circle_curve.frame().reference().as_raw();
                 let radius = circle_curve.radius().get();
                 edited_curves.contains(curve.id.as_str()).then(|| {
                     (
@@ -454,8 +454,8 @@ pub(crate) fn write_semantic(
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = ellipse_curve.center().get();
-                let axis = *ellipse_curve.axis();
-                let major_direction = *ellipse_curve.major_direction();
+                let axis = *ellipse_curve.frame().axis().as_raw();
+                let major_direction = *ellipse_curve.frame().reference().as_raw();
                 let major_radius = ellipse_curve.major_radius().get();
                 let minor_radius = ellipse_curve.minor_radius().get();
                 edited_curves.contains(curve.id.as_str()).then(|| {
@@ -489,8 +489,8 @@ pub(crate) fn write_semantic(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
-                let normal = *plane_surface.normal();
-                let u_axis = *plane_surface.u_axis();
+                let normal = *plane_surface.frame().axis().as_raw();
+                let u_axis = *plane_surface.frame().reference().as_raw();
                 edited_surfaces
                     .contains(surface.id.as_str())
                     .then(|| (surface.id.as_str().to_owned(), (origin, normal, u_axis)))
@@ -505,8 +505,8 @@ pub(crate) fn write_semantic(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
-                let axis = *sphere_surface.axis();
-                let ref_direction = *sphere_surface.ref_direction();
+                let axis = *sphere_surface.frame().axis().as_raw();
+                let ref_direction = *sphere_surface.frame().reference().as_raw();
                 let radius = sphere_surface.radius().get();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
@@ -525,8 +525,8 @@ pub(crate) fn write_semantic(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                let axis = *torus_surface.axis();
-                let ref_direction = *torus_surface.ref_direction();
+                let axis = *torus_surface.frame().axis().as_raw();
+                let ref_direction = *torus_surface.frame().reference().as_raw();
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
@@ -546,8 +546,8 @@ pub(crate) fn write_semantic(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                let axis = *cylinder_surface.axis();
-                let ref_direction = *cylinder_surface.ref_direction();
+                let axis = *cylinder_surface.frame().axis().as_raw();
+                let ref_direction = *cylinder_surface.frame().reference().as_raw();
                 let radius = cylinder_surface.radius().get();
                 edited_surfaces.contains(surface.id.as_str()).then(|| {
                     (
@@ -558,8 +558,8 @@ pub(crate) fn write_semantic(
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                let axis = *cone_surface.axis();
-                let ref_direction = *cone_surface.ref_direction();
+                let axis = *cone_surface.frame().axis().as_raw();
+                let ref_direction = *cone_surface.frame().reference().as_raw();
                 let radius = cone_surface.radius().get();
                 let ratio = cone_surface.ratio().get();
                 let half_angle = cone_surface.half_angle().get();

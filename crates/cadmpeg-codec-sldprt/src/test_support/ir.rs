@@ -30,7 +30,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 center.x += dx;
                 *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
-                    circle_curve.frame(),
+                    *circle_curve.frame(),
                     circle_curve.radius(),
                 );
             }
@@ -43,7 +43,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
                 *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                     center,
-                    frame,
+                    *frame,
                     major_radius,
                     minor_radius,
                 )
@@ -58,7 +58,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let center = cadmpeg_ir::features::FinitePoint3::new(center).unwrap();
                 *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
                     center,
-                    frame,
+                    *frame,
                     major_radius,
                     minor_radius,
                 );
@@ -71,7 +71,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 let vertex = cadmpeg_ir::features::FinitePoint3::new(vertex).unwrap();
                 *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
                     vertex,
-                    frame,
+                    *frame,
                     focal_distance,
                 );
             }
@@ -112,7 +112,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
         }
     }
     for point in &mut ir.model.points {
-        let moved = point.position();
+        let moved = point.position().get();
         point
             .set_position(cadmpeg_ir::math::Point3::new(
                 moved.x + dx,
@@ -132,7 +132,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 origin.x += dx;
                 *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
-                    frame,
+                    *frame,
                 );
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -142,7 +142,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 origin.x += dx;
                 *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                     cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
-                    frame,
+                    *frame,
                     radius,
                 );
             }
@@ -155,7 +155,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 origin.x += dx;
                 *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
                     cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
-                    frame,
+                    *frame,
                     radius,
                     ratio,
                     half_angle,
@@ -168,7 +168,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 center.x += dx;
                 *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
                     cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
-                    frame,
+                    *frame,
                     radius,
                 );
             }
@@ -180,7 +180,7 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                 center.x += dx;
                 *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
                     cadmpeg_ir::features::FinitePoint3::new(center).unwrap(),
-                    frame,
+                    *frame,
                     major_radius,
                     minor_radius,
                 );
@@ -238,7 +238,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
     for point in &mut ir.model.points {
         point
-            .set_position(shift(&point.position()))
+            .set_position(shift(&point.position().get()))
             .expect("a finite translation keeps a finite position");
     }
     for curve in &mut ir.model.curves {
@@ -256,7 +256,7 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
             let origin = shift(&plane_surface.origin().get());
             let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
             *plane_surface =
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, plane_surface.frame());
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, *plane_surface.frame());
         }
     }
 }
@@ -295,7 +295,13 @@ pub(crate) fn sorted_point_positions(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
         .model
         .points
         .iter()
-        .map(|point| [point.position().x, point.position().y, point.position().z])
+        .map(|point| {
+            [
+                point.position().get().x,
+                point.position().get().y,
+                point.position().get().z,
+            ]
+        })
         .collect();
     positions.sort_by(|a, b| a.partial_cmp(b).unwrap());
     positions

@@ -202,8 +202,8 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
             .unwrap();
         let result = decode(bytes);
         assert_eq!(
-            result.ir().model.points[0].position(),
-            point_ir.model.points[0].position()
+            result.ir().model.points[0].position().get(),
+            point_ir.model.points[0].position().get()
         );
         assert_valid(&result);
     }

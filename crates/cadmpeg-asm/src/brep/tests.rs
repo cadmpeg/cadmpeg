@@ -77,8 +77,8 @@ fn exact_circle_extrusion_reduces_to_cylinder_only_along_normal() {
         panic!("exact circle extrusion did not reduce")
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     assert!(point_vector(Point3::new(2.0, 3.0, 4.0), origin.get()).norm() < 1.0e-12);
     assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
@@ -270,7 +270,7 @@ fn constant_circular_plane_plane_blend_reduces_to_tangent_cylinder() {
         matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
                 if {
                     let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
         let radius = cylinder_surface.radius().get();
                     origin.get() == Point3::new(2.0, 2.0, -4.0)
                         && *axis == Vector3::new(0.0, 0.0, 1.0)
@@ -332,8 +332,8 @@ fn constant_circular_plane_cylinder_blend_reduces_to_tangent_torus() {
         matches!(analytic_procedural_surface(&definition), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)))
                 if {
                     let center = torus_surface.center();
-        let axis = torus_surface.axis();
-        let ref_direction = torus_surface.ref_direction();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
                     *center == Point3::new(0.0, 0.0, 1.0)

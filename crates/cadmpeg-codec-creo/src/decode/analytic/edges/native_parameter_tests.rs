@@ -391,7 +391,7 @@ fn solved_endpoints_select_one_hyperbola_branch() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) = selected.0 else {
         panic!("hyperbola branch");
     };
-    let major_direction = *hyperbola_curve.major_direction();
+    let major_direction = *hyperbola_curve.frame().reference().as_raw();
     assert_eq!(major_direction, Vector3::new(-1.0, 0.0, 0.0));
 }
 

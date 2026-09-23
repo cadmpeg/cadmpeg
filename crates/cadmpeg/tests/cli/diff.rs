@@ -13,7 +13,7 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();
     let left = unit_cube().expect("unit cube fixture is admitted");
     let mut right = left.clone();
-    let moved = right.model.points[0].position();
+    let moved = right.model.points[0].position().get();
     right.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 0.5,

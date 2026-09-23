@@ -324,8 +324,8 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             panic!("{version:?}: expected a decoded plane");
         };
         let origin = plane_surface.origin();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         assert!(same_float(origin.x, 4.0), "{version:?}");
         assert!(same_float(origin.y, 5.0), "{version:?}");
         assert!(same_float(origin.z, 6.0), "{version:?}");
@@ -440,7 +440,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
         )
         .unwrap();
     assert_eq!(
-        decoded.ir().model.points[0].position(),
+        decoded.ir().model.points[0].position().get(),
         Point3::new(4.0, 5.0, 6.0)
     );
 }
@@ -451,7 +451,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, fidelity) = decoded.into_parts();
-    let moved = ir.model.points[0].position();
+    let moved = ir.model.points[0].position().get();
     ir.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
@@ -700,8 +700,8 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         panic!("expected a decoded plane");
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert!((origin.x - 4.0).abs() < 1.0e-10);
     assert!((origin.y - 5.0).abs() < 1.0e-10);
     assert!((origin.z - 6.0).abs() < 1.0e-10);
@@ -1543,7 +1543,8 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
                 .find(|point| point.id == vertex.point)
         })
         .unwrap()
-        .position();
+        .position()
+        .get();
     let end = decoded
         .ir()
         .model
@@ -1559,7 +1560,8 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
                 .find(|point| point.id == vertex.point)
         })
         .unwrap()
-        .position();
+        .position()
+        .get();
     let face = decoded
         .ir()
         .model

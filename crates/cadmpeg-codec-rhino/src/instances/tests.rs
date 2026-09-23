@@ -872,7 +872,7 @@ pub(crate) fn static_instance_suppresses_member_and_two_references_expand_with_d
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>(),
         vec![Point3::new(11.0, 2.0, 3.0), Point3::new(21.0, 2.0, 3.0)]
     );
@@ -966,7 +966,7 @@ fn instance_transform_uses_member_carriers_for_mixed_body_and_free_geometry() {
 
     let result = crate::decode::decode_for_test(&scan);
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 11.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 11.0);
     assert!(result.ir().model.bodies[0].transform.is_none());
     let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
     else {
@@ -1394,7 +1394,7 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
         assert_eq!(result.ir().model.points.len(), 1);
         assert!(result.ir().model.bodies[0].transform.is_none());
         assert_eq!(
-            result.ir().model.points[0].position(),
+            result.ir().model.points[0].position().get(),
             Point3::new(12.0, 0.0, 0.0)
         );
         assert!(result
@@ -1531,7 +1531,7 @@ fn invalid_instance_families_are_atomic_and_later_reference_recovers() {
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.bodies[0].transform.is_none());
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         Point3::new(33.0, 0.0, 0.0)
     );
     for unknown in &result

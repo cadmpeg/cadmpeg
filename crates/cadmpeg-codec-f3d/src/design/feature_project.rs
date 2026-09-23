@@ -6105,22 +6105,22 @@ fn analytic_surface_axis(
     let (origin, direction) = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             (origin, *normal)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             (origin, *axis)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             (origin, *axis)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             (center, *axis)
         }
         _ => return None,

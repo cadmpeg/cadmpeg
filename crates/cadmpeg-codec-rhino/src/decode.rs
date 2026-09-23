@@ -1889,7 +1889,7 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            let placed = placed_finite_point(transform, point.finite_position())?;
+            let placed = placed_finite_point(transform, point.position())?;
             point.set_finite_position(placed);
             derived_ids.push(point.id.to_string());
         }
@@ -5472,10 +5472,10 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let source_origin = plane_surface.origin().get();
-            let u_axis = *plane_surface.u_axis();
+            let u_axis = *plane_surface.frame().reference().as_raw();
             let origin = placed_finite_point(transform, plane_surface.origin())?;
             let unit_normal = transform
-                .apply_unit_normal(plane_surface.frame().unit_axis())
+                .apply_unit_normal(*plane_surface.frame().axis())
                 .ok_or_else(|| {
                     "instance plane normal transform could not produce a finite unit normal"
                         .to_string()

@@ -18,7 +18,7 @@ fn an_undeclared_archive_word_recovers_its_content_under_an_unverified_admission
     let bytes = support::archive_version("100", &[object]);
     let result = decode(bytes);
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
     assert_valid(&result);

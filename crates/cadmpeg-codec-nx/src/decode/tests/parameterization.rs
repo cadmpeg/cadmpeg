@@ -77,8 +77,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
             &mut carrier.geometry
         {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;
@@ -1320,8 +1320,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             panic!("plane support");
         };
         let origin = plane_surface.origin().get();
-        let normal = *plane_surface.normal();
-        let u_axis = *plane_surface.u_axis();
+        let normal = *plane_surface.frame().axis().as_raw();
+        let u_axis = *plane_surface.frame().reference().as_raw();
         let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
             .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {

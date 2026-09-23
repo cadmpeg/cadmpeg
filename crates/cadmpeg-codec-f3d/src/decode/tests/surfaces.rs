@@ -441,9 +441,13 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         let directrix = definition_payload.directrix();
         let axis_origin = definition_payload.axis_origin();
         let axis_direction = definition_payload.axis_direction();
-        let angular_interval = definition_payload.angular_interval();
-        let angular_parameter_interval = definition_payload.angular_parameter_interval();
-        let parameter_interval = definition_payload.parameter_interval();
+        let angular_interval = definition_payload.angular_interval().endpoints();
+        let angular_parameter_interval = definition_payload
+            .angular_parameter_interval()
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
+        let parameter_interval = definition_payload
+            .parameter_interval()
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
         let transposed = definition_payload.transposed();
         let None = definition_payload.revision_form() else {
             panic!("expected revolution surface construction")
@@ -456,7 +460,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             *axis_direction,
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
-        assert_eq!(*angular_interval, [0.0, 1.0]);
+        assert_eq!(angular_interval, [0.0, 1.0]);
         assert_eq!(angular_parameter_interval, None);
         assert_eq!(parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);

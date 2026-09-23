@@ -73,7 +73,7 @@ pub(super) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
-        scale_point3(&mut point.position(), length_scale_mm);
+        scale_point3(&mut point.position().get(), length_scale_mm);
     }
     for face in &mut ir.model.faces {
         scale_tolerance(&mut face.tolerance, length_scale_mm)?;
@@ -1345,7 +1345,7 @@ fn scale_surface_geometry(
             let origin = scale_finite_point(plane_surface.origin(), scale)
                 .ok_or_else(|| CodecError::malformed("PlaneSurface.origin must be finite"))?;
             *plane_surface =
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, plane_surface.frame());
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, *plane_surface.frame());
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let radius = cylinder_surface.radius().get();
@@ -1356,7 +1356,7 @@ fn scale_surface_geometry(
             })?;
             *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                 origin,
-                cylinder_surface.frame(),
+                *cylinder_surface.frame(),
                 radius,
             );
         }
@@ -1369,7 +1369,7 @@ fn scale_surface_geometry(
             })?;
             *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
                 origin,
-                cone_surface.frame(),
+                *cone_surface.frame(),
                 radius,
                 cone_surface.ratio(),
                 cone_surface.half_angle(),
@@ -1384,7 +1384,7 @@ fn scale_surface_geometry(
             })?;
             *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
                 center,
-                sphere_surface.frame(),
+                *sphere_surface.frame(),
                 radius,
             );
         }
@@ -1401,7 +1401,7 @@ fn scale_surface_geometry(
             })?;
             *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
                 center,
-                torus_surface.frame(),
+                *torus_surface.frame(),
                 major_radius,
                 minor_radius,
             );
@@ -1468,7 +1468,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             })?;
             *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
                 center,
-                circle_curve.frame(),
+                *circle_curve.frame(),
                 radius,
             );
         }
@@ -1485,7 +1485,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             })?;
             *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
                 center,
-                ellipse_curve.frame(),
+                *ellipse_curve.frame(),
                 major_radius,
                 minor_radius,
             )
@@ -1500,7 +1500,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             })?;
             *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
                 vertex,
-                parabola_curve.frame(),
+                *parabola_curve.frame(),
                 focal_distance,
             );
         }
@@ -1517,7 +1517,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
             })?;
             *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
                 center,
-                hyperbola_curve.frame(),
+                *hyperbola_curve.frame(),
                 major_radius,
                 minor_radius,
             );
@@ -2367,7 +2367,7 @@ mod tests {
         else {
             panic!("test curve construction changed family");
         };
-        let center = helix_payload.center();
+        let center = helix_payload.center().as_raw();
         let major = helix_payload.major();
         let minor = helix_payload.minor();
         let pitch = helix_payload.pitch();
@@ -2400,8 +2400,8 @@ mod tests {
         let PcurveGeometry::Line(line_pcurve) = geometry else {
             panic!("test pcurve changed family");
         };
-        let origin = line_pcurve.origin();
-        let direction = line_pcurve.direction();
+        let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
         assert_point2(*origin, [25.4, 2.0]);
         assert_point2(*direction, [76.2, 4.0]);
     }
@@ -2441,7 +2441,7 @@ mod tests {
             panic!("test surface changed family");
         };
         let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
         let radius = cylinder_surface.radius().get();
         assert_point3(origin, [25.4, 50.8, 76.2]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
@@ -2450,7 +2450,7 @@ mod tests {
             panic!("test curve changed family");
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
+        let axis = circle_curve.frame().axis().as_raw();
         let radius = circle_curve.radius().get();
         assert_point3(center, [50.8, 76.2, 101.6]);
         assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));

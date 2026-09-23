@@ -675,7 +675,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     assert!(
         matches!(reversed.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
         if {
-            let axis = circle_curve.axis();
+            let axis = circle_curve.frame().axis().as_raw();
             *axis == Vector3::new(0.0, 0.0, -1.0)
         })
     );
@@ -743,7 +743,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     assert!(
         matches!(signed.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
-                    let ref_direction = circle_curve.ref_direction();
+                    let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
                     radius == 2.0 && *ref_direction == Vector3::new(-1.0, 0.0, 0.0)
                 })
@@ -858,7 +858,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         panic!("expected cone latitude circle");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
@@ -891,8 +891,8 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
         panic!("expected great circle");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(center, Point3::new(1.0, 2.0, 3.0));
     assert!((radius - 5.0).abs() < 1.0e-12);
@@ -1305,7 +1305,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         panic!("expected meridian circle");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(center, Point3::new(5.0, 0.0, 0.0));
     assert_eq!(*axis, Vector3::new(0.0, -1.0, 0.0));
@@ -1321,7 +1321,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         panic!("expected latitude circle");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(center, Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
@@ -1395,7 +1395,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         unreachable!();
     };
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let pitch = helix_payload.pitch();
     let apex_factor = helix_payload.apex_factor();
 
@@ -1438,7 +1438,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         unreachable!();
     };
     let angle_range = *helix_payload.angle_range();
-    let center = *helix_payload.center();
+    let center = *helix_payload.center().as_raw();
     let pitch = *helix_payload.pitch();
 
     assert_eq!(angle_range, [0.0, 1.0]);

@@ -244,7 +244,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         panic!("expected plane geometry");
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
+    let normal = plane_surface.frame().axis().as_raw();
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin.z, 4.0);
 
@@ -339,7 +339,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             && matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                         if {
                             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
                             origin.z == 4.0 && *normal == Vector3::new(0.0, 0.0, 1.0)
                         })
     }));

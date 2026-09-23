@@ -1054,26 +1054,26 @@ pub(super) fn curve_geometry_coplanar(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             point_valid(center) && normal_valid(*axis) && direction_valid(*ref_direction)
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             point_valid(center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
+            let axis = parabola_curve.frame().axis().as_raw();
+            let major_direction = parabola_curve.frame().reference().as_raw();
             point_valid(vertex) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
+            let axis = hyperbola_curve.frame().axis().as_raw();
+            let major_direction = hyperbola_curve.frame().reference().as_raw();
             point_valid(center) && normal_valid(*axis) && direction_valid(*major_direction)
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {

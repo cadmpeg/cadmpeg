@@ -215,7 +215,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         panic!("sphere-plane spline did not derive a circle");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
     assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
@@ -305,8 +305,8 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         panic!("cylinder-plane spline did not derive an ellipse");
     };
     let center = ellipse_curve.center().get();
-    let axis = ellipse_curve.axis();
-    let major_direction = ellipse_curve.major_direction();
+    let axis = ellipse_curve.frame().axis().as_raw();
+    let major_direction = ellipse_curve.frame().reference().as_raw();
     let major_radius = ellipse_curve.major_radius().get();
     let minor_radius = ellipse_curve.minor_radius().get();
     assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= CYLINDER_PLANE_CONIC_TOLERANCE);
@@ -402,8 +402,8 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
         panic!("perpendicular cylinders did not select an ellipse branch");
     };
     let center = ellipse_curve.center().get();
-    let axis = ellipse_curve.axis();
-    let major_direction = ellipse_curve.major_direction();
+    let axis = ellipse_curve.frame().axis().as_raw();
+    let major_direction = ellipse_curve.frame().reference().as_raw();
     let major_radius = ellipse_curve.major_radius().get();
     let minor_radius = ellipse_curve.minor_radius().get();
     assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);

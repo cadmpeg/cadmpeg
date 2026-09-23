@@ -284,7 +284,7 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     assert_eq!(replayed, source);
 
     let mut point_edited = decoded.ir().clone();
-    let moved = point_edited.model.points[0].position();
+    let moved = point_edited.model.points[0].position().get();
     point_edited.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 12.5,
@@ -317,8 +317,8 @@ fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        round_trip.ir().model.points[0].position(),
-        point_edited.model.points[0].position()
+        round_trip.ir().model.points[0].position().get(),
+        point_edited.model.points[0].position().get()
     );
     assert_eq!(
         round_trip.ir().model.surfaces[0].geometry,
@@ -1236,13 +1236,13 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>(),
         source_less
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>()
     );
 }
@@ -1275,7 +1275,8 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                     .find(|point| point.id == vertex.point)
             })
             .unwrap()
-            .position();
+            .position()
+            .get();
         let end = source_less
             .model
             .vertices
@@ -1289,7 +1290,8 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
                     .find(|point| point.id == vertex.point)
             })
             .unwrap()
-            .position();
+            .position()
+            .get();
         let delta =
             cadmpeg_ir::math::Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
         let length = delta.norm();
@@ -1802,8 +1804,8 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
         panic!("expected cone")
     };
     let origin = cone_surface.origin();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
 
     let ratio = 0.4;

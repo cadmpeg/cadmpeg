@@ -1645,7 +1645,10 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
     else {
         panic!("expected a bounded procedural revolution");
     };
-    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+    let Some(parameter_interval) = &definition_payload_0
+        .parameter_interval()
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         panic!("expected a bounded procedural revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);

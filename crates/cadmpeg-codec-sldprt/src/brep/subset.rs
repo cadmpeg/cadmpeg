@@ -26,8 +26,8 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let tangent = axis.cross(*ref_direction);
             Some(Point3::new(
@@ -41,8 +41,8 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let minor_direction = axis.cross(*major_direction);

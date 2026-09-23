@@ -927,14 +927,16 @@ fn native_procedural_surface_definition(
             let directrix = definition_payload.directrix();
             let axis_origin = definition_payload.axis_origin();
             let axis_direction = definition_payload.axis_direction();
-            let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.increasing_parameter_interval();
+            let angular_interval = definition_payload.angular_interval().endpoints();
+            let angular_parameter_interval = definition_payload
+                .angular_parameter_interval()
+                .map(IncreasingParameterInterval::endpoints);
+            let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
             let revision_form = definition_payload.revision_form();
             {
                 if angular_parameter_interval
-                    .is_some_and(|parameter_interval| parameter_interval != *angular_interval)
+                    .is_some_and(|parameter_interval| parameter_interval != angular_interval)
                 {
                     return Err(CodecError::NotImplemented(
                         "F3D rot_spl_sur cannot encode a distinct angular parameter interval"
@@ -1012,7 +1014,7 @@ fn native_procedural_surface_definition(
                 ];
                 if *transposed
                     || parameter_interval != native_parameter_interval
-                    || *angular_interval != native_angular_interval
+                    || angular_interval != native_angular_interval
                 {
                     return Err(CodecError::NotImplemented(
                     "source-less F3D rot_spl_sur intervals must match its profile and solved cache and cannot be transposed".into(),
@@ -4410,8 +4412,8 @@ fn native_increasing_interval_curve(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             native_conic_interval_curve(
                 center,
@@ -4424,8 +4426,8 @@ fn native_increasing_interval_curve(
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             native_conic_interval_curve(
@@ -5497,7 +5499,7 @@ pub(crate) fn native_procedural_curve(
         match procedural.definition() {
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) => (
                 helix_payload.angle_range(),
-                helix_payload.center(),
+                helix_payload.center().as_raw(),
                 helix_payload.major(),
                 helix_payload.minor(),
                 helix_payload.pitch(),
@@ -5605,7 +5607,7 @@ pub(super) fn native_cacheless_procedural_curve(
         )));
     };
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -5655,8 +5657,8 @@ fn native_embedded_surface(
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             native_ident(bytes, "plane")?;
             native_point(
                 bytes,
@@ -5672,15 +5674,15 @@ fn native_embedded_surface(
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             native_embedded_cone(bytes, origin, *axis, *ref_direction, radius, 1.0, 0.0)?;
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -5696,8 +5698,8 @@ fn native_embedded_surface(
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             native_ident(bytes, "sphere")?;
             native_point(
@@ -5715,8 +5717,8 @@ fn native_embedded_surface(
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             native_ident(bytes, "torus")?;
@@ -6170,8 +6172,8 @@ fn native_embedded_surface_with_bounds(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             native_ident(bytes, "sphere")?;
             native_point(
@@ -6192,8 +6194,8 @@ fn native_embedded_surface_with_bounds(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             native_ident(bytes, "torus")?;
@@ -6248,15 +6250,15 @@ fn native_embedded_cone_with_bounds(
     let (origin, axis, ref_direction, radius, ratio, half_angle) = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             (origin, *axis, *ref_direction, radius, 1.0, 0.0)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -6664,8 +6666,8 @@ fn native_pcurve_geometry(
 ) -> Result<Cow<'_, PcurveNurbs>, CodecError> {
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             if !range.iter().all(|value| value.is_finite()) || range[0] >= range[1] {
                 return Err(CodecError::NotImplemented(
                     "source-less F3D line pcurve requires an ordered finite range".into(),

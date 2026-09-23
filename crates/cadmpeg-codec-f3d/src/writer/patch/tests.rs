@@ -211,8 +211,8 @@ fn generated_signed_sphere_patches_exact_frame_and_radius() {
         matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Sphere(sphere_surface), false))
                 if {
                     let center = sphere_surface.center();
-        let axis = sphere_surface.axis();
-        let ref_direction = sphere_surface.ref_direction();
+        let axis = sphere_surface.frame().axis().as_raw();
+        let ref_direction = sphere_surface.frame().reference().as_raw();
         let radius = sphere_surface.radius().get();
                     *center == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -304,8 +304,8 @@ fn generated_torus_preserves_signed_self_intersecting_radii() {
         matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Torus(torus_surface), false))
                 if {
                     let center = torus_surface.center();
-        let axis = torus_surface.axis();
-        let ref_direction = torus_surface.ref_direction();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
                     *center == Point3::new(10.0, 20.0, 30.0)
@@ -400,8 +400,8 @@ fn generated_cylinder_preserves_native_angle_branch() {
         matches!(cadmpeg_asm::brep::geometry::decode_surface(&decoded[0]), Some((SolvedSurfaceGeometry::Cylinder(cylinder_surface), true))
                 if {
                     let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
         let radius = cylinder_surface.radius().get();
                     *origin == Point3::new(10.0, 20.0, 30.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -504,8 +504,8 @@ fn generated_ellipse_preserves_negative_ratio_phase() {
         matches!(cadmpeg_asm::brep::geometry::decode_curve(&decoded[0]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
                     let center = ellipse_curve.center().get();
-        let axis = ellipse_curve.axis();
-        let major_direction = ellipse_curve.major_direction();
+        let axis = ellipse_curve.frame().axis().as_raw();
+        let major_direction = ellipse_curve.frame().reference().as_raw();
         let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
                     center == Point3::new(10.0, 20.0, 30.0)

@@ -136,8 +136,8 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         unreachable!()
     };
     let origin = cone_surface.origin();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
@@ -161,8 +161,8 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         unreachable!()
     };
     let origin = cone_surface.origin();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
@@ -184,8 +184,8 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         unreachable!()
     };
     let origin = cone_surface.origin();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let half_angle = cone_surface.half_angle().get();
 
@@ -404,7 +404,7 @@ fn decode_retains_topology_owned_point_at_origin() {
     assert_eq!(result.ir().model.bodies[0].transform, None);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
 }
@@ -650,7 +650,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     assert!(!nurbs.periodic());
     assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.01));
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -758,7 +758,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.
-    let p = &result.ir().model.points[0].position();
+    let p = &result.ir().model.points[0].position().get();
     assert!((p.x - 62.5).abs() < 1.0e-6 && (p.z - 12.7).abs() < 1.0e-6);
 
     // One plane, one cylinder decoded.
@@ -793,14 +793,14 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
-            let axis = plane_surface.u_axis();
+            let axis = plane_surface.frame().reference().as_raw();
             *axis == Vector3::new(1.0, 0.0, 0.0)
         })
     ));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
-            let direction = cylinder_surface.ref_direction();
+            let direction = cylinder_surface.frame().reference().as_raw();
             *direction == Vector3::new(1.0, 0.0, 0.0)
         })
     ));

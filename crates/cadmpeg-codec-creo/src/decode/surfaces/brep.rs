@@ -831,10 +831,10 @@ fn native_circle_loop_geometry(
         return None;
     };
     let first_center = circle_curve.center();
-    let first_axis = circle_curve.axis();
+    let first_axis = circle_curve.frame().axis().as_raw();
     let first_radius = circle_curve.radius().get();
     let second_center = circle_curve_2.center();
-    let second_axis = circle_curve_2.axis();
+    let second_axis = circle_curve_2.frame().axis().as_raw();
     let second_radius = circle_curve_2.radius().get();
     if !scalar_values_agree(first_radius, second_radius)
         || !points_are_geometrically_coincident(first_center, second_center)
@@ -862,7 +862,7 @@ fn ordered_two_edge_circle_loops<'a>(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.normal();
+    let normal = plane_surface.frame().axis().as_raw();
     let circle_loops = loops
         .iter()
         .map(|lp| native_circle_loop_geometry(lp, model_curves))

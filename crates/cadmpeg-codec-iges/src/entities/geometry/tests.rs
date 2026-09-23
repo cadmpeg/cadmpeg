@@ -459,7 +459,10 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .iter()
             .find(|point| point.id.as_str() == format!("iges:model:point#D{sequence}"))
             .unwrap();
-        assert_eq!(point.position(), cadmpeg_ir::math::Point3::new(x, y, 0.0));
+        assert_eq!(
+            point.position().get(),
+            cadmpeg_ir::math::Point3::new(x, y, 0.0)
+        );
     }
     let flashes = &result.ir().native.namespace("iges").unwrap().arenas()["flashes"];
     assert_eq!(flashes.len(), 5);
@@ -980,8 +983,8 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         panic!("expected a circle carrier");
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(center, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
@@ -999,7 +1002,7 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         .model
         .points
         .iter()
-        .any(|point| point.position() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
+        .any(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1089,7 +1092,7 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
     else {
         panic!("expected a circle carrier");
     };
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, -0.0, 1.0));
     assert_eq!(radius, 1.0);
@@ -1214,9 +1217,9 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
         .unwrap();
 
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 0.0);
-    assert_eq!(result.ir().model.points[0].position().y, 80.0);
-    assert_eq!(result.ir().model.points[0].position().z, 60.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 0.0);
+    assert_eq!(result.ir().model.points[0].position().get().y, 80.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 60.0);
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["transformations"].len(),
         2

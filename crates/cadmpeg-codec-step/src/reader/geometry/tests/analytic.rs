@@ -274,7 +274,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
     let PcurveGeometry::Line(line_pcurve) = &line_pcurve.geometry else {
         panic!("line-directrix witness did not retain a line pcurve");
     };
-    let direction = line_pcurve.direction();
+    let direction = line_pcurve.direction().as_raw();
     assert!((direction.u - 10.0).abs() < EPS_TP03_PARAMETER_SCALE);
     assert!(direction.v.abs() < EPS_TP03_PARAMETER_SCALE);
 
@@ -288,7 +288,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
     let PcurveGeometry::Line(line_pcurve) = &revolution_pcurve.geometry else {
         panic!("circle-directrix witness did not retain a line pcurve");
     };
-    let direction = line_pcurve.direction();
+    let direction = line_pcurve.direction().as_raw();
     let degree_to_radian = std::f64::consts::PI / 180.0;
     assert!((direction.u - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
     assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
@@ -360,7 +360,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .expect("swept-surface pcurve");
         assert!(matches!(&pcurve.geometry, PcurveGeometry::Line(line_pcurve)
         if {
-            let direction = line_pcurve.direction();
+            let direction = line_pcurve.direction().as_raw();
             direction.u == expected_pcurve_u && direction.v == 0.0
         }));
     };
@@ -496,7 +496,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .geometry
         .solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
             if {
-                let major_direction = ellipse_curve.major_direction();
+                let major_direction = ellipse_curve.frame().reference().as_raw();
     let major_radius = ellipse_curve.major_radius().get();
     let minor_radius = ellipse_curve.minor_radius().get();
                 *major_direction == Vector3::new(0.0, 1.0, 0.0)
@@ -514,7 +514,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
     assert!(
         matches!(ordered.geometry.solved(), Some(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
-                    let major_direction = ellipse_curve.major_direction();
+                    let major_direction = ellipse_curve.frame().reference().as_raw();
         let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
                     *major_direction == Vector3::new(1.0, 0.0, 0.0)
@@ -651,7 +651,7 @@ fn conical_surface_accepts_a_negative_semi_angle() {
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
-            let axis = *cone_surface.axis();
+            let axis = *cone_surface.frame().axis().as_raw();
             cone_surface.half_angle().get() == -0.715_584_993_317_674_8
                 && cone_surface.radius().get() == 5.0
                 && (axis.x, axis.y, axis.z) == (0.0, 0.0, 1.0)
@@ -891,9 +891,9 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
                     .is_some_and(|source| source.object_id == id)
             })
             .unwrap_or_else(|| panic!("missing APLL point {id}"));
-        assert!((point.position().x - expected.0).abs() < EPS_APLL_POINT);
-        assert!((point.position().y - expected.1).abs() < EPS_APLL_POINT);
-        assert!((point.position().z - expected.2).abs() < EPS_APLL_POINT);
+        assert!((point.position().get().x - expected.0).abs() < EPS_APLL_POINT);
+        assert!((point.position().get().y - expected.1).abs() < EPS_APLL_POINT);
+        assert!((point.position().get().z - expected.2).abs() < EPS_APLL_POINT);
     }
     let named_point = decoded
         .ir()

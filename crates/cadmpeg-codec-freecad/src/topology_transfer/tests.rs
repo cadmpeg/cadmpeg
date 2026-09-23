@@ -528,7 +528,7 @@ Fa
         .expect("selected pcurve");
     match &pcurve.geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
+            let origin = line_pcurve.origin().as_raw();
             assert_eq!(origin.v, 0.0);
         }
         geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
@@ -1340,6 +1340,7 @@ Co 1001000 +2 1 +2 3 *
                 .find(|point| point.id == vertex.point)
                 .expect("required invariant")
                 .position()
+                .get()
         })
         .collect::<Vec<_>>();
     positions.sort_by(|left, right| left.x.total_cmp(&right.x));

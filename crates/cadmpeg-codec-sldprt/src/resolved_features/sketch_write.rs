@@ -869,7 +869,7 @@ fn patch_direct_curve_body(
     };
     let frame = match crate::brep::curve_by_attr(body, request.carrier_attr) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            circle_curve.frame()
+            *circle_curve.frame()
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
             return Err(cadmpeg_core::CodecError::Malformed(
@@ -1016,7 +1016,7 @@ fn patch_direct_ellipse(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let axis = match crate::brep::curve_by_attr(body, request.carrier_attr) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            let axis = *ellipse_curve.axis();
+            let axis = *ellipse_curve.frame().axis().as_raw();
             axis
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {

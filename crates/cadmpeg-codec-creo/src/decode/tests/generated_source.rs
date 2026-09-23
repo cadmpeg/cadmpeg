@@ -1124,7 +1124,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
             *geometry.origin() == Point3::new(1.0, 2.0, 3.0)
-                && *geometry.axis() == Vector3::new(0.0, 0.0, 1.0)
+                && *geometry.frame().axis().as_raw() == Vector3::new(0.0, 0.0, 1.0)
                 && (geometry.radius().get() - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
         }));
     assert_eq!(
@@ -1143,8 +1143,8 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 0.25;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

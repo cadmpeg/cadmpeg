@@ -146,7 +146,7 @@ fn write_seekable(
         .iter()
         .filter(|point| !plan.topology_points.contains(point.id.as_str()))
     {
-        let position = point.position();
+        let position = point.position().get();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
         payload.extend(position.y.to_le_bytes());
@@ -1210,8 +1210,8 @@ fn admit_pcurve<'a>(
     let domain = edge.domain;
     let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
-            let origin = line.origin();
-            let direction = line.direction();
+            let origin = line.origin().as_raw();
+            let direction = line.direction().as_raw();
             let from = [
                 origin.u + direction.u * domain[0],
                 origin.v + direction.v * domain[0],
@@ -1681,7 +1681,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                     point.id.as_str()
                 )));
             }
-            group.push(point.position());
+            group.push(point.position().get());
         }
         groups.push(PointGroup {
             points: group,
@@ -1707,8 +1707,8 @@ fn check_frame(
     frame: cadmpeg_ir::units::OrthonormalFrame3,
     family: &str,
 ) -> Result<(), CodecError> {
-    let normal = frame.axis();
-    let x = frame.reference();
+    let normal = frame.axis().as_raw();
+    let x = frame.reference().as_raw();
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
     if (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE

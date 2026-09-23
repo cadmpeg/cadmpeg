@@ -61,7 +61,7 @@ fn source_less_points_round_trip_across_target_versions() {
             .expect("required invariant");
         assert_eq!(decoded.ir().model.points.len(), 1);
         assert_eq!(
-            decoded.ir().model.points[0].position(),
+            decoded.ir().model.points[0].position().get(),
             Point3::new(1.25, -2.5, 3.75)
         );
     }
@@ -695,7 +695,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("required invariant");
     assert_eq!(
-        rewritten.ir().model.points[0].position(),
+        rewritten.ir().model.points[0].position().get(),
         Point3::new(4.0, 5.0, 6.0)
     );
 }

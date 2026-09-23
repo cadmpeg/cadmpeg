@@ -744,7 +744,7 @@ fn encoder_bakes_rigid_body_transform() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None).unwrap());
-    let original_point = ir.model.points[0].position();
+    let original_point = ir.model.points[0].position().get();
     let original_normal = ir
         .model
         .surfaces
@@ -752,11 +752,11 @@ fn encoder_bakes_rigid_body_transform() {
         .find_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
-                    let normal = *plane_surface.normal();
+                    let normal = *plane_surface.frame().axis().as_raw();
                     normal.x == 1.0
                 } =>
             {
-                let normal = *plane_surface.normal();
+                let normal = *plane_surface.frame().axis().as_raw();
                 Some(normal)
             }
             _ => None,
@@ -787,14 +787,14 @@ fn encoder_bakes_rigid_body_transform() {
         .unwrap();
 
     assert!(decoded.ir().model.points.iter().any(|point| {
-        (point.position().x - expected_point.x).abs() < 1.0e-9
-            && (point.position().y - expected_point.y).abs() < 1.0e-9
-            && (point.position().z - expected_point.z).abs() < 1.0e-9
+        (point.position().get().x - expected_point.x).abs() < 1.0e-9
+            && (point.position().get().y - expected_point.y).abs() < 1.0e-9
+            && (point.position().get().z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
         if {
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             *normal == expected_normal
         })
     }));
@@ -814,7 +814,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     let mut result = EditableDecodeResult::from(result);
-    let moved = result.ir_mut().model.points[0].position();
+    let moved = result.ir_mut().model.points[0].position().get();
     result.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
@@ -834,7 +834,7 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .model
         .points
         .iter()
-        .any(|point| point.position().x == 1.0));
+        .any(|point| point.position().get().x == 1.0));
 }
 
 #[test]
@@ -846,7 +846,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut solid = EditableDecodeResult::from(solid);
-    let moved = solid.ir_mut().model.points[0].position();
+    let moved = solid.ir_mut().model.points[0].position().get();
     solid.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -874,7 +874,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
         )
         .unwrap();
     let mut sheet = EditableDecodeResult::from(sheet);
-    let moved = sheet.ir_mut().model.points[0].position();
+    let moved = sheet.ir_mut().model.points[0].position().get();
     sheet.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -904,7 +904,7 @@ fn semantic_writer_preserves_outer_header() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -986,7 +986,7 @@ fn semantic_writer_preserves_sheet_body_classification() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -1218,7 +1218,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(50.8, moved.y, moved.z))
         .expect("a finite position is a point");
@@ -1239,7 +1239,7 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         .model
         .points
         .iter()
-        .any(|point| (point.position().x - 50.8).abs() < 1e-5));
+        .any(|point| (point.position().get().x - 50.8).abs() < 1e-5));
 }
 
 #[test]
@@ -1256,7 +1256,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -1391,7 +1391,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -1479,7 +1479,7 @@ fn semantic_writer_preserves_face_appearance() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,

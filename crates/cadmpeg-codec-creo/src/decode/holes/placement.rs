@@ -221,7 +221,7 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.normal();
+    let normal = plane_surface.frame().axis().as_raw();
     let axis = normalize([normal.x, normal.y, normal.z])?;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
     let radial = aligned_axis.complement().map(Axis::index);

@@ -365,7 +365,7 @@ pub(in super::super) fn schema_feature_definition(
                     hole.entry_surface_id.map(face_selection),
                     Some(hole.geometry.origin()),
                     Some(cadmpeg_ir::features::FeatureDirection3::from(
-                        hole.geometry.frame().unit_axis(),
+                        *hole.geometry.frame().axis(),
                     )),
                     Length::new(2.0 * hole.geometry.radius().get()),
                     Some(hole.extent),
@@ -912,7 +912,7 @@ fn reconciled_datum_plane_definition(
             };
             match &surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                    let u_axis = plane_surface.u_axis();
+                    let u_axis = plane_surface.frame().reference().as_raw();
                     Some(*u_axis)
                 }
                 _ => None,

@@ -906,10 +906,11 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
     let offset = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
             let origin = plane.origin().get();
-            let origin = FinitePoint3::new(origin.translated(*plane.normal(), distance))?;
+            let origin =
+                FinitePoint3::new(origin.translated(*plane.frame().axis().as_raw(), distance))?;
             SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                 origin,
-                plane.frame(),
+                *plane.frame(),
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
@@ -917,7 +918,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let radius = PositiveLength::new(radius + distance)?;
             SolvedSurfaceGeometry::Cylinder(cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                 cylinder.origin(),
-                cylinder.frame(),
+                *cylinder.frame(),
                 radius,
             ))
         }
@@ -926,7 +927,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let radius = NonZeroLength::new(radius + distance)?;
             SolvedSurfaceGeometry::Sphere(cadmpeg_ir::geometry::analytic::SphereSurface::new(
                 sphere.center(),
-                sphere.frame(),
+                *sphere.frame(),
                 radius,
             ))
         }
@@ -935,7 +936,7 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let minor_radius = NonZeroLength::new(minor_radius + distance)?;
             SolvedSurfaceGeometry::Torus(cadmpeg_ir::geometry::analytic::TorusSurface::new(
                 torus.center(),
-                torus.frame(),
+                *torus.frame(),
                 torus.major_radius(),
                 minor_radius,
             ))
@@ -944,12 +945,13 @@ fn offset_analytic(geometry: &SurfaceGeometry, distance: f64) -> Option<SurfaceG
             let origin = cone.origin().get();
             let radius = cone.radius().get();
             let half_angle = cone.half_angle().get();
-            let origin =
-                FinitePoint3::new(origin.translated(*cone.axis(), -distance * half_angle.sin()))?;
+            let origin = FinitePoint3::new(
+                origin.translated(*cone.frame().axis().as_raw(), -distance * half_angle.sin()),
+            )?;
             let radius = NonNegativeLength::new(radius + distance * half_angle.cos())?;
             SolvedSurfaceGeometry::Cone(cadmpeg_ir::geometry::analytic::ConeSurface::new(
                 origin,
-                cone.frame(),
+                *cone.frame(),
                 radius,
                 cone.ratio(),
                 cone.half_angle(),

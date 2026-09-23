@@ -1606,7 +1606,7 @@ fn legacy_decoded_curve_endpoints(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let ref_direction = circle_curve.ref_direction();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let endpoint = Point3([
                 center.x + ref_direction.x * radius,

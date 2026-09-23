@@ -660,8 +660,8 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &mut ir.model.curves[1].geometry
     {
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
         let mut center = center;
         center.z = 0.01;
@@ -750,8 +750,8 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         &mut ir.model.curves[0].geometry
     {
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
         let mut center = center;
         center.z = 0.01;

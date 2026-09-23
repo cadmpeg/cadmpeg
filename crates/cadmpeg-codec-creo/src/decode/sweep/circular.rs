@@ -492,7 +492,7 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
     geometry: &CylinderSurface,
 ) -> Option<([f64; 2], f64)> {
     let origin = geometry.origin().get();
-    let axis = geometry.axis();
+    let axis = geometry.frame().axis().as_raw();
     let radius = geometry.radius().get();
     (dot([axis.x, axis.y, axis.z], transform.normal()).abs() >= 1.0 - EPS_AXIS_ALIGNMENT)
         .then_some(())?;

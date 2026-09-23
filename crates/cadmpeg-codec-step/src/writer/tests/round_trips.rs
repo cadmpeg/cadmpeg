@@ -44,8 +44,8 @@ fn curve_geometry_for_sheet_pcurve(
     };
     Ok(match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             line(*origin, *direction)
         }
         PcurveGeometry::Circle(circle_pcurve) => {

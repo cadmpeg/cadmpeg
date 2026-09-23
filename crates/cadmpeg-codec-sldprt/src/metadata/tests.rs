@@ -147,7 +147,7 @@ fn semantic_writer_preserves_document_metadata() {
         )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,

@@ -108,9 +108,9 @@ fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 12.5);
-    assert_eq!(result.ir().model.points[0].position().y, -2.0);
-    assert_eq!(result.ir().model.points[0].position().z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
 }
 
 #[test]
@@ -125,9 +125,9 @@ fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
     let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 12.5);
-    assert_eq!(result.ir().model.points[0].position().y, -2.0);
-    assert_eq!(result.ir().model.points[0].position().z, 4.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 12.5);
+    assert_eq!(result.ir().model.points[0].position().get().y, -2.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 4.0);
 }
 
 #[test]
@@ -256,8 +256,8 @@ fn decode_replaces_partition_plane_from_status_framed_deltas() {
         matches!(result.ir().model.surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *normal == Vector3::new(0.0, 1.0, 0.0)
                         && *u_axis == Vector3::new(1.0, 0.0, 0.0)
@@ -396,8 +396,8 @@ fn decode_replaces_partition_circle_from_status_framed_deltas() {
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                 if {
                     let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
                     center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -420,8 +420,8 @@ fn decode_replaces_partition_ellipse_from_status_framed_deltas() {
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
                     let center = ellipse_curve.center().get();
-        let axis = ellipse_curve.axis();
-        let major_direction = ellipse_curve.major_direction();
+        let axis = ellipse_curve.frame().axis().as_raw();
+        let major_direction = ellipse_curve.frame().reference().as_raw();
         let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
                     center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
@@ -446,8 +446,8 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
         let radius = cylinder_surface.radius().get();
                     *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -470,8 +470,8 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let origin = cone_surface.origin();
-        let axis = cone_surface.axis();
-        let ref_direction = cone_surface.ref_direction();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
         let radius = cone_surface.radius().get();
         let ratio = cone_surface.ratio().get();
         let half_angle = cone_surface.half_angle().get();
@@ -498,8 +498,8 @@ fn decode_replaces_partition_sphere_from_status_framed_deltas() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
                     let center = sphere_surface.center();
-        let axis = sphere_surface.axis();
-        let ref_direction = sphere_surface.ref_direction();
+        let axis = sphere_surface.frame().axis().as_raw();
+        let ref_direction = sphere_surface.frame().reference().as_raw();
         let radius = sphere_surface.radius().get();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -522,8 +522,8 @@ fn decode_replaces_partition_torus_from_status_framed_deltas() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let center = torus_surface.center();
-        let axis = torus_surface.axis();
-        let ref_direction = torus_surface.ref_direction();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
                     *center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)

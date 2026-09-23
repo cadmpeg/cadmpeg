@@ -117,7 +117,7 @@ impl<'a> WritableObjectCurve<'a> {
         }
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
-                check_frame(curve.id.as_str(), circle.frame(), "circle")?;
+                check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -139,8 +139,8 @@ impl<'a> WritableObjectCurve<'a> {
         match self.geometry {
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
-                let axis = circle.axis();
-                let ref_direction = circle.ref_direction();
+                let axis = circle.frame().axis().as_raw();
+                let ref_direction = circle.frame().reference().as_raw();
                 let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
@@ -180,9 +180,9 @@ impl<'a> WritableFaceSurface<'a> {
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
-                let normal = plane.normal();
-                let u_axis = plane.u_axis();
-                check_frame(surface.id.as_str(), plane.frame(), "plane")?;
+                let normal = plane.frame().axis().as_raw();
+                let u_axis = plane.frame().reference().as_raw();
+                check_frame(surface.id.as_str(), *plane.frame(), "plane")?;
                 Ok(Self::Plane {
                     origin,
                     normal: *normal,
@@ -406,7 +406,7 @@ impl<'a> WritableModel<'a> {
                 }
                 Ok(WritableVertex {
                     source: vertex,
-                    point: point.position(),
+                    point: point.position().get(),
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;

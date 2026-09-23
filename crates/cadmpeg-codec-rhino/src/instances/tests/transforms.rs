@@ -80,7 +80,7 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
         for ir in [decoded.ir(), &reread] {
             assert_eq!(ir.model.points.len(), 1, "exponent {exponent}");
             assert_eq!(
-                ir.model.points[0].position(),
+                ir.model.points[0].position().get(),
                 Point3::new(scale, 2.0 * scale, 3.0 * scale)
             );
             let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
@@ -138,7 +138,10 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
             .any(|loss| loss.code == RhinoLossCode::IntegrityFailure.kind()));
         let ir = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
         assert_eq!(ir.model.points.len(), 1);
-        assert_eq!(ir.model.points[0].position(), Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(
+            ir.model.points[0].position().get(),
+            Point3::new(1.0, 2.0, 3.0)
+        );
         let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
         assert_eq!(native["product_occurrences"].as_array().unwrap().len(), 1);
         assert_eq!(
@@ -185,7 +188,7 @@ fn source_instance_world_placement_is_applied_once() {
         for ir in [decoded.ir(), &reread] {
             assert_eq!(ir.model.bodies.len(), 1);
             assert_eq!(ir.model.points.len(), 1);
-            let point = ir.model.points[0].position();
+            let point = ir.model.points[0].position().get();
             let body = ir.model.bodies.first().unwrap();
             let world = body.transform.unwrap_or_default().apply_point(point);
             assert_eq!(world, Some(expected));

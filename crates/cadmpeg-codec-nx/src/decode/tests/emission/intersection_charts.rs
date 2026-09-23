@@ -36,6 +36,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .find(|point| &point.id == point_id)
             .expect("vertex point")
             .position()
+            .get()
     });
     ir.model.edges[0].set_curve(None).unwrap();
     ir.model.edges[0].set_param_range(None).unwrap();
@@ -109,7 +110,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     };
     let supports = intersection.supports();
     let endpoints = intersection.endpoints();
-    let tolerance = intersection.tolerance();
+    let tolerance = intersection.tolerance().get();
 
     assert_ne!(supports[0], supports[1]);
     assert_eq!(*endpoints, expected_endpoints);
@@ -131,7 +132,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .iter_mut()
         .find(|point| point.id == point_id)
         .expect("vertex point");
-    let moved = point.position();
+    let moved = point.position().get();
     point
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 0.5,
@@ -139,7 +140,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             moved.z,
         ))
         .expect("a finite position is a point");
-    let moved = point.position();
+    let moved = point.position().get();
     point
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -147,7 +148,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             moved.z,
         ))
         .expect("a finite position is a point");
-    let moved = point.position();
+    let moved = point.position().get();
     point
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,

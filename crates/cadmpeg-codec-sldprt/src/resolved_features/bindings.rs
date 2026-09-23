@@ -743,7 +743,7 @@ fn mirror_plane_from_surface(
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some((origin, normal.unit()?))
         }
         SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {

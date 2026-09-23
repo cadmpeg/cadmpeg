@@ -78,7 +78,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str(), point.position()))
+        .map(|point| (point.id.as_str(), point.position().get()))
         .collect::<HashMap<_, _>>();
     let vertices = ir
         .model
@@ -3833,16 +3833,16 @@ fn curve_parameter_at_point(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radial = offset(center);
             let y_axis = axis.cross(*ref_direction);
             Some(radial.dot(y_axis).atan2(radial.dot(*ref_direction)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let radial = offset(center);

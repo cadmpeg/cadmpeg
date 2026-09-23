@@ -240,7 +240,9 @@ impl CompositeIndex {
         }
         let mut points = BTreeMap::new();
         for point in &ir.model.points {
-            points.entry(point.id.clone()).or_insert(point.position());
+            points
+                .entry(point.id.clone())
+                .or_insert(point.position().get());
         }
         let mut vertex_points = BTreeMap::<VertexId, Point3>::new();
         for vertex in &ir.model.vertices {
@@ -290,7 +292,7 @@ fn point_for_vertex(ir: &CadIr, id: &VertexId, index: Option<&CompositeIndex>) -
         .points
         .iter()
         .find(|candidate| candidate.id == *point)
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
 }
 
 fn composite_edge_endpoints_agree(
@@ -1394,8 +1396,8 @@ fn bounded_nurbs_for_id(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
             let Some(mut nurbs) =
                 circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
@@ -1418,8 +1420,8 @@ fn bounded_nurbs_for_id(
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             let Some(mut nurbs) = elliptical_arc_nurbs(
@@ -1449,8 +1451,8 @@ fn bounded_nurbs_for_id(
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
+            let axis = parabola_curve.frame().axis().as_raw();
+            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
             let Some(mut nurbs) =
                 parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval)?

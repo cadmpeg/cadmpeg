@@ -345,8 +345,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             plane_surface,
         )) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
             assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
             assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);

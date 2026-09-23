@@ -755,11 +755,11 @@ impl PositionalFrame {
     }
     /// Returns the axis.
     pub(crate) fn axis(&self) -> [f64; 3] {
-        (*self.frame.axis()).into()
+        (*self.frame.axis().as_raw()).into()
     }
     /// Returns the ref direction.
     pub(crate) fn ref_direction(&self) -> [f64; 3] {
-        (*self.frame.reference()).into()
+        (*self.frame.reference().as_raw()).into()
     }
 
     /// Returns the admitted origin.

@@ -171,7 +171,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = decode(source);
     let mut edited = decoded.ir().clone();
-    let moved = edited.model.points[0].position();
+    let moved = edited.model.points[0].position().get();
     edited.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(2.5, moved.y, moved.z))
         .expect("a finite position is a point");
@@ -180,7 +180,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
         .expect("preserved F3D write");
     let round_trip = decode(bytes);
-    assert_eq!(round_trip.ir().model.points[0].position().x, 2.5);
+    assert_eq!(round_trip.ir().model.points[0].position().get().x, 2.5);
     assert_eq!(
         round_trip.ir().model.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
@@ -469,7 +469,7 @@ fn the_patch_path_names_the_preserved_dialect() {
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position();
+    let moved = edited.model.points[0].position().get();
     edited.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,

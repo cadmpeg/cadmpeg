@@ -2064,7 +2064,7 @@ fn extrude_target_plane_candidate(
                 return None;
             };
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
                 return None;
             }
@@ -2150,7 +2150,7 @@ fn face_coincident_with_sketch(
         return false;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.normal();
+    let normal = plane_surface.frame().axis().as_raw();
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };

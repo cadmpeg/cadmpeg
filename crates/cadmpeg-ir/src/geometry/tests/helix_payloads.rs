@@ -51,7 +51,7 @@ fn numerical_audit_helix_line_admits_finite_nonzero_small_directions() {
 fn helix_curve_admission_rejects_the_validator_numeric_states() {
     let valid = curve(1.0);
     let range = *valid.angle_range();
-    let center = *valid.center();
+    let center = *valid.center().as_raw();
     let major = *valid.major();
     let minor = *valid.minor();
     let pitch = *valid.pitch();
@@ -325,12 +325,12 @@ fn helix_curve_finite_center_returns_the_admitted_center() {
             None,
         )
         .unwrap();
-        let finite = helix.finite_center();
+        let finite = *helix.center();
         assert_eq!(
             [finite.x, finite.y, finite.z].map(f64::to_bits),
             [center.x, center.y, center.z].map(f64::to_bits)
         );
-        assert_eq!(finite.as_raw(), helix.center());
+        assert_eq!(finite.as_raw(), helix.center().as_raw());
         assert_eq!(FinitePoint3::new(center), Some(finite));
     }
 }

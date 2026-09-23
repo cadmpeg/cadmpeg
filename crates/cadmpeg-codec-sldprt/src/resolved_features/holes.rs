@@ -1807,8 +1807,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                             cylinder_surface,
                         )) => {
                             let origin = cylinder_surface.origin().get();
-                            let axis =
-                                FeatureDirection3::from(cylinder_surface.frame().unit_axis());
+                            let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
                             let candidate = cylinder_surface.radius().get();
                             ((candidate - radius).abs() <= radius_tolerance
                                 && point_axis_distance_squared(point, origin, axis.get())
@@ -2043,7 +2042,7 @@ pub(crate) fn project_generated_hole_axes(
                         continue;
                     }
                     let axis = canonical_direction(FeatureDirection3::from(
-                        cylinder_surface.frame().unit_axis(),
+                        *cylinder_surface.frame().axis(),
                     ));
                     let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
                     let closest = Point3::new(
@@ -2384,7 +2383,7 @@ fn drilled_hole_topology_candidates(
             {
                 hole_axis_key(&HolePlacement::Axis {
                     origin: cone_surface.origin(),
-                    axis: FeatureDirection3::from(cone_surface.frame().unit_axis()),
+                    axis: FeatureDirection3::from(*cone_surface.frame().axis()),
                 })
             }
             _ => None,
@@ -2760,7 +2759,7 @@ fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector
         return None;
     };
     let origin = cylinder_surface.origin().get();
-    let axis = *cylinder_surface.axis();
+    let axis = *cylinder_surface.frame().axis().as_raw();
     let radius = cylinder_surface.radius().get();
     let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
     let along = delta.dot(axis);
@@ -3114,7 +3113,7 @@ fn cylindrical_bore_axes(
                 return None;
             };
             let origin = cylinder_surface.origin().get();
-            let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
+            let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
             let candidate = cylinder_surface.radius().get();
             ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
         })
@@ -3192,7 +3191,7 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
             return None;
         };
         let origin = cylinder_surface.origin().get();
-        let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
+        let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
         let candidate = cylinder_surface.radius().get();
         ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
     }))
@@ -3282,7 +3281,7 @@ fn cylindrical_bore_face_spans(
                 return None;
             };
             let origin = cylinder_surface.origin().get();
-            let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
+            let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
             let radius = cylinder_surface.radius().get();
             let mut stations = face
                 .loops
@@ -3301,9 +3300,9 @@ fn cylindrical_bore_face_spans(
                 .filter_map(|vertex| points.get(&vertex.point))
                 .map(|point| {
                     Vector3::new(
-                        point.position().x - origin.x,
-                        point.position().y - origin.y,
-                        point.position().z - origin.z,
+                        point.position().get().x - origin.x,
+                        point.position().get().y - origin.y,
+                        point.position().get().z - origin.z,
                     )
                     .dot(axis.get())
                 });
@@ -3519,7 +3518,7 @@ pub(crate) fn project_bore_backed_position_sketches(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                     if {
                         let origin = plane_surface.origin().get();
-                        let normal = *plane_surface.normal();
+                        let normal = *plane_surface.frame().axis().as_raw();
                         normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                             && axes.iter().all(|(point, _)| {
                                 Vector3::new(
@@ -3534,8 +3533,8 @@ pub(crate) fn project_bore_backed_position_sketches(
                     } =>
                 {
                     let origin = plane_surface.origin().get();
-                    let normal = *plane_surface.normal();
-                    let u_axis = *plane_surface.u_axis();
+                    let normal = *plane_surface.frame().axis().as_raw();
+                    let u_axis = *plane_surface.frame().reference().as_raw();
                     Some((origin, normal, u_axis))
                 }
                 _ => None,
@@ -3725,7 +3724,7 @@ fn match_marker_loci_to_bore_axes(
             continue;
         };
         let origin = cylinder_surface.origin();
-        let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
+        let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
         let candidate = cylinder_surface.radius().get();
         if (candidate - radius).abs() > radius_tolerance {
             continue;
@@ -4298,7 +4297,7 @@ fn constrained_bore_axes(
         .filter_map(|surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
-                    let axis = *cylinder_surface.axis();
+                    let axis = *cylinder_surface.frame().axis().as_raw();
                     let candidate_radius = cylinder_surface.radius().get();
                     (candidate_radius - radius).abs() <= radius_tolerance
                         && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY

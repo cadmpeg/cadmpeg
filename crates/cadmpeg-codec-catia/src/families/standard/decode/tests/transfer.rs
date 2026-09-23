@@ -179,7 +179,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .model
         .points
         .iter()
-        .any(|p| (p.position().x - 10.0).abs() < 1.0e-6));
+        .any(|p| (p.position().get().x - 10.0).abs() < 1.0e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
@@ -194,7 +194,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .any(|link| link.as_str() == "catia:standard:circle#0"));
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             assert!((radius - 5.0).abs() < 1.0e-6);
             assert!((axis.z - 1.0).abs() < 1.0e-6);
@@ -205,8 +205,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
                     (origin.x - 1.0).abs() < EPS_TRANSFER_PLANE_FRAME
                         && (origin.y - 2.0).abs() < EPS_TRANSFER_PLANE_FRAME
                         && (origin.z - 3.0).abs() < EPS_TRANSFER_PLANE_FRAME
@@ -597,7 +597,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
                     origin.x == exact_x && *axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
                 })
     );

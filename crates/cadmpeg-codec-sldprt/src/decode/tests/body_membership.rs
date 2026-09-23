@@ -41,8 +41,8 @@ fn decode_builds_valid_topology_and_plane() {
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(u_axis.x, 1.0);
@@ -55,7 +55,7 @@ fn decode_builds_valid_topology_and_plane() {
         .model
         .points
         .iter()
-        .map(|p| p.position().x)
+        .map(|p| p.position().get().x)
         .collect();
     assert!(xs.contains(&1000.0));
 

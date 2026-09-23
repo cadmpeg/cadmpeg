@@ -96,8 +96,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     let mut origin = *origin;
     origin.z = 20.0;
@@ -226,8 +226,8 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 3.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -342,8 +342,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             unreachable!();
         };
         let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
 
         let radius = 3.0;
         *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -489,8 +489,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         unreachable!();
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 4.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -750,8 +750,8 @@ fn hole_topology_uses_exact_cylinder_spans() {
         unreachable!();
     };
     let origin = cone_surface.origin();
-    let axis = cone_surface.axis();
-    let ref_direction = cone_surface.ref_direction();
+    let axis = cone_surface.frame().axis().as_raw();
+    let ref_direction = cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
 

@@ -79,8 +79,8 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
     let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle")
     };
-    let axis = *circle_curve.axis();
-    let ref_direction = *circle_curve.ref_direction();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(dot.abs() < 1.0e-12);
     assert!(result
@@ -116,7 +116,7 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
     let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle");
     };
-    let ref_direction = *circle_curve.ref_direction();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!((ref_direction.x - 0.8).abs() < 1.0e-12);
     assert!((ref_direction.y + 0.6).abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);
@@ -145,8 +145,8 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     let Some(SolvedCurveGeometry::Circle(circle_curve)) = circle.geometry.solved() else {
         panic!("decoded carrier is not a circle");
     };
-    let axis = *circle_curve.axis();
-    let ref_direction = *circle_curve.ref_direction();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
     assert!(ref_direction.y > 0.999_999_999);
     assert!(dot.abs() < 1.0e-12);
@@ -179,7 +179,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
         let Some(SolvedCurveGeometry::Circle(circle_curve)) = curve.geometry.solved() else {
             panic!("witness carrier is not a circle");
         };
-        let ref_direction = *circle_curve.ref_direction();
+        let ref_direction = *circle_curve.frame().reference().as_raw();
         assert!((ref_direction.x - x).abs() < 1.0e-12);
         assert!((ref_direction.y - y).abs() < 1.0e-12);
         assert!((ref_direction.z - z).abs() < 1.0e-12);
@@ -195,7 +195,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
     let Some(SolvedCurveGeometry::Circle(circle_curve)) = near_axis.geometry.solved() else {
         panic!("near-axis witness carrier is not a circle");
     };
-    let ref_direction = *circle_curve.ref_direction();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!(ref_direction.y > 0.999_999_999);
 
     let parallel_reference = decoded
@@ -209,7 +209,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
     else {
         panic!("parallel-reference witness carrier is not a circle");
     };
-    let ref_direction = *circle_curve.ref_direction();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     assert!((ref_direction.x - 1.0).abs() < 1.0e-12);
     assert!(ref_direction.y.abs() < 1.0e-12);
     assert!(ref_direction.z.abs() < 1.0e-12);

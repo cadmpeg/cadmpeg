@@ -402,7 +402,7 @@ pub(in crate::decode) fn reconciled_model_plane(
         [surface] => match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 Some(PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -1767,7 +1767,7 @@ pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEqua
     let (origin, normal) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
+            let axis = circle_curve.frame().axis().as_raw();
             (
                 [center.x, center.y, center.z],
                 normalize([axis.x, axis.y, axis.z])?,
@@ -1775,7 +1775,7 @@ pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEqua
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
+            let axis = ellipse_curve.frame().axis().as_raw();
             (
                 [center.x, center.y, center.z],
                 normalize([axis.x, axis.y, axis.z])?,

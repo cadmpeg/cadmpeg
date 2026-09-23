@@ -3197,7 +3197,7 @@ mod tests {
         );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position(),
+            result.ir().model.points[0].position().get(),
             Point3::new(1.0, 2.0, 3.0)
         );
         assert!(result.report().geometry_transferred());

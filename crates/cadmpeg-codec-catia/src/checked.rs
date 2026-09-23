@@ -275,12 +275,12 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
 
     /// Returns the first direction.
     pub(crate) fn axis(self) -> UnitVector3<Tolerance, Measurement> {
-        UnitVector3(self.0.unit_axis(), PhantomData)
+        UnitVector3(*self.0.axis(), PhantomData)
     }
 
     /// Returns the second direction.
     pub(crate) fn reference(self) -> UnitVector3<Tolerance, Measurement> {
-        UnitVector3(self.0.unit_reference(), PhantomData)
+        UnitVector3(*self.0.reference(), PhantomData)
     }
 }
 

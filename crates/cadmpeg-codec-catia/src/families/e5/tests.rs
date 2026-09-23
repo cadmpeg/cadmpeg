@@ -27,7 +27,7 @@ fn e5_circle_parser_reads_framed_carrier() {
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
+            let axis = circle_curve.frame().axis().as_raw();
             let radius = circle_curve.radius().get();
             assert_eq!(center, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
@@ -295,8 +295,8 @@ fn e5_surface_parser_reads_framed_torus() {
     match &surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(*center, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));

@@ -171,8 +171,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             plane_surface,
         )) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.x = 0.25;
             *plane_surface =
@@ -386,8 +386,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             plane_surface,
         )) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.x = -8.5;
             *plane_surface =
@@ -403,8 +403,8 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
             plane_surface,
         )) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.x = -9.0;
             *plane_surface =
@@ -679,8 +679,8 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     )) = &mut ir.model.surfaces[1].geometry
     {
         let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
 
         let radius = 0.75;
         *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

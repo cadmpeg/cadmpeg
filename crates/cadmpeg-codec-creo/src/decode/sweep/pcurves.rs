@@ -91,8 +91,8 @@ fn revolution_boundary_pcurve(
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let normal = vector(*normal);
             let u_axis = vector(*u_axis);
             let v_axis = cross(normal, u_axis);
@@ -124,8 +124,8 @@ fn revolution_boundary_pcurve(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let carrier_axis = vector(*axis);
             let relative = point_from(origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -139,8 +139,8 @@ fn revolution_boundary_pcurve(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let carrier_axis = vector(*axis);
             let relative = point_from(origin);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -154,8 +154,8 @@ fn revolution_boundary_pcurve(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let carrier_axis = vector(*axis);
             let relative = point_from(center);
             let u = azimuth(relative, carrier_axis, vector(*ref_direction));
@@ -168,8 +168,8 @@ fn revolution_boundary_pcurve(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let carrier_axis = vector(*axis);

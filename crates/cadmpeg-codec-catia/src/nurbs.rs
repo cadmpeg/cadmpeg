@@ -203,8 +203,8 @@ pub(crate) fn reverse_pcurve_geometry(
     }
     match geometry {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             let origin = Point2::new(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
@@ -267,8 +267,8 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let axis = *circle_curve.axis();
-            let reference = *circle_curve.ref_direction();
+            let axis = *circle_curve.frame().axis().as_raw();
+            let reference = *circle_curve.frame().reference().as_raw();
             let sweep = range[1] - range[0];
             let tangent = axis.cross(reference);
             let end = range[1];
@@ -426,7 +426,7 @@ pub(crate) fn reverse_helix_definition(
         return None;
     }
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -671,7 +671,7 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
         return None;
     };
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -994,7 +994,7 @@ mod tests {
                 panic!("helix definition")
             };
             let angle_range = helix_payload.angle_range();
-            let center = helix_payload.center();
+            let center = helix_payload.center().as_raw();
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
@@ -1244,7 +1244,7 @@ mod tests {
         let mut non_axial_pitch = definition.clone();
         if let ProceduralCurveDefinition::Helix(helix_payload) = &mut non_axial_pitch {
             let angle_range = *helix_payload.angle_range();
-            let center = *helix_payload.center();
+            let center = *helix_payload.center().as_raw();
             let major = *helix_payload.major();
             let minor = *helix_payload.minor();
             let apex_factor = helix_payload.apex_factor();

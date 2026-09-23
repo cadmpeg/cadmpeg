@@ -449,11 +449,11 @@ pub(crate) mod tests {
         );
         assert_eq!(result.ir().model.points.len(), 2);
         assert_eq!(
-            result.ir().model.points[0].position(),
+            result.ir().model.points[0].position().get(),
             cadmpeg_ir::math::Point3::new(11.0, 22.0, 33.0)
         );
         assert_eq!(
-            result.ir().model.points[1].position(),
+            result.ir().model.points[1].position().get(),
             cadmpeg_ir::math::Point3::new(9.0, 18.0, 27.0)
         );
         assert!(result.report().geometry_transferred());

@@ -517,7 +517,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     };
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: carrier.origin(),
-        axis: cadmpeg_ir::features::FeatureDirection3::from(carrier.frame().unit_axis()),
+        axis: cadmpeg_ir::features::FeatureDirection3::from(*carrier.frame().axis()),
     })
 }
 
@@ -838,7 +838,7 @@ fn counterbore_source_boundary_circle(
                     return None;
                 };
                 let center = circle_curve.center().get();
-                let axis = circle_curve.axis();
+                let axis = circle_curve.frame().axis().as_raw();
                 let candidate = circle_curve.radius().get();
                 ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalize([axis.x, axis.y, axis.z])?;
@@ -933,7 +933,7 @@ pub(in crate::decode) fn counterbore_source_patch_geometries(
     let geometry = |radius| {
         Some(CylinderSurface::new(
             carrier.origin(),
-            carrier.frame(),
+            *carrier.frame(),
             cadmpeg_ir::scalar::PositiveLength::new(radius)?,
         ))
     };
