@@ -14,6 +14,59 @@ fn directed_subd_sum_fixture_round_trips_and_validates() {
     assert_eq!(CadIr::from_json(&json).expect("parse fixture"), ir);
 }
 
+#[test]
+fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
+    use crate::geometry::analytic::{LineCurve, PlaneSurface};
+    use crate::geometry::{
+        CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    };
+    use crate::ids::{CurveId, SurfaceId};
+    use crate::math::{Point3, Vector3};
+
+    let ir = directed_subd_sum().unwrap();
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    for (key, direction) in [
+        (crate::identity_key!("u"), Vector3::new(1.0, 0.0, 0.0)),
+        (crate::identity_key!("v"), Vector3::new(0.0, 1.0, 0.0)),
+    ] {
+        let id = v2_id!(CurveId, "curve", key);
+        let curve = ir.model.curves.iter().find(|curve| curve.id == id).unwrap();
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &curve.geometry else {
+            panic!("the directed SubD example curve is a line");
+        };
+        assert_eq!(
+            serde_json::to_string(line).unwrap(),
+            serde_json::to_string(&LineCurve::try_new(origin, direction).unwrap()).unwrap()
+        );
+    }
+    let id = v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache"));
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == id)
+        .unwrap();
+    let SurfaceGeometry::Procedural {
+        cache: Some(SolvedSurfaceGeometry::Plane(plane)),
+        ..
+    } = &surface.geometry
+    else {
+        panic!("the directed SubD example cache is a plane");
+    };
+    assert_eq!(
+        serde_json::to_string(plane).unwrap(),
+        serde_json::to_string(
+            &PlaneSurface::try_new(
+                origin,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            )
+            .unwrap()
+        )
+        .unwrap()
+    );
+}
+
 #[cfg(feature = "schema")]
 #[test]
 fn directed_subd_sum_fixture_matches_schema_shape() {
