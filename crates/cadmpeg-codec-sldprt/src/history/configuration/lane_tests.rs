@@ -1633,6 +1633,52 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
 }
 
 #[test]
+fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let count_id = ParameterId::mint("test:model:parameter#count").expect("identity grammar");
+    ir.model.parameters.push(DesignParameter {
+        id: count_id.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "Count".into(),
+        expression: "7".into(),
+        display: None,
+        value: Some(ParameterValue::Integer(7)),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .configurations
+        .push(design_configuration("default", 0, Some(0), None));
+    let below_minimum = f64::from_bits((i64::MIN as f64).to_bits() + 1);
+    assert!(below_minimum < i64::MIN as f64);
+    for (real, expected) in [
+        (below_minimum, None),
+        (i64::MIN as f64, Some(i64::MIN)),
+        (-(i64::MIN as f64), None),
+        (-2.5, None),
+        (2.5, None),
+        (-2.0, Some(-2)),
+    ] {
+        ir.model.configurations[0].parameter_values.insert(
+            count_id.clone(),
+            ParameterValue::Real(FiniteReal::new(real).unwrap()),
+        );
+        align_configuration_parameter_kinds(&mut ir);
+        assert_eq!(
+            ir.model.configurations[0].parameter_values.get(&count_id),
+            expected.map(ParameterValue::Integer).as_ref(),
+            "real override {real:e}"
+        );
+    }
+}
+
+#[test]
 fn configuration_topology_binding_updates_snapshot_face_selection() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, Sense};
