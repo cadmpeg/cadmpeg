@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
@@ -13,18 +14,16 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{B5Graph, B5Profile, B5Surface};
-use super::super::vecmath::{add, cross, scale};
+use super::super::vecmath::{add, components, coordinates, cross, scale};
 use super::{
-    annotate, dot, length, point3, subtract, vector, RevolutionPlan, SurfacePlan, SurfaceProcedure,
-    TransferPlan,
+    annotate, dot, point3, subtract, RevolutionPlan, SurfacePlan, SurfaceProcedure, TransferPlan,
 };
 use crate::assemble::cgm_source;
-use crate::math::unit_vector;
-
-const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 
 /// Direct geometry or a procedural surface construction.
 pub(super) enum B5SurfaceCarrier<'a> {
@@ -41,9 +40,9 @@ pub(super) enum B5ProceduralSurface<'a> {
     },
     Revolution {
         profile_curve: u32,
-        axis_origin: [f64; 3],
-        axis_direction: [f64; 3],
-        angular_scale: f64,
+        axis_origin: FinitePoint3,
+        axis_direction: UnitVector3,
+        angular_scale: PositiveReal,
         bounds: [[f64; 2]; 2],
     },
 }
@@ -51,33 +50,19 @@ pub(super) enum B5ProceduralSurface<'a> {
 /// Classify a surface into its direct geometry or procedural construction.
 pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
     match surface {
-        B5Surface::Plane {
-            origin,
-            direction_u,
-            direction_v,
-            ..
-        } => orthonormal_plane(*origin, *direction_u, *direction_v).map_or(
-            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
-            B5SurfaceCarrier::Analytic,
-        ),
+        B5Surface::Plane { origin, frame, .. } => {
+            B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, *frame),
+            )))
+        }
         B5Surface::Cylinder {
             origin,
-            reference_x,
-            axis,
+            frame,
             radius,
             ..
-        } => cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            point3(*origin),
-            vector(*axis),
-            vector(*reference_x),
-            *radius,
-        )
-        .map(SolvedSurfaceGeometry::Cylinder)
-        .map(SurfaceGeometry::Solved)
-        .map_or(
-            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
-            B5SurfaceCarrier::Analytic,
-        ),
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::new(*origin, *frame, *radius),
+        ))),
         B5Surface::Cone { surface, .. } => surface.map_or(
             B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
             |surface| {
@@ -88,42 +73,26 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
         ),
         B5Surface::Sphere {
             center,
-            direction_x,
-            axis,
+            frame,
             radius,
             ..
-        } => cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-            point3(*center),
-            vector(*axis),
-            vector(*direction_x),
-            *radius,
-        )
-        .map(SolvedSurfaceGeometry::Sphere)
-        .map(SurfaceGeometry::Solved)
-        .map_or(
-            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
-            B5SurfaceCarrier::Analytic,
-        ),
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::new(*center, *frame, (*radius).into()),
+        ))),
         B5Surface::Torus {
             center,
-            direction_x,
-            axis,
+            frame,
             major_radius,
             minor_radius,
             ..
-        } => cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-            point3(*center),
-            vector(*axis),
-            vector(*direction_x),
-            *major_radius,
-            *minor_radius,
-        )
-        .map(SolvedSurfaceGeometry::Torus)
-        .map(SurfaceGeometry::Solved)
-        .map_or(
-            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
-            B5SurfaceCarrier::Analytic,
-        ),
+        } => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                *center,
+                *frame,
+                *major_radius,
+                (*minor_radius).into(),
+            ),
+        ))),
         B5Surface::Nurbs(surface) => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(surface.clone()),
         )),
@@ -234,9 +203,9 @@ pub(super) fn neutral_surface(
 
 pub(super) fn revolution_surface(
     profile: Option<&B5Profile>,
-    axis_origin: [f64; 3],
-    axis_direction: [f64; 3],
-    angular_scale: f64,
+    axis_origin: FinitePoint3,
+    axis_direction: UnitVector3,
+    angular_scale: PositiveReal,
     bounds: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -244,17 +213,14 @@ pub(super) fn revolution_surface(
     let profile = profile?;
     let [parameter_interval, native_angular_interval] = bounds;
     let directrix = profile_nurbs(profile, parameter_interval, record, refusal)?;
-    if angular_scale <= 0.0 {
-        return None;
-    }
     let angular_interval = [
-        native_angular_interval[0] / angular_scale,
-        native_angular_interval[1] / angular_scale,
+        native_angular_interval[0] / angular_scale.get(),
+        native_angular_interval[1] / angular_scale.get(),
     ];
     let surface = revolve_nurbs(
         &directrix,
-        axis_origin,
-        axis_direction,
+        coordinates(axis_origin),
+        components(&axis_direction),
         angular_interval,
         native_angular_interval,
         record,
@@ -264,8 +230,8 @@ pub(super) fn revolution_surface(
         surface,
         RevolutionPlan {
             directrix,
-            axis_origin: point3(axis_origin),
-            axis_direction: vector(axis_direction),
+            axis_origin,
+            axis_direction,
             angular_interval,
             angular_parameter_interval: native_angular_interval,
             parameter_interval,
@@ -527,29 +493,6 @@ fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
     )
 }
 
-fn orthonormal_plane(
-    origin: [f64; 3],
-    direction_u: [f64; 3],
-    direction_v: [f64; 3],
-) -> Option<SurfaceGeometry> {
-    let u = unit_vector(direction_u)?;
-    let v = unit_vector(direction_v)?;
-    if (length(direction_u) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-        || (length(direction_v) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
-        || dot(u, v).abs() > EPS_FRAME_ORTHONORMAL
-    {
-        return None;
-    }
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            point3(origin),
-            vector(unit_vector(cross(u, v))?),
-            vector(u),
-        )
-        .ok()?,
-    )))
-}
-
 /// Emit the referenced surfaces, their procedural definitions, and the offset
 /// procedural surfaces, returning the map from `object_id` to emitted
 /// [`SurfaceId`]. Consumes the planned surfaces out of the transfer plan.
@@ -663,21 +606,15 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
-                        revolution.axis_origin,
-                        revolution.axis_direction,
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        directrix_id,
+                        (revolution.axis_origin, revolution.axis_direction),
+                        revolution.angular_interval,
+                        Some(revolution.angular_parameter_interval),
+                        Some(revolution.parameter_interval),
+                        false,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
-                    .and_then(|axis| {
-                        cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                            directrix_id,
-                            axis,
-                            revolution.angular_interval,
-                            Some(revolution.angular_parameter_interval),
-                            Some(revolution.parameter_interval),
-                            false,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
-                        )
-                    })
                     .map(|admitted_payload| {
                         ProceduralSurface::new(
                             procedural_id,
@@ -953,8 +890,7 @@ fn emit_extrusion_procedure(
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_extrusion_procedure, surface_carrier, B5ProceduralSurface, B5SurfaceCarrier};
-    use crate::families::b5::graph::B5Surface;
+    use super::emit_extrusion_procedure;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
@@ -966,21 +902,6 @@ mod tests {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
-
-    #[test]
-    fn rejected_plane_frame_is_an_unresolved_carrier() {
-        let plane = B5Surface::Plane {
-            origin: [0.0; 3],
-            direction_u: [1.0, 0.0, 0.0],
-            direction_v: [1.0, 0.0, 0.0],
-            u_range: [0.0, 1.0],
-            v_range: [0.0, 1.0],
-        };
-        assert!(matches!(
-            surface_carrier(&plane),
-            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
-        ));
-    }
 
     use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
     use cadmpeg_ir::math::{Point2, Vector3};

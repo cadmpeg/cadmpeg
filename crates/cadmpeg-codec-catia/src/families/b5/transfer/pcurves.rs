@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -19,7 +20,7 @@ use super::super::graph::{
     edge_pcurve_parameters, evaluate_pcurve, pcurve_nurbs_knots, B5Graph, B5Pcurve,
     B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::vecmath::{add, cross, scale};
+use super::super::vecmath::{add, components, coordinates, cross, scale};
 use super::edges::ordered_subrange;
 use super::{
     annotate, dot, point3, subtract, vector, CurvePlan, HelixPlan, TransferPlan, POINT_TOLERANCE,
@@ -35,9 +36,8 @@ pub(super) fn sphere_great_circle_geometry(
 ) -> Option<CurveGeometry> {
     let B5Surface::Sphere {
         center,
-        direction_x,
+        frame,
         direction_y,
-        axis: sphere_axis,
         radius,
         construction_radius,
         ..
@@ -48,24 +48,25 @@ pub(super) fn sphere_great_circle_geometry(
     if pcurve.chart_scale != *construction_radius {
         return None;
     }
+    let (sphere_axis, direction_x) = (components(frame.axis()), components(frame.reference()));
     let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
     let plane_axis = unit_vector(add(
-        scale(*sphere_axis, 1.0),
+        scale(sphere_axis, 1.0),
         add(
-            scale(*direction_x, -pcurve.slope * phase.cos()),
+            scale(direction_x, -pcurve.slope * phase.cos()),
             scale(*direction_y, -pcurve.slope * phase.sin()),
         ),
     ))?;
     let ref_direction = add(
-        scale(*direction_x, -phase.sin()),
+        scale(direction_x, -phase.sin()),
         scale(*direction_y, phase.cos()),
     );
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            point3(*center),
+            center.get(),
             vector(plane_axis),
-            vector(scale(ref_direction, radius.signum())),
-            radius.abs(),
+            vector(ref_direction),
+            radius.get(),
         )
         .ok()?,
     )))
@@ -385,49 +386,52 @@ pub(super) fn lifted_curve_geometry(
         | B5Surface::Sphere { .. } => None,
         B5Surface::Plane {
             origin,
-            direction_u,
+            frame,
             direction_v,
             ..
-        } => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            NurbsCurve::from_lanes(
-                pcurve.degree,
-                knots,
-                pcurve
-                    .control_points
-                    .iter()
-                    .map(|uv| {
-                        point3(add(
-                            *origin,
-                            add(scale(*direction_u, uv[0]), scale(*direction_v, uv[1])),
-                        ))
-                    })
-                    .collect(),
-                pcurve.weights.clone(),
-                false,
-            )
-            .ok()?,
-        ))),
+        } => {
+            let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|uv| {
+                            point3(add(
+                                origin,
+                                add(scale(direction_u, uv[0]), scale(*direction_v, uv[1])),
+                            ))
+                        })
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                )
+                .ok()?,
+            )))
+        }
         B5Surface::Cylinder {
             origin,
-            reference_x,
-            axis,
+            frame,
             radius,
             angular_scale,
             ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let first = pcurve.control_points.first()?;
+            let axis = components(frame.axis());
             let line_origin = cylinder_point(
-                *origin,
-                *reference_x,
-                *axis,
-                *radius,
+                coordinates(*origin),
+                components(frame.reference()),
+                axis,
+                radius.get(),
                 *angular_scale,
                 *first,
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     point3(line_origin),
-                    vector(*axis),
+                    vector(axis),
                 )
                 .ok()?,
             )))
@@ -460,35 +464,32 @@ pub(super) fn lifted_curve_geometry(
         }
         B5Surface::Torus {
             center,
-            direction_x,
+            frame,
             direction_y,
-            axis,
             major_radius,
             minor_radius,
             major_scale,
-            minor_scale,
             ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let u = pcurve.control_points.first()?[0];
             let angle = u / major_scale;
             let radial = add(
-                scale(*direction_x, angle.cos()),
+                scale(components(frame.reference()), angle.cos()),
                 scale(*direction_y, angle.sin()),
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point3(add(*center, scale(radial, *major_radius))),
-                    vector(cross(radial, *axis)),
-                    vector(scale(radial, minor_radius.signum())),
-                    minor_radius.abs(),
+                    point3(add(coordinates(*center), scale(radial, major_radius.get()))),
+                    vector(cross(radial, components(frame.axis()))),
+                    vector(radial),
+                    minor_radius.get(),
                 )
                 .ok()?,
             )))
         }
         B5Surface::Torus {
             center,
-            direction_x,
-            axis,
+            frame,
             major_radius,
             minor_radius,
             minor_scale,
@@ -496,12 +497,16 @@ pub(super) fn lifted_curve_geometry(
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale;
-            let signed_radius = major_radius + minor_radius * angle.cos();
+            let axis = components(frame.axis());
+            let signed_radius = major_radius.get() + minor_radius.get() * angle.cos();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
-                    vector(*axis),
-                    vector(scale(*direction_x, signed_radius.signum())),
+                    point3(add(
+                        coordinates(*center),
+                        scale(axis, minor_radius.get() * angle.sin()),
+                    )),
+                    vector(axis),
+                    vector(scale(components(frame.reference()), signed_radius.signum())),
                     signed_radius.abs(),
                 )
                 .ok()?,
@@ -528,20 +533,20 @@ pub(super) fn lifted_curve_geometry(
         }
         B5Surface::Cylinder {
             origin,
-            reference_x,
-            axis,
+            frame,
             radius,
             ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point3(add(*origin, scale(*axis, v))),
-                    vector(*axis),
-                    vector(scale(*reference_x, radius.signum())),
-                    radius.abs(),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(point3(add(
+                        coordinates(*origin),
+                        scale(components(frame.axis()), v),
+                    )))?,
+                    *frame,
+                    *radius,
+                ),
             )))
         }
         B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface)
@@ -614,8 +619,7 @@ pub(super) fn cylinder_helix(
 
     let B5Surface::Cylinder {
         origin,
-        reference_x,
-        axis,
+        frame,
         radius,
         angular_scale,
         ..
@@ -623,6 +627,12 @@ pub(super) fn cylinder_helix(
     else {
         return None;
     };
+    let (origin, reference_x, axis, radius) = (
+        coordinates(*origin),
+        components(frame.reference()),
+        components(frame.axis()),
+        radius.get(),
+    );
     if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
         return None;
     }
@@ -631,8 +641,8 @@ pub(super) fn cylinder_helix(
         return None;
     };
     let endpoints = [first, second];
-    let lifted = endpoints
-        .map(|uv| cylinder_point(*origin, *reference_x, *axis, *radius, *angular_scale, uv));
+    let lifted =
+        endpoints.map(|uv| cylinder_point(origin, reference_x, axis, radius, *angular_scale, uv));
     let forward_error = distance(lifted[0], edge_start).max(distance(lifted[1], edge_end));
     if !forward_error.is_finite() || forward_error > POINT_TOLERANCE {
         return None;
@@ -643,25 +653,25 @@ pub(super) fn cylinder_helix(
     if delta_angle == 0.0 || delta_height == 0.0 {
         return None;
     }
-    let reference_y = cross(*axis, *reference_x);
+    let reference_y = cross(axis, reference_x);
     let radial = add(
-        scale(*reference_x, angles[0].cos()),
+        scale(reference_x, angles[0].cos()),
         scale(reference_y, angles[0].sin()),
     );
-    let tangent = cross(*axis, radial);
+    let tangent = cross(axis, radial);
     let sweep = delta_angle.abs();
     let definition = ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [0.0, sweep],
             cadmpeg_ir::geometry::HelixFrame {
-                center: point3(add(*origin, scale(*axis, endpoints[0][1]))),
-                major: vector(scale(radial, *radius)),
+                center: point3(add(origin, scale(axis, endpoints[0][1]))),
+                major: vector(scale(radial, radius)),
                 minor: vector(scale(tangent, radius * delta_angle.signum())),
                 pitch: vector(scale(
-                    *axis,
+                    axis,
                     delta_height / sweep * 2.0 * std::f64::consts::PI,
                 )),
-                axis: vector(*axis),
+                axis: vector(axis),
             },
             0.0,
             None,

@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveReal};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 /// Admitted topology control bytes.
@@ -24,12 +24,11 @@ use vertex_refs::{B5VertexRef, B5Vertices};
 
 use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl};
 
-use super::vecmath::{add, cross, scale};
+use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
-use crate::math::unit_vector;
 use crate::wire;
-use crate::wire::bytes::{f64_le, read_f64_array};
+use crate::wire::bytes::{f64_le, f64_point, read_f64_array};
 
 const EPS_B5_GRAPH_GEOMETRY: f64 = 1.0e-9;
 const EPS_B5_GRAPH_DEGENERATE: f64 = 1.0e-10;
@@ -257,13 +256,15 @@ pub(in crate::families) enum B5Surface {
         /// Exact source payload.
         payload: Vec<u8>,
     },
-    /// `b5 03 27`: a plane spanned by `origin`, `direction_u`, and
-    /// `direction_v`.
+    /// `b5 03 27`: a plane spanned by `origin`, the stored first in-plane
+    /// direction and `direction_v`.
     Plane {
         /// A point on the plane.
-        origin: [f64; 3],
-        /// First in-plane unit direction.
-        direction_u: [f64; 3],
+        origin: FinitePoint3,
+        /// The unit normal `direction_u × direction_v`, normalized by its
+        /// largest component, and the stored first in-plane unit direction
+        /// `direction_u`.
+        frame: OrthonormalFrame3,
         /// Second in-plane unit direction.
         direction_v: [f64; 3],
         /// Active native U interval.
@@ -274,14 +275,13 @@ pub(in crate::families) enum B5Surface {
     /// `b5 03 28`: a cylinder with a positive radius.
     Cylinder {
         /// A point on the cylinder axis.
-        origin: [f64; 3],
-        /// Unit reference direction orthogonal to `axis`, the zero-angle
-        /// ray.
-        reference_x: [f64; 3],
-        /// Unit cylinder axis, `reference_x × stored_v` normalized.
-        axis: [f64; 3],
+        origin: FinitePoint3,
+        /// The unit cylinder axis `stored_u × stored_v`, normalized by its
+        /// largest component, and the stored unit direction `stored_u`, the
+        /// zero-angle ray.
+        frame: OrthonormalFrame3,
         /// Positive cylinder radius.
-        radius: f64,
+        radius: PositiveLength,
         /// Active native circumferential interval.
         u_range: [f64; 2],
         /// Active native axial interval.
@@ -321,15 +321,13 @@ pub(in crate::families) enum B5Surface {
     /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
     Sphere {
         /// Sphere center.
-        center: [f64; 3],
-        /// Zero-azimuth unit direction.
-        direction_x: [f64; 3],
+        center: FinitePoint3,
+        /// The polar-axis unit direction and the zero-azimuth unit direction.
+        frame: OrthonormalFrame3,
         /// Quarter-turn azimuth unit direction.
         direction_y: [f64; 3],
-        /// Polar-axis unit direction.
-        axis: [f64; 3],
         /// Positive sphere radius.
-        radius: f64,
+        radius: PositiveLength,
         /// Active azimuth interval, in radians.
         azimuth_range: [f64; 2],
         /// Active latitude interval, in radians.
@@ -342,17 +340,15 @@ pub(in crate::families) enum B5Surface {
     /// `b5 03 2b`: a torus in its two arc-length angular coordinates.
     Torus {
         /// Torus center.
-        center: [f64; 3],
-        /// Zero-major-angle direction.
-        direction_x: [f64; 3],
+        center: FinitePoint3,
+        /// The torus axis and the zero-major-angle direction.
+        frame: OrthonormalFrame3,
         /// Quarter-turn major-angle direction.
         direction_y: [f64; 3],
-        /// Torus axis.
-        axis: [f64; 3],
-        /// Major radius.
-        major_radius: f64,
-        /// Minor radius.
-        minor_radius: f64,
+        /// Positive major radius.
+        major_radius: PositiveLength,
+        /// Positive minor radius.
+        minor_radius: PositiveLength,
         /// Active major-angle interval.
         major_angular_range: [f64; 2],
         /// Full-turn major-angle chart domain.
@@ -372,19 +368,15 @@ pub(in crate::families) enum B5Surface {
         /// `object_id` of the swept [`B5Profile`].
         profile_curve: u32,
         /// A point on the revolution axis.
-        axis_origin: [f64; 3],
-        /// First transverse unit direction of the stored revolution frame.
-        reference_x: [f64; 3],
-        /// Second transverse unit direction of the stored revolution frame.
-        reference_y: [f64; 3],
-        /// Unit revolution axis.
-        axis_direction: [f64; 3],
+        axis_origin: FinitePoint3,
+        /// Unit revolution axis of the stored right-handed frame.
+        axis_direction: UnitVector3,
         /// Active parameter interval of the swept profile.
         profile_range: [f64; 2],
         /// Active native arc-length interval of the revolution.
         angular_range: [f64; 2],
         /// Positive divisor mapping native V to a revolution angle.
-        angular_scale: f64,
+        angular_scale: PositiveReal,
     },
     /// An `a8 03 34` inline-pole B-spline surface, resolved through
     /// [`crate::families::a5a8::records::a8_surfaces`] and merged into the same
@@ -2736,13 +2728,29 @@ fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool
         && dot.abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY
 }
 
-fn directions_form_right_handed_orthonormal_frame(
+/// Admit a `b5 03 2b` or `2d` frame: the two transverse directions are unit
+/// length, perpendicular, and `direction_x × direction_y` lies within `1e-12`
+/// of the axis. The frame holds the stored axis and `direction_x`.
+fn right_handed_frame(
+    axis: [f64; 3],
     direction_x: [f64; 3],
     direction_y: [f64; 3],
-    axis: [f64; 3],
-) -> bool {
-    directions_are_unit_and_orthogonal(direction_x, direction_y)
-        && distance_squared(cross(direction_x, direction_y), axis) <= 1e-24
+) -> Option<OrthonormalFrame3> {
+    OrthonormalFrame3::right_handed_euclidean_1e12(
+        UnitVector3::new(Vector3::from(axis))?,
+        ExactUnitVector3::new(direction_x)?.into(),
+        ExactUnitVector3::new(direction_y)?.into(),
+    )
+}
+
+/// Admit a `b5 03 27` or `28` frame: the two stored directions are unit
+/// length and perpendicular. The frame holds the unit normal of
+/// `first × second` and the stored `first` direction.
+fn completed_frame(first: [f64; 3], second: [f64; 3]) -> Option<OrthonormalFrame3> {
+    OrthonormalFrame3::completing_by_largest_component(
+        ExactUnitVector3::new(first)?.into(),
+        ExactUnitVector3::new(second)?.into(),
+    )
 }
 
 /// Admit a `b5 03 29` cone frame: the directions are unit length, the two
@@ -2780,14 +2788,14 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, 105)?.get(),
                 f64_le(&record.payload, 113)?.get(),
             ];
-            (directions_are_unit_and_orthogonal(direction_u, direction_v)
-                && f64_le(&record.payload, 73)?.get() == 1.0
+            let frame = completed_frame(direction_u, direction_v)?;
+            (f64_le(&record.payload, 73)?.get() == 1.0
                 && f64_le(&record.payload, 81)?.get() == 1.0
                 && u_range[0] < u_range[1]
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Plane {
-                    origin: read_f64_array::<3>(&record.payload, 1)?.map(FiniteReal::get),
-                    direction_u,
+                    origin: f64_point(&record.payload, 1)?,
+                    frame,
                     direction_v,
                     u_range,
                     v_range,
@@ -2821,9 +2829,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     .chain([angular_scale])
                     .map(f64::abs)
                     .fold(1.0, f64::max);
-            (radius > 0.0
-                && directions_are_unit_and_orthogonal(stored_u, stored_v)
-                && angular_factor > 0.0
+            let admitted_radius = PositiveLength::new(radius)?;
+            let frame = completed_frame(stored_u, stored_v)?;
+            (angular_factor > 0.0
                 && angular_scale.is_finite()
                 && f64_le(&record.payload, 121)?.get() == 1.0
                 && u_range[0] < u_range[1]
@@ -2831,10 +2839,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && u_range[1] <= chart_domain[1] + chart_tolerance
                 && v_range[0] < v_range[1])
                 .then_some(B5Surface::Cylinder {
-                    origin: read_f64_array::<3>(&record.payload, 1)?.map(FiniteReal::get),
-                    reference_x: unit_vector(stored_u)?,
-                    axis: unit_vector(cross(stored_u, stored_v))?,
-                    radius,
+                    origin: f64_point(&record.payload, 1)?,
+                    frame,
+                    radius: admitted_radius,
                     u_range,
                     v_range,
                     angular_scale,
@@ -2901,7 +2908,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x2a => {
             (record.payload.len() == 153 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let center = read_f64_array::<3>(&record.payload, 1)?.map(FiniteReal::get);
+            let center = f64_point(&record.payload, 1)?;
             let stored_x = read_f64_array::<3>(&record.payload, 25)?.map(FiniteReal::get);
             let stored_y = read_f64_array::<3>(&record.payload, 49)?.map(FiniteReal::get);
             let stored_axis = read_f64_array::<3>(&record.payload, 73)?.map(FiniteReal::get);
@@ -2911,30 +2918,32 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let azimuth_range = [azimuth_lo, azimuth_hi];
             let latitude_range = [latitude_lo, latitude_hi];
             let vector_length = |value: [f64; 3]| value[0].hypot(value[1]).hypot(value[2]);
-            let direction_x = unit_vector(stored_x)?;
-            let direction_y = unit_vector(stored_y)?;
-            let axis = unit_vector(stored_axis)?;
+            let direction_x =
+                UnitVector3::normalized_by_largest_component(Vector3::from(stored_x))?;
+            let direction_y =
+                UnitVector3::normalized_by_largest_component(Vector3::from(stored_y))?;
+            let axis = UnitVector3::normalized_by_largest_component(Vector3::from(stored_axis))?;
             let expected_chart_angle =
                 (azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI;
             let expected_chart_origin = construction_radius * expected_chart_angle;
             let chart_origin_tolerance =
                 2.0 * f64::EPSILON * chart_origin.abs().max(expected_chart_origin.abs()).max(1.0);
-            (radius > 0.0
-                && construction_radius > 0.0
+            let admitted_radius = PositiveLength::new(radius)?;
+            let frame =
+                OrthonormalFrame3::right_handed_euclidean_1e12(axis, direction_x, direction_y)?;
+            (construction_radius > 0.0
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && expected_chart_origin.is_finite()
                 && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
                 && [stored_x, stored_y, stored_axis].iter().all(|direction| {
                     ((vector_length(*direction) / radius) - 1.0).abs()
                         <= EPS_B5_GRAPH_EXACT_GEOMETRY
-                })
-                && directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis))
+                }))
             .then_some(B5Surface::Sphere {
                 center,
-                direction_x,
-                direction_y,
-                axis,
-                radius,
+                frame,
+                direction_y: components(&direction_y),
+                radius: admitted_radius,
                 azimuth_range,
                 latitude_range,
                 construction_radius,
@@ -2969,21 +2978,20 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             ];
             let major_scale = f64_le(&record.payload, 177)?.get();
             let minor_scale = f64_le(&record.payload, 185)?.get();
-            (directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis)
-                && major_radius > 0.0
-                && minor_radius > 0.0
-                && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
+            let frame = right_handed_frame(axis, direction_x, direction_y)?;
+            let admitted_major_radius = PositiveLength::new(major_radius)?;
+            let admitted_minor_radius = PositiveLength::new(minor_radius)?;
+            (periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
                 && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && major_scale > 0.0
                 && minor_scale > 0.0)
                 .then_some(())?;
             Some(B5Surface::Torus {
-                center: read_f64_array::<3>(&record.payload, 1)?.map(FiniteReal::get),
-                direction_x,
+                center: f64_point(&record.payload, 1)?,
+                frame,
                 direction_y,
-                axis,
-                major_radius,
-                minor_radius,
+                major_radius: admitted_major_radius,
+                minor_radius: admitted_minor_radius,
                 major_angular_range,
                 major_angular_domain,
                 minor_angular_range,
@@ -3006,7 +3014,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, position.checked_add(112)?)?.get(),
                 f64_le(&record.payload, position.checked_add(120)?)?.get(),
             ];
-            let angular_scale = f64_le(&record.payload, position.checked_add(130)?)?.get();
+            let angular_scale =
+                PositiveReal::new(f64_le(&record.payload, position.checked_add(130)?)?.get())?;
             let angular_half_turn = f64_le(&record.payload, position.checked_add(163)?)?.get();
             let reference_x = read_f64_array::<3>(&record.payload, position.checked_add(24)?)?
                 .map(FiniteReal::get);
@@ -3014,14 +3023,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 .map(FiniteReal::get);
             let axis_direction = read_f64_array::<3>(&record.payload, position.checked_add(72)?)?
                 .map(FiniteReal::get);
-            (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05])
-                && angular_scale > 0.0
-                && directions_form_right_handed_orthonormal_frame(
-                    reference_x,
-                    reference_y,
-                    axis_direction,
-                ))
-            .then_some(())?;
+            (record.payload.get(position + 128..position + 130) == Some(&[0x05, 0x05]))
+                .then_some(())?;
+            let frame = right_handed_frame(axis_direction, reference_x, reference_y)?;
             (angular_range[0] < angular_range[1]
                 && angular_range[0] >= 0.0
                 && angular_range[1] <= 2.0 * angular_half_turn
@@ -3030,13 +3034,12 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && f64_le(&record.payload, position + 146)?.get() == 1.0
                 && f64_le(&record.payload, position + 154)?.get() == 0.0
                 && record.payload.get(position + 162) == Some(&0x01)
-                && angular_half_turn.to_bits() == (std::f64::consts::PI * angular_scale).to_bits())
+                && angular_half_turn.to_bits()
+                    == (std::f64::consts::PI * angular_scale.get()).to_bits())
             .then_some(B5Surface::Revolution {
                 profile_curve,
-                axis_origin: read_f64_array::<3>(&record.payload, position)?.map(FiniteReal::get),
-                reference_x,
-                reference_y,
-                axis_direction,
+                axis_origin: f64_point(&record.payload, position)?,
+                axis_direction: *frame.axis(),
                 profile_range,
                 angular_range,
                 angular_scale,
@@ -3302,25 +3305,18 @@ fn analytic_offset_magnitude_agrees(
         (
             B5Surface::Plane {
                 origin: carrier_origin,
-                direction_u: carrier_u,
-                direction_v: carrier_v,
+                frame: carrier_frame,
                 ..
             },
             B5Surface::Plane {
                 origin: source_origin,
-                direction_u: source_u,
-                direction_v: source_v,
+                frame: source_frame,
                 ..
             },
         ) => {
-            let (Some(carrier_normal), Some(source_normal)) = (
-                unit_vector(cross(*carrier_u, *carrier_v)),
-                unit_vector(cross(*source_u, *source_v)),
-            ) else {
-                return false;
-            };
-            let delta = difference(*carrier_origin, *source_origin);
-            parallel(carrier_normal, source_normal)
+            let source_normal = components(source_frame.axis());
+            let delta = difference(coordinates(*carrier_origin), coordinates(*source_origin));
+            parallel(components(carrier_frame.axis()), source_normal)
                 && projected_distance_close(
                     dot(delta, source_normal).abs(),
                     distance.abs(),
@@ -3330,21 +3326,25 @@ fn analytic_offset_magnitude_agrees(
         (
             B5Surface::Cylinder {
                 origin: carrier_origin,
-                axis: carrier_axis,
+                frame: carrier_frame,
                 radius: carrier_radius,
                 ..
             },
             B5Surface::Cylinder {
                 origin: source_origin,
-                axis: source_axis,
+                frame: source_frame,
                 radius: source_radius,
                 ..
             },
         ) => {
-            let delta = difference(*carrier_origin, *source_origin);
-            parallel(*carrier_axis, *source_axis)
-                && collinear(delta, *source_axis)
-                && relative_close((carrier_radius - source_radius).abs(), distance.abs())
+            let source_axis = components(source_frame.axis());
+            let delta = difference(coordinates(*carrier_origin), coordinates(*source_origin));
+            parallel(components(carrier_frame.axis()), source_axis)
+                && collinear(delta, source_axis)
+                && relative_close(
+                    (carrier_radius.get() - source_radius.get()).abs(),
+                    distance.abs(),
+                )
         }
         (
             B5Surface::Sphere {
@@ -3358,38 +3358,49 @@ fn analytic_offset_magnitude_agrees(
                 ..
             },
         ) => {
+            let (carrier_radius, source_radius) = (carrier_radius.get(), source_radius.get());
             let geometric_scale = carrier_radius
                 .abs()
                 .max(source_radius.abs())
                 .max(distance.abs());
-            same_point(*carrier_center, *source_center, geometric_scale)
-                && relative_close((carrier_radius - source_radius).abs(), distance.abs())
+            same_point(
+                coordinates(*carrier_center),
+                coordinates(*source_center),
+                geometric_scale,
+            ) && relative_close((carrier_radius - source_radius).abs(), distance.abs())
         }
         (
             B5Surface::Torus {
                 center: carrier_center,
-                axis: carrier_axis,
+                frame: carrier_frame,
                 major_radius: carrier_major,
                 minor_radius: carrier_minor,
                 ..
             },
             B5Surface::Torus {
                 center: source_center,
-                axis: source_axis,
+                frame: source_frame,
                 major_radius: source_major,
                 minor_radius: source_minor,
                 ..
             },
         ) => {
+            let (carrier_major, source_major) = (carrier_major.get(), source_major.get());
+            let (carrier_minor, source_minor) = (carrier_minor.get(), source_minor.get());
             let geometric_scale = carrier_major
                 .abs()
                 .max(source_major.abs())
                 .max(carrier_minor.abs())
                 .max(source_minor.abs())
                 .max(distance.abs());
-            same_point(*carrier_center, *source_center, geometric_scale)
-                && parallel(*carrier_axis, *source_axis)
-                && relative_close(*carrier_major, *source_major)
+            same_point(
+                coordinates(*carrier_center),
+                coordinates(*source_center),
+                geometric_scale,
+            ) && parallel(
+                components(carrier_frame.axis()),
+                components(source_frame.axis()),
+            ) && relative_close(carrier_major, source_major)
                 && relative_close((carrier_minor - source_minor).abs(), distance.abs())
         }
         _ => false,
@@ -3927,14 +3938,14 @@ fn supported_surface_parameters_match_carrier(
                 ..
             },
             B5Surface::Cylinder { radius, .. },
-        ) => relative_close(*construction_radius, *radius),
+        ) => relative_close(*construction_radius, radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
                 ..
             },
             B5Surface::Torus { minor_radius, .. },
-        ) => relative_close(*construction_radius, *minor_radius),
+        ) => relative_close(*construction_radius, minor_radius.get()),
         (
             B5SupportedSurfaceParameters::Radius {
                 construction_radius,
@@ -3990,35 +4001,42 @@ fn lift_pcurve_endpoints(
         | B5Surface::RollingBall { .. } => None,
         B5Surface::Plane {
             origin,
-            direction_u,
+            frame,
             direction_v,
             ..
-        } => Some(
-            endpoints
-                .map(|[u, v]| add(*origin, add(scale(*direction_u, u), scale(*direction_v, v)))),
-        ),
+        } => {
+            let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
+            Some(
+                endpoints
+                    .map(|[u, v]| add(origin, add(scale(direction_u, u), scale(*direction_v, v)))),
+            )
+        }
         B5Surface::Cylinder {
             origin,
-            reference_x,
-            axis,
+            frame,
             radius,
             angular_scale,
             ..
         } => {
-            let reference_y = cross(*axis, *reference_x);
+            let (origin, axis, reference_x) = (
+                coordinates(*origin),
+                components(frame.axis()),
+                components(frame.reference()),
+            );
+            let reference_y = cross(axis, reference_x);
             Some(endpoints.map(|[u, v]| {
                 let angle = u / angular_scale;
                 add(
-                    *origin,
+                    origin,
                     add(
                         scale(
                             add(
-                                scale(*reference_x, angle.cos()),
+                                scale(reference_x, angle.cos()),
                                 scale(reference_y, angle.sin()),
                             ),
-                            *radius,
+                            radius.get(),
                         ),
-                        scale(*axis, v),
+                        scale(axis, v),
                     ),
                 )
             }))
@@ -4050,29 +4068,36 @@ fn lift_pcurve_endpoints(
         })),
         B5Surface::Torus {
             center,
-            direction_x,
+            frame,
             direction_y,
-            axis,
             major_radius,
             minor_radius,
             major_scale,
             minor_scale,
             ..
-        } => Some(endpoints.map(|[u, v]| {
-            let major_angle = u / major_scale;
-            let minor_angle = v / minor_scale;
-            let radial = add(
-                scale(*direction_x, major_angle.cos()),
-                scale(*direction_y, major_angle.sin()),
+        } => {
+            let (center, axis, direction_x) = (
+                coordinates(*center),
+                components(frame.axis()),
+                components(frame.reference()),
             );
-            add(
-                *center,
+            let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
+            Some(endpoints.map(|[u, v]| {
+                let major_angle = u / major_scale;
+                let minor_angle = v / minor_scale;
+                let radial = add(
+                    scale(direction_x, major_angle.cos()),
+                    scale(*direction_y, major_angle.sin()),
+                );
                 add(
-                    scale(radial, major_radius + minor_radius * minor_angle.cos()),
-                    scale(*axis, minor_radius * minor_angle.sin()),
-                ),
-            )
-        })),
+                    center,
+                    add(
+                        scale(radial, major_radius + minor_radius * minor_angle.cos()),
+                        scale(axis, minor_radius * minor_angle.sin()),
+                    ),
+                )
+            }))
+        }
         B5Surface::Sphere { .. } => None,
         B5Surface::Revolution {
             profile_curve,
@@ -4114,7 +4139,12 @@ fn lift_pcurve_endpoints(
                         )
                     }
                 };
-                rotate_about_axis(point, *axis_origin, *axis_direction, v / angular_scale)
+                rotate_about_axis(
+                    point,
+                    coordinates(*axis_origin),
+                    components(axis_direction),
+                    v / angular_scale.get(),
+                )
             }))
         }
         B5Surface::Nurbs(surface) => Some([
@@ -4511,9 +4541,8 @@ fn sphere_great_circle_point(
 ) -> Option<[f64; 3]> {
     let B5Surface::Sphere {
         center,
-        direction_x,
+        frame,
         direction_y,
-        axis,
         radius,
         construction_radius,
         ..
@@ -4521,6 +4550,12 @@ fn sphere_great_circle_point(
     else {
         return None;
     };
+    let (center, direction_x, axis, radius) = (
+        coordinates(*center),
+        components(frame.reference()),
+        components(frame.axis()),
+        radius.get(),
+    );
     let [start, end] = pcurve.chart_bounds[0];
     if ![start, end, parameter].into_iter().all(f64::is_finite)
         || start >= end
@@ -4532,8 +4567,6 @@ fn sphere_great_circle_point(
         || !pcurve.chart_shift.is_finite()
         || !pcurve.slope.is_finite()
         || !pcurve.phase.is_finite()
-        || !radius.is_finite()
-        || *radius <= 0.0
     {
         return None;
     }
