@@ -391,7 +391,16 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     curve_id,
-                    (axis.origin.get(), axis.direction.get()),
+                    (
+                        axis.origin,
+                        cadmpeg_ir::units::UnitVector3::new(axis.direction.get()).ok_or_else(
+                            || {
+                                cadmpeg_core::CodecError::malformed(format!(
+                                    "feature {feature_id} revolution axis direction does not have unit length"
+                                ))
+                            },
+                        )?,
+                    ),
                     [0.0, std::f64::consts::TAU],
                     None,
                     [

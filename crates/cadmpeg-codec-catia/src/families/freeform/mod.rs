@@ -186,33 +186,36 @@ pub(super) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                directrix,
-                (origin, axis),
-                [
-                    revolution.angular_range[0] / revolution.angular_scale.get(),
-                    revolution.angular_range[1] / revolution.angular_scale.get(),
-                ],
-                Some(revolution.angular_range),
-                Some(revolution.profile_range.get()),
-                false,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
-            )
-            .map(|admitted_payload| {
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!(
-                            "catia",
-                            "consolidated",
-                            "surface-revolution"
+            cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(origin, axis)
+                .and_then(|axis| {
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        directrix,
+                        axis,
+                        [
+                            revolution.angular_range[0] / revolution.angular_scale.get(),
+                            revolution.angular_range[1] / revolution.angular_scale.get(),
+                        ],
+                        Some(revolution.angular_range),
+                        Some(revolution.profile_range.get()),
+                        false,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                })
+                .map(|admitted_payload| {
+                    ProceduralSurface::new(
+                        ProceduralSurfaceId::compose(
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "consolidated",
+                                "surface-revolution"
+                            ),
+                            index,
                         ),
-                        index,
-                    ),
-                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                    None,
-                )
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                        None,
+                    )
+                })
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {

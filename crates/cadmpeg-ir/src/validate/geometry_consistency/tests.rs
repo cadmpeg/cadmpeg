@@ -956,7 +956,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.model.curves[0].id.clone(), (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };

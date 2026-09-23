@@ -2100,7 +2100,7 @@ fn try_decode_standard_population(
                 (
                     "object_stream_b5_03_2d",
                     tag,
-                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (revolution.axis_origin, revolution.axis_direction), revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
+                    ProceduralSurfaceDefinition::Revolution(cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(revolution.axis_origin, revolution.axis_direction).ok()?, revolution.angular_interval, Some(revolution.angular_parameter_interval), Some(revolution.parameter_interval), false, cadmpeg_ir::geometry::CacheContract::from_form(None)).ok()?),
                     Exactness::Derived,
                 )
             }

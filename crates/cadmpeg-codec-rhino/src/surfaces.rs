@@ -166,16 +166,23 @@ impl DecodedProceduralSurface {
                 transposed,
             } => {
                 let [directrix] = *children;
+                let directrix = commit_child(0, "directrix", directrix)?;
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        commit_child(0, "directrix", directrix)?,
-                        (axis_origin, axis_direction),
-                        angular_interval,
-                        None,
-                        Some(parameter_interval),
-                        transposed,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                        axis_origin,
+                        axis_direction,
                     )
+                    .and_then(|axis| {
+                        cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                            directrix,
+                            axis,
+                            angular_interval,
+                            None,
+                            Some(parameter_interval),
+                            transposed,
+                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        )
+                    })
                     .map_err(reject_payload)?,
                 )
             }

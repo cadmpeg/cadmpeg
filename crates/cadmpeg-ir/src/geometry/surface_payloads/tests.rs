@@ -1040,17 +1040,20 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
 #[test]
 fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
     use super::{
-        DeformableSurfacePayload, DeformableSurfacePayloadWire, ExactSurfacePayload,
-        ExactSurfacePayloadWire, ExtrusionSurfaceConstruction, ExtrusionSurfaceConstructionWire,
-        RevolutionSurfaceConstruction, RevolutionSurfaceConstructionWire, SumSurfaceConstruction,
-        SumSurfaceConstructionWire, TaperSurfaceConstruction, TaperSurfaceConstructionWire,
+        admit_revolution_axis, DeformableSurfacePayload, DeformableSurfacePayloadWire,
+        ExactSurfacePayload, ExactSurfacePayloadWire, ExtrusionSurfaceConstruction,
+        ExtrusionSurfaceConstructionWire, RevolutionSurfaceConstruction,
+        RevolutionSurfaceConstructionWire, SumSurfaceConstruction, SumSurfaceConstructionWire,
+        TaperSurfaceConstruction, TaperSurfaceConstructionWire,
     };
+    use crate::features::FinitePoint3;
     use crate::geometry::{
         CacheContract, DeformableSurfaceConstruction, DeformableSurfaceData, ExactSpline,
         RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization, TaperSurfaceKind,
     };
     use crate::ids::CurveId;
     use crate::math::{Point3, Vector3};
+    use crate::units::UnitVector3;
 
     // One value per float field family the shared revision-gated form carries.
     #[derive(Clone, Copy)]
@@ -1148,7 +1151,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
     let revolution = |fields: Fields| {
         RevolutionSurfaceConstruction::try_new(
             curve(),
-            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            (FinitePoint3::ZERO, UnitVector3::Z_AXIS),
             [0.0, 1.0],
             None,
             None,
@@ -1311,18 +1314,12 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
             }
         }
 
-        // The revolution axis is stored raw rather than in a checked carrier,
-        // and no interval rule reads it.
-        assert!(RevolutionSurfaceConstruction::try_new(
-            curve(),
-            (Point3::new(value, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
-            [0.0, 1.0],
-            None,
-            None,
-            false,
-            cache(admitted),
-        )
-        .is_err());
+        // The revolution axis is admitted before `try_new`, which takes the
+        // checked axis types, and no interval rule reads it.
+        assert!(
+            admit_revolution_axis(Point3::new(value, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0))
+                .is_err()
+        );
         assert!(
             RevolutionSurfaceConstruction::try_from(RevolutionSurfaceConstructionWire {
                 directrix: curve(),
@@ -1628,4 +1625,127 @@ fn an_axis_revolution_replaces_its_origin_and_keeps_the_admitted_direction() {
         [moved.x, moved.y, moved.z].map(f64::to_bits)
     );
     assert_eq!(*payload.axis_direction(), direction);
+}
+
+#[test]
+fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
+    use super::{
+        admit_revolution_axis, RevolutionSurfaceConstruction, RevolutionSurfaceConstructionWire,
+    };
+    use crate::features::FinitePoint3;
+    use crate::geometry::{CacheContract, ProceduralSurfaceDefinition};
+    use crate::ids::CurveId;
+    use crate::math::{Point3, Vector3};
+    use crate::units::UnitVector3;
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let wire = |axis_origin: Point3, axis_direction: Vector3| RevolutionSurfaceConstructionWire {
+        directrix: directrix.clone(),
+        axis_origin,
+        axis_direction,
+        angular_interval: [0.0, 1.0],
+        angular_parameter_interval: None,
+        parameter_interval: None,
+        transposed: false,
+        cache: CacheContract::from_form(None),
+    };
+    let admitted = RevolutionSurfaceConstruction::try_new(
+        directrix.clone(),
+        (FinitePoint3::ZERO, UnitVector3::Z_AXIS),
+        [0.0, 1.0],
+        None,
+        None,
+        false,
+        CacheContract::from_form(None),
+    )
+    .unwrap();
+    let admitted_wire =
+        serde_json::to_value(ProceduralSurfaceDefinition::Revolution(admitted.clone())).unwrap();
+    let origin = Point3::new(0.0, 0.0, 0.0);
+
+    for direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 2.0),
+        Vector3::new(0.0, 0.0, 1.0 + 1.0e-6),
+        Vector3::new(0.0, f64::NAN, 1.0),
+        Vector3::new(0.0, 0.0, f64::INFINITY),
+    ] {
+        // The raw route into `try_new` and both deserialization routes refuse
+        // a direction whose norm is not within the unit tolerance.
+        assert!(admit_revolution_axis(origin, direction).is_err());
+        assert!(RevolutionSurfaceConstruction::try_from(wire(origin, direction)).is_err());
+        let mut definition = admitted_wire.clone();
+        definition["axis_direction"] = serde_json::json!([direction.x, direction.y, direction.z]);
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(definition).is_err());
+    }
+    for axis_origin in [
+        Point3::new(f64::NAN, 0.0, 0.0),
+        Point3::new(0.0, f64::NEG_INFINITY, 0.0),
+    ] {
+        assert!(admit_revolution_axis(axis_origin, Vector3::new(0.0, 0.0, 1.0)).is_err());
+        assert!(RevolutionSurfaceConstruction::try_from(wire(
+            axis_origin,
+            Vector3::new(0.0, 0.0, 1.0)
+        ))
+        .is_err());
+    }
+
+    // A direction within the tolerance is stored as given, not renormalized.
+    let near_unit = Vector3::new(0.0, 0.0, 1.0 + 1.0e-10);
+    let payload = RevolutionSurfaceConstruction::try_from(wire(origin, near_unit)).unwrap();
+    assert_eq!(payload.axis_direction().z.to_bits(), near_unit.z.to_bits());
+    assert_eq!(
+        payload,
+        RevolutionSurfaceConstruction::try_new(
+            directrix,
+            admit_revolution_axis(origin, near_unit).unwrap(),
+            [0.0, 1.0],
+            None,
+            None,
+            false,
+            CacheContract::from_form(None),
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::from_value::<ProceduralSurfaceDefinition>(admitted_wire).unwrap(),
+        ProceduralSurfaceDefinition::Revolution(admitted)
+    );
+}
+
+#[test]
+fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
+    use super::RevolutionSurfaceConstruction;
+    use crate::features::FinitePoint3;
+    use crate::geometry::CacheContract;
+    use crate::ids::CurveId;
+    use crate::math::Point3;
+    use crate::units::UnitVector3;
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let build = |origin: FinitePoint3| {
+        RevolutionSurfaceConstruction::try_new(
+            directrix.clone(),
+            (origin, UnitVector3::Y_AXIS),
+            [0.0, 2.0],
+            Some([1.0, 3.0]),
+            Some([-1.0, 4.0]),
+            true,
+            CacheContract::from_form(None),
+        )
+        .unwrap()
+    };
+    let mut payload = build(FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap());
+    let moved = FinitePoint3::new(Point3::new(-0.0, f64::MAX, 5.0e-324)).unwrap();
+    payload.set_axis_origin(moved);
+    assert_eq!(payload, build(moved));
+    assert_eq!(
+        [
+            payload.axis_origin().x,
+            payload.axis_origin().y,
+            payload.axis_origin().z
+        ]
+        .map(f64::to_bits),
+        [moved.x, moved.y, moved.z].map(f64::to_bits)
+    );
 }

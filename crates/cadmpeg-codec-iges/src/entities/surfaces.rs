@@ -28,6 +28,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, PositiveLength};
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1722,8 +1723,9 @@ pub(super) fn project(
             ));
             continue;
         };
-        let axis_origin = line_curve.origin().get();
-        let axis_direction = *line_curve.direction().as_raw();
+        let admitted_axis = (line_curve.origin(), line_curve.direction());
+        let axis_origin = admitted_axis.0.get();
+        let axis_direction = *admitted_axis.1.as_raw();
         let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
             losses.push(entity_loss(
                 entry,
@@ -1759,8 +1761,7 @@ pub(super) fn project(
             };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let mut procedural_directrix = generatrix_id.clone();
-            let mut procedural_axis_origin = axis_origin;
-            let mut procedural_axis_direction = axis_direction;
+            let mut procedural_axis = admitted_axis;
             if entry.transform != 0 {
                 let Some(orientation) = similarity_orientation(transform) else {
                     losses.push(entity_loss(
@@ -1785,10 +1786,13 @@ pub(super) fn project(
                     )),
                     source_object: Some(source_object(entry)?),
                 });
-                procedural_axis_origin = transform.apply_point(axis_origin).ok_or_else(|| {
+                let placed_origin = admitted_axis.0.transformed(transform).ok_or_else(|| {
                     CodecError::malformed("placement produces a non-finite revolution origin")
                 })?;
-                let Some(direction) = transform.apply_vector(axis_direction).and_then(unit_vector)
+                let Some(placed_direction) = transform
+                    .apply_vector(axis_direction)
+                    .and_then(unit_vector)
+                    .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -1796,7 +1800,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                procedural_axis_direction = direction.scale(orientation);
+                procedural_axis = (placed_origin, placed_direction);
             }
             let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
             let procedural_id =
@@ -1814,7 +1818,7 @@ pub(super) fn project(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
-                    (procedural_axis_origin, procedural_axis_direction),
+                    procedural_axis,
                     [start_angle, end_angle],
                     None,
                     Some(source_interval),
@@ -1952,8 +1956,7 @@ pub(super) fn project(
         });
         let mut procedural_directrix =
             crate::ids::curve(&crate::ids::Stem::directory(generatrix_sequence));
-        let mut procedural_axis_origin = axis_origin;
-        let mut procedural_axis_direction = axis_direction;
+        let mut procedural_axis = admitted_axis;
         let procedural_is_exact = if entry.transform == 0 {
             true
         } else if let Some(orientation) = similarity_orientation(transform) {
@@ -1988,10 +1991,13 @@ pub(super) fn project(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry)?),
             });
-            procedural_axis_origin = transform.apply_point(axis_origin).ok_or_else(|| {
+            let placed_origin = admitted_axis.0.transformed(transform).ok_or_else(|| {
                 CodecError::malformed("placement produces a non-finite revolution origin")
             })?;
-            let Some(direction) = transform.apply_vector(axis_direction).and_then(unit_vector)
+            let Some(placed_direction) = transform
+                .apply_vector(axis_direction)
+                .and_then(unit_vector)
+                .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
                 losses.push(entity_loss(
                     entry,
@@ -1999,7 +2005,7 @@ pub(super) fn project(
                 ));
                 continue;
             };
-            procedural_axis_direction = direction.scale(orientation);
+            procedural_axis = (placed_origin, placed_direction);
             true
         } else {
             false
@@ -2009,7 +2015,7 @@ pub(super) fn project(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
-                    (procedural_axis_origin, procedural_axis_direction),
+                    procedural_axis,
                     [start_angle, end_angle],
                     None,
                     Some(source_interval),
