@@ -616,12 +616,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     axis_dir,
                     angle,
                 } => {
-                    if !angle.get().is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite face rotation angle",
-                            feature.id
-                        )));
-                    }
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Rotate".into());
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisOrigin"),
@@ -683,12 +677,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             match rotation {
                 Some(rotation) => {
-                    if !rotation.angle.get().is_finite() || !rotation.origin.is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has invalid body rotation",
-                            feature.id
-                        )));
-                    }
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("RotationOrigin"),
                         format_point3_mm(rotation.origin.get()),
@@ -741,12 +729,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved dome construction",
-                    feature.id
-                )));
-            }
-            if height.is_some_and(|height| !height.get().is_finite()) {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has a non-finite dome height",
                     feature.id
                 )));
             }
@@ -818,12 +800,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match mode {
                 FlexMode::Unresolved { .. } => {}
                 FlexMode::Bending { angle } => {
-                    if !angle.get().is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite flex angle",
-                            feature.id
-                        )));
-                    }
                     parameters.remove("Factor");
                     parameters.remove("Distance");
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Bending".into());
@@ -833,12 +809,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 FlexMode::Twisting { angle } => {
-                    if !angle.get().is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite flex angle",
-                            feature.id
-                        )));
-                    }
                     parameters.remove("Factor");
                     parameters.remove("Distance");
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Twisting".into());
@@ -857,12 +827,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 FlexMode::Stretching { distance } => {
-                    if !distance.get().is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite flex distance",
-                            feature.id
-                        )));
-                    }
                     parameters.remove("Angle");
                     parameters.remove("Factor");
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Stretching".into());
@@ -897,9 +861,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let center_valid = center.as_ref().is_none_or(|center| match center {
-                ScaleCenter::Point(point) => point.is_finite(),
                 ScaleCenter::Native(reference) => !reference.is_empty(),
-                ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
+                ScaleCenter::Point(_) | ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
             });
             let resolved_factors = factors.resolved();
             if existing.is_none()

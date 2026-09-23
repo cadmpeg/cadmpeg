@@ -470,8 +470,8 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
             vertex,
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
-        AngularTermination::Angle { angle } => angle.get().is_finite(),
-        AngularTermination::ThroughAll {}
+        AngularTermination::Angle { .. }
+        | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {} => true,

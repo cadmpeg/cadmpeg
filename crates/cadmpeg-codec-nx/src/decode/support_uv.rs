@@ -419,13 +419,6 @@ pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> boo
                 || missing_support_parameter(point.u)
                 || missing_support_parameter(point.v)
         }),
-        Some(PcurveGeometry::Line(line_pcurve)) => {
-            let origin = *line_pcurve.origin();
-            let direction = *line_pcurve.direction();
-            [origin, direction]
-                .into_iter()
-                .any(|point| !point.is_finite())
-        }
         Some(_) => false,
     }
 }
@@ -1497,7 +1490,7 @@ pub(super) fn blend_spine_cache_fit_tolerance_with_index(
                 .and_then(|procedurals| procedurals.first().copied())
                 .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
         })
-        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .filter(|tolerance| *tolerance > 0.0)
         .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
 }
 

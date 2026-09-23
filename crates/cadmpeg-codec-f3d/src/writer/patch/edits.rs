@@ -3429,19 +3429,14 @@ pub(super) fn validate_procedural_surface_edits(
                             "F3D extrusion native position is missing: {id}"
                         ))
                     })?;
-                    if !interval.into_iter().all(f64::is_finite) || interval[0] >= interval[1] {
+                    if interval[0] >= interval[1] {
                         return Err(CodecError::malformed(format_args!(
                             "F3D extrusion interval must be finite and ordered: {id}"
                         )));
                     }
-                    if !after_direction.is_finite() || after_direction.norm() == 0.0 {
+                    if after_direction.norm() == 0.0 {
                         return Err(CodecError::malformed(format_args!(
                             "F3D extrusion direction must be finite and nonzero: {id}"
-                        )));
-                    }
-                    if !position.is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "F3D extrusion native position must be finite: {id}"
                         )));
                     }
                     (before_parameter_interval != after_parameter_interval
@@ -3519,7 +3514,7 @@ pub(super) fn validate_procedural_surface_fit_edits(
                 "cannot remove F3D procedural-surface fit tolerance: {id}"
             ))
         })?;
-        if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+        if before.cache_fit_tolerance().is_none() {
             return Err(CodecError::malformed(format_args!(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
@@ -3762,7 +3757,7 @@ pub(super) fn validate_procedural_curve_edits(
                     "cannot remove F3D procedural-curve fit tolerance: {id}"
                 ))
             })?;
-            if before.cache_fit_tolerance().is_none() || !tolerance.is_finite() || tolerance < 0.0 {
+            if before.cache_fit_tolerance().is_none() {
                 return Err(CodecError::malformed(format_args!(
                     "F3D procedural-curve fit tolerance must replace a finite nonnegative value: {id}"
                 )));

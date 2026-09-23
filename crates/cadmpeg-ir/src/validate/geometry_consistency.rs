@@ -322,9 +322,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .filter_map(|curve| {
             Some((
                 ir.model.procedural_curve_owner(&curve.id)?.as_str(),
-                curve
-                    .cache_fit_tolerance()
-                    .filter(|value| value.is_finite()),
+                curve.cache_fit_tolerance(),
             ))
         })
         .collect::<HashMap<_, _>>();

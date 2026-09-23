@@ -327,12 +327,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
             }
             if let Some(draft) = first_draft {
-                if !draft.get().is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "SLDPRT feature {} has a non-finite extrusion draft",
-                        feature.id
-                    )));
-                }
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Draft"),
                     format_angle_rad(draft.get()),
@@ -589,12 +583,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     position,
                     direction,
                 }] => {
-                    if !position.is_finite() {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has a non-finite hole position",
-                            feature.id
-                        )));
-                    }
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Position"),
                         format_point3_mm(position.get()),

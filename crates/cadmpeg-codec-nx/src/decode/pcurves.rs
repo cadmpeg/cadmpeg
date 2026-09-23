@@ -836,16 +836,8 @@ fn reverse_pcurve_over_range(
                     .map(PcurveGeometry::Offset),
             )
         }
-        PcurveGeometry::Parabola(parabola_pcurve)
-            if {
-                let focal_distance = parabola_pcurve.focal_distance();
-                reflection != 0.0
-                    && start.is_finite()
-                    && end.is_finite()
-                    && start < end
-                    && focal_distance.is_finite()
-                    && focal_distance != 0.0
-            } =>
+        PcurveGeometry::Parabola(_)
+            if reflection != 0.0 && start.is_finite() && end.is_finite() && start < end =>
         {
             let (Some(first), Some(last), Some(tangent)) = (
                 pcurve_uv(pcurve, end),
@@ -985,9 +977,8 @@ fn reverse_analytic_pcurve_over_range(
             let plane_slope = spherical_great_circle_pcurve.plane_slope();
             let reversed_origin = azimuth_origin + azimuth_rate * reflection;
             let reversed_rate = -azimuth_rate;
-            [reversed_origin, reversed_rate, plane_phase, plane_slope]
-                .into_iter()
-                .all(f64::is_finite)
+            reversed_origin
+                .is_finite()
                 .then_some(PcurveGeometry::SphericalGreatCircle(
                     cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
                         reversed_origin,

@@ -205,9 +205,6 @@ pub(crate) fn reverse_pcurve_geometry(
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin();
             let direction = line_pcurve.direction();
-            if !origin.is_finite() || !direction.is_finite() {
-                return None;
-            }
             let origin = Point2::new(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
@@ -539,7 +536,6 @@ pub(crate) fn circular_helix_cache(
     if !readable_range(*angle_range, true, refusal, record) {
         return None;
     }
-    let center = helix_payload.center();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -550,11 +546,6 @@ pub(crate) fn circular_helix_cache(
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
     let pitch_norm = pitch.x.hypot(pitch.y).hypot(pitch.z);
-    let frame_finite = center.is_finite()
-        && major.is_finite()
-        && minor.is_finite()
-        && pitch.is_finite()
-        && axis.is_finite();
     let normalized_dot = |left: &Vector3, right: &Vector3| {
         (left.x / left.x.hypot(left.y).hypot(left.z))
             * (right.x / right.x.hypot(right.y).hypot(right.z))
@@ -565,7 +556,6 @@ pub(crate) fn circular_helix_cache(
     };
     if !requested_tolerance.is_finite()
         || requested_tolerance <= 0.0
-        || !frame_finite
         || !radius.is_finite()
         || radius <= 0.0
         || !minor_radius.is_finite()
@@ -686,10 +676,7 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
 
-    if !angle.is_finite()
-        || !angle_range.iter().copied().all(f64::is_finite)
-        || angle_range[0] >= angle_range[1]
-    {
+    if !angle.is_finite() || angle_range[0] >= angle_range[1] {
         return None;
     }
     let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;

@@ -106,12 +106,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let parent_sources = self.parent_sources;
         Ok({
-            if !distance.get().is_finite() {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has a non-finite reference-plane offset",
-                    feature.id
-                )));
-            }
             if existing.is_some_and(|record| !is_offset_plane(record)) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
