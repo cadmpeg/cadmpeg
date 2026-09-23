@@ -323,7 +323,14 @@ pub(in super::super) fn schema_feature_definition(
                                 drilled_placement.map_or(
                                     (None, None, None, None, None, None),
                                     |(position, direction)| {
-                                        (None, Some(position), Some(direction), None, None, None)
+                                        (
+                                            None,
+                                            cadmpeg_ir::features::FinitePoint3::new(position),
+                                            cadmpeg_ir::features::FeatureDirection3::new(direction),
+                                            None,
+                                            None,
+                                            None,
+                                        )
                                     },
                                 )
                             },
@@ -331,7 +338,9 @@ pub(in super::super) fn schema_feature_definition(
                                 (
                                     Some(face_selection(entry_surface_id)),
                                     None,
-                                    Some(Vector3::from(direction)),
+                                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(
+                                        direction,
+                                    )),
                                     None,
                                     Some(extent),
                                     None,
@@ -342,8 +351,8 @@ pub(in super::super) fn schema_feature_definition(
                     |(entry_surface_id, position, direction, extent)| {
                         (
                             entry_surface_id.map(face_selection),
-                            Some(position),
-                            Some(direction),
+                            cadmpeg_ir::features::FinitePoint3::new(position),
+                            cadmpeg_ir::features::FeatureDirection3::new(direction),
                             None,
                             Some(extent),
                             None,
@@ -354,8 +363,10 @@ pub(in super::super) fn schema_feature_definition(
             |hole| {
                 (
                     hole.entry_surface_id.map(face_selection),
-                    Some(hole.geometry.origin().get()),
-                    Some(*hole.geometry.axis()),
+                    Some(hole.geometry.origin()),
+                    Some(cadmpeg_ir::features::FeatureDirection3::from(
+                        hole.geometry.frame().unit_axis(),
+                    )),
                     Length::new(2.0 * hole.geometry.radius().get()),
                     Some(hole.extent),
                     Some(HoleBottom::Flat),
@@ -383,11 +394,9 @@ pub(in super::super) fn schema_feature_definition(
             .flatten();
         let placements = position
             .zip(direction)
-            .and_then(|(position, direction)| {
-                Some(HolePlacement::Directed {
-                    position: cadmpeg_ir::features::FinitePoint3::new(position)?,
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
-                })
+            .map(|(position, direction)| HolePlacement::Directed {
+                position,
+                direction,
             })
             .into_iter()
             .chain(stepped_axis)
