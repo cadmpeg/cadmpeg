@@ -153,11 +153,11 @@ fn pcurve_fit_tolerance_admission_and_mutation_preserve_valid_values() {
         assert_eq!(inline.fit_tolerance(), 2.0);
         assert_eq!(general.fit_tolerance(), Some(2.0));
     }
-    inline.set_admitted_fit_tolerance(FitTolerance::try_new(0.0).unwrap());
-    general.set_admitted_fit_tolerance(Some(FitTolerance::try_new(0.0).unwrap()));
+    inline.set_fit_tolerance(FitTolerance::try_new(0.0).unwrap());
+    general.set_fit_tolerance(Some(FitTolerance::try_new(0.0).unwrap()));
     assert_eq!(inline.fit_tolerance(), 0.0);
     assert_eq!(general.fit_tolerance(), Some(0.0));
-    general.set_admitted_fit_tolerance(None);
+    general.set_fit_tolerance(None);
     assert_eq!(general.fit_tolerance(), None);
 }
 
@@ -237,8 +237,8 @@ fn pcurve_admitted_fit_tolerance_replaces_the_value_that_the_raw_constructor_adm
         PcurveGeneralForm::try_new(None, Some([1.0, 0.0]), Some(2.0)).expect("general metadata");
     for value in [0.0, 0.0025, 1.0e3] {
         let admitted = FitTolerance::try_new(value).expect("a finite non-negative tolerance");
-        inline.set_admitted_fit_tolerance(admitted);
-        general.set_admitted_fit_tolerance(Some(admitted));
+        inline.set_fit_tolerance(admitted);
+        general.set_fit_tolerance(Some(admitted));
         let raw_inline = PcurveInlineForm::try_new(false, [false; 4], [1.0, 0.0], value)
             .expect("the raw constructor admits the value");
         let raw_general = PcurveGeneralForm::try_new(None, Some([1.0, 0.0]), Some(value))
@@ -246,6 +246,6 @@ fn pcurve_admitted_fit_tolerance_replaces_the_value_that_the_raw_constructor_adm
         assert_eq!(inline, raw_inline);
         assert_eq!(general, raw_general);
     }
-    general.set_admitted_fit_tolerance(None);
+    general.set_fit_tolerance(None);
     assert_eq!(general.fit_tolerance(), None);
 }

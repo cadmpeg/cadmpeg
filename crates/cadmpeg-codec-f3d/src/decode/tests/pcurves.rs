@@ -1098,7 +1098,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
         })
     }
     .unwrap();
-    inline.set_admitted_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
+    inline.set_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();
@@ -1137,7 +1137,7 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     else {
         panic!("decoded fixture uses ASM inline pcurve metadata")
     };
-    inline.set_admitted_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
+    inline.set_fit_tolerance(cadmpeg_ir::geometry::FitTolerance::try_new(0.0025).unwrap());
     let expected = pcurve.clone();
 
     let mut regenerated = Vec::new();

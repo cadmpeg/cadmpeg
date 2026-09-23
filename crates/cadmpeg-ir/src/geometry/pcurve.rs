@@ -1929,8 +1929,8 @@ impl PcurveInlineForm {
         self.fit_tolerance.get()
     }
 
-    /// Replace the fit tolerance with an admitted one.
-    pub fn set_admitted_fit_tolerance(&mut self, value: FitTolerance) {
+    /// Replace the fit tolerance.
+    pub fn set_fit_tolerance(&mut self, value: FitTolerance) {
         self.fit_tolerance = value;
     }
 
@@ -2017,8 +2017,8 @@ impl PcurveGeneralForm {
         self.fit_tolerance.map(FitTolerance::get)
     }
 
-    /// Replace the fit tolerance with an admitted one, or clear it.
-    pub fn set_admitted_fit_tolerance(&mut self, value: Option<FitTolerance>) {
+    /// Replace or clear the fit tolerance.
+    pub fn set_fit_tolerance(&mut self, value: Option<FitTolerance>) {
         self.fit_tolerance = value;
     }
 
