@@ -743,6 +743,14 @@ fn compact_unordered_boundary_rejects_partial_subtours() {
 }
 
 #[test]
+fn compact_unordered_boundary_refuses_degree_overflow() {
+    let domain = MeshFaceBoundaryDomain::UnorderedFullCycle((0..129).collect());
+    let mut assignment = vec![Some([0, 0]); 128];
+    assignment.push(None);
+    assert!(!compact_boundary_domain_viable(&domain, &assignment, None));
+}
+
+#[test]
 fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 16));
     let budget = WorkBudget::new(10_000);

@@ -1153,7 +1153,7 @@ fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
         && carrier.get(0..2) == Some(&[1, 1])
         && carrier.get(2..11) == Some(&[0; 9])
         && matches!(carrier[11], 0 | 1))
-    .then_some(carrier[11])
+    .then(|| carrier[11])
 }
 
 /// Validate the selector family selected by the legacy carrier flag.

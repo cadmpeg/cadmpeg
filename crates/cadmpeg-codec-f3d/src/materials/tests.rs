@@ -38,6 +38,16 @@ use crate::F3dCodec;
 
 use super::{merge_definition_catalog_record, DefinitionCatalog, RECORD_MARKER, STREAM_HEADER_LEN};
 
+#[test]
+fn legacy_face_selector_refuses_short_carriers_without_indexing() {
+    assert_eq!(super::legacy_face_selector_kind(Some(&[])), None);
+    assert_eq!(super::legacy_face_selector_kind(Some(&[1, 1])), None);
+    let mut carrier = [0; 12];
+    carrier[..2].copy_from_slice(&[1, 1]);
+    carrier[11] = 1;
+    assert_eq!(super::legacy_face_selector_kind(Some(&carrier)), Some(1));
+}
+
 fn raw_body_map_pair(
     asm_key_offset: usize,
     entity_suffix: u64,
