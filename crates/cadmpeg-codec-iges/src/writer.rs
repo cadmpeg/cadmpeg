@@ -4795,11 +4795,15 @@ fn revolution_surface_entities(
     })?;
     ensure_finite_point(start, "Type 120 generatrix start")?;
     ensure_finite_point(end, "Type 120 generatrix terminate")?;
-    let axis_direction = unit(*axis_direction, "Type 120 axis direction")?;
-    let axis_end = axis_origin.translated(axis_direction, 1.0);
+    let axis_direction = UnitVector3::normalized(*axis_direction)
+        .ok_or_else(|| CodecError::malformed("IGES Type 120 axis direction is degenerate"))?;
+    let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
     let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::analytic::LineCurve::try_new(*axis_origin, axis_direction)
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+        cadmpeg_ir::geometry::analytic::LineCurve::new(
+            FinitePoint3::new(*axis_origin)
+                .ok_or_else(|| CodecError::malformed("LineCurve.origin must be finite"))?,
+            axis_direction,
+        ),
     ));
     let axis_span = CurveSpan {
         range: [0.0, 1.0],
@@ -6139,11 +6143,12 @@ fn apply_rigid_transform(
             CodecError::malformed("transformed curve point has a non-finite coordinate")
         })
     };
-    let vector = |value: Vector3, label: &str| -> Result<Vector3, CodecError> {
+    let vector = |value: Vector3, label: &str| -> Result<UnitVector3, CodecError> {
         let placed = transform.apply_vector(value).ok_or_else(|| {
             CodecError::malformed(format_args!("IGES {label} has a non-finite component"))
         })?;
-        unit(placed, label)
+        UnitVector3::normalized(placed)
+            .ok_or_else(|| CodecError::malformed(format_args!("IGES {label} is degenerate")))
     };
     Ok(match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -6151,15 +6156,13 @@ fn apply_rigid_transform(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     point(line_curve.origin())?,
-                    UnitVector3::new(vector(direction, "transformed line direction")?).ok_or_else(
-                        || CodecError::malformed("LineCurve.direction must have unit length"),
-                    )?,
+                    vector(direction, "transformed line direction")?,
                 ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = point(circle_curve.center())?;
-            let frame = OrthonormalFrame3::new(
+            let frame = OrthonormalFrame3::from_units(
                 vector(
                     *circle_curve.frame().axis().as_raw(),
                     "transformed circle axis",
@@ -6184,7 +6187,7 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = point(ellipse_curve.center())?;
-            let frame = OrthonormalFrame3::new(
+            let frame = OrthonormalFrame3::from_units(
                 vector(
                     *ellipse_curve.frame().axis().as_raw(),
                     "transformed ellipse axis",
@@ -6211,7 +6214,7 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = point(parabola_curve.vertex())?;
-            let frame = OrthonormalFrame3::new(
+            let frame = OrthonormalFrame3::from_units(
                 vector(
                     *parabola_curve.frame().axis().as_raw(),
                     "transformed parabola axis",
@@ -6236,7 +6239,7 @@ fn apply_rigid_transform(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = point(hyperbola_curve.center())?;
-            let frame = OrthonormalFrame3::new(
+            let frame = OrthonormalFrame3::from_units(
                 vector(
                     *hyperbola_curve.frame().axis().as_raw(),
                     "transformed hyperbola axis",

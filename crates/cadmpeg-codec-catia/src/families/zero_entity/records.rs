@@ -2124,12 +2124,13 @@ fn zero_entity_plane(payload: &[u8]) -> Option<SurfaceGeometry> {
     let row0 = f64_vector(payload, 34)?.get();
     let row1 = f64_vector(payload, 58)?.get();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            origin.get(),
-            row0.cross(row1).unit()?,
-            row0.unit()?,
-        )
-        .ok()?,
+        cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+            origin,
+            cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                cadmpeg_ir::units::UnitVector3::normalized(row0.cross(row1))?,
+                cadmpeg_ir::units::UnitVector3::normalized(row0)?,
+            )?,
+        ),
     )))
 }
 

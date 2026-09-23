@@ -7494,7 +7494,7 @@ fn historical_pattern_identity_axes_for_selection(
                 .into_iter()
                 .filter_map(|(origin, direction)| {
                     let direction = direction.unit()?;
-                    (origin.is_finite() && direction.is_finite()).then_some((origin, direction))
+                    origin.is_finite().then_some((origin, direction))
                 })
                 .collect::<Vec<_>>();
         if state_axes.is_empty() {

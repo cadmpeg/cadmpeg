@@ -20,10 +20,17 @@ use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
+    SphereSurface, TorusSurface,
+};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::layout::compact_analytic_header as analytic;
 
@@ -69,9 +76,16 @@ fn norm3(v: &[f64]) -> f64 {
     Vector3::from([v[0], v[1], v[2]]).norm()
 }
 
-fn unit(v: &[f64]) -> Vector3 {
-    let original = Vector3::from([v[0], v[1], v[2]]);
-    original.unit().unwrap_or(original)
+/// The unit direction of a stored vector, absent when the vector is not
+/// finite or its length is within `f64::EPSILON` of zero.
+fn direction(v: &[f64]) -> Option<UnitVector3> {
+    UnitVector3::normalized(Vector3::from([v[0], v[1], v[2]]))
+}
+
+/// The frame of two stored directions, absent when either direction is
+/// degenerate or the two are not perpendicular.
+fn frame(axis: &[f64], reference: &[f64]) -> Option<OrthonormalFrame3> {
+    OrthonormalFrame3::from_units(direction(axis)?, direction(reference)?)
 }
 
 // ---- compact analytic carriers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)) -----------------------------------
@@ -319,47 +333,39 @@ fn decode_carrier_values(
     };
     let g = match tt {
         tag::LINE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[3..6]),
-            )
-            .ok()?,
+            LineCurve::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                direction(&v[3..6])?,
+            ),
         ))),
         tag::CIRCLE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[3..6]),
-                unit(&v[6..9]),
-                v[9] * LEN_TO_MM,
-            )
-            .ok()?,
+            CircleCurve::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+                PositiveLength::new(v[9] * LEN_TO_MM)?,
+            ),
         ))),
         tag::ELLIPSE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[3..6]),
-                unit(&v[6..9]),
-                v[9] * LEN_TO_MM,
-                v[10] * LEN_TO_MM,
+            EllipseCurve::try_from_parts(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+                PositiveLength::new(v[9] * LEN_TO_MM)?,
+                PositiveLength::new(v[10] * LEN_TO_MM)?,
             )
             .ok()?,
         ))),
         tag::PLANE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[3..6]),
-                unit(&v[6..9]),
-            )
-            .ok()?,
+            PlaneSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[6..9])?,
+            ),
         ))),
         tag::CYLINDER => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[3..6]),
-                unit(&v[7..10]),
-                v[6] * LEN_TO_MM,
-            )
-            .ok()?,
+            CylinderSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[3..6], &v[7..10])?,
+                PositiveLength::new(v[6] * LEN_TO_MM)?,
+            ),
         ))),
         tag::CONE => {
             // origin(3) axis(3) radius sin cos refdir(3): the half-angle is the
@@ -383,40 +389,30 @@ fn decode_carrier_values(
                 std::f64::consts::FRAC_PI_2
             };
             return Some(surface(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        scale_point(&v[0..3]),
-                        unit(&v[3..6]),
-                        unit(&v[9..12]),
-                        v[6] * LEN_TO_MM,
-                        1.0,
-                        half_angle,
-                    )
-                    .ok()?,
-                ),
+                SolvedSurfaceGeometry::Cone(ConeSurface::new(
+                    FinitePoint3::new(scale_point(&v[0..3]))?,
+                    frame(&v[3..6], &v[9..12])?,
+                    NonNegativeLength::new(v[6] * LEN_TO_MM)?,
+                    PositiveReal::ONE,
+                    Angle::new(half_angle)?,
+                )),
             )));
         }
         tag::SPHERE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                scale_point(&v[0..3]),
-                unit(&v[4..7]),
-                unit(&v[7..10]),
-                v[3] * LEN_TO_MM,
-            )
-            .ok()?,
+            SphereSurface::new(
+                FinitePoint3::new(scale_point(&v[0..3]))?,
+                frame(&v[4..7], &v[7..10])?,
+                NonZeroLength::new(v[3] * LEN_TO_MM)?,
+            ),
         ))),
         tag::TORUS => {
             return Some(surface(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        scale_point(&v[0..3]),
-                        unit(&v[3..6]),
-                        unit(&v[8..11]),
-                        v[6].abs() * LEN_TO_MM,
-                        v[7] * LEN_TO_MM,
-                    )
-                    .ok()?,
-                ),
+                SolvedSurfaceGeometry::Torus(TorusSurface::new(
+                    FinitePoint3::new(scale_point(&v[0..3]))?,
+                    frame(&v[3..6], &v[8..11])?,
+                    PositiveLength::new(v[6].abs() * LEN_TO_MM)?,
+                    NonZeroLength::new(v[7] * LEN_TO_MM)?,
+                )),
             )));
         }
         _ => return None,

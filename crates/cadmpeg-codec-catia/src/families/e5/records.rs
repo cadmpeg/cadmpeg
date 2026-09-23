@@ -12,7 +12,8 @@ use cadmpeg_ir::geometry::{
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
@@ -221,17 +222,22 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
             {
                 let (frame_u, frame_v) = (frame_u.get(), frame_v.get());
                 if radius.get() > 0.0 {
-                    if let Some(axis) = frame_u.cross(frame_v).unit() {
-                        let Ok(payload) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            origin.get(),
-                            axis,
-                            frame_u.unit().unwrap_or_else(|| {
-                                cadmpeg_ir::geometry::derive_reference_direction(axis)
+                    if let Some(axis) = UnitVector3::normalized(frame_u.cross(frame_v)) {
+                        let reference = UnitVector3::normalized(frame_u).or_else(|| {
+                            UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
+                                *axis.as_raw(),
+                            ))
+                        });
+                        let (Some(frame), Some(radius)) = (
+                            reference.and_then(|reference| {
+                                OrthonormalFrame3::from_units(axis, reference)
                             }),
-                            radius.get(),
+                            PositiveLength::new(radius.get()),
                         ) else {
                             continue;
                         };
+                        let payload =
+                            cadmpeg_ir::geometry::analytic::CircleCurve::new(origin, frame, radius);
                         out.push(E5Circle {
                             pos,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),

@@ -10,6 +10,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::UnitVector3;
 
 /// A cursor over a CATIA record payload, tracking an absolute byte offset.
 #[derive(Debug, Clone, Copy)]
@@ -137,8 +138,8 @@ impl Cursor<'_> {
 
     /// Reads three finite `f64` components and normalises them to a unit
     /// direction, failing on a degenerate (near-zero-length) vector.
-    pub(crate) fn unit3(&mut self) -> Option<Vector3> {
-        self.vector3()?.get().unit()
+    pub(crate) fn unit3(&mut self) -> Option<UnitVector3> {
+        UnitVector3::normalized(self.vector3()?.get())
     }
 }
 
