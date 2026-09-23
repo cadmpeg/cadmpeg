@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked scalar owners for native record invariants.
 
+use std::marker::PhantomData;
+
 use serde::{Deserialize, Serialize};
 
 /// A finite, strictly positive scalar.
@@ -49,39 +51,71 @@ const EPS_UNIT_DEVIATION_E9: f64 = 1.0e-9;
 /// Deviation from unit length tolerated by directions selecting exponent 12.
 const EPS_UNIT_DEVIATION_E12: f64 = 1.0e-12;
 
-/// Measures a direction's length as the sum of its squared components.
-const MEASURE_SQUARED: u8 = 0;
+/// A measurement of a direction's length. Each implementing type names one
+/// measurement, so a direction admits only by a measurement it names. A
+/// measurement is a copyable marker, so the direction it selects stays `Copy`.
+pub(crate) trait LengthMeasurement: Copy {
+    /// The direction's measured length.
+    fn length(value: [f64; 3]) -> f64;
+}
 
-/// Measures a direction's length as the square root of that sum, the way
-/// `Vector3::norm` does.
-const MEASURE_NORM: u8 = 1;
+/// Measures a direction's length as the sum of its squared components.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SquaredLength;
+
+impl LengthMeasurement for SquaredLength {
+    fn length(value: [f64; 3]) -> f64 {
+        value[0] * value[0] + value[1] * value[1] + value[2] * value[2]
+    }
+}
+
+/// Measures a direction's length as the square root of the sum of its squared
+/// components, the way `Vector3::norm` does.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct NormLength;
+
+impl LengthMeasurement for NormLength {
+    fn length(value: [f64; 3]) -> f64 {
+        SquaredLength::length(value).sqrt()
+    }
+}
 
 /// Measures a direction's length as a chain of `hypot` calls, the way the
 /// records that store a planar pair do.
-const MEASURE_HYPOT: u8 = 2;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct HypotLength;
 
-/// A finite direction admitted by `MEASUREMENT` of its length deviating from
+impl LengthMeasurement for HypotLength {
+    fn length(value: [f64; 3]) -> f64 {
+        value[0].hypot(value[1]).hypot(value[2])
+    }
+}
+
+/// A finite direction admitted by `Measurement` of its length deviating from
 /// one by at most `10^-TOLERANCE_EXPONENT`. Both the measurement and the
 /// tolerance are the record grammar's, so every route into the type — literal
 /// construction, derivation and serde — admits exactly the same directions.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub(crate) struct UnitVector3<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>([f64; 3]);
+pub(crate) struct UnitVector3<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>(
+    [f64; 3],
+    PhantomData<Measurement>,
+);
 
 /// A direction whose squared length is one to `1e-12`.
-pub(crate) type ExactUnitVector3 = UnitVector3<12, MEASURE_SQUARED>;
+pub(crate) type ExactUnitVector3 = UnitVector3<12, SquaredLength>;
 
 /// A direction whose norm is one to `1e-12`.
-pub(crate) type ExactNormUnitVector3 = UnitVector3<12, MEASURE_NORM>;
+pub(crate) type ExactNormUnitVector3 = UnitVector3<12, NormLength>;
 
 /// A direction whose `hypot` length is one to `1e-12`.
-pub(crate) type ExactHypotUnitVector3 = UnitVector3<12, MEASURE_HYPOT>;
+pub(crate) type ExactHypotUnitVector3 = UnitVector3<12, HypotLength>;
 
 /// A direction whose squared length is one to `1e-9`.
-pub(crate) type RelaxedUnitVector3 = UnitVector3<9, MEASURE_SQUARED>;
+pub(crate) type RelaxedUnitVector3 = UnitVector3<9, SquaredLength>;
 
 /// A direction whose `hypot` length is one to `1e-9`.
-pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<9, MEASURE_HYPOT>;
+pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<9, HypotLength>;
 
 /// A coordinate plane a planar direction is placed in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,12 +170,15 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
     pub(crate) fn in_plane(
         self,
         plane: CoordinatePlane,
-    ) -> UnitVector3<TOLERANCE_EXPONENT, MEASURE_HYPOT> {
+    ) -> UnitVector3<TOLERANCE_EXPONENT, HypotLength> {
         let [first, second] = self.0;
-        UnitVector3(match plane {
-            CoordinatePlane::Xy => [first, second, 0.0],
-            CoordinatePlane::Xz => [first, 0.0, second],
-        })
+        UnitVector3(
+            match plane {
+                CoordinatePlane::Xy => [first, second, 0.0],
+                CoordinatePlane::Xz => [first, 0.0, second],
+            },
+            PhantomData,
+        )
     }
 }
 
@@ -160,34 +197,24 @@ impl<const TOLERANCE_EXPONENT: u32> From<UnitVector2<TOLERANCE_EXPONENT>> for [f
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
-    UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>
+impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
+    UnitVector3<TOLERANCE_EXPONENT, Measurement>
 {
     /// Tolerance on this direction's measured length deviating from one.
     const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
 
     /// The +X direction.
-    pub(crate) const X: Self = Self([1.0, 0.0, 0.0]);
+    pub(crate) const X: Self = Self([1.0, 0.0, 0.0], PhantomData);
 
     /// The +Y direction.
-    pub(crate) const Y: Self = Self([0.0, 1.0, 0.0]);
-
-    /// This direction's measured length, by the measurement the type names.
-    fn measured_length(value: [f64; 3]) -> f64 {
-        let squared_length = value[0] * value[0] + value[1] * value[1] + value[2] * value[2];
-        match MEASUREMENT {
-            MEASURE_NORM => squared_length.sqrt(),
-            MEASURE_HYPOT => value[0].hypot(value[1]).hypot(value[2]),
-            _ => squared_length,
-        }
-    }
+    pub(crate) const Y: Self = Self([0.0, 1.0, 0.0], PhantomData);
 
     /// Constructs a unit direction whose measured length is one within the
     /// tolerance.
     pub(crate) fn new(value: [f64; 3]) -> Option<Self> {
         (value.iter().all(|component| component.is_finite())
-            && (Self::measured_length(value) - 1.0).abs() <= Self::TOLERANCE)
-            .then_some(Self(value))
+            && (Measurement::length(value) - 1.0).abs() <= Self::TOLERANCE)
+            .then_some(Self(value, PhantomData))
     }
 
     /// Normalizes a finite direction whose norm is above [`f64::EPSILON`].
@@ -217,8 +244,8 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8> TryFrom<[f64; 3]>
-    for UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>
+impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement> TryFrom<[f64; 3]>
+    for UnitVector3<TOLERANCE_EXPONENT, Measurement>
 {
     type Error = String;
 
@@ -227,10 +254,10 @@ impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8> TryFrom<[f64; 3]>
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, const MEASUREMENT: u8>
-    From<UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>> for [f64; 3]
+impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
+    From<UnitVector3<TOLERANCE_EXPONENT, Measurement>> for [f64; 3]
 {
-    fn from(value: UnitVector3<TOLERANCE_EXPONENT, MEASUREMENT>) -> Self {
+    fn from(value: UnitVector3<TOLERANCE_EXPONENT, Measurement>) -> Self {
         value.0
     }
 }
