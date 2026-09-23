@@ -6,6 +6,7 @@ use cadmpeg_core::decode::{alloc_filled, u64_from_index};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{DraftAccounting, ModelCheckpoint, ModelDraft};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -22,6 +23,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
@@ -1887,8 +1889,8 @@ impl<'a> DecodeContext<'a> {
             .added_mut::<Point>(&mut self.ir.model)
             .ok_or_else(|| "instance decode removed existing points".to_string())?
         {
-            let placed = placed_point(transform, point.position())?;
-            point.set_position(placed).map_err(ToString::to_string)?;
+            let placed = placed_finite_point(transform, point.finite_position())?;
+            point.set_finite_position(placed);
             derived_ids.push(point.id.to_string());
         }
         for curve in before
@@ -5335,12 +5337,22 @@ fn transform_decoded_curve(
     }
 }
 
+const NON_FINITE_PLACEMENT: &str = "instance transform produced a non-finite coordinate";
+
 /// Places a point, refusing a placement the transform sends out of the finite
 /// range.
 fn placed_point(transform: Transform, point: Point3) -> Result<Point3, String> {
     transform
         .apply_point(point)
-        .ok_or_else(|| "instance transform produced a non-finite coordinate".to_string())
+        .ok_or_else(|| NON_FINITE_PLACEMENT.to_string())
+}
+
+/// Places an admitted point, refusing a placement the transform sends out of
+/// the finite range. The placed point stays admitted.
+fn placed_finite_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, String> {
+    point
+        .transformed(transform)
+        .ok_or_else(|| NON_FINITE_PLACEMENT.to_string())
 }
 
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
@@ -5384,9 +5396,9 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin().get();
+            let origin = line_curve.origin();
             let direction = *line_curve.direction().as_raw();
-            let transformed_origin = placed_point(transform, origin)?;
+            let transformed_origin = placed_finite_point(transform, origin)?;
             let endpoint = placed_point(
                 transform,
                 Point3::new(
@@ -5405,18 +5417,23 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 return Err("instance line transform collapsed its direction".to_string());
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transformed_origin,
-                    cadmpeg_ir::math::Vector3::new(value.x / norm, value.y / norm, value.z / norm),
-                )?,
+                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
+                        value.x / norm,
+                        value.y / norm,
+                        value.z / norm,
+                    ))
+                    .ok_or("LineCurve.direction must have unit length")?,
+                ),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let point = degenerate_curve.point().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(placed_point(
-                    transform, point,
-                )?)?,
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::new(placed_finite_point(
+                    transform,
+                    degenerate_curve.point(),
+                )?),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }) => {
@@ -5457,7 +5474,7 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             let source_origin = plane_surface.origin().get();
             let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
-            let origin = placed_point(transform, source_origin)?;
+            let origin = placed_finite_point(transform, plane_surface.origin())?;
             let normal = transform.apply_normal(normal).ok_or_else(|| {
                 "instance plane normal transform could not produce a finite unit normal".to_string()
             })?;
@@ -5485,15 +5502,18 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
                 return Err("instance plane transform collapsed its frame".to_string());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
-                    normal,
-                    cadmpeg_ir::math::Vector3::new(
-                        value.x / length,
-                        value.y / length,
-                        value.z / length,
-                    ),
-                )?,
+                    OrthonormalFrame3::new(
+                        normal,
+                        cadmpeg_ir::math::Vector3::new(
+                            value.x / length,
+                            value.y / length,
+                            value.z / length,
+                        ),
+                    )
+                    .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
+                ),
             ))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record }) => {

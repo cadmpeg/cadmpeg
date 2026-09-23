@@ -111,6 +111,14 @@ impl FinitePoint3 {
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+
+    /// Apply an affine transform. [`Transform::apply_point`] returns a point
+    /// only when every coordinate is finite, so its result stays admitted.
+    /// The result is absent when the transform overflows a coordinate.
+    #[must_use]
+    pub fn transformed(self, transform: Transform) -> Option<Self> {
+        transform.apply_point(self.0).map(Self)
+    }
 }
 
 checked_feature_geometry!(
