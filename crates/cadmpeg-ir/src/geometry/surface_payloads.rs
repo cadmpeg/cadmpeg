@@ -378,6 +378,10 @@ impl TryFrom<ExtrusionSurfaceConstructionWire> for ExtrusionSurfaceConstruction 
     }
 }
 
+const INVALID_REVOLUTION_AXIS: ProceduralGeometryError = ProceduralGeometryError::Payload(
+    "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+);
+
 /// Admit a revolution axis: a point on the axis with finite coordinates and
 /// a direction whose norm is within `1e-9` of one. Both revolution
 /// constructions store the axis in this form.
@@ -385,12 +389,21 @@ pub fn admit_revolution_axis(
     origin: Point3,
     direction: Vector3,
 ) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
-    const INVALID_AXIS: ProceduralGeometryError = ProceduralGeometryError::Payload(
-        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
-    );
+    admit_revolution_axis_origin(
+        origin,
+        UnitVector3::new(direction).ok_or(INVALID_REVOLUTION_AXIS)?,
+    )
+}
+
+/// Admit a revolution axis around an admitted direction. Only the origin is
+/// checked, with the refusal of [`admit_revolution_axis`].
+pub fn admit_revolution_axis_origin(
+    origin: Point3,
+    direction: UnitVector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
     Ok((
-        FinitePoint3::new(origin).ok_or(INVALID_AXIS)?,
-        UnitVector3::new(direction).ok_or(INVALID_AXIS)?,
+        FinitePoint3::new(origin).ok_or(INVALID_REVOLUTION_AXIS)?,
+        direction,
     ))
 }
 

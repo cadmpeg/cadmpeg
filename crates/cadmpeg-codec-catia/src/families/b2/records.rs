@@ -11,7 +11,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
@@ -2131,10 +2131,7 @@ impl B2Cylinder {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                 FinitePoint3::new(Point3::from(self.origin))?,
-                OrthonormalFrame3::new(
-                    Vector3::from(self.axis.get()),
-                    Vector3::from(self.reference_direction.get()),
-                )?,
+                OrthonormalFrame3::from_units(self.axis.into(), self.reference_direction.into())?,
                 self.radius,
             ),
         )))
@@ -2882,19 +2879,17 @@ pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeom
     let axial = slant * cone.half_angle.cos();
     let axis = cone.axis.get();
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(
+        cadmpeg_ir::geometry::analytic::ConeSurface::new(
+            FinitePoint3::new(Point3::new(
                 cone.apex[0] + axial * axis[0],
                 cone.apex[1] + axial * axis[1],
                 cone.apex[2] + axial * axis[2],
-            ),
-            Vector3::from(axis),
-            Vector3::from(cone.t1.get()),
-            slant * cone.half_angle.sin(),
-            1.0,
-            cone.half_angle,
-        )
-        .ok()?,
+            ))?,
+            OrthonormalFrame3::from_units(cone.axis.into(), cone.t1.into())?,
+            NonNegativeLength::new(slant * cone.half_angle.sin())?,
+            PositiveReal::ONE,
+            Angle::new(cone.half_angle)?,
+        ),
     )))
 }
 
@@ -2902,13 +2897,15 @@ pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeom
 #[must_use]
 pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<SurfaceGeometry> {
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        cadmpeg_ir::geometry::analytic::SphereSurface::try_with_radius(
-            Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
-            Vector3::from(sphere.axis.get()),
-            Vector3::from(sphere.direction_x.get()),
+        cadmpeg_ir::geometry::analytic::SphereSurface::new(
+            FinitePoint3::new(Point3::new(
+                sphere.center[0],
+                sphere.center[1],
+                sphere.center[2],
+            ))?,
+            OrthonormalFrame3::from_units(sphere.axis.into(), sphere.direction_x.into())?,
             NonZeroLength::from(sphere.radius),
-        )
-        .ok()?,
+        ),
     )))
 }
 
@@ -2918,10 +2915,7 @@ pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceG
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::new(
             FinitePoint3::new(Point3::from(torus.center))?,
-            OrthonormalFrame3::new(
-                Vector3::from(torus.axis.get()),
-                Vector3::from(torus.direction_x.get()),
-            )?,
+            OrthonormalFrame3::from_units(torus.axis.into(), torus.direction_x.into())?,
             torus.major_radius,
             NonZeroLength::from(torus.minor_radius),
         ),

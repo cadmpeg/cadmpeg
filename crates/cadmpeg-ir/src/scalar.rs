@@ -236,6 +236,16 @@ impl Angle {
     pub const ZERO: Self = Self(0.0);
 }
 
+impl NonNegativeLength {
+    /// Zero in canonical units.
+    pub const ZERO: Self = Self(0.0);
+}
+
+impl PositiveReal {
+    /// Unit scalar value.
+    pub const ONE: Self = Self(1.0);
+}
+
 impl SlopeAngle {
     /// Zero in canonical radians.
     pub const ZERO: Self = Self(0.0);

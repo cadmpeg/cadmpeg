@@ -96,7 +96,10 @@ pub(super) fn append_consolidated_revolutions(
         );
         let (Some(admitted_center), Some(frame)) = (
             FinitePoint3::new(center),
-            OrthonormalFrame3::new(direction_x, direction_y),
+            OrthonormalFrame3::from_units(
+                revolution.direction_x.into(),
+                revolution.direction_y.into(),
+            ),
         ) else {
             continue;
         };
@@ -163,7 +166,10 @@ pub(super) fn append_consolidated_revolutions(
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                     cadmpeg_ir::geometry::analytic::TorusSurface::new(
                         FinitePoint3::new(torus_center)?,
-                        OrthonormalFrame3::new(axis, ref_direction)?,
+                        OrthonormalFrame3::from_units(
+                            revolution.axis.into(),
+                            cadmpeg_ir::units::UnitVector3::new(ref_direction)?,
+                        )?,
                         PositiveLength::new(major_radius)?,
                         NonZeroLength::from(profile.radius),
                     ),
@@ -190,36 +196,39 @@ pub(super) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(origin, axis)
-                .and_then(|axis| {
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        directrix,
-                        axis,
-                        [
-                            revolution.angular_range[0] / revolution.angular_scale.get(),
-                            revolution.angular_range[1] / revolution.angular_scale.get(),
-                        ],
-                        Some(revolution.angular_range),
-                        Some(revolution.profile_range.get()),
-                        false,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
-                    )
-                })
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!(
-                                "catia",
-                                "consolidated",
-                                "surface-revolution"
-                            ),
-                            index,
+            cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_origin(
+                origin,
+                revolution.axis.into(),
+            )
+            .and_then(|axis| {
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    directrix,
+                    axis,
+                    [
+                        revolution.angular_range[0] / revolution.angular_scale.get(),
+                        revolution.angular_range[1] / revolution.angular_scale.get(),
+                    ],
+                    Some(revolution.angular_range),
+                    Some(revolution.profile_range.get()),
+                    false,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                )
+            })
+            .map(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!(
+                            "catia",
+                            "consolidated",
+                            "surface-revolution"
                         ),
-                        ProceduralSurfaceDefinition::Revolution(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                        index,
+                    ),
+                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
+                    None,
+                )
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         );
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {
@@ -664,10 +673,7 @@ pub(super) fn try_decode_freeform_surfaces(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     FinitePoint3::new(circle.center)?,
-                    OrthonormalFrame3::new(
-                        cadmpeg_ir::math::Vector3::from(circle.axis.get()),
-                        cadmpeg_ir::math::Vector3::from(circle.ref_direction.get()),
-                    )?,
+                    OrthonormalFrame3::from_units(circle.axis.into(), circle.ref_direction.into())?,
                     circle.radius,
                 ),
             )),
@@ -1266,12 +1272,12 @@ fn consolidated_line_profiles(
             &cadmpeg_ir::identity_namespace!("catia", "consolidated", "line-profile-curve"),
             index,
         );
-        let Ok(payload) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(line.origin[0], line.origin[1], line.origin[2]),
-            Vector3::from(line.direction.get()),
-        ) else {
+        let Some(origin) =
+            FinitePoint3::new(Point3::new(line.origin[0], line.origin[1], line.origin[2]))
+        else {
             continue;
         };
+        let payload = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, line.direction.into());
         profiles.push(ConsolidatedLineProfile {
             curve: Curve {
                 id,

@@ -253,6 +253,25 @@ impl UnitVector3 {
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+    /// Place a planar direction in the xy plane, as `[first, second, 0]`.
+    ///
+    /// `hypot(h, 0)` is `|h|`, so the placed direction's norm is the planar
+    /// direction's `hypot` length bit for bit and keeps its admission.
+    #[must_use]
+    pub fn in_xy_plane(planar: UnitVector2) -> Self {
+        let [first, second] = planar.0;
+        Self(Vector3::new(first, second, 0.0))
+    }
+    /// Place a planar direction in the xz plane, as `[first, 0, second]`.
+    ///
+    /// `hypot(first, 0)` is `|first|`, and `hypot` does not depend on the
+    /// sign of an argument, so the placed direction's norm is the planar
+    /// direction's `hypot` length bit for bit and keeps its admission.
+    #[must_use]
+    pub fn in_xz_plane(planar: UnitVector2) -> Self {
+        let [first, second] = planar.0;
+        Self(Vector3::new(first, 0.0, second))
+    }
 }
 impl TryFrom<Vector3> for UnitVector3 {
     type Error = &'static str;
@@ -263,6 +282,34 @@ impl TryFrom<Vector3> for UnitVector3 {
 impl From<UnitVector3> for Vector3 {
     fn from(value: UnitVector3) -> Self {
         value.0
+    }
+}
+
+/// A planar direction whose `hypot` length is one within the analytic frame
+/// tolerance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UnitVector2([f64; 2]);
+impl UnitVector2 {
+    /// Admit a planar unit direction.
+    pub fn new(value: [f64; 2]) -> Option<Self> {
+        ((value[0].hypot(value[1]) - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
+    }
+    /// Return the direction components.
+    pub const fn get(self) -> [f64; 2] {
+        self.0
+    }
+    /// Turn the direction a quarter turn, to `[-second, first]`. `hypot`
+    /// does not depend on the order or the sign of its arguments, so the
+    /// length stays the same bit for bit.
+    #[must_use]
+    pub fn quarter_turn(self) -> Self {
+        Self([-self.0[1], self.0[0]])
+    }
+    /// Turn the direction a quarter turn the other way, to
+    /// `[second, -first]`. The length stays the same bit for bit.
+    #[must_use]
+    pub fn reverse_quarter_turn(self) -> Self {
+        Self([self.0[1], -self.0[0]])
     }
 }
 
@@ -280,8 +327,11 @@ impl OrthonormalFrame3 {
     };
     /// Admit two perpendicular unit directions.
     pub fn new(axis: Vector3, reference: Vector3) -> Option<Self> {
-        let axis = UnitVector3::new(axis)?;
-        let reference = UnitVector3::new(reference)?;
+        Self::from_units(UnitVector3::new(axis)?, UnitVector3::new(reference)?)
+    }
+    /// Admit two admitted unit directions that are perpendicular. Only the
+    /// perpendicularity is checked.
+    pub fn from_units(axis: UnitVector3, reference: UnitVector3) -> Option<Self> {
         (axis.0.dot(reference.0).abs() <= EPS_UNIT_FRAME).then_some(Self { axis, reference })
     }
     /// Return the admitted first direction. A caller that moves it into
@@ -475,6 +525,68 @@ mod tests {
             OrthonormalFrame3::IDENTITY.unit_reference(),
             UnitVector3::X_AXIS
         );
+    }
+
+    #[test]
+    fn planar_directions_keep_their_admission_when_turned_and_placed() {
+        use super::{UnitVector2, UnitVector3};
+
+        let scale = 1.0 + 9.9e-10;
+        for value in [[0.6 * scale, -0.8 * scale], [-scale, 0.0], [0.0, scale]] {
+            let planar = UnitVector2::new(value).expect("planar direction inside the band");
+            for turned in [planar, planar.quarter_turn(), planar.reverse_quarter_turn()] {
+                let [first, second] = turned.get();
+                let length = first.hypot(second);
+                assert_eq!(length.to_bits(), value[0].hypot(value[1]).to_bits());
+                for placed in [
+                    UnitVector3::in_xy_plane(turned),
+                    UnitVector3::in_xz_plane(turned),
+                ] {
+                    assert_eq!(placed.as_raw().norm().to_bits(), length.to_bits());
+                    assert_eq!(UnitVector3::new(*placed.as_raw()), Some(placed));
+                }
+            }
+        }
+        let [first, second] = UnitVector2::new([0.6, -0.8])
+            .expect("unit planar direction")
+            .quarter_turn()
+            .get();
+        assert_eq!([first, second], [0.8, 0.6]);
+        let placed = UnitVector3::in_xz_plane(UnitVector2::new([0.6, 0.8]).expect("unit"));
+        assert_eq!(
+            [placed.as_raw().x, placed.as_raw().y, placed.as_raw().z].map(f64::to_bits),
+            [0.6_f64, 0.0, 0.8].map(f64::to_bits)
+        );
+        for rejected in [
+            [1.0 + 2.0e-9, 0.0],
+            [f64::NAN, 0.0],
+            [f64::INFINITY, 0.0],
+            [0.0, 0.0],
+        ] {
+            assert!(UnitVector2::new(rejected).is_none());
+        }
+    }
+
+    #[test]
+    fn frames_from_admitted_units_check_only_perpendicularity() {
+        use super::{OrthonormalFrame3, UnitVector3};
+        use crate::math::Vector3;
+
+        assert_eq!(
+            OrthonormalFrame3::from_units(UnitVector3::Z_AXIS, UnitVector3::X_AXIS),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        assert!(OrthonormalFrame3::from_units(UnitVector3::X_AXIS, UnitVector3::X_AXIS).is_none());
+        for (tilt, admitted) in [(5.0e-10, true), (2.0e-9, false)] {
+            let reference = Vector3::new(tilt, 0.0, 1.0).unit().expect("nonzero");
+            let reference = UnitVector3::new(reference).expect("unit reference");
+            let frame = OrthonormalFrame3::from_units(UnitVector3::X_AXIS, reference);
+            assert_eq!(frame.is_some(), admitted);
+            assert_eq!(
+                frame,
+                OrthonormalFrame3::new(Vector3::new(1.0, 0.0, 0.0), *reference.as_raw())
+            );
+        }
     }
 
     #[test]
