@@ -221,11 +221,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
-        "RevisionG2RadiusValue",
-        "keyless",
-    ),
-    (
         "crates/cadmpeg-ir/src/hash/digest.rs",
         "Sha256Digest",
         "keyless",

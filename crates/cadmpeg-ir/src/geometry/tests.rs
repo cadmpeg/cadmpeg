@@ -1028,17 +1028,15 @@ fn a_law_expression_states_its_kind_and_carries_only_its_own_keys() {
 
 #[test]
 fn the_ir_scalar_mints_name_no_native_sentinel() {
-    use crate::geometry::{LoftSubdata, LoftSubdataRow, RevisionG2RadiusValue};
+    use crate::geometry::{LoftSubdata, LoftSubdataRow};
+    use crate::scalar::PositiveI64;
 
     // A radius selector is positive. The native `-1` absence spelling fails
     // that without being named, and the decoder reads it as the `none` variant
     // before this value is constructed.
-    assert!(RevisionG2RadiusValue::new(-1).is_none());
-    assert!(RevisionG2RadiusValue::new(0).is_none());
-    assert_eq!(
-        RevisionG2RadiusValue::new(3).map(RevisionG2RadiusValue::get),
-        Some(3)
-    );
+    assert!(PositiveI64::new(-1).is_none());
+    assert!(PositiveI64::new(0).is_none());
+    assert_eq!(PositiveI64::new(3).as_ref().map(PositiveI64::get), Some(3));
 
     // The loft table type code is the native discriminator and states no
     // sentinel: type 211 is a variant of `LoftSubdata`, which the decoder

@@ -342,9 +342,7 @@ pub struct EmbeddedRevisionG2Blend {
     /// Two blend radii in document length units.
     pub radii: [f64; 2],
     /// The integer-valued optional-radius selector serialized after the radii.
-    pub radius_selector: cadmpeg_ir::geometry::RollingBallRadiusSelector<
-        cadmpeg_ir::geometry::RevisionG2RadiusValue,
-    >,
+    pub radius_selector: cadmpeg_ir::geometry::RollingBallRadiusSelector<PositiveI64>,
     /// Support-side parameter interval `(T0, T1)`.
     pub u_range: [Option<f64>; 2],
     /// Second interval; `None` marks an unbounded end.
@@ -708,7 +706,7 @@ fn g2_blend_spl_sur(
         let radius_selector = match cur.take_enum()? {
             -1 => cadmpeg_ir::geometry::RollingBallRadiusSelector::None {},
             value => cadmpeg_ir::geometry::RollingBallRadiusSelector::Value {
-                value: cadmpeg_ir::geometry::RevisionG2RadiusValue::new(value)?,
+                value: PositiveI64::new(value)?,
             },
         };
         let u_range = [
