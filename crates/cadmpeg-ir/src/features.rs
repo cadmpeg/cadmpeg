@@ -105,6 +105,13 @@ checked_feature_geometry!(
     "FinitePoint3 coordinates must be finite", get, as_raw
 );
 impl FinitePoint3 {
+    /// The model origin.
+    pub const ZERO: Self = Self(Point3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
+
     /// Reflect through the model origin. Negation keeps every coordinate
     /// finite, so the result stays admitted.
     #[must_use]
@@ -152,6 +159,13 @@ impl From<UnitVector3> for FeatureDirection3 {
 }
 
 impl FeatureDirection3 {
+    /// The unit +z direction.
+    pub const Z_AXIS: Self = Self(Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    });
+
     /// Reverse all components. Each product of two components keeps its
     /// value under negation, so the squared norm is unchanged and the result
     /// stays admitted.

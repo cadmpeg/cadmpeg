@@ -4133,7 +4133,7 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
         };
     let norm = x.hypot(y).hypot(z);
     (norm > EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12).then_some(AxisAngle {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))?,
+        origin: cadmpeg_ir::features::FinitePoint3::ZERO,
         direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
             x / norm,
             y / norm,
