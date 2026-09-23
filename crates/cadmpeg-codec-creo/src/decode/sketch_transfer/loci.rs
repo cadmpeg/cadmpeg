@@ -16,7 +16,8 @@ use crate::decode::sketch_transfer::identity::{
 };
 use crate::decode::sketch_transfer::profiles::{
     solver_only_section_entities, solver_only_section_entity_family,
-    unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
+    unique_section_incidence_curve_family,
+    unique_section_incidence_curve_family_without_type35_target, SectionEntityIncidenceFamily,
 };
 use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
@@ -824,7 +825,8 @@ pub(in super::super) fn section_skamp_midpoint(
         {
             return None;
         }
-        section_skamp_oriented_line(definition, sketch, item, geometry)
+        let line = section_skamp_oriented_line(definition, sketch, item, geometry)?;
+        section_skamp_line_without_type35_target(definition, item).then_some(line)
     };
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
         section_skamp_point_locus(definition, sketch, item).or_else(|| {
@@ -857,6 +859,31 @@ pub(in super::super) fn section_skamp_midpoint(
         (Some(candidate), None) | (None, Some(candidate)) => Some(candidate),
         _ => None,
     }
+}
+
+/// Whether the entity is a line by evidence other than a sense-zero type-35
+/// target role: its decoded or centered line row, its saved line, or a unique
+/// line family from its other incidence roles. An endpoint role alone
+/// establishes a bounded curve, not a line.
+fn section_skamp_line_without_type35_target(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    item: &crate::feature::definitions::FeatureSkampItem,
+) -> bool {
+    unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+        matches!(
+            segment.kind,
+            crate::feature::definitions::FeatureSegmentKind::Line(_)
+        )
+    }) || unique_centered_line_segment(definition, item.entity_id).is_some()
+        || unique_section_incidence_curve_family_without_type35_target(definition, item.entity_id)
+            == Some(SectionEntityIncidenceFamily::Line)
+        || (saved_section_entity_fallback_allowed(definition, item.entity_id)
+            && section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+                matches!(
+                    entity,
+                    crate::feature::definitions::FeatureSavedEntity::Line(_)
+                )
+            }))
 }
 
 pub(in super::super) fn section_saved_entity(

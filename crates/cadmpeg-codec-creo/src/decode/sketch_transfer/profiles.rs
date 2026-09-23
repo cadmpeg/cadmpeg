@@ -401,7 +401,12 @@ fn section_incidence_curve_family_evidence_without_type35(
 
 #[derive(Clone, Copy)]
 enum SolverRoles {
+    /// Unary, endpoint, center, line-pair and radius-equality roles.
     Strict,
+    /// The strict roles and the type-zero point role.
+    WithoutType35Target,
+    /// The strict roles, the type-zero point role and the type-35 target line
+    /// role.
     Extended,
 }
 
@@ -455,7 +460,10 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
                 }
             }
         }
-        if matches!(solver_roles, SolverRoles::Extended) {
+        if matches!(
+            solver_roles,
+            SolverRoles::WithoutType35Target | SolverRoles::Extended
+        ) {
             let type_zero_point_role =
                 |target: &crate::feature::definitions::FeatureSkampItem,
                  point: &crate::feature::definitions::FeatureSkampItem| {
@@ -514,6 +522,22 @@ pub(in super::super) fn unique_section_incidence_curve_family(
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
     exactly_one(section_incidence_curve_family_evidence(definition, entity_id).into_iter())
+}
+
+/// The unique incidence family of an entity when its sense-zero type-35
+/// target roles supply no evidence.
+pub(in super::super) fn unique_section_incidence_curve_family_without_type35_target(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    entity_id: u32,
+) -> Option<SectionEntityIncidenceFamily> {
+    exactly_one(
+        section_incidence_curve_family_evidence_with_solver_roles(
+            definition,
+            entity_id,
+            SolverRoles::WithoutType35Target,
+        )
+        .into_iter(),
+    )
 }
 
 pub(in super::super) fn normalize_section_incidence_curve_family_evidence(

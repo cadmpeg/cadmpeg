@@ -946,7 +946,7 @@ mod tests {
             ..
         } = relation.definition.kind()
         else {
-            panic!("type-35 relation on an unbounded line: {relation:#?}");
+            panic!("a native type-35 relation: {relation:#?}");
         };
         assert_eq!(native_kind, "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
@@ -1076,5 +1076,103 @@ mod tests {
             })
             .expect("unresolved axis line");
         assert_type35_retains_its_native_form(&result, axis_line.id());
+    }
+
+    /// An opaque `segtab` row with the unknown type 99 and external identifier
+    /// `external_id`.
+    fn opaque_row(external_id: u8) -> [u8; 12] {
+        [
+            99,
+            0,
+            0,
+            0,
+            0xf6,
+            0xf6,
+            0xf6,
+            0,
+            0xf6,
+            0xf6,
+            0xf6,
+            external_id,
+        ]
+    }
+
+    /// The decoded sketch entity with external identifier 42.
+    fn entity_42(result: &cadmpeg_ir::codec::DecodeResult) -> &SketchEntityId {
+        result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id().as_str().ends_with(":42"))
+            .expect("entity 42")
+            .id()
+    }
+
+    const POINT_9: [(u8, u8, &[u8]); 2] = [(1, 9, &X), (2, 9, &[0xe4])];
+
+    #[test]
+    fn a_midpoint_target_role_does_not_make_an_opaque_row_a_midpoint_target() {
+        let result = decode_type35_section(&POINT_9, opaque_row(42), &[]);
+        assert_type35_retains_its_native_form(&result, entity_42(&result));
+    }
+
+    #[test]
+    fn a_midpoint_target_role_does_not_make_a_solver_only_entity_a_midpoint_target() {
+        // Entity 42 has no `segtab` row; the row is entity 44.
+        let result = decode_type35_section(&POINT_9, opaque_row(44), &[]);
+        assert_type35_retains_its_native_form(&result, entity_42(&result));
+    }
+
+    #[test]
+    fn a_midpoint_target_role_does_not_make_a_bounded_curve_row_a_midpoint_target() {
+        // A type-12 row between the unsolved section points 7 and 8.
+        let result = decode_type35_section(
+            &POINT_9,
+            [12, 0, 0, 0, 7, 8, 0xf6, 0, 0xf6, 0xf6, 0xf6, 42],
+            &[],
+        );
+        assert_type35_retains_its_native_form(&result, entity_42(&result));
+    }
+
+    #[test]
+    fn an_endpoint_role_does_not_make_an_opaque_row_a_midpoint_target() {
+        // An inactive type-0 incidence selects the first endpoint of entity 42.
+        let result = decode_type35_section(
+            &POINT_9,
+            opaque_row(42),
+            &[b"\x06\x00\x00\x00\xf8\x02\xf7\x6c\xfb\xe2\x2a\x02\xe2\x2b\x00"],
+        );
+        assert_type35_retains_its_native_form(&result, entity_42(&result));
+    }
+
+    #[test]
+    fn a_unary_line_role_makes_an_opaque_row_a_midpoint_target() {
+        // An inactive unary vertical incidence on entity 42.
+        let result = decode_type35_section(
+            &POINT_9,
+            opaque_row(42),
+            &[b"\x06\x02\x00\x00\xf8\x01\xf7\x6c\xfb\xe2\x2a\x00"],
+        );
+        let model = &result.ir().model;
+        let [relation] = model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| constraint.id.as_str().ends_with(":skamp:5"))
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one type-35 relation: {:#?}", model.sketch_constraints);
+        };
+        let SketchConstraintDefinitionInput::Midpoint {
+            point: SketchLocus::Entity(point),
+            entity,
+        } = relation.definition.kind()
+        else {
+            panic!("a midpoint relation: {relation:#?}");
+        };
+        assert!(point.as_str().ends_with(":43"), "{point:?}");
+        assert_eq!(entity, entity_42(&result));
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{validation:#?}");
     }
 }
