@@ -5,8 +5,8 @@ use super::error_finding;
 use crate::document::CadIr;
 use crate::report::check::{Check, Finding};
 use crate::sketches::{
-    SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchGeometry,
-    SketchGeometryDefinition, SketchLocus,
+    SketchConstraintDefinitionInput as Constraint, SketchDistancePair, SketchEntityKindRestriction,
+    SketchGeometry, SketchGeometryDefinition, SketchLocus,
     SpatialSketchConstraintDefinitionInput as SpatialConstraint, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
@@ -1494,67 +1494,28 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Refuse a midpoint, arc-angle or ellipse-angle constraint whose referenced
-/// entity has a neutral geometry of another kind. An absent entity is a
-/// referential finding of its own. External and native geometry has no neutral
-/// kind, so it is admitted.
+/// Refuse a constraint whose restricted entity has a neutral geometry of a kind
+/// the constraint does not admit. An absent entity is a referential finding of
+/// its own.
 fn constraint_entity_kind_refusal(
     definition: &Constraint,
     geometry: &HashMap<&crate::sketches::SketchEntityId, &SketchGeometry>,
 ) -> Option<&'static str> {
-    let (entity, admitted, message): (_, fn(&SketchGeometryDefinition) -> bool, _) =
-        match definition {
-            Constraint::Midpoint { entity, .. } => (
-                entity,
-                |definition| {
-                    matches!(
-                        definition,
-                        SketchGeometryDefinition::Line { .. }
-                            | SketchGeometryDefinition::Arc { .. }
-                            | SketchGeometryDefinition::Ellipse {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Hyperbola {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Parabola {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Nurbs { .. }
-                    )
-                },
-                "sketch midpoint constraint references an entity that is not a bounded curve",
-            ),
-            Constraint::ArcAngle { entity, .. } => (
-                entity,
-                |definition| matches!(definition, SketchGeometryDefinition::Arc { .. }),
-                "sketch arc-angle constraint references an entity that is not a circular arc",
-            ),
-            Constraint::EllipseAngle { entity, .. } => (
-                entity,
-                |definition| {
-                    matches!(
-                        definition,
-                        SketchGeometryDefinition::Ellipse {
-                            bounds: Some(_),
-                            ..
-                        }
-                    )
-                },
-                "sketch ellipse-angle constraint references an entity that is not a bounded ellipse",
-            ),
-            _ => return None,
-        };
-    let definition = geometry.get(entity)?.definition();
-    let unclassified = matches!(
-        definition,
-        SketchGeometryDefinition::ExternalReference { .. }
-            | SketchGeometryDefinition::Native { .. }
-    );
-    (!unclassified && !admitted(definition)).then_some(message)
+    let (entity, restriction) = definition.entity_kind_restriction()?;
+    if restriction.admits(geometry.get(entity)?.definition()) {
+        return None;
+    }
+    Some(match restriction {
+        SketchEntityKindRestriction::BoundedCurve => {
+            "sketch midpoint constraint references an entity that is not a bounded curve"
+        }
+        SketchEntityKindRestriction::CircularArc => {
+            "sketch arc-angle constraint references an entity that is not a circular arc"
+        }
+        SketchEntityKindRestriction::BoundedEllipse => {
+            "sketch ellipse-angle constraint references an entity that is not a bounded ellipse"
+        }
+    })
 }
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {

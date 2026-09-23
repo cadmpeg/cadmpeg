@@ -816,6 +816,14 @@ pub(in super::super) fn section_skamp_midpoint(
         if section_skamp_is_arc(definition, item) {
             return sketch_entity_id(sketch, item.entity_id);
         }
+        // A type-25 section-reference line and an axis line anchored at one
+        // section point are unbounded, so neither is a midpoint target.
+        if unique_reference_line_segment(definition, item.entity_id).is_some()
+            || unique_decoded_section_segment(definition, item.entity_id)
+                .is_some_and(|segment| section_degenerate_axis_line(definition, segment))
+        {
+            return None;
+        }
         section_skamp_oriented_line(definition, sketch, item, geometry)
     };
     let point = |item: &crate::feature::definitions::FeatureSkampItem| {
