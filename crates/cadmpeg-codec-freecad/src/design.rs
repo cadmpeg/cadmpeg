@@ -5404,7 +5404,7 @@ fn helical_sweep_definition(
     let construction = HelicalSweepConstruction {
         profile: profile.planar().cloned()?,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
-        axis_direction: cadmpeg_ir::units::UnitVector3::new(axis_direction.unit()?)?,
+        axis_direction: cadmpeg_ir::units::UnitVector3::normalized(axis_direction)?,
         law,
         pitch: cadmpeg_ir::scalar::NonNegativeLength::new(scalar_named(properties, "Pitch")?)?,
         travel: cadmpeg_ir::features::HelicalSweepTravel::new(
