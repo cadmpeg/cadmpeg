@@ -275,3 +275,24 @@ fn an_assigned_real_keeps_its_bits_in_the_length_and_angle_families() {
         assert_eq!(Angle::new(value), Some(angle));
     }
 }
+
+#[test]
+fn a_nonzero_length_magnitude_is_the_positive_length_it_admits() {
+    use crate::scalar::{NonZeroLength, PositiveLength};
+
+    for value in [
+        -2.5,
+        3.0,
+        f64::MIN,
+        f64::MAX,
+        -f64::MIN_POSITIVE,
+        -f64::from_bits(1),
+        f64::from_bits(1),
+    ] {
+        let magnitude = NonZeroLength::new(value)
+            .expect("a finite nonzero length")
+            .abs();
+        assert_eq!(magnitude.get().to_bits(), value.abs().to_bits());
+        assert_eq!(PositiveLength::new(value.abs()), Some(magnitude));
+    }
+}

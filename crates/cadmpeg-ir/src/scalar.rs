@@ -322,6 +322,15 @@ impl Length {
     }
 }
 
+impl NonZeroLength {
+    /// The magnitude. The magnitude of a finite nonzero value is finite and
+    /// positive.
+    #[must_use]
+    pub const fn abs(self) -> PositiveLength {
+        PositiveLength(self.0.abs())
+    }
+}
+
 impl Angle {
     /// Reverse the sign.
     #[must_use]
