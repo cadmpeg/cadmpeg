@@ -711,13 +711,25 @@ impl<'a> Cur<'a> {
         let mark = self.pos;
         let count = self.long()?;
         let count = usize::try_from(count).ok()?;
-        let mut values = Vec::with_capacity(count);
+        if count > self.prims.len().saturating_sub(self.pos) {
+            self.pos = mark;
+            return None;
+        }
+        let mut values = Vec::new();
+        if values.try_reserve_exact(count).is_err() {
+            self.pos = mark;
+            return None;
+        }
         for _ in 0..count {
             let Some(value) = self.num() else {
                 self.pos = mark;
                 return None;
             };
             values.push(value);
+        }
+        if out.try_reserve(count + 1).is_err() {
+            self.pos = mark;
+            return None;
         }
         out.push(Token::Long(count as i64));
         out.extend(values.into_iter().map(Token::Double));
@@ -1460,6 +1472,20 @@ fn type_record(head: &str, prims: &[Prim], k: f64) -> Vec<Token> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn counted_float_array_refuses_an_unavailable_huge_count_without_allocating() {
+        let prims = [Prim::Integer(i64::MAX)];
+        let mut cur = Cur {
+            prims: &prims,
+            pos: 0,
+            k: 1.0,
+        };
+        let mut output = Vec::new();
+        assert_eq!(cur.float_array(&mut output), None);
+        assert_eq!(cur.pos, 0);
+        assert!(output.is_empty());
+    }
+
+    #[test]
     fn numerical_audit_sat_integer_fields_preserve_exact_values_and_reject_overflow() {
         let stream = parse(&asm_stream(
             "audit-integer 9007199254740993 -9223372036854775808 9223372036854775807 #\n",
@@ -1474,7 +1500,7 @@ mod tests {
         }
     }
 
-    use super::{parse, Terminator};
+    use super::{parse, Cur, Prim, Terminator};
     use crate::sab::Token;
 
     fn approx(a: f64, b: f64) -> bool {

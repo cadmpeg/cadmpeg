@@ -1844,14 +1844,19 @@ fn loft_subdata_form(
     } else {
         usize::try_from(column_count).ok()?
     };
-    // Each row consumes two double tokens for its parameters.
-    let rows_to_read = bounded_len(rows_to_read as u64, 2, cur.rest().len())?;
-    let mut rows = Vec::with_capacity(rows_to_read);
+    // Each row has one parameter pair, its column pairs, and a revision pair.
+    let pairs_per_row = 1usize
+        .checked_add(columns_to_read)?
+        .checked_add(usize::from(revision && type_code != 211))?;
+    let tokens_per_row = pairs_per_row.checked_mul(2)?;
+    let rows_to_read = bounded_len(rows_to_read as u64, tokens_per_row, cur.rest().len())?;
+    let mut rows = Vec::new();
+    rows.try_reserve_exact(rows_to_read).ok()?;
     for _ in 0..rows_to_read {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
         let mut columns = Vec::new();
         if type_code != 211 {
-            columns.reserve(columns_to_read);
+            columns.try_reserve_exact(columns_to_read).ok()?;
             for _ in 0..columns_to_read {
                 columns.push([cur.take_f64()?, cur.take_f64()?]);
             }
@@ -4439,6 +4444,25 @@ fn procedural_resolving_refs(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod loft_count_tests {
+    use super::loft_subdata_form;
+    use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
+
+    #[test]
+    fn huge_column_count_without_pairs_is_refused_before_reservation() {
+        let tokens = [
+            Token::Long(212),
+            Token::Long(1),
+            Token::Long(i64::MAX),
+            Token::Double(0.0),
+            Token::Double(1.0),
+        ];
+        assert!(loft_subdata_form(&mut Cur::at(&tokens, 0), false).is_none());
+    }
 }
 
 #[cfg(test)]
