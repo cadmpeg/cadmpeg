@@ -28,7 +28,7 @@ use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use cadmpeg_ir::{
     features::{
         holes::{HoleBottom, HoleKind, HolePlacement},
-        FeatureDefinition, FeatureOperation, LinearTermination,
+        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, LinearTermination,
     },
     scalar::Length,
 };
@@ -130,19 +130,16 @@ pub(crate) fn project_helix_axes(
         model_feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Helix {
-                axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin).ok_or_else(
-                    || {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks helix origin must be finite".into(),
-                        )
-                    },
-                )?,
-                axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction)
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks helix direction must have finite nonzero norm".into(),
-                        )
-                    })?,
+                axis_origin: FinitePoint3::new(axis_origin).ok_or_else(|| {
+                    cadmpeg_core::CodecError::Malformed(
+                        "SolidWorks helix origin must be finite".into(),
+                    )
+                })?,
+                axis_direction: FeatureDirection3::new(axis_direction).ok_or_else(|| {
+                    cadmpeg_core::CodecError::Malformed(
+                        "SolidWorks helix direction must have finite nonzero norm".into(),
+                    )
+                })?,
                 radius: cadmpeg_ir::scalar::PositiveLength::new(radius).ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
                         "SolidWorks projected length must be finite".into(),
@@ -1608,12 +1605,12 @@ pub(crate) fn project_hole_position_sketches(
                     }
                 };
                 let (Some(origin), Some(axis)) = (
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    FinitePoint3::new(Point3::new(
                         origin.x + position.u * u_axis.x + position.v * v_axis.x,
                         origin.y + position.u * u_axis.y + position.v * v_axis.y,
                         origin.z + position.u * u_axis.z + position.v * v_axis.z,
                     )),
-                    cadmpeg_ir::features::FeatureDirection3::new(normal),
+                    FeatureDirection3::new(normal),
                 ) else {
                     resolved.clear();
                     break;
@@ -1810,10 +1807,11 @@ pub(crate) fn project_spatial_hole_position_sketches(
                             cylinder_surface,
                         )) => {
                             let origin = cylinder_surface.origin().get();
-                            let axis = *cylinder_surface.axis();
+                            let axis =
+                                FeatureDirection3::from(cylinder_surface.frame().unit_axis());
                             let candidate = cylinder_surface.radius().get();
                             ((candidate - radius).abs() <= radius_tolerance
-                                && point_axis_distance_squared(point, origin, axis)
+                                && point_axis_distance_squared(point, origin, axis.get())
                                     <= axis_tolerance_squared)
                                 .then_some((origin, axis))
                         }
@@ -1831,7 +1829,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     support_axes
                         .dedup_by(|left, right| left.dot(*right) >= 1.0 - EPS_HOLE_GEOMETRY);
                     if let [axis] = support_axes.as_slice() {
-                        axes.push((point, *axis));
+                        let Some(axis) = FeatureDirection3::new(*axis) else {
+                            continue;
+                        };
+                        axes.push((point, axis));
                     }
                 }
                 let Some(axes) = carrier_placements(axes) else {
@@ -1944,8 +1945,8 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
         .into_iter()
         .map(|origin| {
             Some(HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-                axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
+                origin: FinitePoint3::new(origin)?,
+                axis: FeatureDirection3::new(axis)?,
             })
         })
         .collect::<Option<Vec<_>>>()
@@ -2037,22 +2038,20 @@ pub(crate) fn project_generated_hole_axes(
                         continue;
                     };
                     let origin = cylinder_surface.origin().get();
-                    let axis = *cylinder_surface.axis();
                     let candidate_radius = cylinder_surface.radius().get();
                     if (candidate_radius - radius).abs() > radius_tolerance {
                         continue;
                     }
-                    let axis = canonical_axis(axis);
-                    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
+                    let axis = canonical_direction(FeatureDirection3::from(
+                        cylinder_surface.frame().unit_axis(),
+                    ));
+                    let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
                     let closest = Point3::new(
                         origin.x - station * axis.x,
                         origin.y - station * axis.y,
                         origin.z - station * axis.z,
                     );
-                    let (Some(closest), Some(axis)) = (
-                        cadmpeg_ir::features::FinitePoint3::new(closest),
-                        cadmpeg_ir::features::FeatureDirection3::new(axis),
-                    ) else {
+                    let Some(closest) = FinitePoint3::new(closest) else {
                         axes.clear();
                         break;
                     };
@@ -2244,7 +2243,7 @@ pub(crate) fn project_hole_topology_axes(
 
 fn project_flat_blind_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
 ) {
     let unresolved = features
         .iter()
@@ -2299,7 +2298,7 @@ fn project_flat_blind_topology_axes(
 
 fn project_drilled_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
 ) {
     expand_seeded_drilled_hole_topology_axes(features, cylinders, topology);
@@ -2364,7 +2363,7 @@ fn drilled_hole_topology_candidates(
     diameter: f64,
     length: f64,
     drill_point_angle: f64,
-    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     surfaces: &[Surface],
 ) -> Option<Vec<HolePlacement>> {
     let radius = diameter * 0.5;
@@ -2383,12 +2382,9 @@ fn drilled_hole_topology_candidates(
                         && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY
                 } =>
             {
-                let origin = cone_surface.origin().get();
                 hole_axis_key(&HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-                    axis: cadmpeg_ir::features::FeatureDirection3::from(
-                        cone_surface.frame().unit_axis(),
-                    ),
+                    origin: cone_surface.origin(),
+                    axis: FeatureDirection3::from(cone_surface.frame().unit_axis()),
                 })
             }
             _ => None,
@@ -2413,7 +2409,7 @@ fn drilled_hole_topology_candidates(
 
 fn expand_seeded_drilled_hole_topology_axes(
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, Vector3, f64, f64, bool)],
+    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
     topology: &HoleTopology<'_>,
 ) {
     let mut visited = HashSet::new();
@@ -3097,7 +3093,10 @@ pub(crate) fn project_hole_axes(
     }
 }
 
-fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point3, Vector3)> {
+fn cylindrical_bore_axes(
+    radius: f64,
+    topology: &HoleTopology<'_>,
+) -> Vec<(Point3, FeatureDirection3)> {
     let surfaces = topology
         .surfaces
         .iter()
@@ -3115,7 +3114,7 @@ fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point
                 return None;
             };
             let origin = cylinder_surface.origin().get();
-            let axis = *cylinder_surface.axis();
+            let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
             let candidate = cylinder_surface.radius().get();
             ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
         })
@@ -3151,24 +3150,18 @@ fn plane_owned_bore_placements(
                 plane_origin.y - origin.y,
                 plane_origin.z - origin.z,
             )
-            .dot(axis);
+            .dot(axis.get());
             Some((
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                FinitePoint3::new(Point3::new(
                     origin.x + station * axis.x,
                     origin.y + station * axis.y,
                     origin.z + station * axis.z,
                 ))?,
-                cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
+                FeatureDirection3::new(plane_normal)?,
             ))
         })
         .try_fold(
-            HashMap::<
-                [GridCoordinate; 3],
-                (
-                    cadmpeg_ir::features::FinitePoint3,
-                    cadmpeg_ir::features::FeatureDirection3,
-                ),
-            >::new(),
+            HashMap::<[GridCoordinate; 3], (FinitePoint3, FeatureDirection3)>::new(),
             |mut placements, placement| {
                 let (origin, axis) = placement?;
                 placements
@@ -3199,22 +3192,22 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
             return None;
         };
         let origin = cylinder_surface.origin().get();
-        let axis = *cylinder_surface.axis();
+        let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
         let candidate = cylinder_surface.radius().get();
         ((candidate - radius).abs() <= tolerance).then_some((origin, axis))
     }))
 }
 
 fn carrier_placements(
-    axes: impl IntoIterator<Item = (Point3, Vector3)>,
+    axes: impl IntoIterator<Item = (Point3, FeatureDirection3)>,
 ) -> Option<Vec<HolePlacement>> {
     const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| GridCoordinate::new(value, AXIS_QUANTUM);
     let mut carriers = axes
         .into_iter()
         .map(|(origin, axis)| {
-            let axis = canonical_axis(axis);
-            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
+            let axis = canonical_direction(axis);
+            let station = Vector3::new(origin.x, origin.y, origin.z).dot(axis.get());
             let closest = Point3::new(
                 origin.x - station * axis.x,
                 origin.y - station * axis.y,
@@ -3230,8 +3223,8 @@ fn carrier_placements(
                     quantize(axis.z),
                 ],
                 HolePlacement::Axis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(closest)?,
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
+                    origin: FinitePoint3::new(closest)?,
+                    axis,
                 },
             ))
         })
@@ -3248,7 +3241,7 @@ fn carrier_placements(
 
 fn cylindrical_bore_face_spans(
     topology: &HoleTopology<'_>,
-) -> Vec<(Point3, Vector3, f64, f64, bool)> {
+) -> Vec<(Point3, FeatureDirection3, f64, f64, bool)> {
     let surfaces = topology
         .surfaces
         .iter()
@@ -3289,7 +3282,7 @@ fn cylindrical_bore_face_spans(
                 return None;
             };
             let origin = cylinder_surface.origin().get();
-            let axis = *cylinder_surface.axis();
+            let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
             let radius = cylinder_surface.radius().get();
             let mut stations = face
                 .loops
@@ -3312,7 +3305,7 @@ fn cylindrical_bore_face_spans(
                         point.position().y - origin.y,
                         point.position().z - origin.z,
                     )
-                    .dot(axis)
+                    .dot(axis.get())
                 });
             let first = stations.next()?;
             let (minimum, maximum) = stations
@@ -3378,8 +3371,11 @@ pub(crate) fn project_topological_hole_constructions(
                         }
                         let parallel =
                             axis.dot(placement_axis.get()).abs() >= 1.0 - EPS_HOLE_GEOMETRY;
-                        let distance =
-                            point_axis_distance_squared(placement_origin.get(), *origin, *axis);
+                        let distance = point_axis_distance_squared(
+                            placement_origin.get(),
+                            *origin,
+                            axis.get(),
+                        );
                         (parallel && distance <= EPS_HOLE_EXACT_GEOMETRY)
                             .then_some((*radius, *span))
                     })
@@ -3719,20 +3715,22 @@ fn match_marker_loci_to_bore_axes(
 
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let quantize_scalar = |value: f64| GridCoordinate::new(value, QUANTUM);
-    let mut grouped =
-        HashMap::<[GridCoordinate; 3], HashMap<[GridCoordinate; 3], Vec<(Point3, Vector3)>>>::new();
+    let mut grouped = HashMap::<
+        [GridCoordinate; 3],
+        HashMap<[GridCoordinate; 3], Vec<(FinitePoint3, FeatureDirection3)>>,
+    >::new();
     for surface in surfaces {
         let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
         else {
             continue;
         };
-        let origin = cylinder_surface.origin().get();
-        let axis = *cylinder_surface.axis();
+        let origin = cylinder_surface.origin();
+        let axis = FeatureDirection3::from(cylinder_surface.frame().unit_axis());
         let candidate = cylinder_surface.radius().get();
         if (candidate - radius).abs() > radius_tolerance {
             continue;
         }
-        let canonical = canonical_axis(axis);
+        let canonical = canonical_axis(axis.get());
         let closest_distance = Vector3::new(origin.x, origin.y, origin.z).dot(canonical);
         let closest = Point3::new(
             origin.x - closest_distance * canonical.x,
@@ -3763,21 +3761,23 @@ fn match_marker_loci_to_bore_axes(
         let mut candidates = lines
             .into_iter()
             .filter_map(|(point, surfaces)| {
-                let compare_origins = |left: &&(Point3, Vector3), right: &&(Point3, Vector3)| {
-                    left.0
-                        .x
-                        .total_cmp(&right.0.x)
-                        .then_with(|| left.0.y.total_cmp(&right.0.y))
-                        .then_with(|| left.0.z.total_cmp(&right.0.z))
-                };
+                let compare_origins =
+                    |left: &&(FinitePoint3, FeatureDirection3),
+                     right: &&(FinitePoint3, FeatureDirection3)| {
+                        left.0
+                            .x
+                            .total_cmp(&right.0.x)
+                            .then_with(|| left.0.y.total_cmp(&right.0.y))
+                            .then_with(|| left.0.z.total_cmp(&right.0.z))
+                    };
                 let (origin, axis) = match direction {
                     Some(expected) => surfaces
                         .iter()
-                        .filter(|(_, axis)| expected.dot(*axis) >= 1.0 - EPS_HOLE_GEOMETRY)
+                        .filter(|(_, axis)| expected.dot(axis.get()) >= 1.0 - EPS_HOLE_GEOMETRY)
                         .min_by(compare_origins)?,
                     None => surfaces.iter().min_by(compare_origins)?,
                 };
-                let axis = direction.map_or_else(|| canonical_axis(*axis), |_| *axis);
+                let axis = direction.map_or_else(|| canonical_direction(*axis), |_| *axis);
                 Some((point, *origin, axis))
             })
             .collect::<Vec<_>>();
@@ -3801,13 +3801,11 @@ fn match_marker_loci_to_bore_axes(
             }
             let placements = candidates
                 .iter()
-                .map(|(_, origin, axis)| {
-                    Some(HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(*origin)?,
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(*axis)?,
-                    })
+                .map(|(_, origin, axis)| HolePlacement::Axis {
+                    origin: *origin,
+                    axis: *axis,
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<Vec<_>>();
             let key = placements
                 .iter()
                 .map(|placement| match placement {
@@ -3842,13 +3840,11 @@ fn match_marker_loci_to_bore_axes(
         for subset in subsets {
             let placements = subset
                 .iter()
-                .map(|index| {
-                    Some(HolePlacement::Axis {
-                        origin: cadmpeg_ir::features::FinitePoint3::new(candidates[*index].1)?,
-                        axis: cadmpeg_ir::features::FeatureDirection3::new(candidates[*index].2)?,
-                    })
+                .map(|index| HolePlacement::Axis {
+                    origin: candidates[*index].1,
+                    axis: candidates[*index].2,
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<Vec<_>>();
             let key = placements
                 .iter()
                 .map(|placement| match placement {
@@ -3876,12 +3872,29 @@ fn match_marker_loci_to_bore_axes(
     Some(solution.clone())
 }
 
-fn canonical_axis(axis: Vector3) -> Vector3 {
-    let sign = [axis.x, axis.y, axis.z]
+/// The sign that moves `axis` into the canonical hemisphere: the sign of its
+/// first component whose magnitude exceeds the exact-geometry tolerance, or
+/// one when no component does.
+fn canonical_sign(axis: Vector3) -> f64 {
+    [axis.x, axis.y, axis.z]
         .into_iter()
         .find(|component| component.abs() > EPS_HOLE_EXACT_GEOMETRY)
-        .map_or(1.0, f64::signum);
+        .map_or(1.0, f64::signum)
+}
+
+fn canonical_axis(axis: Vector3) -> Vector3 {
+    let sign = canonical_sign(axis);
     Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
+}
+
+/// The admitted form of [`canonical_axis`]. Multiplying a finite component by
+/// one or minus one is exact, so the components equal the raw form bit for bit.
+fn canonical_direction(axis: FeatureDirection3) -> FeatureDirection3 {
+    if canonical_sign(axis.get()) < 0.0 {
+        axis.reversed()
+    } else {
+        axis
+    }
 }
 
 fn congruent_bore_axis_subsets(
@@ -4330,12 +4343,12 @@ fn constrained_bore_axes(
         .map(|index| {
             let point = loci[index];
             Some(HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                origin: FinitePoint3::new(Point3::new(
                     origin.x + point.u * u_axis.x + point.v * v_axis.x,
                     origin.y + point.u * u_axis.y + point.v * v_axis.y,
                     origin.z + point.u * u_axis.z + point.v * v_axis.z,
                 ))?,
-                axis: cadmpeg_ir::features::FeatureDirection3::new(normal)?,
+                axis: FeatureDirection3::new(normal)?,
             })
         })
         .collect::<Option<Vec<_>>>()
