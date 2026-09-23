@@ -35,7 +35,8 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
     native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
     native_f64(&mut bytes, 60.0);
-    native_f64(&mut bytes, target.tolerances.linear.get());
+    // Binary ASM stores length tolerances in centimetres.
+    native_f64(&mut bytes, target.tolerances.linear.get() / 10.0);
     native_f64(&mut bytes, target.tolerances.angular.get());
     Ok(bytes)
 }

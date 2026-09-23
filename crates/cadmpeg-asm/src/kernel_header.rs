@@ -55,7 +55,7 @@ pub struct KernelHeader {
     pub save_date: Option<String>,
     /// Kernel scale metadata slot. Coordinate decoding does not apply it.
     pub scale: Option<f64>,
-    /// Absolute distance tolerance `resabs`.
+    /// Absolute distance tolerance `resabs`, normalized to centimetres.
     pub linear: Option<f64>,
     /// Normal tolerance `resnor`.
     pub angular: Option<f64>,

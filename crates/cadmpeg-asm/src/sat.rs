@@ -51,7 +51,7 @@ pub struct TextHeader {
     pub save_date: String,
     /// Length unit of the stream, in millimetres per unit.
     pub scale: f64,
-    /// Absolute distance tolerance.
+    /// Absolute distance tolerance in stream length units.
     pub resabs: f64,
     /// Normal tolerance.
     pub resnor: f64,
@@ -61,8 +61,8 @@ impl TextHeader {
     /// The header as a [`KernelHeader`] for the shared decode path.
     ///
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
-    /// into the centimetre convention, so the decoders see the same unit a
-    /// binary stream carries.
+    /// into the centimetre convention, including `resabs`, so the decoders see
+    /// the same unit a binary stream carries.
     pub fn as_kernel_header(&self) -> KernelHeader {
         KernelHeader {
             save_format_version: Some(self.save_format_version),
@@ -72,9 +72,20 @@ impl TextHeader {
             product_version: Some(self.product_version.clone()),
             save_date: Some(self.save_date.clone()),
             scale: Some(10.0),
-            linear: Some(self.resabs),
+            linear: Some(resabs_cm(self.scale, self.resabs)),
             angular: Some(self.resnor),
         }
+    }
+}
+
+/// Convert a text length tolerance to the binary stream's centimetre unit.
+/// The second product keeps a positive result when `scale / 10` rounds to zero.
+fn resabs_cm(scale: f64, resabs: f64) -> f64 {
+    let converted = resabs * (scale / 10.0);
+    if converted == 0.0 && resabs > 0.0 {
+        (resabs / 10.0) * scale
+    } else {
+        converted
     }
 }
 
@@ -351,6 +362,14 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
             format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
+        });
+    }
+    let normalized_resabs = resabs_cm(scale, resabs);
+    if resabs > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
+        return Err(StreamError {
+            format: StreamFormat::Text,
+            offset: at,
+            reason: "header resabs cannot be represented in centimetres".to_string(),
         });
     }
     Ok(TextHeader {
@@ -1537,6 +1556,33 @@ mod tests {
         assert_eq!(header.flags, Some(2));
         // The token values were converted; the reported unit is centimetres.
         assert_eq!(header.scale, Some(10.0));
+        let expected_resabs_cm = stream.header.resabs / 10.0;
+        assert_eq!(header.linear, Some(expected_resabs_cm));
+    }
+
+    #[test]
+    fn text_header_resabs_uses_declared_length_scale() {
+        let source = String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n"))
+            .expect("ASCII stream");
+        let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
+        let stream = parse(source.as_bytes()).expect("inch-scale stream");
+        let actual = stream.header.as_kernel_header().linear.expect("resabs");
+        let expected_resabs_cm = stream.header.resabs * 2.54;
+        assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn text_header_refuses_unrepresentable_resabs_conversion() {
+        let source = String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n"))
+            .expect("ASCII stream");
+        for replacement in ["20 1.7976931348623157e308 1.0e-10", "5e-324 1 1.0e-10"] {
+            let source = source.replacen("1 1e-06 1.0e-10", replacement, 1);
+            let error = parse(source.as_bytes()).expect_err("resabs cannot be normalized");
+            assert_eq!(
+                error.reason,
+                "header resabs cannot be represented in centimetres"
+            );
+        }
     }
 
     #[test]

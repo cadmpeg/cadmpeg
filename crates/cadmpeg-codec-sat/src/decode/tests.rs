@@ -51,12 +51,20 @@ fn both_encodings_decode_the_same_solid() {
     assert!((sphere_radius(&text) - 25.0).abs() < 1.0e-9);
     assert!((sphere_radius(&asm_binary) - 25.0).abs() < 1.0e-9);
     assert!((sphere_radius(&acis_binary) - 25.0).abs() < 1.0e-9);
+    let text_resabs_mm = 0.000_001;
+    let binary_resabs_mm = 0.000_01;
+    assert!((text.ir().tolerances.linear.get() - text_resabs_mm).abs() < f64::EPSILON);
+    for result in [&asm_binary, &acis_binary] {
+        assert!((result.ir().tolerances.linear.get() - binary_resabs_mm).abs() < f64::EPSILON);
+    }
 }
 
 #[test]
 fn text_scale_selects_the_length_unit() {
     let inch = decode_bytes(&text_sphere_stream(25.4));
     assert!((sphere_radius(&inch) - 635.0).abs() < 1.0e-9);
+    let expected_resabs_mm = 0.000_025_4;
+    assert!((inch.ir().tolerances.linear.get() - expected_resabs_mm).abs() < f64::EPSILON);
 }
 
 #[test]

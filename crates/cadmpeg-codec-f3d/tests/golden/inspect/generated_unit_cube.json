@@ -41,11 +41,11 @@
         "history_partition_offset": "8627",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "resabs": "0.000001",
+        "resabs": "0.0000001",
         "resnor": "0.0000000001",
         "save_date": "Thu Jan  1 00:00:00 1970",
         "scale": "60",
-        "sha256": "70ccb866093e5428ae50b3a3190f07d411ea2afdb463ed53b19193b8d730c5a1",
+        "sha256": "6c6c05ccc7d61852395fb09ed2a0305429e3b58985b9455f1cd0e6f8c5fd984f",
         "solved_record_len": "8627"
       },
       "compression": "stored",
