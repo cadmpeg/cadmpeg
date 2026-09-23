@@ -258,7 +258,8 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             record.pos,
             record.support_id,
             record.distance,
-            record.domain,
+            record.u_range,
+            record.v_range,
         )
     };
     assert_eq!(

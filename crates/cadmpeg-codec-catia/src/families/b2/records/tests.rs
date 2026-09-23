@@ -82,21 +82,23 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
             .collect::<Vec<_>>(),
         [0xe4, 0xc4, 0xec]
     );
+    let point = cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0);
+    let direction = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     assert!(matches!(
         &carriers[0].payload,
         B2PlaneCarrierPayload::PointDirection2 {
-            point: [10.0, 20.0],
-            direction: [1.0, 0.0],
+            origin,
+            frame,
             tail: [5.0, -2.0, 3.0],
-        }
+        } if origin.get() == point && *frame.reference().as_raw() == direction
     ));
     assert!(matches!(
         &carriers[1].payload,
         B2PlaneCarrierPayload::PointDirection3 {
-            point: [10.0, 20.0],
-            direction: [1.0, 0.0, 0.0],
+            origin,
+            frame,
             tail: [5.0, -2.0, 3.0],
-        }
+        } if origin.get() == point && *frame.reference().as_raw() == direction
     ));
     assert!(matches!(
         &carriers[2].payload,
@@ -955,8 +957,8 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(u8::from(records[0].reference_token), reference_token);
         assert_eq!(records[0].profile_allocation_id, 0x1234);
         assert_eq!(<[f64; 3]>::from(records[0].origin.get()), [1.0, 2.0, 3.0]);
-        assert_eq!(records[0].direction_x.get(), [1.0, 0.0, 0.0]);
-        assert_eq!(records[0].direction_y.get(), [0.0, 1.0, 0.0]);
+        assert_eq!(records[0].profile_frame.axis().get(), [1.0, 0.0, 0.0]);
+        assert_eq!(records[0].profile_frame.reference().get(), [0.0, 1.0, 0.0]);
         assert_eq!(records[0].axis.get(), [0.0, 0.0, 1.0]);
         assert_eq!(
             records[0].angular_range.endpoints(),
@@ -1059,7 +1061,7 @@ fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
             panic!("one B-family line profile")
         };
         assert_eq!(line.pos, 0);
-        assert_eq!(line.origin, [1.0, 2.0, 3.0]);
+        assert_eq!(<[f64; 3]>::from(line.origin.get()), [1.0, 2.0, 3.0]);
         assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
         assert_eq!(line.range.endpoints(), [-4.0, 9.0]);
     }
@@ -1163,7 +1165,7 @@ fn set_record_value(stream: &mut [u8], index: usize, value: f64) {
 }
 
 #[test]
-fn b2_torus_parser_gates_the_axis_by_the_euclidean_right_handed_cross_product() {
+fn b2_torus_parser_gates_the_axis_by_the_componentwise_right_handed_cross_product() {
     let long = 1.0 + 4.0e-13;
     let mut stream = b2_torus_stream();
     set_record_value(&mut stream, 7, long);
@@ -1183,10 +1185,48 @@ fn b2_torus_parser_gates_the_axis_by_the_euclidean_right_handed_cross_product() 
         set_record_value(&mut stream, index, value);
         assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
     }
+    // Each component is within 1e-12 of the axis; the euclidean deviation is
+    // about 1.3e-12.
     let mut stream = b2_torus_stream();
     set_record_value(&mut stream, 9, quarter);
     set_record_value(&mut stream, 10, quarter);
-    assert!(crate::families::b2::records::b2_tori(&stream).is_empty());
+    let [torus] = crate::families::b2::records::b2_tori(&stream)
+        .try_into()
+        .expect("each cross-product component is within 1e-12 of the axis");
+    assert_eq!(torus.frame.axis().get(), [quarter, quarter, 1.0]);
+}
+
+/// Each three-direction frame is admitted when the record is read only when
+/// its transverse directions are perpendicular to `1e-12`. The second
+/// transverse direction `(2e-12, 1, 0)` keeps the cross product with
+/// `(1, 0, 0)` equal to the axis `(0, 0, 1)`.
+#[test]
+fn b2_frames_refuse_transverse_directions_that_are_not_perpendicular() {
+    let skew = 2.0e-12;
+    let mut torus = b2_torus_stream();
+    set_record_value(&mut torus, 6, skew);
+    assert!(crate::families::b2::records::b2_tori(&torus).is_empty());
+    let mut sphere = b2_sphere_stream();
+    set_record_value(&mut sphere, 6, 5.0 * skew);
+    assert!(crate::families::b2::records::b2_spheres(&sphere).is_empty());
+    let mut cone = b2_cone_stream();
+    set_record_value(&mut cone, 6, skew);
+    assert!(crate::families::b2::records::b2_cones(&cone).is_empty());
+    let mut revolution = b2_revolution_stream();
+    revolution[56..64].copy_from_slice(&skew.to_le_bytes());
+    assert!(crate::families::b2::records::b2_revolutions(&revolution).is_empty());
+
+    let mut sphere = b2_sphere_stream();
+    set_record_value(&mut sphere, 6, 5.0 * 2.0_f64.powi(-40));
+    assert_eq!(crate::families::b2::records::b2_spheres(&sphere).len(), 1);
+    assert_eq!(
+        crate::families::b2::records::b2_cones(&b2_cone_stream()).len(),
+        1
+    );
+    assert_eq!(
+        crate::families::b2::records::b2_revolutions(&b2_revolution_stream()).len(),
+        1
+    );
 }
 
 #[test]
@@ -1252,7 +1292,7 @@ fn b2_centres_and_the_cone_half_angle_are_admitted_when_the_record_is_read() {
         assert_eq!(carried, center);
     }
     match crate::families::b2::records::b2_cone_geometry(&cone) {
-        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(surface))) => {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(surface)) => {
             assert_eq!(surface.half_angle(), cone.half_angle);
         }
         other => panic!("expected a cone, got {other:?}"),
@@ -1344,8 +1384,14 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, 2.5);
-    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
+    assert_eq!(offsets[0].distance.get(), 2.5);
+    assert_eq!(
+        [
+            offsets[0].u_range.endpoints(),
+            offsets[0].v_range.endpoints()
+        ],
+        [[0.0, 4.0], [-1.0, 3.0]]
+    );
 }
 
 #[test]
@@ -1410,11 +1456,16 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
         )
     })
     .unwrap();
+    let interval = |range: [f64; 2]| {
+        cadmpeg_ir::topology::IncreasingParameterInterval::new(range)
+            .expect("fixture interval is finite and increasing")
+    };
     let exact = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,
-        distance: tiny,
-        domain: [0.0, 0.0, tiny, tiny],
+        distance: cadmpeg_ir::scalar::FiniteReal::new(tiny).expect("finite distance"),
+        u_range: interval([0.0, tiny]),
+        v_range: interval([0.0, tiny]),
     };
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(
@@ -1425,13 +1476,13 @@ fn offset_support_binding_scales_each_nurbs_parameter_domain() {
     );
 
     let mut outside_u = exact.clone();
-    outside_u.domain[2] = 2.0 * tiny;
+    outside_u.u_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
         [None]
     );
     let mut outside_v = exact;
-    outside_v.domain[3] = 2.0 * tiny;
+    outside_v.v_range = interval([0.0, 2.0 * tiny]);
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
         [None]
@@ -1443,7 +1494,7 @@ fn consolidated_offset_support_parser_reads_width2_frame() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b3_offset_support_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, 2.5);
+    assert_eq!(offsets[0].distance.get(), 2.5);
 }
 
 #[test]
@@ -1718,7 +1769,7 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     let cones = crate::families::b2::records::b2_cones(&b2_cone_stream());
     assert_eq!(cones.len(), 1);
     assert_eq!(<[f64; 3]>::from(cones[0].apex.get()), [1.0, 2.0, 3.0]);
-    assert_eq!(cones[0].axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(cones[0].frame.axis().get(), [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle.get(), 0.25);
     assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
@@ -1784,8 +1835,14 @@ fn b2_construction_use_parser_reorders_offset_domain() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b2_construction_use_stream());
     assert_eq!(offsets.len(), 1);
     assert_eq!(offsets[0].support_id, 0x1234);
-    assert_eq!(offsets[0].distance, -2.0);
-    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
+    assert_eq!(offsets[0].distance.get(), -2.0);
+    assert_eq!(
+        [
+            offsets[0].u_range.endpoints(),
+            offsets[0].v_range.endpoints()
+        ],
+        [[0.0, 4.0], [-1.0, 3.0]]
+    );
 }
 
 #[test]
@@ -1799,27 +1856,31 @@ fn b2_offset_support_parser_rejects_nonincreasing_domains() {
     assert!(crate::families::b2::records::b2_offset_supports(&construction).is_empty());
 }
 
+/// The offset domain is two increasing intervals, so a record cannot hold a
+/// non-increasing domain and the binding does not test for one.
 #[test]
-fn offset_support_binding_rejects_nonincreasing_domains() {
-    let mut offset = crate::families::b2::records::B2OffsetSupport {
+fn an_offset_support_holds_only_increasing_domains_and_binds_them() {
+    use cadmpeg_ir::topology::IncreasingParameterInterval;
+
+    let interval = |range: [f64; 2]| {
+        IncreasingParameterInterval::new(range).expect("fixture interval is finite and increasing")
+    };
+    let offset = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 1,
-        distance: 2.0,
-        domain: [0.0, 0.0, 1.0, 1.0],
+        distance: cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite distance"),
+        u_range: interval([0.0, 1.0]),
+        v_range: interval([0.0, 1.0]),
     };
     let carriers = crate::families::a5a8::records::a5_surfaces(
         &a5_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     );
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset.clone()], &carriers),
+        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
     );
-    offset.domain[2] = offset.domain[0];
-    assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
-        [None]
-    );
+    assert!(IncreasingParameterInterval::new([0.0, 0.0]).is_none());
 }
 
 #[test]

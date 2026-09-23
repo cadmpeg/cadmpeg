@@ -594,6 +594,31 @@ impl RevolutionSurfaceConstruction {
             cache,
         })
     }
+
+    /// Build the construction with a legacy cache contract from admitted
+    /// parts. The axis and interval types state their contracts, and a legacy
+    /// cache contract has no condition of its own, so nothing is checked.
+    #[must_use]
+    pub const fn legacy(
+        directrix: CurveId,
+        (axis_origin, axis_direction): (FinitePoint3, UnitVector3),
+        angular_interval: IncreasingParameterInterval,
+        angular_parameter_interval: Option<IncreasingParameterInterval>,
+        parameter_interval: Option<IncreasingParameterInterval>,
+        transposed: bool,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            angular_parameter_interval,
+            parameter_interval,
+            transposed,
+            cache: CacheContract::Legacy { cache },
+        }
+    }
     /// Return the directrix.
     pub fn directrix(&self) -> &CurveId {
         &self.directrix
@@ -761,6 +786,28 @@ impl OffsetSurfaceConstruction {
             linear_support_extension,
             extension,
         })
+    }
+    /// Build an offset with a legacy extension from admitted parts. The
+    /// distance type states finiteness, and a legacy extension has no
+    /// condition of its own, so nothing is checked.
+    #[must_use]
+    pub const fn legacy(
+        support: SurfaceId,
+        distance: FiniteReal,
+        u_sense: Option<i64>,
+        v_sense: Option<i64>,
+        linear_support_extension: bool,
+        flags: super::LegacyExtensionFlags,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            support,
+            distance,
+            u_sense,
+            v_sense,
+            linear_support_extension,
+            extension: OffsetExtension::Legacy { flags, cache },
+        }
     }
     /// Return the support.
     pub fn support(&self) -> &SurfaceId {

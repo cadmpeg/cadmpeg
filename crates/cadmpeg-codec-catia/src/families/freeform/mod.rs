@@ -60,14 +60,14 @@ pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
+) -> Vec<ConsolidatedRevolutionBinding> {
     let mut bindings = Vec::new();
     for carrier in resolved {
         let index = carrier.revolution_index;
         let revolution = &carrier.revolution;
         let profile = &carrier.profile;
-        let direction_x = Vector3::from(revolution.direction_x.get());
-        let direction_y = Vector3::from(revolution.direction_y.get());
+        let direction_x = Vector3::from(revolution.profile_frame.axis().get());
+        let direction_y = Vector3::from(revolution.profile_frame.reference().get());
         let axis = Vector3::from(revolution.axis.get());
         let origin = revolution.origin.get();
         let transverse_coordinate =
@@ -91,18 +91,12 @@ pub(super) fn append_consolidated_revolutions(
             ),
             index,
         );
-        let (Some(admitted_center), Some(frame)) = (
-            FinitePoint3::new(center),
-            OrthonormalFrame3::from_units(
-                revolution.direction_x.into(),
-                revolution.direction_y.into(),
-            ),
-        ) else {
+        let Some(admitted_center) = FinitePoint3::new(center) else {
             continue;
         };
         let payload = cadmpeg_ir::geometry::analytic::CircleCurve::new(
             admitted_center,
-            frame,
+            revolution.profile_frame.into(),
             profile.radius,
         );
         annotate(
@@ -193,36 +187,22 @@ pub(super) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            RevolutionSurfaceConstruction::admit_angular_interval([
-                revolution.angular_range.lower() / revolution.angular_scale.get(),
-                revolution.angular_range.upper() / revolution.angular_scale.get(),
-            ])
-            .and_then(|angular_interval| {
-                RevolutionSurfaceConstruction::try_from_intervals(
+            ProceduralSurface::new(
+                ProceduralSurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution"),
+                    index,
+                ),
+                ProceduralSurfaceDefinition::Revolution(RevolutionSurfaceConstruction::legacy(
                     directrix,
                     (revolution.origin, revolution.axis.into()),
-                    angular_interval,
+                    revolution.angular_interval,
                     Some(revolution.angular_range),
                     Some(revolution.profile_range),
                     false,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-            })
-            .map(|admitted_payload| {
-                ProceduralSurface::new(
-                    ProceduralSurfaceId::compose(
-                        &cadmpeg_ir::identity_namespace!(
-                            "catia",
-                            "consolidated",
-                            "surface-revolution"
-                        ),
-                        index,
-                    ),
-                    ProceduralSurfaceDefinition::Revolution(admitted_payload),
                     None,
-                )
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+                )),
+                None,
+            ),
         );
         if let Some(geometry) = torus_geometry {
             bindings.push(ConsolidatedRevolutionBinding {
@@ -234,7 +214,7 @@ pub(super) fn append_consolidated_revolutions(
             });
         }
     }
-    Ok(bindings)
+    bindings
 }
 
 fn typed_face_counts(
@@ -460,7 +440,11 @@ pub(super) fn try_decode_freeform_surfaces(
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = if b5_graph.is_none() {
-        Some(freeform_surface_carriers(&scan.data, &consolidated_records, refusal).ok()?)
+        Some(freeform_surface_carriers(
+            &scan.data,
+            &consolidated_records,
+            refusal,
+        ))
     } else {
         None
     };
@@ -551,7 +535,7 @@ pub(super) fn try_decode_freeform_surfaces(
     if !topology_transferred {
         let surfaces = match fallback_surfaces.take() {
             Some(surfaces) => surfaces,
-            None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal).ok()?,
+            None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
         };
         for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId::compose(
@@ -574,17 +558,12 @@ pub(super) fn try_decode_freeform_surfaces(
         }
     }
     // The bindings this call returns are read by the standard-family route
-    // alone; here the call is made for the curves and surfaces it appends, and
-    // the only thing this route takes from its result is the refusal, which it
-    // states before it transfers no model.
-    if let Err(error) = append_consolidated_revolutions(
+    // alone; here the call is made for the curves and surfaces it appends.
+    append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    ) {
-        refusal.push_construction(&error);
-        return None;
-    }
+    );
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
     let mut standalone_wires = line_profiles
@@ -667,7 +646,7 @@ pub(super) fn try_decode_freeform_surfaces(
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     circle.center,
-                    OrthonormalFrame3::from_units(circle.axis.into(), circle.ref_direction.into())?,
+                    circle.frame,
                     circle.radius,
                 ),
             )),
@@ -1083,7 +1062,7 @@ fn freeform_surface_carriers(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
+) -> Vec<FreeformSurfaceCarrier> {
     let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
     let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let mut surfaces = resolved
@@ -1122,17 +1101,12 @@ fn freeform_surface_carriers(
     surfaces.extend(
         crate::families::b2::records::b2_cones_from_records(data, records)
             .into_iter()
-            .map(|surface| {
-                Ok(FreeformSurfaceCarrier {
-                    pos: surface.pos,
-                    geometry: crate::families::b2::records::b2_cone_geometry(&surface).ok_or_else(
-                        || cadmpeg_core::CodecError::malformed("invalid freeform surface geometry"),
-                    )?,
-                    source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
-                    source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
-                })
-            })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?,
+            .map(|surface| FreeformSurfaceCarrier {
+                pos: surface.pos,
+                geometry: crate::families::b2::records::b2_cone_geometry(&surface),
+                source_object: cgm_source_key("b2-03-29-frame", format!("{:010}", surface.pos)),
+                source_tag: format!("b2_03_29:frame_offset:{:010}", surface.pos),
+            }),
     );
     surfaces.extend(
         crate::families::b2::records::b2_spheres_from_records(data, records)
@@ -1154,7 +1128,7 @@ fn freeform_surface_carriers(
                 source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
             }),
     );
-    Ok(surfaces)
+    surfaces
 }
 
 fn freeform_surface_source(
@@ -1244,12 +1218,8 @@ fn consolidated_line_profiles(
             &cadmpeg_ir::identity_namespace!("catia", "consolidated", "line-profile-curve"),
             index,
         );
-        let Some(origin) =
-            FinitePoint3::new(Point3::new(line.origin[0], line.origin[1], line.origin[2]))
-        else {
-            continue;
-        };
-        let payload = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, line.direction.into());
+        let payload =
+            cadmpeg_ir::geometry::analytic::LineCurve::new(line.origin, line.direction.into());
         profiles.push(ConsolidatedLineProfile {
             curve: Curve {
                 id,
@@ -1363,34 +1333,23 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
-        let record_bounds = RecordBounds::try_new([
-            Some(offset.domain[0]),
-            Some(offset.domain[1]),
-            Some(offset.domain[2]),
-            Some(offset.domain[3]),
-        ])
-        .map_err(cadmpeg_core::CodecError::malformed)?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
-            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                carrier_ids[carrier].clone(),
-                offset.distance,
-                None,
-                None,
-                false,
-                cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                    cache: None,
-                },
-            )
-            .map(|admitted_payload| {
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Offset(admitted_payload),
-                    Some(record_bounds),
-                )
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
+                        carrier_ids[carrier].clone(),
+                        offset.distance,
+                        None,
+                        None,
+                        false,
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        None,
+                    ),
+                ),
+                Some(RecordBounds::from_corners(offset.u_range, offset.v_range)),
+            ),
         );
     }
 
@@ -2056,7 +2015,7 @@ fn append_resolved_consolidated_surface_curves(
                 };
                 (
                     (*pos, None),
-                    match crate::families::b2::records::b2_cone_geometry(cone) { Some(carrier) => carrier, None => continue },
+                    crate::families::b2::records::b2_cone_geometry(cone),
                     None,
                     ConsolidatedCarrierChart::Cone { cone },
                     "consolidated_b2_03_29_cone",
@@ -3048,13 +3007,13 @@ pub(super) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDeriva
 #[cfg(test)]
 mod tests {
     use super::{
-        append_consolidated_line_profiles, append_consolidated_revolutions,
-        append_freeform_surface_pools, append_resolved_consolidated_surface_curves,
-        attach_standalone_wires, consolidated_line_profiles, freeform_surface_carriers,
-        pcurve_lift_reaches_endpoints, rechart_equivalent_surface_pcurve, same_surface_locus,
-        solve_planar_chart_rechart, standard_carrier_surface_ids, typed_face_counts,
-        unique_endpoint_pair_match, unique_paired_surface_lift_match, ConsolidatedCarrierChart,
-        FreeformSurfacePool, RechartFailure,
+        append_consolidated_line_profiles, append_freeform_surface_pools,
+        append_resolved_consolidated_surface_curves, attach_standalone_wires,
+        consolidated_line_profiles, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
+        rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
+        standard_carrier_surface_ids, typed_face_counts, unique_endpoint_pair_match,
+        unique_paired_surface_lift_match, ConsolidatedCarrierChart, FreeformSurfacePool,
+        RechartFailure,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
@@ -3348,8 +3307,7 @@ mod tests {
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("valid source object identity");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -4174,8 +4132,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
@@ -4194,8 +4151,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
@@ -4210,13 +4166,51 @@ mod tests {
                 })));
     }
 
+    /// A cone record that is read builds its carrier. The frame witness has a
+    /// componentwise cross-product deviation of `1e-9` and `|t1·axis| ≈ 1.41e-9`;
+    /// the overflow witness has a finite apex whose carrier origin, the axis
+    /// point at the slant start, is not finite. The record read refuses both, so
+    /// the freeform carriers are built without them.
+    #[test]
+    fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
+        let set = |stream: &mut Vec<u8>, index: usize, values: &[f64]| {
+            for (offset, value) in values.iter().enumerate() {
+                let start = 5 + 8 * (index + offset);
+                stream[start..start + 8].copy_from_slice(&value.to_le_bytes());
+            }
+        };
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let mut frame_witness = crate::test_support::test_b2::b2_cone_stream();
+        set(
+            &mut frame_witness,
+            3,
+            &[s, s, 0.0, -s, s, 0.0, 1.0e-9, 1.0e-9, 1.0],
+        );
+        let mut overflow_witness = crate::test_support::test_b2::b2_cone_stream();
+        set(&mut overflow_witness, 0, &[f64::MAX, 0.0, 0.0]);
+        set(
+            &mut overflow_witness,
+            3,
+            &[0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        );
+        set(&mut overflow_witness, 16, &[1.0e308, 1.5e308]);
+        for bytes in [frame_witness, overflow_witness] {
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let carriers =
+                freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+            assert!(carriers.is_empty());
+            assert!(
+                crate::families::b2::records::b2_cones_from_records(&bytes, &records).is_empty()
+            );
+        }
+    }
+
     #[test]
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
         let bytes = crate::test_support::test_b2::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new())
-                .expect("valid freeform carriers");
+            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
@@ -4230,80 +4224,6 @@ mod tests {
                 })));
     }
 
-    /// The `Err` arm of `append_consolidated_revolutions` names the interval
-    /// the IR refused, so the freeform route can state a cause instead of
-    /// dropping the family. No byte input reaches this arm: the record decoder
-    /// admits a revolution only when its scaled lower angle is 0.5 and its
-    /// scaled span is 2π, so both scaled angles are finite and increasing.
-    #[test]
-    fn a_refused_revolution_construction_names_the_interval() {
-        use crate::checked::ExactUnitVector3;
-        use crate::families::b2::records::{B2Circle, B2ResolvedRevolution, B2Revolution};
-        use crate::native::{CatiaCircleLayout, CatiaRevolutionReferenceToken};
-        use cadmpeg_ir::features::FinitePoint3;
-        use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
-        use cadmpeg_ir::topology::IncreasingParameterInterval;
-
-        let unit = |value: [f64; 3]| {
-            ExactUnitVector3::new(value).expect("fixture direction is a unit vector")
-        };
-        let interval = |value: [f64; 2]| {
-            IncreasingParameterInterval::new(value)
-                .expect("fixture interval is finite and increasing")
-        };
-        let resolved = [B2ResolvedRevolution {
-            revolution_index: 0,
-            revolution: B2Revolution {
-                pos: 0,
-                reference_token: CatiaRevolutionReferenceToken::Compact,
-                profile_allocation_id: 1,
-                origin: FinitePoint3::ZERO,
-                direction_x: unit([1.0, 0.0, 0.0]),
-                direction_y: unit([0.0, 1.0, 0.0]),
-                axis: unit([0.0, 0.0, 1.0]),
-                angular_range: interval([1.0, 2.0]),
-                profile_range: interval([0.0, 1.0]),
-                // The upper scaled angle is 2e308, which is not finite.
-                angular_scale: PositiveReal::new(1.0e-308)
-                    .expect("fixture scalar is finite positive"),
-            },
-            profile: B2Circle {
-                pos: 0,
-                layout: CatiaCircleLayout::Identity8Bit,
-                record_id: 1,
-                frame_token: 0x08,
-                center_pair: [2.0, 0.0],
-                radius: PositiveLength::new(1.0).expect("fixture scalar is finite positive"),
-                range: interval([0.0, 1.0]),
-                chart_shift: 0.0,
-            },
-        }];
-        let mut ir = CadIr::empty();
-        let mut annotations = AnnotationBuilder::default();
-        let Err(error) = append_consolidated_revolutions(&mut ir, &mut annotations, &resolved)
-        else {
-            panic!("a non-finite scaled angular interval is refused");
-        };
-        assert!(
-            error
-                .to_string()
-                .contains("revolution angular_interval must be finite and strictly increasing"),
-            "the refusal must name the interval it refused: {error}"
-        );
-
-        let mut refusal = crate::nurbs::LaneRefusals::new();
-        refusal.push_construction(&error);
-        let notes = refusal.take_notes();
-        let [note] = notes.as_slice() else {
-            panic!("one construction refusal states one note");
-        };
-        assert!(
-            note.message
-                .contains("revolution angular_interval must be finite and strictly increasing"),
-            "the note the route states must carry the cause: {}",
-            note.message
-        );
-    }
     #[test]
     fn large_planar_sites_recover_the_identity_chart() {
         use cadmpeg_ir::{

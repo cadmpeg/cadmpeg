@@ -228,3 +228,17 @@ fn non_finite_record_bounds_are_rejected_without_mutating_the_surface() {
     );
     assert!(RecordBounds::try_new([Some(f64::INFINITY), None, None, None]).is_err());
 }
+
+#[test]
+fn a_parameter_box_builds_its_lower_then_upper_corner() {
+    use crate::topology::IncreasingParameterInterval;
+
+    let u = IncreasingParameterInterval::new([-0.0, 4.0]).expect("increasing u interval");
+    let v = IncreasingParameterInterval::new([-1.0, 3.0]).expect("increasing v interval");
+    let bounds = RecordBounds::from_corners(u, v);
+    assert_eq!(
+        bounds.get().map(|value| value.map(f64::to_bits)),
+        [Some(-0.0), Some(-1.0), Some(4.0), Some(3.0)].map(|value| value.map(f64::to_bits))
+    );
+    assert_eq!(RecordBounds::try_new(bounds.get()), Ok(bounds));
+}

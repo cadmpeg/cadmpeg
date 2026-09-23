@@ -296,3 +296,31 @@ fn a_nonzero_length_magnitude_is_the_positive_length_it_admits() {
         assert_eq!(PositiveLength::new(value.abs()), Some(magnitude));
     }
 }
+
+#[test]
+fn a_length_scaled_by_a_sine_stays_admitted_and_not_above_the_length() {
+    use crate::scalar::{Angle, NonNegativeLength};
+
+    let length = NonNegativeLength::new(f64::MAX).unwrap();
+    for radians in [
+        0.25,
+        -0.25,
+        std::f64::consts::FRAC_PI_2,
+        -std::f64::consts::FRAC_PI_2,
+        1.0e300,
+        0.0,
+    ] {
+        let angle = Angle::new(radians).unwrap();
+        let scaled = length.scaled_by_sine(angle);
+        assert_eq!(NonNegativeLength::new(scaled.get()), Some(scaled));
+        assert!(scaled.get() <= length.get());
+        assert_eq!(scaled.get(), f64::MAX * radians.sin().abs());
+    }
+    let slant = NonNegativeLength::new(2.0).unwrap();
+    let half_angle = Angle::new(0.25).unwrap();
+    assert_eq!(slant.scaled_by_sine(half_angle).get(), 2.0 * 0.25_f64.sin());
+    assert_eq!(
+        NonNegativeLength::ZERO.scaled_by_sine(half_angle),
+        NonNegativeLength::ZERO
+    );
+}

@@ -181,16 +181,6 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
             .map(|direction| Self(direction, PhantomData))
     }
 
-    /// Normalizes a finite direction whose norm is above [`f64::EPSILON`].
-    /// The result must pass this type's unit-length admission.
-    pub(crate) fn normalized(value: [f64; 3]) -> Option<Self> {
-        let length = value[0].hypot(value[1]).hypot(value[2]);
-        if length <= f64::EPSILON {
-            return None;
-        }
-        Self::new(crate::math::unit_vector(value)?)
-    }
-
     /// Constructs a unit direction from a `scale`-scaled stored vector whose
     /// `hypot` length is `scale` within the tolerance. The divided components
     /// must also pass this type's unit-length admission.
@@ -259,17 +249,16 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
         PhantomData,
     );
 
-    /// Admits the frame of `axis` and `reference` when the admitted
-    /// `binormal` completes them to a right-handed frame by the IR
-    /// right-handed frame route: `reference × binormal` equals `axis` within
-    /// `1e-12` by `measure`.
+    /// Admits the frame of `axis` and `reference` when the three admitted
+    /// directions form a right-handed orthonormal frame by the IR
+    /// right-handed frame route: `reference · binormal` is zero and
+    /// `reference × binormal` equals `axis`, each within `1e-12`.
     pub(crate) fn right_handed(
         axis: UnitVector3<Tolerance, Measurement>,
         reference: UnitVector3<Tolerance, Measurement>,
         binormal: UnitVector3<Tolerance, Measurement>,
-        measure: cadmpeg_ir::units::CrossDeviation,
     ) -> Option<Self> {
-        cadmpeg_ir::units::OrthonormalFrame3::right_handed(axis.0, reference.0, binormal.0, measure)
+        cadmpeg_ir::units::OrthonormalFrame3::right_handed(axis.0, reference.0, binormal.0)
             .map(|frame| Self(frame, PhantomData))
     }
 
@@ -385,48 +374,6 @@ mod tests {
             let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
             let admitted = (norm - 1.0).abs() <= ExactDeviation::TOLERANCE;
             assert_eq!(ExactNormUnitVector3::new(value).is_some(), admitted);
-        }
-    }
-
-    #[test]
-    fn normalized_directions_divide_by_the_norm_and_reject_the_degenerate_one() {
-        let value = [0.0, 3.0, 4.0];
-        assert_eq!(
-            ExactNormUnitVector3::normalized(value).map(ExactNormUnitVector3::get),
-            Some([0.0, 3.0 / 5.0, 4.0 / 5.0])
-        );
-        assert!(ExactNormUnitVector3::normalized([0.0, 0.0, 0.0]).is_none());
-    }
-
-    #[test]
-    fn normalized_directions_enforce_the_unit_invariant_and_length_gate() {
-        for value in [[1e200, 0.0, 0.0], [f64::MAX, f64::MAX, 0.0]] {
-            let direction = ExactNormUnitVector3::normalized(value)
-                .expect("large finite direction can be normalized");
-            assert!(ExactNormUnitVector3::new(direction.get()).is_some());
-        }
-        assert_eq!(
-            ExactNormUnitVector3::normalized([1e200, 0.0, 0.0]).map(ExactNormUnitVector3::get),
-            Some([1.0, 0.0, 0.0])
-        );
-        for magnitude in [f64::from_bits(1), f64::EPSILON] {
-            assert!(ExactNormUnitVector3::normalized([magnitude, 0.0, 0.0]).is_none());
-        }
-        assert_eq!(
-            ExactNormUnitVector3::normalized([
-                f64::from_bits(f64::EPSILON.to_bits() + 1),
-                0.0,
-                0.0,
-            ])
-            .map(ExactNormUnitVector3::get),
-            Some([1.0, 0.0, 0.0])
-        );
-        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            for axis in 0..3 {
-                let mut value = [1.0; 3];
-                value[axis] = invalid;
-                assert!(ExactNormUnitVector3::normalized(value).is_none());
-            }
         }
     }
 
@@ -555,30 +502,26 @@ mod tests {
 
     #[test]
     fn right_handed_frames_hold_the_directions_they_admitted() {
-        use cadmpeg_ir::units::CrossDeviation;
-
         let axis = ExactUnitVector3::new([0.0, 0.0, 1.0]).expect("unit");
         let reference = ExactUnitVector3::new([1.0, 0.0, 0.0]).expect("unit");
         let binormal = ExactUnitVector3::new([0.0, 1.0, 0.0]).expect("unit");
         let reversed = ExactUnitVector3::new([0.0, -1.0, 0.0]).expect("unit");
         let tilted = ExactUnitVector3::new([1.0, 0.0, 2.0e-9]).expect("unit");
-        for measure in [CrossDeviation::LargestComponent, CrossDeviation::Length] {
-            let frame =
-                UnitFrame3::right_handed(axis, reference, binormal, measure).expect("right-handed");
-            assert_eq!((frame.axis(), frame.reference()), (axis, reference));
-            assert_eq!(
-                cadmpeg_ir::units::OrthonormalFrame3::from(frame),
-                cadmpeg_ir::units::OrthonormalFrame3::right_handed(
-                    axis.into(),
-                    reference.into(),
-                    binormal.into(),
-                    measure
-                )
-                .expect("right-handed")
-            );
-            assert!(UnitFrame3::right_handed(axis, reference, reversed, measure).is_none());
-            assert!(UnitFrame3::right_handed(axis, tilted, binormal, measure).is_none());
-        }
+        let skewed = ExactUnitVector3::new([2.0e-9, 1.0, 0.0]).expect("unit");
+        let frame = UnitFrame3::right_handed(axis, reference, binormal).expect("right-handed");
+        assert_eq!((frame.axis(), frame.reference()), (axis, reference));
+        assert_eq!(
+            cadmpeg_ir::units::OrthonormalFrame3::from(frame),
+            cadmpeg_ir::units::OrthonormalFrame3::right_handed(
+                axis.into(),
+                reference.into(),
+                binormal.into(),
+            )
+            .expect("right-handed")
+        );
+        assert!(UnitFrame3::right_handed(axis, reference, reversed).is_none());
+        assert!(UnitFrame3::right_handed(axis, tilted, binormal).is_none());
+        assert!(UnitFrame3::right_handed(axis, reference, skewed).is_none());
     }
 
     #[test]

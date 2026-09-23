@@ -1831,3 +1831,80 @@ fn typed_revolution_intervals_build_the_raw_construction_and_keep_the_refusal_or
     assert_eq!(raw([1.0, 1.0], invalid_cache()).unwrap_err(), cache_refusal);
     assert_eq!(raw([0.0, 2.0], invalid_cache()).unwrap_err(), cache_refusal);
 }
+
+#[test]
+fn a_legacy_offset_from_admitted_parts_matches_its_raw_admission() {
+    use crate::scalar::FiniteReal;
+
+    for (distance, u_sense, v_sense, linear) in
+        [(-2.0, None, None, false), (0.0, Some(1), Some(-1), true)]
+    {
+        let flags = LegacyExtensionFlags::Enabled {
+            secondary: true,
+            tertiary: None,
+        };
+        let built = OffsetSurfaceConstruction::legacy(
+            support(),
+            FiniteReal::new(distance).expect("finite distance"),
+            u_sense,
+            v_sense,
+            linear,
+            flags,
+            None,
+        );
+        assert_eq!(
+            OffsetSurfaceConstruction::try_new(
+                support(),
+                distance,
+                u_sense,
+                v_sense,
+                linear,
+                OffsetExtension::Legacy { flags, cache: None },
+            ),
+            Ok(built)
+        );
+    }
+}
+
+#[test]
+fn a_legacy_revolution_from_admitted_parts_matches_its_interval_admission() {
+    use super::RevolutionSurfaceConstruction;
+    use crate::features::FinitePoint3;
+    use crate::geometry::CacheContract;
+    use crate::ids::CurveId;
+    use crate::topology::IncreasingParameterInterval;
+    use crate::units::UnitVector3;
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let axis = (FinitePoint3::ZERO, UnitVector3::Y_AXIS);
+    let interval = |range: [f64; 2]| IncreasingParameterInterval::new(range).expect("increasing");
+    for (angular_parameter, parameter, transposed) in [
+        (
+            Some(interval([1.0, 3.0])),
+            Some(interval([-1.0, 4.0])),
+            true,
+        ),
+        (None, None, false),
+    ] {
+        assert_eq!(
+            RevolutionSurfaceConstruction::try_from_intervals(
+                directrix.clone(),
+                axis,
+                interval([0.5, 0.5 + std::f64::consts::TAU]),
+                angular_parameter,
+                parameter,
+                transposed,
+                CacheContract::from_form(None),
+            ),
+            Ok(RevolutionSurfaceConstruction::legacy(
+                directrix.clone(),
+                axis,
+                interval([0.5, 0.5 + std::f64::consts::TAU]),
+                angular_parameter,
+                parameter,
+                transposed,
+                None,
+            ))
+        );
+    }
+}
