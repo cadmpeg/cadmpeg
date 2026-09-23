@@ -15,9 +15,6 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeSet;
 
-/// Non-zero hole-axis direction acceptance.
-const EPS_NONZERO_HOLE_DIRECTION: f64 = 1.0e-12;
-
 pub(super) fn hole_feature_is_incomplete(
     profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
@@ -29,9 +26,6 @@ pub(super) fn hole_feature_is_incomplete(
     let (kind, exit_kind) = treatments;
     let profile_incomplete = profile.is_some_and(planar_profile_ref_is_incomplete);
     let face_incomplete = face.is_some_and(face_selection_is_incomplete);
-    let finite_direction = |vector: cadmpeg_ir::features::FeatureDirection3| {
-        vector.norm() > EPS_NONZERO_HOLE_DIRECTION
-    };
     let axis_is_direction_invariant = matches!(extent, Some(LinearTermination::ThroughAll {}))
         && exit_kind.is_none_or(|exit| exit == kind);
     let placements_complete = placements.is_some_and(|placements| {
@@ -41,11 +35,9 @@ pub(super) fn hole_feature_is_incomplete(
                 .enumerate()
                 .any(|(index, placement)| placements[index + 1..].contains(placement))
             && placements.iter().all(|placement| match placement {
-                cadmpeg_ir::features::holes::HolePlacement::Directed { direction, .. } => {
-                    finite_direction(*direction)
-                }
-                cadmpeg_ir::features::holes::HolePlacement::Axis { axis, .. } => {
-                    axis_is_direction_invariant && finite_direction(*axis)
+                cadmpeg_ir::features::holes::HolePlacement::Directed { .. } => true,
+                cadmpeg_ir::features::holes::HolePlacement::Axis { .. } => {
+                    axis_is_direction_invariant
                 }
             })
     });
