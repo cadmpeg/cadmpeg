@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::math::{Point2, Vector3};
+use crate::math::{Point2, Point3, Vector3};
 use crate::transform::{Transform, Transform2, TransformError};
 
 const EPS_INVERSE_CHECK: f64 = 1.0e-12;
@@ -225,6 +225,20 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     for value in [transformed.x, transformed.y, transformed.z] {
         assert!((value - component).abs() <= EPS_NORMAL_DIRECTION);
     }
+}
+
+#[test]
+fn affine_point_keeps_a_subnormal_tie_breaking_tail() {
+    let transform = Transform::affine([
+        [2.0_f64.powi(-537), 2.0_f64.powi(-564), 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let result = transform
+        .apply_point(Point3::new(2.0_f64.powi(-538), 2.0_f64.powi(-564), 0.0))
+        .unwrap();
+    assert_eq!(result.x.to_bits(), 1);
 }
 
 #[test]
