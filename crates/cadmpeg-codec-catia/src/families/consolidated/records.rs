@@ -1801,7 +1801,8 @@ mod tests {
             frame_token: 0,
             center_pair: [0.0; 2],
             radius: cadmpeg_ir::scalar::PositiveLength::new(span).expect("positive span"),
-            range: crate::checked::OrderedInterval::new([0.0, span]).expect("increasing span"),
+            range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, span])
+                .expect("increasing span"),
             chart_shift: 0.0,
         };
         let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {

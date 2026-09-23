@@ -980,6 +980,49 @@ impl From<ParameterInterval> for [f64; 2] {
     }
 }
 
+/// A finite parameter interval whose first endpoint is strictly below its
+/// second.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
+pub struct IncreasingParameterInterval([f64; 2]);
+
+impl IncreasingParameterInterval {
+    /// Admit finite endpoints in strictly increasing order.
+    pub fn new(endpoints: [f64; 2]) -> Option<Self> {
+        (endpoints.iter().all(|value| value.is_finite()) && endpoints[0] < endpoints[1])
+            .then_some(Self(endpoints))
+    }
+    /// Return the interval endpoints.
+    pub const fn endpoints(self) -> [f64; 2] {
+        self.0
+    }
+    /// Return the lower endpoint.
+    pub const fn lower(self) -> f64 {
+        self.0[0]
+    }
+    /// Return the upper endpoint.
+    pub const fn upper(self) -> f64 {
+        self.0[1]
+    }
+    pub(crate) const fn as_raw(&self) -> &[f64; 2] {
+        &self.0
+    }
+}
+
+impl TryFrom<[f64; 2]> for IncreasingParameterInterval {
+    type Error = &'static str;
+    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("parameter interval must be finite and strictly increasing")
+    }
+}
+
+impl From<IncreasingParameterInterval> for [f64; 2] {
+    fn from(value: IncreasingParameterInterval) -> Self {
+        value.0
+    }
+}
+
 /// An edge carrier and its admitted parameter endpoints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1236,6 +1279,38 @@ cadmpeg_core::named_optional_field!(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn increasing_intervals_admit_only_finite_strictly_increasing_endpoints() {
+        use super::IncreasingParameterInterval;
+
+        let interval = IncreasingParameterInterval::new([-1.0, 2.5]).expect("increasing");
+        assert_eq!(interval.endpoints(), [-1.0, 2.5]);
+        assert_eq!([interval.lower(), interval.upper()], [-1.0, 2.5]);
+        let wire = serde_json::to_value(interval).unwrap();
+        assert_eq!(wire, serde_json::json!([-1.0, 2.5]));
+        assert_eq!(
+            serde_json::from_value::<IncreasingParameterInterval>(wire).unwrap(),
+            interval
+        );
+        for refused in [
+            [1.0, 1.0],
+            [2.0, 1.0],
+            [f64::NAN, 1.0],
+            [0.0, f64::INFINITY],
+            [f64::NEG_INFINITY, 0.0],
+        ] {
+            assert!(IncreasingParameterInterval::new(refused).is_none());
+            assert_eq!(
+                IncreasingParameterInterval::try_from(refused),
+                Err("parameter interval must be finite and strictly increasing")
+            );
+        }
+        assert!(
+            serde_json::from_value::<IncreasingParameterInterval>(serde_json::json!([1.0, 1.0]))
+                .is_err()
+        );
+    }
+
     #[test]
     fn face_loops_are_one_tagged_object_that_round_trips() {
         use super::{FaceLoops, LoopBoundaryRole};

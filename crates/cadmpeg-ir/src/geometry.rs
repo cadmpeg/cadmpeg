@@ -6766,7 +6766,7 @@ impl TolerantIntersectionConstruction {
 pub struct TolerantIntersectionParameterization {
     /// Coincident support charts in support order.
     pub pcurves: [PcurveGeometry; 2],
-    parameter_range: [f64; 2],
+    parameter_range: crate::topology::IncreasingParameterInterval,
 }
 
 #[derive(Deserialize)]
@@ -6792,13 +6792,10 @@ impl TolerantIntersectionParameterization {
         pcurves: [PcurveGeometry; 2],
         parameter_range: [f64; 2],
     ) -> Result<Self, &'static str> {
-        if !parameter_range.iter().all(|value| value.is_finite())
-            || parameter_range[0] >= parameter_range[1]
-        {
-            return Err(
+        let parameter_range = crate::topology::IncreasingParameterInterval::new(parameter_range)
+            .ok_or(
                 "tolerant intersection parameter_range must be finite and strictly increasing",
-            );
-        }
+            )?;
         Ok(Self {
             pcurves,
             parameter_range,
@@ -6808,7 +6805,7 @@ impl TolerantIntersectionParameterization {
     /// Common finite solved-curve interval.
     #[must_use]
     pub const fn parameter_range(&self) -> [f64; 2] {
-        self.parameter_range
+        self.parameter_range.endpoints()
     }
 }
 
@@ -7489,15 +7486,62 @@ pub enum CurveOffsetRange {
     /// Constant-distance offset over a retained source interval.
     Uniform {
         /// Parameter interval on the source curve.
-        parameter_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        parameter_range: crate::topology::IncreasingParameterInterval,
     },
     /// Variable-distance offset over the interval used by its law.
     Variable {
         /// Parameter interval on the source curve.
-        parameter_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        parameter_range: crate::topology::IncreasingParameterInterval,
         /// Variable signed-distance law.
         distance_law: CurveOffsetDistanceLaw,
     },
+}
+
+/// The refusal of a curve offset whose distance, side, range or law is
+/// invalid.
+pub(crate) const INVALID_CURVE_OFFSET: &str =
+    "curve offset distance, side, range, or law is invalid";
+
+/// Admit a curve-offset interval with the curve-offset refusal.
+fn admit_curve_offset_interval(
+    range: [f64; 2],
+) -> Result<crate::topology::IncreasingParameterInterval, ProceduralGeometryError> {
+    crate::topology::IncreasingParameterInterval::new(range)
+        .ok_or(ProceduralGeometryError::Payload(INVALID_CURVE_OFFSET))
+}
+
+/// Read a curve-offset interval with the curve-offset refusal.
+fn deserialize_curve_offset_interval<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::topology::IncreasingParameterInterval, D::Error> {
+    crate::topology::IncreasingParameterInterval::new(<[f64; 2]>::deserialize(deserializer)?)
+        .ok_or_else(|| serde::de::Error::custom(INVALID_CURVE_OFFSET))
+}
+
+impl CurveOffsetRange {
+    /// Admit a constant-distance range over a strictly increasing source
+    /// interval. The refusal is the one
+    /// [`OffsetCurveConstruction::try_new`](crate::geometry::curve_payloads::OffsetCurveConstruction::try_new)
+    /// states for an invalid offset.
+    pub fn uniform(parameter_range: [f64; 2]) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Uniform {
+            parameter_range: admit_curve_offset_interval(parameter_range)?,
+        })
+    }
+
+    /// Admit a variable-distance range over a strictly increasing source
+    /// interval, with the refusal of [`CurveOffsetRange::uniform`].
+    pub fn variable(
+        parameter_range: [f64; 2],
+        distance_law: CurveOffsetDistanceLaw,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Variable {
+            parameter_range: admit_curve_offset_interval(parameter_range)?,
+            distance_law,
+        })
+    }
 }
 
 /// Neutral semantics for a procedural curve.
@@ -7988,7 +8032,8 @@ pub enum CurveOffsetDistanceLaw {
         /// Ordered signed distances in document length units.
         distances: [f64; 2],
         /// Ordered arc-length or neutral carrier-parameter controls.
-        control_range: [f64; 2],
+        #[serde(deserialize_with = "deserialize_curve_offset_interval")]
+        control_range: crate::topology::IncreasingParameterInterval,
     },
     /// One coordinate of another curve defines the signed distance.
     Coordinate {
@@ -8003,6 +8048,23 @@ pub enum CurveOffsetDistanceLaw {
         /// Function-parameter change per neutral source parameter or length unit.
         function_parameter_scale: f64,
     },
+}
+
+impl CurveOffsetDistanceLaw {
+    /// Admit a linear law over strictly increasing controls, with the refusal
+    /// of [`CurveOffsetRange::uniform`]. The distances are checked by the
+    /// offset construction.
+    pub fn linear(
+        basis: CurveOffsetLawBasis,
+        distances: [f64; 2],
+        control_range: [f64; 2],
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Linear {
+            basis,
+            distances,
+            control_range: admit_curve_offset_interval(control_range)?,
+        })
+    }
 }
 
 #[cfg(test)]

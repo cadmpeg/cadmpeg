@@ -541,17 +541,19 @@ impl TryFrom<FeaturePolylineWire> for FeaturePolyline {
 /// Coordinate expressions over a finite increasing feature-curve domain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "FeatureEquationCurveWire")]
+#[serde(
+    try_from = "FeatureEquationCurveWire",
+    into = "FeatureEquationCurveWire"
+)]
 pub struct FeatureEquationCurve {
     parameter: String,
     x_expression: String,
     y_expression: String,
     z_expression: String,
-    start: FiniteReal,
-    end: FiniteReal,
+    domain: crate::topology::IncreasingParameterInterval,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct FeatureEquationCurveWire {
@@ -582,19 +584,16 @@ impl FeatureEquationCurve {
         if [&parameter, &x_expression, &y_expression, &z_expression]
             .into_iter()
             .any(|value| value.trim().is_empty())
-            || start >= end
         {
             return None;
         }
-        let start = FiniteReal::new(start)?;
-        let end = FiniteReal::new(end)?;
+        let domain = crate::topology::IncreasingParameterInterval::new([start, end])?;
         Some(Self {
             parameter,
             x_expression,
             y_expression,
             z_expression,
-            start,
-            end,
+            domain,
         })
     }
 
@@ -620,12 +619,26 @@ impl FeatureEquationCurve {
 
     /// Return the inclusive lower parameter bound.
     pub fn start(&self) -> f64 {
-        self.start.get()
+        self.domain.lower()
     }
 
     /// Return the inclusive upper parameter bound.
     pub fn end(&self) -> f64 {
-        self.end.get()
+        self.domain.upper()
+    }
+}
+
+impl From<FeatureEquationCurve> for FeatureEquationCurveWire {
+    fn from(value: FeatureEquationCurve) -> Self {
+        let [start, end] = value.domain.endpoints();
+        Self {
+            parameter: value.parameter,
+            x_expression: value.x_expression,
+            y_expression: value.y_expression,
+            z_expression: value.z_expression,
+            start,
+            end,
+        }
     }
 }
 

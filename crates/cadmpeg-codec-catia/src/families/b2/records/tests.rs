@@ -962,7 +962,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
             records[0].angular_range,
             [2.0 * 0.5, 2.0 * (0.5 + std::f64::consts::TAU)]
         );
-        assert_eq!(records[0].profile_range.get(), [-4.0, 9.0]);
+        assert_eq!(records[0].profile_range.endpoints(), [-4.0, 9.0]);
         assert_eq!(records[0].angular_scale.get(), 2.0);
     }
 }
@@ -975,8 +975,8 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
         panic!("one resolved revolution profile")
     };
     assert_eq!(
-        resolved.revolution.profile_range.get(),
-        resolved.profile.range.get()
+        resolved.revolution.profile_range.endpoints(),
+        resolved.profile.range.endpoints()
     );
     assert_eq!(resolved.revolution_index, 0);
 
@@ -1061,7 +1061,7 @@ fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
         assert_eq!(line.pos, 0);
         assert_eq!(line.origin, [1.0, 2.0, 3.0]);
         assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
-        assert_eq!(line.range.get(), [-4.0, 9.0]);
+        assert_eq!(line.range.endpoints(), [-4.0, 9.0]);
     }
 }
 
@@ -1408,10 +1408,10 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream());
     assert_eq!(cylinders.len(), 1);
     assert_eq!(
-        cylinders[0].u_range.get(),
+        cylinders[0].u_range.endpoints(),
         [0.0, 4.0 * std::f64::consts::PI]
     );
-    assert_eq!(cylinders[0].v_range.get(), [-4.0, 5.0]);
+    assert_eq!(cylinders[0].v_range.endpoints(), [-4.0, 5.0]);
     match cylinders[0].surface_geometry().unwrap() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
@@ -1460,10 +1460,10 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
 fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
     let tiny = 1e-200_f64;
     let mut cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream()).remove(0);
-    cylinder.u_range =
-        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing u range");
-    cylinder.v_range =
-        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing v range");
+    cylinder.u_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, tiny])
+        .expect("increasing u range");
+    cylinder.v_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, tiny])
+        .expect("increasing v range");
     assert!(crate::families::b2::records::b2_cylinder_point(&cylinder, [tiny, tiny]).is_some());
     assert!(
         crate::families::b2::records::b2_cylinder_point(&cylinder, [2.0 * tiny, tiny]).is_none()
@@ -1473,8 +1473,8 @@ fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
     );
 
     let mut cone = crate::families::b2::records::b2_cones(&b2_cone_stream()).remove(0);
-    cone.slant_range =
-        crate::checked::OrderedInterval::new([0.0, tiny]).expect("increasing slant range");
+    cone.slant_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, tiny])
+        .expect("increasing slant range");
     assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, tiny]).is_some());
     assert!(crate::families::b2::records::b2_cone_point(&cone, [0.0, 2.0 * tiny]).is_none());
 }
@@ -1621,7 +1621,7 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     assert_eq!(cones[0].half_angle, 0.25);
     assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
-    assert_eq!(cones[0].slant_range.get(), [2.0, 8.0]);
+    assert_eq!(cones[0].slant_range.endpoints(), [2.0, 8.0]);
     assert_eq!(cones[0].angular_scale.get(), 3.0);
     assert_eq!(
         cones[0].angular_domain,
@@ -1635,7 +1635,7 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     large[141..149].copy_from_slice(&2_000_000.0_f64.to_le_bytes());
     large[149..157].copy_from_slice(&3_000_000.0_f64.to_le_bytes());
     let cones = crate::families::b2::records::b2_cones(&large);
-    assert_eq!(cones[0].slant_range.get(), [2.0, 2_000_000.0]);
+    assert_eq!(cones[0].slant_range.endpoints(), [2.0, 2_000_000.0]);
     assert_eq!(cones[0].angular_scale.get(), 3_000_000.0);
 }
 
@@ -1645,7 +1645,7 @@ fn b2_cone_parser_accepts_and_canonicalizes_an_apex_origin() {
     stream[133..141].copy_from_slice(&(-5e-13f64).to_le_bytes());
     let cones = crate::families::b2::records::b2_cones(&stream);
     assert_eq!(cones.len(), 1);
-    assert_eq!(cones[0].slant_range.get(), [0.0, 8.0]);
+    assert_eq!(cones[0].slant_range.endpoints(), [0.0, 8.0]);
 
     stream[133..141].copy_from_slice(&(-2e-12f64).to_le_bytes());
     assert!(crate::families::b2::records::b2_cones(&stream).is_empty());

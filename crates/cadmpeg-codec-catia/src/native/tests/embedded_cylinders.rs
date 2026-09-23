@@ -47,7 +47,10 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     assert_eq!(group.group_type, 3);
     assert_eq!(cylinder.group, group.id);
     assert_eq!(cylinder.object_id, 0x5678);
-    assert_eq!(cylinder.u_range.get(), [0.0, 4.0 * std::f64::consts::PI]);
+    assert_eq!(
+        cylinder.u_range.endpoints(),
+        [0.0, 4.0 * std::f64::consts::PI]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

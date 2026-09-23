@@ -990,7 +990,10 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         .expect("native analytic circle");
     assert_eq!(binding.circle, "catia:consolidated:circle#0");
     assert_eq!(native.consolidated_circles[0].center_pair, [12.0, 34.0]);
-    assert_eq!(native.consolidated_circles[0].range.get(), [0.0, 10.0]);
+    assert_eq!(
+        native.consolidated_circles[0].range.endpoints(),
+        [0.0, 10.0]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

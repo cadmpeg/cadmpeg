@@ -66,9 +66,7 @@ fn a_distance_law_without_its_parameter_range_has_no_encoding() {
             source(),
             -2.0,
             side.clone(),
-            Some(CurveOffsetRange::Uniform {
-                parameter_range: [0.0, 1.0],
-            }),
+            Some(CurveOffsetRange::uniform([0.0, 1.0]).unwrap()),
         )
         .unwrap(),
     );
@@ -116,16 +114,23 @@ fn offset_payload_preserves_direction_magnitude_and_requires_strict_ranges() {
     let valid = definition(direction.clone(), None).unwrap();
     let _curve: ProceduralCurve = ProceduralCurve::new(id(), valid.clone());
     for range in [[1.0, 0.0], [0.0, 0.0]] {
-        assert!(definition(
-            direction.clone(),
-            Some(CurveOffsetRange::Uniform {
-                parameter_range: range
-            })
-        )
-        .is_err());
+        let refused = CurveOffsetRange::uniform(range)
+            .and_then(|range| definition(direction.clone(), Some(range)));
+        assert_eq!(
+            refused,
+            Err(crate::geometry::ProceduralGeometryError::Payload(
+                "curve offset distance, side, range, or law is invalid"
+            ))
+        );
         let mut wire = serde_json::to_value(&valid).unwrap();
         wire["range"] = serde_json::json!({"kind": "uniform", "parameter_range": range});
-        assert!(serde_json::from_value::<ProceduralCurveDefinition>(wire).is_err());
+        let error = serde_json::from_value::<ProceduralCurveDefinition>(wire).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("curve offset distance, side, range, or law is invalid"),
+            "{error}"
+        );
     }
     assert!(definition(
         OffsetSide::PlaneNormal {
@@ -591,4 +596,64 @@ fn the_law_expression_walk_refuses_an_operand_tree_past_its_depth_limit() {
         LAW_EXPRESSION_DEPTH_LIMIT_FOR_TEST + 1
     ))
     .is_err());
+}
+
+#[test]
+fn curve_offset_intervals_are_admitted_with_the_offset_refusal() {
+    use crate::geometry::{CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralGeometryError};
+
+    let refusal = Err(ProceduralGeometryError::Payload(
+        "curve offset distance, side, range, or law is invalid",
+    ));
+    let linear = |control_range| {
+        CurveOffsetDistanceLaw::linear(CurveOffsetLawBasis::ArcLength, [1.0, 2.0], control_range)
+    };
+    let law = linear([0.0, 10.0]).expect("increasing controls");
+    let CurveOffsetDistanceLaw::Linear { control_range, .. } = &law else {
+        panic!("a linear law");
+    };
+    assert_eq!(control_range.endpoints(), [0.0, 10.0]);
+    let range = CurveOffsetRange::variable([0.0, 1.0], law.clone()).expect("increasing range");
+    let CurveOffsetRange::Variable {
+        parameter_range, ..
+    } = &range
+    else {
+        panic!("a variable range");
+    };
+    assert_eq!(parameter_range.endpoints(), [0.0, 1.0]);
+    let wire = serde_json::to_value(&range).unwrap();
+    assert_eq!(wire["parameter_range"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(
+        wire["distance_law"]["control_range"],
+        serde_json::json!([0.0, 10.0])
+    );
+    assert_eq!(
+        serde_json::from_value::<CurveOffsetRange>(wire.clone()).unwrap(),
+        range
+    );
+    for invalid in [
+        [1.0, 0.0],
+        [0.0, 0.0],
+        [f64::NAN, 1.0],
+        [0.0, f64::INFINITY],
+    ] {
+        assert_eq!(linear(invalid), refusal.clone().map(|()| law.clone()));
+        assert_eq!(
+            CurveOffsetRange::variable(invalid, law.clone()),
+            refusal.clone().map(|()| range.clone())
+        );
+        assert_eq!(
+            CurveOffsetRange::uniform(invalid),
+            refusal.clone().map(|()| range.clone())
+        );
+    }
+    let mut decreasing = wire;
+    decreasing["distance_law"]["control_range"] = serde_json::json!([10.0, 0.0]);
+    let error = serde_json::from_value::<CurveOffsetRange>(decreasing).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("curve offset distance, side, range, or law is invalid"),
+        "{error}"
+    );
 }

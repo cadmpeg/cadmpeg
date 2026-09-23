@@ -12,6 +12,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
@@ -19,7 +20,7 @@ use std::mem::size_of;
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
     CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
-    OrderedInterval, RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
+    RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
@@ -1820,7 +1821,7 @@ fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
 }
 
 pub(in crate::families) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
-    if !parameter_in_closed_range(uv[1], cone.slant_range.get()) {
+    if !parameter_in_closed_range(uv[1], cone.slant_range.endpoints()) {
         return None;
     }
     let phi = uv[0] / cone.angular_scale.get();
@@ -1843,8 +1844,8 @@ pub(in crate::families) fn b2_cylinder_point(
     cylinder: &B2Cylinder,
     uv: [f64; 2],
 ) -> Option<Point3> {
-    if !parameter_in_closed_range(uv[0], cylinder.u_range.get())
-        || !parameter_in_closed_range(uv[1], cylinder.v_range.get())
+    if !parameter_in_closed_range(uv[0], cylinder.u_range.endpoints())
+        || !parameter_in_closed_range(uv[1], cylinder.v_range.endpoints())
     {
         return None;
     }
@@ -1882,7 +1883,7 @@ pub(crate) struct B2Circle {
     /// Circle radius in millimetres.
     pub(crate) radius: PositiveLength,
     /// Arc-length parameter interval.
-    pub(crate) range: OrderedInterval,
+    pub(crate) range: IncreasingParameterInterval,
     /// Length-valued angular chart shift.
     pub(crate) chart_shift: f64,
 }
@@ -1891,7 +1892,7 @@ pub(crate) struct B2Circle {
 impl B2Circle {
     /// Whether the interval spans one complete circumference.
     fn full_circle(&self) -> bool {
-        circle_range_is_full_turn(self.radius.get(), self.range.get())
+        circle_range_is_full_turn(self.radius.get(), self.range.endpoints())
     }
 }
 
@@ -1922,7 +1923,7 @@ pub(in crate::families) struct B2SpatialCircle {
     /// Positive radius in millimetres.
     pub(in crate::families) radius: PositiveLength,
     /// Stored arc-length interval.
-    pub(in crate::families) range: OrderedInterval,
+    pub(in crate::families) range: IncreasingParameterInterval,
     /// Stored chart shift.
     pub(in crate::families) chart_shift: f64,
 }
@@ -1969,7 +1970,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let ref_direction =
         ExactNormUnitVector3::new([stored_reference.x, stored_reference.y, stored_reference.z])?;
     let radius = PositiveLength::new(radius)?;
-    let range = OrderedInterval::new(range)?;
+    let range = IncreasingParameterInterval::new(range)?;
     Some(B2SpatialCircle {
         pos: frame.pos,
         header_token: frame.header_token,
@@ -2095,9 +2096,9 @@ pub(crate) struct B2Cylinder {
     /// Cylinder radius.
     pub(crate) radius: PositiveLength,
     /// Arc-length circumferential range.
-    pub(crate) u_range: OrderedInterval,
+    pub(crate) u_range: IncreasingParameterInterval,
     /// Axial range.
-    pub(crate) v_range: OrderedInterval,
+    pub(crate) v_range: IncreasingParameterInterval,
     /// Layout-specific frame data.
     pub(crate) layout: B2CylinderLayout,
 }
@@ -2124,7 +2125,7 @@ impl B2Cylinder {
 
     pub(crate) fn range_origin(&self) -> Option<f64> {
         matches!(self.layout, B2CylinderLayout::RangeOrigin { .. })
-            .then(|| cylinder_range_origin(self.radius.get(), self.u_range.get()))
+            .then(|| cylinder_range_origin(self.radius.get(), self.u_range.endpoints()))
     }
 
     pub(in crate::families) fn surface_geometry(&self) -> Option<SurfaceGeometry> {
@@ -2158,7 +2159,7 @@ pub(crate) struct B2Cone {
     /// Active azimuth interval.
     pub(crate) angular_range: [f64; 2],
     /// Native slant-coordinate range.
-    pub(crate) slant_range: OrderedInterval,
+    pub(crate) slant_range: IncreasingParameterInterval,
     /// Divisor mapping the stored U coordinate to azimuth.
     pub(crate) angular_scale: PositiveReal,
     /// Full-turn azimuth chart domain.
@@ -2185,7 +2186,7 @@ pub(crate) struct B2Revolution {
     /// Stored angular parameter interval.
     pub(crate) angular_range: [f64; 2],
     /// Stored profile parameter interval.
-    pub(crate) profile_range: OrderedInterval,
+    pub(crate) profile_range: IncreasingParameterInterval,
     /// Positive angular chart scale.
     pub(crate) angular_scale: PositiveReal,
 }
@@ -2212,7 +2213,7 @@ pub(crate) struct B2LineProfile {
     /// Unit line direction.
     pub(crate) direction: ExactUnitVector3,
     /// Increasing stored parameter interval.
-    pub(crate) range: OrderedInterval,
+    pub(crate) range: IncreasingParameterInterval,
 }
 
 /// Radius-scaled sphere chart stored in a `b2 03 2a` record.
@@ -2473,7 +2474,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             continue;
         };
         let (Some(slant_range), Some(angular_scale)) = (
-            OrderedInterval::new(slant_range),
+            IncreasingParameterInterval::new(slant_range),
             PositiveReal::new(angular_scale),
         ) else {
             continue;
@@ -2567,7 +2568,7 @@ pub(crate) fn b2_revolutions_from_records(
             continue;
         };
         let (Some(profile_range), Some(angular_scale)) = (
-            OrderedInterval::new([bounds[2], bounds[3]]),
+            IncreasingParameterInterval::new([bounds[2], bounds[3]]),
             PositiveReal::new(angular_scale),
         ) else {
             continue;
@@ -2679,7 +2680,7 @@ pub(crate) fn b2_line_profiles_from_records(
             let values = read_f64_array::<9>(data, frame.payload)?;
             let direction: [f64; 3] = [values[3], values[4], values[5]];
             let direction = ExactUnitVector3::new(direction)?;
-            let range = OrderedInterval::new([values[7], values[8]])?;
+            let range = IncreasingParameterInterval::new([values[7], values[8]])?;
             (values[6].to_bits() == 1.0_f64.to_bits()).then_some(B2LineProfile {
                 pos: frame.pos,
                 origin: [values[0], values[1], values[2]],
@@ -2969,8 +2970,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             let vector = RelaxedUnitVector2::from_hypot(vector)?;
             let radius = PositiveLength::new(radius)?;
-            let u_range = OrderedInterval::new(u_range)?;
-            let v_range = OrderedInterval::new(v_range)?;
+            let u_range = IncreasingParameterInterval::new(u_range)?;
+            let v_range = IncreasingParameterInterval::new(v_range)?;
             let axis = match frame_token {
                 0x19 => vector,
                 0x1c => vector.reverse_quarter_turn(),
@@ -3005,8 +3006,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 return None;
             }
             let radius = PositiveLength::new(radius)?;
-            let u_range = OrderedInterval::new(u_range)?;
-            let v_range = OrderedInterval::new(v_range)?;
+            let u_range = IncreasingParameterInterval::new(u_range)?;
+            let v_range = IncreasingParameterInterval::new(v_range)?;
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
@@ -3036,8 +3037,8 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             }
             let vector = RelaxedUnitVector2::from_hypot(vector)?;
             let radius = PositiveLength::new(radius)?;
-            let u_range = OrderedInterval::new(u_range)?;
-            let v_range = OrderedInterval::new(v_range)?;
+            let u_range = IncreasingParameterInterval::new(u_range)?;
+            let v_range = IncreasingParameterInterval::new(v_range)?;
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
@@ -3098,9 +3099,10 @@ pub(crate) fn b2_circles_from_records(
             continue;
         };
         let [c1, c2, radius, lo, hi] = values;
-        let (Some(radius), Some(range)) =
-            (PositiveLength::new(radius), OrderedInterval::new([lo, hi]))
-        else {
+        let (Some(radius), Some(range)) = (
+            PositiveLength::new(radius),
+            IncreasingParameterInterval::new([lo, hi]),
+        ) else {
             continue;
         };
         if values.iter().all(|v| v.is_finite())

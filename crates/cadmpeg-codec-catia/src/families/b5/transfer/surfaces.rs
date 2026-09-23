@@ -926,26 +926,28 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
+            let side = cadmpeg_ir::geometry::OffsetSide::Direction {
+                direction,
+                support: Some(surface_ids[&support.surface_object_id].clone()),
+            };
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
-                    source_id,
-                    distance,
-                    cadmpeg_ir::geometry::OffsetSide::Direction {
-                        direction,
-                        support: Some(surface_ids[&support.surface_object_id].clone()),
-                    },
-                    Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                        parameter_range: source_parameter_range,
-                    }),
-                )
-                .map(|admitted_payload| {
-                    ProceduralCurve::new(
-                        procedure_id,
-                        ProceduralCurveDefinition::Offset(admitted_payload),
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::CurveOffsetRange::uniform(source_parameter_range)
+                    .and_then(|range| {
+                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                            source_id,
+                            distance,
+                            side,
+                            Some(range),
+                        )
+                    })
+                    .map(|admitted_payload| {
+                        ProceduralCurve::new(
+                            procedure_id,
+                            ProceduralCurveDefinition::Offset(admitted_payload),
+                        )
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
     }

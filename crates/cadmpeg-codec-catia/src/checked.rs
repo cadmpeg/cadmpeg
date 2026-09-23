@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Checked direction and interval owners for native record invariants.
+//! Checked direction owners and byte-extent overlap for native record invariants.
 
 use std::marker::PhantomData;
 
@@ -259,47 +259,6 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
 {
     fn from(value: UnitVector3<Tolerance, Measurement>) -> Self {
         value.get()
-    }
-}
-
-/// A finite, strictly increasing scalar interval.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-pub(crate) struct OrderedInterval([f64; 2]);
-
-impl OrderedInterval {
-    /// Constructs a finite interval whose lower bound is below its upper bound.
-    pub(crate) fn new(value: [f64; 2]) -> Option<Self> {
-        (value.iter().all(|bound| bound.is_finite()) && value[0] < value[1]).then_some(Self(value))
-    }
-
-    /// Returns the interval bounds.
-    pub(crate) fn get(self) -> [f64; 2] {
-        self.0
-    }
-
-    /// Returns the lower bound.
-    pub(crate) fn lower(self) -> f64 {
-        self.0[0]
-    }
-
-    /// Returns the upper bound.
-    pub(crate) fn upper(self) -> f64 {
-        self.0[1]
-    }
-}
-
-impl TryFrom<[f64; 2]> for OrderedInterval {
-    type Error = String;
-
-    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or_else(|| "interval is not finite and increasing".to_owned())
-    }
-}
-
-impl From<OrderedInterval> for [f64; 2] {
-    fn from(value: OrderedInterval) -> Self {
-        value.0
     }
 }
 

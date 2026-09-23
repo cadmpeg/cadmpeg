@@ -403,7 +403,9 @@ struct OffsetCurveConstructionWire {
 }
 
 impl OffsetCurveConstruction {
-    /// Admit the construction parameters.
+    /// Admit the construction parameters. The range and law interval types
+    /// state the interval contract; the side, the law distances and the
+    /// distance are checked here.
     pub fn try_new(
         source: CurveId,
         distance: f64,
@@ -418,27 +420,11 @@ impl OffsetCurveConstruction {
                 direction.is_finite() && direction.norm() > 0.0
             }
         };
-        let range_valid = range.as_ref().is_none_or(|range| {
-            let parameter_range = match range {
-                crate::geometry::CurveOffsetRange::Uniform { parameter_range }
-                | crate::geometry::CurveOffsetRange::Variable {
-                    parameter_range, ..
-                } => parameter_range,
-            };
-            parameter_range.iter().all(|value| value.is_finite())
-                && parameter_range[0] < parameter_range[1]
-        });
         let law_valid = match &range {
             Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
                 match distance_law {
-                    crate::geometry::CurveOffsetDistanceLaw::Linear {
-                        distances,
-                        control_range,
-                        ..
-                    } => {
+                    crate::geometry::CurveOffsetDistanceLaw::Linear { distances, .. } => {
                         distances.iter().all(|value| value.is_finite())
-                            && control_range.iter().all(|value| value.is_finite())
-                            && control_range[0] < control_range[1]
                     }
                     crate::geometry::CurveOffsetDistanceLaw::Coordinate {
                         function_parameter_offset,
@@ -453,9 +439,9 @@ impl OffsetCurveConstruction {
             }
             None | Some(crate::geometry::CurveOffsetRange::Uniform { .. }) => true,
         };
-        if !side_valid || !range_valid || !law_valid {
+        if !side_valid || !law_valid {
             return Err(ProceduralGeometryError::Payload(
-                "curve offset distance, side, range, or law is invalid",
+                crate::geometry::INVALID_CURVE_OFFSET,
             ));
         }
 
