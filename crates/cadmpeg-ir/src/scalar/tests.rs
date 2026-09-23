@@ -194,3 +194,69 @@ fn a_widening_edge_carries_a_signed_zero_and_a_domain_boundary_unchanged() {
     let one = Fraction::new(1.0).expect("one is a fraction");
     assert_eq!(NonNegativeReal::from(one).get(), 1.0);
 }
+
+#[test]
+fn scalar_constants_are_the_admitted_literals() {
+    use crate::scalar::{Angle, FiniteReal, NonZeroReal};
+
+    let constants = [
+        (
+            Angle::QUARTER_TURN.get(),
+            Angle::new(std::f64::consts::FRAC_PI_2).map(Angle::get),
+        ),
+        (
+            Angle::HALF_TURN.get(),
+            Angle::new(std::f64::consts::PI).map(Angle::get),
+        ),
+        (
+            Angle::THREE_QUARTER_TURN.get(),
+            Angle::new(3.0 * std::f64::consts::FRAC_PI_2).map(Angle::get),
+        ),
+        (
+            FiniteReal::ZERO.get(),
+            FiniteReal::new(0.0).map(FiniteReal::get),
+        ),
+        (
+            NonZeroReal::ONE.get(),
+            NonZeroReal::new(1.0).map(NonZeroReal::get),
+        ),
+        (
+            NonZeroReal::FRAC_1_SQRT_2.get(),
+            NonZeroReal::new(std::f64::consts::FRAC_1_SQRT_2).map(NonZeroReal::get),
+        ),
+    ];
+    for (constant, admitted) in constants {
+        assert_eq!(
+            Some(constant.to_bits()),
+            admitted.map(f64::to_bits),
+            "{constant} is the admitted literal"
+        );
+    }
+}
+
+#[test]
+fn finite_scalar_magnitudes_stay_admitted() {
+    use crate::scalar::{Angle, FiniteReal, Length};
+
+    for value in [
+        -0.0,
+        0.0,
+        -2.5,
+        3.0,
+        f64::MIN,
+        f64::MAX,
+        -f64::MIN_POSITIVE,
+        -f64::from_bits(1),
+    ] {
+        let magnitude = value.abs().to_bits();
+        let length = Length::new(value).expect("a finite length").abs();
+        let angle = Angle::new(value).expect("a finite angle").abs();
+        let real = FiniteReal::new(value).expect("a finite real").abs();
+        assert_eq!(length.get().to_bits(), magnitude);
+        assert_eq!(angle.get().to_bits(), magnitude);
+        assert_eq!(real.get().to_bits(), magnitude);
+        assert_eq!(Length::new(length.get()), Some(length));
+        assert_eq!(Angle::new(angle.get()), Some(angle));
+        assert_eq!(FiniteReal::new(real.get()), Some(real));
+    }
+}

@@ -383,7 +383,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
     );
-    assert_eq!(construction.depth, Some(Length::new(12.0).unwrap()));
+    assert_eq!(
+        construction.depth,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(12.0).unwrap())
+    );
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -408,7 +411,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.2).unwrap()
     );
-    assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
+    assert_eq!(
+        construction.depth,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(12.4).unwrap())
+    );
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
@@ -432,7 +438,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(8.43).unwrap()
     );
-    assert_eq!(construction.depth, Some(Length::new(11.62).unwrap()));
+    assert_eq!(
+        construction.depth,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(11.62).unwrap())
+    );
     assert!(matches!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::NativeThread {
@@ -468,7 +477,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap()
     );
-    assert_eq!(construction.depth, Some(Length::new(10.0).unwrap()));
+    assert_eq!(
+        construction.depth,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap())
+    );
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterbore {
@@ -498,7 +510,10 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         construction.diameter,
         cadmpeg_ir::scalar::PositiveLength::new(5.5).unwrap()
     );
-    assert_eq!(construction.depth, Some(Length::new(12.4).unwrap()));
+    assert_eq!(
+        construction.depth,
+        Some(cadmpeg_ir::scalar::PositiveLength::new(12.4).unwrap())
+    );
     assert_eq!(
         construction.construction,
         cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Counterdrill {

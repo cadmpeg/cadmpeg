@@ -1622,7 +1622,7 @@ fn project_solid_primitive(
             solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
                 radius: Length::new(*diameter * 5.0)?,
                 height: Length::new(*height * 10.0)?,
-                angle: Angle::new(std::f64::consts::TAU)?,
+                angle: Angle::FULL_TURN,
             })
             .ok()?,
             op: operation(*result),
@@ -7144,7 +7144,7 @@ fn project_fixed_pipe(
     let section_size_parameter = unique("SectionSize")?;
     let section_thickness_parameter = unique("SectionThickness")?;
     let section_size = design_length(section_size_parameter)?;
-    let section_thickness = design_length(section_thickness_parameter)?;
+    let section_thickness = design_positive_length(section_thickness_parameter)?;
     if along.unit().is_some()
         || against.unit().is_some()
         || along.evaluated_value() != values[0]
@@ -7152,14 +7152,13 @@ fn project_fixed_pipe(
         || section_size_parameter.evaluated_value() != values[2]
         || section_thickness_parameter.evaluated_value() != values[3]
         || section_size.get() <= 0.0
-        || section_thickness.get() <= 0.0
     {
         return None;
     }
     let wall_thickness = if *filled {
         None
     } else if section_thickness.get() < section_size.get() / 2.0 {
-        Some(cadmpeg_ir::scalar::PositiveLength::try_from(section_thickness).ok()?)
+        Some(section_thickness)
     } else {
         return None;
     };
@@ -7558,14 +7557,10 @@ fn project_hole(
         };
         Some(*parameter)
     };
-    let depth = design_length(parameter("HoleDepth")?)?;
+    let depth = design_positive_length(parameter("HoleDepth")?)?;
     let diameter = design_positive_length(parameter("HoleDiameter")?)?;
     let tip_angle = design_angle(parameter("TipAngle")?)?;
-    if depth.get() <= 0.0
-        || diameter.get() <= 0.0
-        || tip_angle.get() <= 0.0
-        || tip_angle.get() > std::f64::consts::PI
-    {
+    if diameter.get() <= 0.0 || tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
         return None;
     }
     let counterbore = match parameters.len() {
@@ -7583,23 +7578,21 @@ fn project_hole(
         }
         _ => return None,
     };
-    let (kind, bottom) = match (counterbore, tip_angle.get() == std::f64::consts::PI) {
-        (None, true) => (HoleKind::Simple, Some(HoleBottom::Flat)),
-        (None, false) => (
-            HoleKind::SimpleDrilled {
-                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok()?,
-            },
-            None,
-        ),
-        (Some((diameter, depth)), true) => (
+    // The tip angle lies in (0, pi]. Pi states a flat bottom; every smaller
+    // tip angle is an interior drill-point angle.
+    let drill_point_angle = cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok();
+    let (kind, bottom) = match (counterbore, drill_point_angle) {
+        (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
+        (None, Some(drill_point_angle)) => (HoleKind::SimpleDrilled { drill_point_angle }, None),
+        (Some((diameter, depth)), None) => (
             HoleKind::Counterbore { diameter, depth },
             Some(HoleBottom::Flat),
         ),
-        (Some((diameter, depth)), false) => (
+        (Some((diameter, depth)), Some(drill_point_angle)) => (
             HoleKind::CounterboreDrilled {
                 diameter,
                 depth,
-                drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok()?,
+                drill_point_angle,
             },
             None,
         ),
@@ -7639,7 +7632,7 @@ fn project_hole(
         .ok()?,
 
         extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::try_from(depth).ok()?,
+            length: cadmpeg_ir::scalar::NonZeroLength::from(depth),
         }),
         bottom,
         taper_angle: None,
@@ -8925,7 +8918,7 @@ fn project_coil(
                 )?)?)
                 .ok()?,
             },
-            cadmpeg_ir::scalar::Angle::new(0.0)?,
+            cadmpeg_ir::scalar::Angle::ZERO,
             &["Diameter", "SectionSize", "Revolutions", "Pitch"],
         ),
     };

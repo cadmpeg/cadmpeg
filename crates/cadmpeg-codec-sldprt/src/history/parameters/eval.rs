@@ -453,7 +453,7 @@ pub(super) fn exponentiate_parameter_value(
         ParameterValue::Length(value) if exponent == 1.0 => ParameterValue::Length(*value),
         ParameterValue::Angle(value) if exponent == 1.0 => ParameterValue::Angle(*value),
         ParameterValue::Length(_) | ParameterValue::Angle(_) if exponent == 0.0 => {
-            ParameterValue::Real(FiniteReal::new(1.0)?)
+            ParameterValue::Real(FiniteReal::ONE)
         }
         ParameterValue::Real(base) => {
             ParameterValue::Real(FiniteReal::new(base.get().powf(exponent))?)
@@ -569,15 +569,9 @@ impl ParameterFunction {
                 );
             }
             Self::Abs => match unary()? {
-                ParameterValue::Length(value) => {
-                    ParameterValue::Length(Length::new(value.get().abs())?)
-                }
-                ParameterValue::Angle(value) => {
-                    ParameterValue::Angle(Angle::new(value.get().abs())?)
-                }
-                ParameterValue::Real(value) => {
-                    ParameterValue::Real(FiniteReal::new(value.get().abs())?)
-                }
+                ParameterValue::Length(value) => ParameterValue::Length(value.abs()),
+                ParameterValue::Angle(value) => ParameterValue::Angle(value.abs()),
+                ParameterValue::Real(value) => ParameterValue::Real(value.abs()),
                 ParameterValue::Integer(value) => ParameterValue::Integer(value.checked_abs()?),
                 ParameterValue::Boolean(_) | ParameterValue::String(_) => return None,
             },

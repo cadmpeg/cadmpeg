@@ -843,11 +843,21 @@ impl PositionalCylinderFrame {
         radius: f64,
         length: Option<f64>,
     ) -> Option<Self> {
-        let frame = PositionalFrame::new(origin, axis, ref_direction)?;
         let length = match length {
             Some(length) => Some(PositiveLength::new(length)?),
             None => None,
         };
+        Self::with_admitted_length(origin, axis, ref_direction, radius, length)
+    }
+    /// Admits a finite frame with valid directions and radius around an admitted extent.
+    pub(crate) fn with_admitted_length(
+        origin: [f64; 3],
+        axis: [f64; 3],
+        ref_direction: [f64; 3],
+        radius: f64,
+        length: Option<PositiveLength>,
+    ) -> Option<Self> {
+        let frame = PositionalFrame::new(origin, axis, ref_direction)?;
         (radius.is_finite() && radius > 0.0).then_some(Self {
             frame,
             radius,

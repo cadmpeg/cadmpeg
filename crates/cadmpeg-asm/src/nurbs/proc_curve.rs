@@ -1779,11 +1779,7 @@ pub fn surface_offset_patch_layout(
 }
 
 /// Draft factor of the marker template, replaced by the native tail value.
-const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal =
-    match cadmpeg_ir::scalar::FiniteReal::new(0.0) {
-        Some(value) => value,
-        None => panic!("zero is a finite draft factor"),
-    };
+const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal = cadmpeg_ir::scalar::FiniteReal::ZERO;
 
 fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
     use cadmpeg_ir::geometry::SilhouetteKind;

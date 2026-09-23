@@ -3741,7 +3741,7 @@ fn parametric_helix_definition(
         radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
         shape,
         revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
-        start_angle: cadmpeg_ir::scalar::Angle::new(0.0)?,
+        start_angle: cadmpeg_ir::scalar::Angle::ZERO,
         clockwise,
         segment_turns,
         construction_style,

@@ -9,7 +9,7 @@ use cadmpeg_ir::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, FeatureDefinition, FeatureOperation,
         LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
     },
-    scalar::Length,
+    scalar::{NonZeroLength, PositiveLength},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -86,7 +86,7 @@ pub(super) fn project_extrude(
         let sole = values.next().filter(|_| values.next().is_none())?;
         parse_positive_length_mm(sole)
             .or_else(|| parse_positive_dimension_length_mm(sole))
-            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let legacy_length = || {
         source_depth
@@ -95,7 +95,7 @@ pub(super) fn project_extrude(
                 parse_positive_length_mm(value)
                     .or_else(|| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let length = |name| {
         feature
@@ -108,7 +108,7 @@ pub(super) fn project_extrude(
                     .flatten()
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::scalar::NonZeroLength::new)
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let draft = match feature.parameters.get("Draft") {
         Some(value) => Some(cadmpeg_ir::scalar::SlopeAngle::new(parse_angle_rad(
@@ -131,13 +131,17 @@ pub(super) fn project_extrude(
             .or_else(|| legacy_history_extrusion.then(legacy_length).flatten())
             .or_else(sole_length)
         {
-            Some(length) => one_sided(LinearTermination::Blind { length }),
+            Some(length) => one_sided(LinearTermination::Blind {
+                length: NonZeroLength::from(length),
+            }),
             None => one_sided(LinearTermination::Unresolved {}),
         },
         Some("Symmetric") => match length("Depth").or_else(sole_length) {
             Some(length) => ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
-                    termination: LinearTermination::Blind { length },
+                    termination: LinearTermination::Blind {
+                        length: NonZeroLength::from(length),
+                    },
                     draft,
                 },
             },
@@ -146,13 +150,13 @@ pub(super) fn project_extrude(
         Some("TwoSided") => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: length("Depth")?,
+                    length: NonZeroLength::from(length("Depth")?),
                 },
                 draft,
             },
             second: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: length("Depth2")?,
+                    length: NonZeroLength::from(length("Depth2")?),
                 },
                 draft: None,
             },
@@ -177,10 +181,7 @@ pub(super) fn project_extrude(
             vertex: VertexSelection::native(feature.properties.get("Vertex")?.clone())
                 .unwrap_or(VertexSelection::Unresolved),
         }),
-        Some("OffsetFromFace") => match length("Depth")
-            .or_else(sole_length)
-            .and_then(|offset| cadmpeg_ir::scalar::PositiveLength::try_from(offset).ok())
-        {
+        Some("OffsetFromFace") => match length("Depth").or_else(sole_length) {
             Some(offset) => one_sided(LinearTermination::OffsetFromFace {
                 face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
                 offset,
@@ -357,10 +358,11 @@ pub(super) fn project_hole(
             .parameters
             .get("Depth")
             .and_then(|value| parse_positive_length_mm(value))
-            .and_then(Length::new)
+            .and_then(PositiveLength::new)
             .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
-            .and_then(|length| cadmpeg_ir::scalar::NonZeroLength::try_from(length).ok())
-            .map(|length| LinearTermination::Blind { length }),
+            .map(|length| LinearTermination::Blind {
+                length: NonZeroLength::from(length),
+            }),
         Some("ThroughAll") => Some(LinearTermination::ThroughAll {}),
         Some(_) => None,
     };
@@ -426,7 +428,7 @@ pub(crate) fn threaded_hole_major_diameter(
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct HoleProfileConstruction {
     pub(in crate::history) diameter: cadmpeg_ir::scalar::PositiveLength,
-    pub(in crate::history) depth: Option<Length>,
+    pub(in crate::history) depth: Option<PositiveLength>,
     pub(in crate::history) construction: HoleConstruction,
     pub(in crate::history) exit_kind: Option<HoleKind>,
     pub(in crate::history) bottom: Option<HoleBottom>,
@@ -481,8 +483,8 @@ fn hole_profile_construction(
 
 pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
     enum ParsedDimension {
-        Diameter(Length),
-        Length(Length),
+        Diameter(PositiveLength),
+        Length(PositiveLength),
         Angle(cadmpeg_ir::scalar::InteriorAngle),
     }
 
@@ -505,9 +507,8 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
     };
     for expression in expressions {
         if strip_diameter_modifier(expression).is_some() {
-            if let Some(value) = parse_dimension_display_length(expression)
-                .filter(|value| *value > 0.0)
-                .and_then(Length::new)
+            if let Some(value) =
+                parse_dimension_display_length(expression).and_then(PositiveLength::new)
             {
                 dimensions.push(ParsedDimension::Diameter(value));
             }
@@ -516,7 +517,7 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
         {
             dimensions.push(ParsedDimension::Angle(value));
         } else if let Some(value) =
-            parse_positive_dimension_length_mm(expression).and_then(Length::new)
+            parse_positive_dimension_length_mm(expression).and_then(PositiveLength::new)
         {
             dimensions.push(ParsedDimension::Length(value));
         }
@@ -536,7 +537,7 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
     angles.sort_by(|left, right| left.get().total_cmp(&right.get()));
     match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
         ([diameter], [depth], []) => Some(HoleProfileConstruction {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+            diameter: *diameter,
             depth: Some(*depth),
             construction: hole_form(HoleKind::Simple),
             exit_kind: None,
@@ -544,7 +545,7 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+            diameter: *diameter,
             depth: Some(*depth),
             construction: hole_form(HoleKind::SimpleDrilled {
                 drill_point_angle: *drill_point_angle,
@@ -570,13 +571,11 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 && thread_depth.get() < drill_depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+                diameter: *diameter,
                 depth: Some(*drill_depth),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*major_diameter)
-                        .ok()?,
-                    thread_depth: cadmpeg_ir::scalar::PositiveLength::try_from(*thread_depth)
-                        .ok()?,
+                    major_diameter: *major_diameter,
+                    thread_depth: *thread_depth,
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
@@ -597,13 +596,11 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && taper_angle.get() < drill_point_angle.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+                diameter: *diameter,
                 depth: Some(*drill_depth),
                 construction: HoleConstruction::NativeThread {
-                    major_diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*major_diameter)
-                        .ok()?,
-                    thread_depth: cadmpeg_ir::scalar::PositiveLength::try_from(*thread_depth)
-                        .ok()?,
+                    major_diameter: *major_diameter,
+                    thread_depth: *thread_depth,
                     pitch: None,
                     drill_point_angle: *drill_point_angle,
                 },
@@ -621,11 +618,11 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 && entry_depth.get() < depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+                diameter: *diameter,
                 depth: Some(*depth),
                 construction: hole_form(HoleKind::CounterboreDrilled {
-                    diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*entry_diameter).ok()?,
-                    depth: cadmpeg_ir::scalar::PositiveLength::try_from(*entry_depth).ok()?,
+                    diameter: *entry_diameter,
+                    depth: *entry_depth,
                     drill_point_angle: *drill_point_angle,
                 }),
                 exit_kind: None,
@@ -655,15 +652,14 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && counterbore_depth.get() < through_depth.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+                diameter: *diameter,
                 depth: Some(*through_depth),
                 construction: hole_form(HoleKind::Counterbore {
-                    diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*counterbore_diameter)
-                        .ok()?,
-                    depth: cadmpeg_ir::scalar::PositiveLength::try_from(*counterbore_depth).ok()?,
+                    diameter: *counterbore_diameter,
+                    depth: *counterbore_depth,
                 }),
                 exit_kind: Some(HoleKind::Countersink {
-                    diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*exit_diameter).ok()?,
+                    diameter: *exit_diameter,
                     angle: *exit_angle,
                 }),
                 bottom: None,
@@ -680,16 +676,16 @@ pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             && entry_angle.get() < drill_point_angle.get() =>
         {
             Some(HoleProfileConstruction {
-                diameter: cadmpeg_ir::scalar::PositiveLength::try_from(*diameter).ok()?,
+                diameter: *diameter,
                 depth: Some(*drill_depth),
                 construction: hole_form(HoleKind::Counterdrill {
                     diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                        cadmpeg_ir::scalar::PositiveLength::try_from(*recess_diameter).ok()?,
-                        Some(cadmpeg_ir::scalar::PositiveLength::try_from(*entry_diameter).ok()?),
+                        *recess_diameter,
+                        Some(*entry_diameter),
                     )
                     .ok()?,
 
-                    depth: cadmpeg_ir::scalar::PositiveLength::try_from(*recess_depth).ok()?,
+                    depth: *recess_depth,
                     angle: *entry_angle,
                 }),
                 exit_kind: None,

@@ -21,7 +21,6 @@ use crate::native::attach::FeatureDefinition;
 use crate::native::attach::FeatureId;
 use crate::native::attach::FeatureOperation;
 use crate::native::attach::FeatureTreeNodeRole;
-use crate::native::attach::Length;
 use crate::native::attach::NewBodyEvidence;
 use crate::native::attach::Point3;
 use crate::native::attach::UnresolvedFamily;
@@ -1403,7 +1402,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
                 .expect("literal sphere center is finite"),
-            Length::new(f64::EPSILON).unwrap()
+            cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
+                .expect("the sphere radius is positive")
         ))
     );
     assert_eq!(
@@ -1412,7 +1412,8 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             body.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1., 2., 3.))
                 .expect("literal sphere center is finite"),
-            Length::new(f64::EPSILON).unwrap()
+            cadmpeg_ir::scalar::PositiveLength::new(f64::EPSILON)
+                .expect("the sphere radius is positive")
         ))
     );
 
