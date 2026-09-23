@@ -699,6 +699,21 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
         })
     };
 
+    for revision in [0, -1] {
+        let mut invalid_cache = cache(admitted);
+        invalid_cache.form_mut().unwrap().revision = revision;
+        assert!(LoftSurfacePayload::try_new(
+            sections(admitted),
+            parameters(),
+            [0; 2],
+            [0; 2],
+            0,
+            Vec::new(),
+            invalid_cache,
+        )
+        .is_err());
+    }
+
     let definition = ProceduralSurfaceDefinition::Loft(loft(admitted).unwrap());
     let wire = serde_json::to_value(&definition).unwrap();
     let entry = &wire["sections"][0]["entries"][0];
