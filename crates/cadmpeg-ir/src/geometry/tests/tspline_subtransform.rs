@@ -82,6 +82,48 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
 }
 
 #[test]
+fn surface_admission_checks_its_revision_cache_form() {
+    use super::super::{
+        CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+        TSplineSurfaceConstruction,
+    };
+    let inline = TSplineSubtransform::Inline(
+        InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
+    );
+    let form = RevisionSurfaceForm {
+        revision: 1,
+        support_bounds: [Some(0.0), None, None, None],
+        reference_endpoints: [None; 2],
+        second_endpoints: [None; 2],
+        flags: Vec::new(),
+        cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
+        discontinuities: Default::default(),
+        tail_flag: false,
+        trailing_flags: Vec::new(),
+    };
+    let admit = |form| {
+        TSplineSurfaceConstruction::try_new(
+            [[0.0, 1.0], [0.0, 1.0]],
+            0,
+            inline.clone(),
+            0,
+            Default::default(),
+            false,
+            CacheContract::from_form(Some(form)),
+        )
+    };
+    assert!(admit(form.clone()).is_ok());
+    for revision in [0, -1] {
+        let mut invalid = form.clone();
+        invalid.revision = revision;
+        assert!(admit(invalid).is_err());
+    }
+    let mut invalid = form;
+    invalid.support_bounds[0] = Some(f64::NAN);
+    assert!(admit(invalid).is_err());
+}
+
+#[test]
 fn subtransform_wire_rejects_missing_resolved_payload() {
     for wire in [
         json!({"kind": "reference", "index": 0}),

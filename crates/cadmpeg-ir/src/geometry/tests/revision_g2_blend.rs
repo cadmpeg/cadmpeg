@@ -192,6 +192,17 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
 }
 
 #[test]
+fn radius_selector_diagnostic_reports_the_rejected_integer() {
+    for value in [0, -2, i64::MIN] {
+        let error = serde_json::from_value::<RevisionG2RadiusValue>(serde_json::json!(value))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(&value.to_string()), "{error}");
+        assert!(error.contains("positive"), "{error}");
+    }
+}
+
+#[test]
 fn the_revision_g2_blend_admission_refuses_a_non_finite_scalar() {
     // JSON itself states no infinity or NaN, so the wire cannot spell a
     // refused value; `TryFrom<…Wire>` is the conversion the deserializer

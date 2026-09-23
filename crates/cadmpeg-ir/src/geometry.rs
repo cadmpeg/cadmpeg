@@ -2809,7 +2809,8 @@ pub struct TSplineSurfaceConstruction {
 }
 
 impl TSplineSurfaceConstruction {
-    /// Admit finite ordered ranges, finite discontinuities, and a resolved subtransform.
+    /// Admit finite ordered ranges, finite discontinuities, a valid revision
+    /// cache, and a resolved subtransform.
     pub fn try_new(
         parameter_ranges: [[f64; 2]; 2],
         type_code: i64,
@@ -2832,6 +2833,11 @@ impl TSplineSurfaceConstruction {
         {
             return Err(ProceduralGeometryError::Payload(
                 "T-spline discontinuities must be finite",
+            ));
+        }
+        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
+            return Err(ProceduralGeometryError::Payload(
+                "T-spline revision cache form is invalid",
             ));
         }
         Ok(Self {
@@ -3168,18 +3174,19 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
 }
 
 impl<F: Default> RevisionSurfaceForm<F> {
-    /// Whether every scalar this form carries is finite. The carrier run and
-    /// the post-tail run are booleans, and a solved cache states its tolerance
-    /// as a `FitTolerance`, which is finite by type.
+    /// Whether the revision is positive and every floating scalar is finite.
+    /// A solved cache states its tolerance as a finite `FitTolerance`.
     #[must_use]
-    fn values_are_finite(&self) -> bool {
-        self.support_bounds
-            .iter()
-            .chain(self.reference_endpoints.iter())
-            .chain(self.second_endpoints.iter())
-            .flatten()
-            .chain(self.discontinuities.iter().flatten())
-            .all(|value| value.is_finite())
+    fn is_valid(&self) -> bool {
+        self.revision > 0
+            && self
+                .support_bounds
+                .iter()
+                .chain(self.reference_endpoints.iter())
+                .chain(self.second_endpoints.iter())
+                .flatten()
+                .chain(self.discontinuities.iter().flatten())
+                .all(|value| value.is_finite())
             && self.cache.values_are_finite()
     }
 }
@@ -3859,10 +3866,11 @@ pub struct LoftRevisionForm {
 }
 
 impl LoftRevisionForm {
-    /// Whether every scalar this form carries is finite.
+    /// Whether the revision is positive and every floating scalar is finite.
     #[must_use]
-    fn values_are_finite(&self) -> bool {
-        self.cache.values_are_finite()
+    fn is_valid(&self) -> bool {
+        self.revision > 0
+            && self.cache.values_are_finite()
             && self
                 .discontinuities
                 .iter()
@@ -4220,7 +4228,9 @@ impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
     {
         let value = i64::deserialize(deserializer)?;
         Self::new(value).ok_or_else(|| {
-            serde::de::Error::custom("revision G2 radius selector value cannot be -1")
+            serde::de::Error::custom(format!(
+                "revision G2 radius selector value must be positive, got {value}"
+            ))
         })
     }
 }

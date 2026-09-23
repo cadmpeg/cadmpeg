@@ -179,13 +179,9 @@ impl TaperSurfaceConstruction {
                 factor,
             } => draft.is_finite() && sine.is_finite() && cosine.is_finite() && factor.is_finite(),
         };
-        if !tail_finite
-            || !cache
-                .form()
-                .is_none_or(RevisionSurfaceForm::values_are_finite)
-        {
+        if !tail_finite || !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
-                "taper surface parameter or subtype tail is not finite",
+                "taper surface parameter or subtype tail is invalid",
             ));
         }
 
@@ -320,12 +316,9 @@ impl ExtrusionSurfaceConstruction {
         native_position: Option<Point3>,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache
-            .form()
-            .is_none_or(RevisionSurfaceForm::values_are_finite)
-        {
+        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
-                "Extrusion.cache is not finite",
+                "Extrusion.cache is invalid",
             ));
         }
         Ok(Self {
@@ -483,12 +476,9 @@ impl RevolutionSurfaceConstruction {
         transposed: bool,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache
-            .form()
-            .is_none_or(RevisionSurfaceForm::values_are_finite)
-        {
+        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
-                "revolution cache form is not finite",
+                "revolution cache form is invalid",
             ));
         }
         if !axis_origin.is_finite() || !axis_direction.is_finite() {
@@ -677,13 +667,13 @@ impl OffsetSurfaceConstruction {
         linear_support_extension: bool,
         extension: OffsetExtension,
     ) -> Result<Self, ProceduralGeometryError> {
-        let extension_finite = match &extension {
+        let extension_valid = match &extension {
             OffsetExtension::Legacy { .. } => true,
-            OffsetExtension::Revision { form } => form.values_are_finite(),
+            OffsetExtension::Revision { form } => form.is_valid(),
         };
-        if !extension_finite {
+        if !extension_valid {
             return Err(ProceduralGeometryError::Payload(
-                "Offset.extension is not finite",
+                "Offset.extension is invalid",
             ));
         }
         Ok(Self {
@@ -1113,12 +1103,9 @@ impl SumSurfaceConstruction {
         basepoint: Vector3,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache
-            .form()
-            .is_none_or(RevisionSurfaceForm::values_are_finite)
-        {
+        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
-                "sum cache form is not finite",
+                "sum cache form is invalid",
             ));
         }
         Ok(Self {
@@ -1185,7 +1172,7 @@ impl ExactSurfacePayload {
                     .flatten()
                     .flatten()
                     .all(|value| value.is_finite())
-                    && form.values_are_finite()
+                    && form.is_valid()
             }
         };
         if !valid {
@@ -1330,7 +1317,7 @@ impl LoftSurfacePayload {
             .all(crate::geometry::LoftSection::values_are_finite);
         let cache_valid = cache
             .form()
-            .is_none_or(crate::geometry::LoftRevisionForm::values_are_finite);
+            .is_none_or(crate::geometry::LoftRevisionForm::is_valid);
         let bridge_valid = bridge.iter().all(|token| match token {
             crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
             crate::geometry::LoftBridgeToken::Boolean(_)
@@ -2093,7 +2080,7 @@ impl DeformableSurfacePayload {
             || !construction
                 .cache
                 .form()
-                .is_none_or(RevisionSurfaceForm::values_are_finite)
+                .is_none_or(RevisionSurfaceForm::is_valid)
         {
             return Err(ProceduralGeometryError::Payload(
                 "deformable surface construction payload is invalid",

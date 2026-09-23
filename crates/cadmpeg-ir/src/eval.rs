@@ -3370,6 +3370,8 @@ fn construction_curve_parameter(
                 || !surface_end.is_finite()
                 || !carrier_start.is_finite()
                 || !carrier_end.is_finite()
+                || !surface_width.is_finite()
+                || !carrier_width.is_finite()
                 || surface_width <= 0.0
                 || carrier_width <= 0.0
                 || parameter < carrier_start
@@ -3385,6 +3387,7 @@ fn construction_curve_parameter(
             let surface_width = surface_end - surface_start;
             if !surface_start.is_finite()
                 || !surface_end.is_finite()
+                || !surface_width.is_finite()
                 || surface_width <= 0.0
                 || parameter < surface_start
                 || parameter > surface_end
@@ -3406,6 +3409,9 @@ fn construction_curve_parameter(
         }
         (None, None) => (parameter, 1.0),
     };
+    if !parameter.is_finite() || !surface_derivative.is_finite() {
+        return None;
+    }
     let curve = index.curves(directrix.as_str())?;
     let Some([surface_start, surface_end]) = surface_interval else {
         return if reversed {
@@ -3446,17 +3452,15 @@ fn construction_curve_parameter(
     if !curve_width.is_finite() || curve_width <= 0.0 || surface_width <= 0.0 {
         return None;
     }
-    let derivative = if reversed {
-        -curve_width / surface_width * surface_derivative
-    } else {
-        curve_width / surface_width * surface_derivative
-    };
+    let derivative = scaled_ratio_products(curve_width, surface_width, [surface_derivative])?[0];
+    let derivative = if reversed { -derivative } else { derivative };
     let fraction = if reversed {
         (surface_end - parameter) / surface_width
     } else {
         (parameter - surface_start) / surface_width
     };
-    Some((curve_start + fraction * curve_width, derivative))
+    let parameter = curve_start + fraction * curve_width;
+    (parameter.is_finite() && derivative.is_finite()).then_some((parameter, derivative))
 }
 
 // The native and carrier parameter intervals are independent serialized semantics;
@@ -3474,7 +3478,7 @@ fn model_native_extrusion_partials(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
-    if !v.is_finite() {
+    if !v.is_finite() || !direction.is_finite() {
         return None;
     }
     let (parameter, derivative) = construction_curve_parameter(
@@ -3489,15 +3493,30 @@ fn model_native_extrusion_partials(
         || model_curve_differential_by_id(index, directrix, parameter),
         |budget| model_curve_differential_by_id_with_budget(index, directrix, parameter, budget),
     )?;
+    let squared_derivative_component =
+        |component| match crate::math::sum::product_sum(std::iter::once(Some([
+            derivative, derivative, component,
+        ]))) {
+            crate::math::sum::ProductSum::Zero => Some(0.0),
+            crate::math::sum::ProductSum::Value(value) => value.finite(),
+            crate::math::sum::ProductSum::Undefined => None,
+        };
+    let duu = Vector3::new(
+        squared_derivative_component(differential.acceleration.x)?,
+        squared_derivative_component(differential.acceleration.y)?,
+        squared_derivative_component(differential.acceleration.z)?,
+    );
     let zero = Vector3::new(0.0, 0.0, 0.0);
-    Some(SurfaceSecondPartials {
+    let partials = SurfaceSecondPartials {
         point: offset(differential.point, &[(v, direction)]),
         du: scale_vector(differential.tangent, derivative),
         dv: direction,
-        duu: scale_vector(differential.acceleration, derivative * derivative),
+        duu,
         duv: zero,
         dvv: zero,
-    })
+    };
+    (partials.point.is_finite() && partials.du.is_finite() && partials.duu.is_finite())
+        .then_some(partials)
 }
 
 fn extrusion_directrix_reversed(
