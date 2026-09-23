@@ -221,10 +221,10 @@ fn walk_owned_markers(b: &[u8], int_width: RefWidth) -> (Vec<usize>, bool) {
         }
         match crate::nurbs::subtypes::next_token(b, pos, int_width) {
             Some(next) => pos = next,
-            None => break,
+            None => return (out, false),
         }
     }
-    (out, true)
+    (out, depth == 0 && outer == 0)
 }
 
 /// Positions of the B-spline markers owned by a complete record's unique
@@ -508,6 +508,26 @@ pub(super) fn take_native_vec3(bytes: &[u8], position: &mut usize, tag: u8) -> O
     let values = vec3_le_at(bytes, *position + 1)?;
     *position += 25;
     Some(values)
+}
+
+#[cfg(test)]
+mod marker_ownership_tests {
+    use super::{owned_marker_positions, NUBS_MARKER};
+    use crate::kernel_header::RefWidth;
+
+    #[test]
+    fn raw_marker_walk_refuses_unclosed_own_and_nested_scopes() {
+        let mut bytes = vec![0x0f];
+        bytes.extend_from_slice(NUBS_MARKER);
+        assert_eq!(owned_marker_positions(&bytes, RefWidth::Four), None);
+        bytes.push(0x10);
+        assert_eq!(
+            owned_marker_positions(&bytes, RefWidth::Four),
+            Some(vec![1])
+        );
+        bytes.push(0x0f);
+        assert_eq!(owned_marker_positions(&bytes, RefWidth::Four), None);
+    }
 }
 
 #[cfg(test)]
