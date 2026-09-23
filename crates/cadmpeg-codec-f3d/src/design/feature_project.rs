@@ -8114,7 +8114,7 @@ fn project_extrude(
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
     };
-    use cadmpeg_ir::scalar::{Angle, Length};
+    use cadmpeg_ir::scalar::{Angle, Length, NonZeroLength};
 
     // Per-side terminations without side-local modifiers; drafts and offsets
     // are attached below once they are resolved.
@@ -8385,17 +8385,21 @@ fn project_extrude(
         }
         _ => return None,
     };
+    // A zero distance admits no nonzero length. Its `Some(None)` matches no
+    // distance arm and no arm that requires an absent distance, so the final
+    // arm refuses it.
+    let along = along.map(|(along, direction)| (NonZeroLength::try_from(along).ok(), direction));
+    let against = against.map(|against| NonZeroLength::try_from(against).ok());
     let (shape, reverse_direction) = match (prologue.extent()?, along, against) {
-        (DesignExtrudeExtent::OneSidedDistance, Some((along, along_direction)), None)
-            if along.get() != 0.0
-                && (matches!(along_direction, AlongDirection::PrologueReversal)
-                    || !prologue.direction_reversed())
+        (DesignExtrudeExtent::OneSidedDistance, Some((Some(along), along_direction)), None)
+            if (matches!(along_direction, AlongDirection::PrologueReversal)
+                || !prologue.direction_reversed())
                 && termination_groups.is_empty()
                 && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::OneSided(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
+                    length: NonZeroLength::from(along.abs()),
                 }),
                 match along_direction {
                     AlongDirection::SignedDistance => along.get() < 0.0,
@@ -8405,21 +8409,19 @@ fn project_extrude(
         }
         (
             DesignExtrudeExtent::TwoSidedDistance,
-            Some((along, AlongDirection::SignedDistance)),
-            Some(against),
-        ) if along.get() != 0.0
-            && against.get() != 0.0
-            && !prologue.direction_reversed()
+            Some((Some(along), AlongDirection::SignedDistance)),
+            Some(Some(against)),
+        ) if !prologue.direction_reversed()
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
+                        length: NonZeroLength::from(along.abs()),
                     },
                     second: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(against.get().abs())?,
+                        length: NonZeroLength::from(against.abs()),
                     },
                 },
                 along.get() < 0.0,
@@ -8427,10 +8429,9 @@ fn project_extrude(
         }
         (
             DesignExtrudeExtent::TwoSidedDistanceToFace,
-            Some((along, AlongDirection::SignedDistance)),
+            Some((Some(along), AlongDirection::SignedDistance)),
             None,
-        ) if along.get() != 0.0
-            && !prologue.direction_reversed()
+        ) if !prologue.direction_reversed()
             && termination_groups.len() == 1
             && target_shape_groups.is_empty()
             && effective_side_one_offset.is_none()
@@ -8442,7 +8443,7 @@ fn project_extrude(
             (
                 ExtentShape::TwoSided {
                     first: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
+                        length: NonZeroLength::from(along.abs()),
                     },
                     second: LinearTermination::ToFace {
                         face: resolved_historical_face_group(
@@ -8498,16 +8499,15 @@ fn project_extrude(
         }
         (
             DesignExtrudeExtent::SymmetricDistance,
-            Some((along, AlongDirection::SignedDistance)),
+            Some((Some(along), AlongDirection::SignedDistance)),
             None,
-        ) if along.get() != 0.0
-            && !prologue.direction_reversed()
+        ) if !prologue.direction_reversed()
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
             (
                 ExtentShape::Symmetric(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(along.get().abs())?,
+                    length: NonZeroLength::from(along.abs()),
                 }),
                 along.get() < 0.0,
             )
