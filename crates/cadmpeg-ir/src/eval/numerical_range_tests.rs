@@ -82,7 +82,8 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
                     primary_kind: 0,
                     cache: crate::geometry::CacheContract::Revision {
                         form: SweepRevisionForm {
-                            revision: 22601,
+                            revision: crate::scalar::PositiveI64::new(22601)
+                                .expect("positive revision"),
                             primary_flag: true,
                             profile_endpoints: [None, None],
                             path_endpoints: [None, None],

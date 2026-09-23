@@ -33,6 +33,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveI64;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
@@ -51,7 +52,7 @@ pub(super) fn cyl_spl_sur(
     // located by parsing that tail. The compact layout has no tail: its optional
     // final surface cache is the last surface block in the scope.
     if matches!(cur.peek(), Some(Token::Long(_))) {
-        let revision = cur.take_long()?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         // Sense flag of the embedded directrix curve. It is the carrier's
         // whole boolean run, so it travels in the revision form's `flags`.
         let directrix_start = cur.pos();
@@ -1049,7 +1050,7 @@ pub(super) fn var_blend_spl_sur(
     };
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
-    let revision = cur.take_long()?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     let sides = Box::new([
         rolling_ball_side(&mut cur, reference_context)?,
         rolling_ball_side(&mut cur, reference_context)?,
@@ -1424,8 +1425,7 @@ pub(super) fn vertex_blend_spl_sur(
         && matches!(span.get(cur.pos() + 1), Some(Token::Long(_)))
     {
         (name == "VBL_SURF").then_some(())?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         Some(revision)
     } else {
         None

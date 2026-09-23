@@ -133,7 +133,7 @@ fn variable_blend_eval_fixture(
         id: ProceduralSurfaceId::mint("test:model:entity#variable-blend-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::VariableBlend(crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(VariableBlendConstruction {
                 subtype: VariableBlendSurfaceSubtype::VariableBlend,
-                revision: 23100,
+                revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
                 sides: Box::new([
                     side(first_surface, pcurves[0].0, pcurves[0].1),
                     side(second_surface, pcurves[1].0, pcurves[1].1),

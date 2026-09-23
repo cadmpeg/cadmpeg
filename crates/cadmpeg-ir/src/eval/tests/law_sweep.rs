@@ -151,7 +151,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
                 cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
-                    revision: 22601,
+                    revision: crate::scalar::PositiveI64::new(22601).expect("positive revision"),
                     primary_flag: true,
                     profile_endpoints: [None, None],
                     path_endpoints: [None, None],

@@ -1294,7 +1294,7 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
     ir.model.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         definition: ProceduralSurfaceDefinition::Extrusion(crate::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(directrix_id, Some([-2.0, 0.0]), Vector3::new(0.0, 0.0, 1.0), Some(Point3::new(0.0, 0.0, 0.0)), crate::geometry::CacheContract::from_form(Some(RevisionSurfaceForm {
-                revision: 1,
+                revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],
@@ -1364,7 +1364,7 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
                 cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
-                    revision: 23100,
+                    revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
                     primary_flag: false,
                     profile_endpoints: [Some(0.0), Some(1.0)],
                     path_endpoints: [Some(0.0), Some(1.0)],

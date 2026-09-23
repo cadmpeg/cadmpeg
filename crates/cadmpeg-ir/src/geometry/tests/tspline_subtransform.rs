@@ -91,7 +91,7 @@ fn surface_admission_checks_its_revision_cache_form() {
         InlineTSplineSubtransform::try_new("program", None, "values").unwrap(),
     );
     let form = RevisionSurfaceForm {
-        revision: 1,
+        revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
         support_bounds: [Some(0.0), None, None, None],
         reference_endpoints: [None; 2],
         second_endpoints: [None; 2],
@@ -112,11 +112,13 @@ fn surface_admission_checks_its_revision_cache_form() {
             CacheContract::from_form(Some(form)),
         )
     };
-    assert!(admit(form.clone()).is_ok());
+    let wire = serde_json::to_value(admit(form.clone()).unwrap()).unwrap();
+    assert_eq!(wire["cache"]["form"]["revision"], json!(1));
     for revision in [0, -1] {
-        let mut invalid = form.clone();
-        invalid.revision = revision;
-        assert!(admit(invalid).is_err());
+        assert!(crate::scalar::PositiveI64::new(revision).is_none());
+        let mut invalid = wire.clone();
+        invalid["cache"]["form"]["revision"] = json!(revision);
+        assert!(serde_json::from_value::<TSplineSurfaceConstruction>(invalid).is_err());
     }
     let mut invalid = form;
     invalid.support_bounds[0] = Some(f64::NAN);

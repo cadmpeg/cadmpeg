@@ -394,7 +394,7 @@ pub struct EmbeddedVariableBlend {
     /// The blend subtype the record name selects.
     pub subtype: cadmpeg_ir::geometry::VariableBlendSurfaceSubtype,
     /// The revision integer that gates the layout.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Two ordered embedded support sides.
     pub sides: Box<[RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>; 2]>,
     /// The embedded slice curve.
@@ -508,7 +508,7 @@ pub struct EmbeddedVertexBlendBoundary {
 /// Embedded native vertex blend before stable IR ids are assigned.
 pub struct EmbeddedVertexBlend {
     /// The revision integer that gates the layout, when serialized.
-    pub revision: Option<i64>,
+    pub revision: Option<PositiveI64>,
     /// The embedded boundary graphs, in stream order.
     pub boundaries: Vec<EmbeddedVertexBlendBoundary>,
     /// The approximation grid size.
@@ -1969,8 +1969,7 @@ fn revision_loft(
 ) -> Option<DecodedProceduralSurface> {
     let table = resolver?;
     let mut cur = Cur::at(span, position);
-    let revision = cur.take_long()?;
-    (revision > 0).then_some(())?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     let asm_extension_present = revision_loft_carries_asm_extension(table);
     let sections = [
         revision_loft_section(&mut cur, table, asm_extension_present)?,
@@ -3066,8 +3065,7 @@ fn revision_sweep_sur(
     table: &SubtypeTable,
 ) -> Option<DecodedProceduralSurface> {
     let mut cur = Cur::at(span, position);
-    let revision = cur.take_long()?;
-    (revision > 0).then_some(())?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     let primary_flag = cur.take_bool()?;
     let mode = cur.take_long()?;
     let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
@@ -3247,8 +3245,7 @@ fn taper_spl_sur(
         // Revision-gated form, stored by the orthogonal subtype's modern name.
         (name == "ortho_spl_sur").then_some(())?;
         let table = resolver?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
         let support = support?;
         let reference = embedded_base_curve_resolving_refs(&mut cur, table)?;
@@ -3484,8 +3481,7 @@ fn off_spl_sur(
         // The modern name uses the revision-gated layout.
         modern.then_some(())?;
         let table = resolver?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let (support, support_bounds) = optional_embedded_surface_with_bounds(&mut cur, table)?;
         let support = support?;
         let distance = cur.take_f64()? * LEN_TO_MM;
@@ -3573,8 +3569,7 @@ fn rot_spl_sur(
         // optional endpoints, axis origin and direction, shared tail. The
         // modern name uses this layout.
         (name == "rot_spl_sur").then_some(())?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let table = resolver?;
         let profile = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let profile_endpoints = [
@@ -3663,8 +3658,7 @@ fn sum_spl_sur(
         // optional endpoints, model-space origin, shared tail. The modern name
         // uses this layout.
         (name == "sum_spl_sur").then_some(())?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let table = resolver?;
         let first = embedded_base_curve_resolving_refs(&mut cur, table)?;
         let first_endpoints = [
@@ -3766,8 +3760,7 @@ fn exact_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         // parameter values, and the extension as an enum. The modern name uses
         // this layout.
         (name == "exact_spl_sur").then_some(())?;
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let RevisionSurfaceTail {
             cache,
             discontinuities,
@@ -3849,8 +3842,7 @@ fn t_spl_sur(toks: &[Token], table: &SubtypeTable) -> Option<DecodedProceduralSu
         // Revision-gated layout: revision integer, shared tail, four optional
         // parameter values, the type code as an enum, then the nested
         // subtransform scope and trailing integer.
-        let revision = cur.take_long()?;
-        (revision > 0).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
         let RevisionSurfaceTail {
             cache,
             discontinuities: tail_discontinuities,
@@ -4062,8 +4054,8 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
-        let revision = cur.take_long()?;
-        (revision == 22_506).then_some(())?;
+        let revision = PositiveI64::new(cur.take_long()?)?;
+        (revision.get() == 22_506).then_some(())?;
         let (support, ranges) = embedded_surface_with_ranges(&mut cur)?;
         let support_bounds = [ranges[0][0], ranges[0][1], ranges[1][0], ranges[1][1]];
         (support, Some((revision, support_bounds)))
