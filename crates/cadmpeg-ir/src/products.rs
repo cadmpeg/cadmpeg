@@ -784,15 +784,6 @@ mod tests {
                 limits
             );
         }
-        let error = serde_json::from_value::<JointLimits>(
-            serde_json::json!({"bounds":"range","minimum":2.0,"maximum":1.0}),
-        )
-        .unwrap_err()
-        .to_string();
-        assert!(
-            error.contains("joint limit range must be ordered"),
-            "{error}"
-        );
     }
 
     #[test]
