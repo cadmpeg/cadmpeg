@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admitted placement frames and scale vectors.
+//! Admitted placement frames.
 
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
@@ -34,35 +34,13 @@ impl FiniteFrame {
     }
 }
 
-/// A scale vector with finite components.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub(crate) struct FiniteVec3([f64; 3]);
-impl TryFrom<[f64; 3]> for FiniteVec3 {
-    type Error = String;
-    fn try_from(values: [f64; 3]) -> Result<Self, Self::Error> {
-        if values.iter().any(|value| !value.is_finite()) {
-            return Err("scale vector components must be finite".to_owned());
-        }
-        Ok(Self(values))
-    }
-}
-impl From<FiniteVec3> for [f64; 3] {
-    fn from(value: FiniteVec3) -> Self {
-        value.0
-    }
-}
-impl FiniteVec3 {
-    pub(crate) fn values(self) -> [f64; 3] {
-        self.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::transform::Transform;
 
-    use super::{FiniteFrame, FiniteVec3};
+    use cadmpeg_ir::units::FiniteVector;
+
+    use super::FiniteFrame;
 
     #[test]
     fn frames_reject_nonfinite_cells_and_nonorthonormal_axes() {
@@ -74,12 +52,12 @@ mod tests {
                     assert!(FiniteFrame::try_from(matrix).is_err());
                 }
             }
-            assert!(FiniteVec3::try_from([value, 1.0, 1.0]).is_err());
+            assert!(FiniteVector::new([value, 1.0, 1.0]).is_none());
         }
         let mut matrix = Transform::identity().rows();
         matrix[0][0] = 2.0;
         assert!(FiniteFrame::try_from(matrix).is_err());
         assert!(serde_json::from_value::<FiniteFrame>(serde_json::json!(matrix)).is_err());
-        assert!(FiniteVec3::try_from([-1.0, 0.0, 2.0]).is_ok());
+        assert!(FiniteVector::new([-1.0, 0.0, 2.0]).is_some());
     }
 }
