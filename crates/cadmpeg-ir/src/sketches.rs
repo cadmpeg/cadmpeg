@@ -3111,6 +3111,83 @@ pub enum SketchConstraintDefinitionInput {
     },
 }
 
+impl SketchConstraintDefinitionInput {
+    /// The entity whose neutral geometry kind this relation restricts, with
+    /// the kind it admits. Midpoint, arc-angle and ellipse-angle relations
+    /// restrict their entity; other relations restrict no entity kind.
+    #[must_use]
+    pub fn entity_kind_restriction(
+        &self,
+    ) -> Option<(&SketchEntityId, SketchEntityKindRestriction)> {
+        match self {
+            Self::Midpoint { entity, .. } => {
+                Some((entity, SketchEntityKindRestriction::BoundedCurve))
+            }
+            Self::ArcAngle { entity, .. } => {
+                Some((entity, SketchEntityKindRestriction::CircularArc))
+            }
+            Self::EllipseAngle { entity, .. } => {
+                Some((entity, SketchEntityKindRestriction::BoundedEllipse))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// The neutral geometry kinds that a relation admits for its restricted entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SketchEntityKindRestriction {
+    /// A line, circular arc, bounded ellipse, hyperbola or parabola, or NURBS curve.
+    BoundedCurve,
+    /// A circular arc.
+    CircularArc,
+    /// A bounded ellipse.
+    BoundedEllipse,
+}
+
+impl SketchEntityKindRestriction {
+    /// Whether `geometry` has an admitted kind. External and native geometry
+    /// has no neutral kind, so it is admitted.
+    #[must_use]
+    pub fn admits(self, geometry: &SketchGeometryDefinition) -> bool {
+        if matches!(
+            geometry,
+            SketchGeometryDefinition::ExternalReference { .. }
+                | SketchGeometryDefinition::Native { .. }
+        ) {
+            return true;
+        }
+        match self {
+            Self::BoundedCurve => matches!(
+                geometry,
+                SketchGeometryDefinition::Line { .. }
+                    | SketchGeometryDefinition::Arc { .. }
+                    | SketchGeometryDefinition::Ellipse {
+                        bounds: Some(_),
+                        ..
+                    }
+                    | SketchGeometryDefinition::Hyperbola {
+                        bounds: Some(_),
+                        ..
+                    }
+                    | SketchGeometryDefinition::Parabola {
+                        bounds: Some(_),
+                        ..
+                    }
+                    | SketchGeometryDefinition::Nurbs { .. }
+            ),
+            Self::CircularArc => matches!(geometry, SketchGeometryDefinition::Arc { .. }),
+            Self::BoundedEllipse => matches!(
+                geometry,
+                SketchGeometryDefinition::Ellipse {
+                    bounds: Some(_),
+                    ..
+                }
+            ),
+        }
+    }
+}
+
 crate::units::named_field!(
     deserialize_object,
     cadmpeg_core::text::NonBlankString,

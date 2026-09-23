@@ -600,7 +600,7 @@ fn sketch_constraint_loci_compatible_with_policy(
             }
         })
     };
-    match definition {
+    let loci_compatible = match definition {
         SketchConstraintDefinitionInput::CoincidentLoci { loci }
         | SketchConstraintDefinitionInput::Group { elements: loci }
         | SketchConstraintDefinitionInput::Text { elements: loci, .. } => {
@@ -617,35 +617,8 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
-        // The neutral midpoint target is a bounded curve. A solved reference
-        // line has no extent, so a type-35 incidence on it retains its native
-        // form. Geometry without a neutral kind stays admitted.
-        SketchConstraintDefinitionInput::Midpoint { point, entity } => {
-            locus_compatible(point)
-                && geometry.get(entity).is_some_and(|geometry| {
-                    matches!(
-                        geometry.definition(),
-                        SketchGeometryDefinition::Line { .. }
-                            | SketchGeometryDefinition::Arc { .. }
-                            | SketchGeometryDefinition::Ellipse {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Hyperbola {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Parabola {
-                                bounds: Some(_),
-                                ..
-                            }
-                            | SketchGeometryDefinition::Nurbs { .. }
-                            | SketchGeometryDefinition::ExternalReference { .. }
-                            | SketchGeometryDefinition::Native { .. }
-                    )
-                })
-        }
-        SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
+        SketchConstraintDefinitionInput::Midpoint { point, entity }
+        | SketchConstraintDefinitionInput::PointOnObject { point, entity } => {
             locus_compatible(point) && geometry.contains_key(entity)
         }
         SketchConstraintDefinitionInput::PointCoordinateValues { point, .. } => {
@@ -690,20 +663,9 @@ fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinitionInput::Fixed { entity }
         | SketchConstraintDefinitionInput::Radius { entity, .. }
         | SketchConstraintDefinitionInput::Diameter { entity, .. }
+        | SketchConstraintDefinitionInput::ArcAngle { entity, .. }
         | SketchConstraintDefinitionInput::EllipseAngle { entity, .. } => {
             geometry.contains_key(entity)
-        }
-        // A fixed arc angle needs a circular arc. Geometry without a neutral
-        // kind stays admitted.
-        SketchConstraintDefinitionInput::ArcAngle { entity, .. } => {
-            geometry.get(entity).is_some_and(|geometry| {
-                matches!(
-                    geometry.definition(),
-                    SketchGeometryDefinition::Arc { .. }
-                        | SketchGeometryDefinition::ExternalReference { .. }
-                        | SketchGeometryDefinition::Native { .. }
-                )
-            })
         }
         SketchConstraintDefinitionInput::AtIntersection {
             point,
@@ -713,7 +675,16 @@ fn sketch_constraint_loci_compatible_with_policy(
             locus_compatible(point) && geometry.contains_key(first) && geometry.contains_key(second)
         }
         _ => true,
-    }
+    };
+    // A relation whose entity kind the IR refuses retains its native form.
+    loci_compatible
+        && definition
+            .entity_kind_restriction()
+            .is_none_or(|(entity, restriction)| {
+                geometry
+                    .get(entity)
+                    .is_some_and(|geometry| restriction.admits(geometry.definition()))
+            })
 }
 
 #[cfg(test)]
@@ -809,6 +780,16 @@ mod tests {
                 ),
             ])
         };
+        let ellipse = |bounds| SketchGeometryDefinition::Ellipse {
+            center: Point2::new(0.0, 0.0),
+            major_angle: Angle::ZERO,
+            major_radius: Length::new(2.0).expect("valid test fixture"),
+            minor_radius: Length::new(1.0).expect("valid test fixture"),
+            bounds,
+        };
+        let point_target = with_target(SketchGeometryDefinition::Point {
+            position: Point2::new(1.0, 0.0),
+        });
         let line = with_target(SketchGeometryDefinition::Line {
             start: Point2::new(-1.0, 0.0),
             end: Point2::new(1.0, 0.0),
@@ -831,69 +812,94 @@ mod tests {
             center: Point2::new(0.0, 0.0),
             radius: Length::new(1.0).expect("valid test fixture"),
         });
+        let full_ellipse = with_target(ellipse(None));
+        let bounded_ellipse = with_target(ellipse(Some([
+            Angle::ZERO,
+            Angle::new(1.0).expect("valid test fixture"),
+        ])));
 
         let midpoint = SketchConstraintDefinitionInput::Midpoint {
             point: SketchLocus::Entity(point.clone()),
             entity: target.clone(),
         };
-        for (geometry, admitted) in [
-            (&line, true),
-            (&arc, true),
-            (&native_line, true),
-            (&reference_line, false),
-            (&circle, false),
-        ] {
-            assert_eq!(
-                sketch_constraint_loci_compatible_with_policy(&midpoint, geometry, false),
-                admitted,
-                "{geometry:?}"
-            );
-        }
         let arc_angle = SketchConstraintDefinitionInput::ArcAngle {
             entity: target.clone(),
             angle: PositiveAngle::QUARTER_TURN,
         };
-        for (geometry, admitted) in [(&arc, true), (&native_line, true), (&circle, false)] {
-            assert_eq!(
-                sketch_constraint_loci_compatible_with_policy(&arc_angle, geometry, false),
-                admitted,
-                "{geometry:?}"
-            );
+        let ellipse_angle = SketchConstraintDefinitionInput::EllipseAngle {
+            entity: target.clone(),
+            angle: PositiveAngle::QUARTER_TURN,
+        };
+        // Each row states whether the midpoint, arc-angle and ellipse-angle
+        // relations admit the target geometry.
+        for (geometry, admitted) in [
+            (&point_target, [false, false, false]),
+            (&line, [true, false, false]),
+            (&reference_line, [false, false, false]),
+            (&native_line, [true, true, true]),
+            (&arc, [true, true, false]),
+            (&circle, [false, false, false]),
+            (&full_ellipse, [false, false, false]),
+            (&bounded_ellipse, [true, false, true]),
+        ] {
+            for (relation, admitted) in [&midpoint, &arc_angle, &ellipse_angle]
+                .into_iter()
+                .zip(admitted)
+            {
+                let compatible =
+                    sketch_constraint_loci_compatible_with_policy(relation, geometry, false);
+                assert_eq!(compatible, admitted, "{relation:?} on {geometry:?}");
+                let (restricted, restriction) = relation
+                    .entity_kind_restriction()
+                    .expect("a restricted relation");
+                assert_eq!(restricted, &target);
+                let target_geometry = geometry.get(&target).expect("target geometry");
+                assert_eq!(
+                    compatible,
+                    restriction.admits(target_geometry.definition()),
+                    "the Creo gate and the IR rule disagree on {relation:?} on {geometry:?}"
+                );
+            }
         }
     }
 
-    #[test]
-    fn a_midpoint_incidence_on_a_solved_reference_line_retains_its_native_form() {
+    /// Decode one `FeatDefs` section. Its skamp table starts with a type-35
+    /// incidence between entity 42 and the type-5 point entity 43 at section
+    /// point 9, followed by `further_skamps`, each closed by the table trailer.
+    fn decode_type35_section(
+        variables: &[(u8, u8, &[u8])],
+        target_row: [u8; 12],
+        further_skamps: &[&[u8]],
+    ) -> cadmpeg_ir::codec::DecodeResult {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-        const X: [u8; 8] = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let mut payload =
-            b"feat_defs_40\0var_arr\0\xf8\x06\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
-        for (variable_type, point, value, uvar) in [
-            (1, 7, &[0xe4][..], 1),
-            (2, 7, &[0xe4][..], 2),
-            (1, 8, &[0xe4][..], 3),
-            (2, 8, &X[..], 4),
-            (1, 9, &X[..], 5),
-            (2, 9, &[0xe4][..], 6),
-        ] {
-            payload.extend_from_slice(&[variable_type, point]);
+        let mut payload = b"feat_defs_40\0var_arr\0\xf8".to_vec();
+        payload.push(u8::try_from(variables.len()).expect("small test fixture"));
+        payload.extend_from_slice(b"\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2");
+        for (uvar, (variable_type, point, value)) in (1_u8..).zip(variables) {
+            payload.extend_from_slice(&[*variable_type, *point]);
             payload.extend_from_slice(value);
             payload.extend_from_slice(&[0x0f, 1, 0, uvar, 0xe2]);
         }
         payload.extend_from_slice(b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2");
-        payload.extend_from_slice(&[25, 0, 0, 0, 7, 8, 0xf6, 0, 0xf6, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&target_row);
+        payload.extend_from_slice(&[0xe2, 0xe3]);
         payload.extend_from_slice(&[5, 0, 0, 0, 9, 0xf6, 0xf6, 0, 0xf6, 0xf6, 0xf6, 43, 0xe2]);
+        payload.extend_from_slice(b"relat_ptr\0\xf8\x01\xf7\x6a\xfb\xe2skamp_ptr\0\xf3\xf8");
+        payload.push(u8::try_from(further_skamps.len() + 1).expect("small test fixture"));
         payload.extend_from_slice(
-            b"relat_ptr\0\xf8\x01\xf7\x6a\xfb\xe2\
-              skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            b"\xf7\x6b\xfb\xe2\
               \xe0\x01id\0\x05\xe0\x01type\0\x23\xe0\x01flags\0\x00\
               \xe0\x01status\0\x01\xe0\x01items\0\xf8\x02\xf7\x6c\xfb\xe2\
               \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x00\xf1\xf7\x6c\xe2\
-              \x2b\x00\xf3\xf7\x6b\xe2\
-              dimtab_ptr\0",
+              \x2b\x00\xf3\xf7\x6b\xe2",
         );
-        let result = crate::CreoCodec
+        for skamp in further_skamps {
+            payload.extend_from_slice(skamp);
+            payload.extend_from_slice(b"\xf3\xf7\x6b\xe2");
+        }
+        payload.extend_from_slice(b"dimtab_ptr\0");
+        crate::CreoCodec
             .decode(
                 &mut std::io::Cursor::new(crate::test_support::build_prt(
                     "c",
@@ -901,7 +907,67 @@ mod tests {
                 )),
                 &DecodeOptions::default(),
             )
-            .expect("decode");
+            .expect("decode")
+    }
+
+    const X: [u8; 8] = [0x46, 0x08, 0, 0, 0, 0, 0, 0];
+    /// A type-25 section-reference row with external identifier 42 and the
+    /// endpoint references 7 and 8.
+    const REFERENCE_LINE_ROW: [u8; 12] = [25, 0, 0, 0, 7, 8, 0xf6, 0, 0xf6, 0xf6, 0xf6, 42];
+
+    /// Assert that the type-35 incidence retains its native form over the
+    /// target entity and the point entity, and that the document validates.
+    fn assert_type35_retains_its_native_form(
+        result: &cadmpeg_ir::codec::DecodeResult,
+        target: &SketchEntityId,
+    ) {
+        let model = &result.ir().model;
+        let point = model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+            })
+            .expect("solved point");
+        let [relation] = model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| constraint.id.as_str().ends_with(":skamp:5"))
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one type-35 relation: {:#?}", model.sketch_constraints);
+        };
+        let SketchConstraintDefinitionInput::Native {
+            native_kind,
+            entities,
+            ..
+        } = relation.definition.kind()
+        else {
+            panic!("type-35 relation on an unbounded line: {relation:#?}");
+        };
+        assert_eq!(native_kind, "creo:skamp:35");
+        assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        assert!(validation.is_ok(), "{validation:#?}");
+    }
+
+    #[test]
+    fn a_midpoint_incidence_on_a_solved_reference_line_retains_its_native_form() {
+        let result = decode_type35_section(
+            &[
+                (1, 7, &[0xe4]),
+                (2, 7, &[0xe4]),
+                (1, 8, &[0xe4]),
+                (2, 8, &X),
+                (1, 9, &X),
+                (2, 9, &[0xe4]),
+            ],
+            REFERENCE_LINE_ROW,
+            &[],
+        );
         let model = &result.ir().model;
         let reference_line = model
             .sketch_entities
@@ -952,5 +1018,63 @@ mod tests {
         );
         let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
         assert!(validation.is_ok(), "{validation:#?}");
+    }
+
+    #[test]
+    fn a_midpoint_incidence_on_an_unresolved_reference_line_retains_its_native_form() {
+        // Endpoint 8 has no stored coordinates, so the row has no solved carrier.
+        let result = decode_type35_section(
+            &[
+                (1, 7, &[0xe4]),
+                (2, 7, &[0xe4]),
+                (1, 9, &X),
+                (2, 9, &[0xe4]),
+            ],
+            REFERENCE_LINE_ROW,
+            &[],
+        );
+        let reference_line = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { native_kind }
+                        if native_kind == "reference_line"
+                )
+            })
+            .expect("unresolved reference line");
+        assert_type35_retains_its_native_form(&result, reference_line.id());
+    }
+
+    #[test]
+    fn a_midpoint_incidence_on_an_unresolved_axis_line_retains_its_native_form() {
+        // Entity 42 is a type-5 row at section point 10 with the vertical
+        // selector. An inactive unary vertical incidence and an inactive
+        // symmetry incidence with 42 as its axis make it an axis line. Point
+        // 10 has no stored coordinates, so the axis has no solved carrier.
+        let result = decode_type35_section(
+            &[(1, 9, &X), (2, 9, &[0xe4])],
+            [5, 0, 0, 0, 10, 0xf6, 0xf6, 0, 0, 0xf6, 0xf6, 42],
+            &[
+                b"\x06\x02\x00\x00\xf8\x01\xf7\x6c\xfb\xe2\x2a\x00",
+                b"\x07\x0e\x00\x00\xf8\x03\xf7\x6c\xfb\xe2\x2a\x00\xe2\x2b\x00\xe2\x2b\x00",
+            ],
+        );
+        let axis_line = result
+            .ir()
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| {
+                matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Native { native_kind } if native_kind == "line"
+                )
+            })
+            .expect("unresolved axis line");
+        assert_type35_retains_its_native_form(&result, axis_line.id());
     }
 }
