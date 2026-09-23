@@ -1406,12 +1406,7 @@ fn decode_retains_generated_rolling_ball_definition() {
     };
     assert_eq!(spine.control_points().len(), 3);
     assert_eq!(cross_section, &BlendCrossSection::Circular);
-    assert_eq!(
-        radius,
-        &BlendRadiusLaw::Constant {
-            signed_radius: -3.0
-        }
-    );
+    assert_eq!(radius, &BlendRadiusLaw::constant(-3.0).unwrap());
 }
 
 #[test]
@@ -1454,9 +1449,7 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                     .clone(),
             ];
             let spine_id = spine.clone();
-            *radius = BlendRadiusLaw::Constant {
-                signed_radius: -2.0,
-            };
+            *radius = BlendRadiusLaw::constant(-2.0).unwrap();
             let restored_cache = definition_payload.legacy_cache();
             *definition_payload =
                 cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
@@ -1606,10 +1599,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
         let mut edited_radius = definition_payload.radius().clone();
         let radius = &mut edited_radius;
 
-        *radius = BlendRadiusLaw::Linear {
-            start: -2.0,
-            end: -4.0,
-        };
+        *radius = BlendRadiusLaw::linear(-2.0, -4.0).unwrap();
         let restored_cache = definition_payload.legacy_cache();
         *definition_payload = cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
             definition_payload.supports().clone(),
@@ -1639,13 +1629,7 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
     };
     let radius = definition_payload.radius();
 
-    assert_eq!(
-        radius,
-        &BlendRadiusLaw::Linear {
-            start: -2.0,
-            end: -4.0,
-        }
-    );
+    assert_eq!(radius, &BlendRadiusLaw::linear(-2.0, -4.0).unwrap());
 }
 
 #[test]

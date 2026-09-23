@@ -466,7 +466,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             crate::geometry::surface_payloads::BlendSurfacePayload::try_new(
                 supports,
                 Some(slice.clone()),
-                BlendRadiusLaw::Constant { signed_radius: 3.0 },
+                BlendRadiusLaw::constant(3.0).unwrap(),
                 BlendCrossSection::Circular,
                 crate::geometry::CacheContract::from_form(Some(Box::new(
                     RollingBallConstruction {

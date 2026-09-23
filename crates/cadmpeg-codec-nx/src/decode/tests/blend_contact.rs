@@ -868,9 +868,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
                         })
                     }),
                     Some(spine.clone()),
-                    BlendRadiusLaw::Constant {
-                        signed_radius: radius,
-                    },
+                    BlendRadiusLaw::constant(radius).unwrap(),
                     BlendCrossSection::Circular,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
@@ -1022,7 +1020,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
                     }),
                 ],
                 Some(spine.clone()),
-                BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                BlendRadiusLaw::constant(1.0).unwrap(),
                 BlendCrossSection::Circular,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
@@ -1276,7 +1274,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     }),
                 ],
                 Some(spine.clone()),
-                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendRadiusLaw::constant(2.0).unwrap(),
                 BlendCrossSection::Circular,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
@@ -1753,7 +1751,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     }),
                 ],
                 Some(outer_spine),
-                BlendRadiusLaw::Constant { signed_radius: 1.5 },
+                BlendRadiusLaw::constant(1.5).unwrap(),
                 BlendCrossSection::Circular,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )

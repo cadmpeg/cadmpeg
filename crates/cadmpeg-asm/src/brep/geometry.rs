@@ -611,10 +611,12 @@ pub(super) fn analytic_procedural_surface(
         DecodedProceduralSurfaceDefinition::Blend {
             supports,
             spine: Some(spine),
-            radius: cadmpeg_ir::geometry::BlendRadiusLaw::Constant { signed_radius },
+            radius_offsets: [signed_radius, end_offset],
             cross_section: cadmpeg_ir::geometry::BlendCrossSection::Circular,
             native,
-        } => analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius),
+        } if signed_radius == end_offset => {
+            analytic_rolling_ball_surface(supports, native.as_deref(), spine, *signed_radius)
+        }
         _ => None,
     }
 }

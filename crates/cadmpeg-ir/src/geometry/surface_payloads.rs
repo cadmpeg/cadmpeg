@@ -2446,11 +2446,6 @@ impl BlendSurfacePayload {
         cross_section: BlendCrossSection,
         cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !radius.values_are_finite() {
-            return Err(ProceduralGeometryError::Payload(
-                "blend radius law is not finite",
-            ));
-        }
         if let Some(construction) = cache.form() {
             let ranges_valid = [&construction.u_range, &construction.v_range]
                 .iter()

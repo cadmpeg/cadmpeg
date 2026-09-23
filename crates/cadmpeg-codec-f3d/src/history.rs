@@ -8822,7 +8822,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
         surface_radii.retain(|candidate| candidate.surface != surface);
         surface_radii.push(crate::history_records::AsmHistoricalSurfaceRadius {
             surface,
-            radius: signed_radius.abs(),
+            radius: signed_radius.get().abs(),
         });
     }
     surface_radii.sort_by_key(|candidate| candidate.surface);

@@ -488,7 +488,7 @@ fn emit_carrier_surface(
             DecodedProceduralSurfaceDefinition::Blend {
                 supports,
                 spine,
-                radius,
+                radius_offsets,
                 cross_section,
                 native,
             } => emit_blend_surface(
@@ -496,7 +496,7 @@ fn emit_carrier_surface(
                 i,
                 supports,
                 spine,
-                radius,
+                radius_offsets,
                 cross_section,
                 native,
                 format,
@@ -2775,7 +2775,7 @@ fn emit_blend_surface(
     i: i64,
     supports: Box<[Option<SurfaceGeometry>; 2]>,
     spine: Option<NurbsCurve>,
-    radius: BlendRadiusLaw,
+    radius_offsets: [f64; 2],
     cross_section: BlendCrossSection,
     native: Option<Box<EmbeddedRollingBall>>,
     format: IdFormat,
@@ -2917,15 +2917,30 @@ fn emit_blend_surface(
         out.stats.partial_procedural_supports += 1;
     }
     Ok(ProceduralSurfaceDefinition::Blend(
-        cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-            resolved_supports,
-            spine,
-            radius,
-            cross_section,
-            cadmpeg_ir::geometry::CacheContract::from_form(native),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+        blend_radius_law(radius_offsets)
+            .and_then(|radius| {
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    resolved_supports,
+                    spine,
+                    radius,
+                    cross_section,
+                    cadmpeg_ir::geometry::CacheContract::from_form(native),
+                )
+            })
+            .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
+}
+
+/// The radius law two signed offsets state: constant when they are equal,
+/// linear from the first to the second otherwise.
+fn blend_radius_law(
+    offsets: [f64; 2],
+) -> Result<BlendRadiusLaw, cadmpeg_ir::geometry::ProceduralGeometryError> {
+    if offsets[0] == offsets[1] {
+        BlendRadiusLaw::constant(offsets[0])
+    } else {
+        BlendRadiusLaw::linear(offsets[0], offsets[1])
+    }
 }
 
 fn emit_carrier_curve(

@@ -1092,14 +1092,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         );
         (owner, procedural)
     };
-    let (first_owner, first) = make_blend(0, BlendRadiusLaw::Constant { signed_radius: 5.0 });
+    let (first_owner, first) = make_blend(0, BlendRadiusLaw::constant(5.0).unwrap());
     attach_test_body_procedural_surface(&mut ir, &output, first_owner, first);
-    let (second_owner, second) = make_blend(
-        1,
-        BlendRadiusLaw::Constant {
-            signed_radius: -5.0,
-        },
-    );
+    let (second_owner, second) = make_blend(1, BlendRadiusLaw::constant(-5.0).unwrap());
     attach_test_body_procedural_surface(&mut ir, &output, second_owner, second);
 
     let (definition, surfaces) =
@@ -1196,12 +1191,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 ..
             },) if faces.len() == 1 && second.len() == 1 && faces != second)));
 
-    let (unowned, procedural) = make_blend(
-        99,
-        BlendRadiusLaw::Constant {
-            signed_radius: 17.0,
-        },
-    );
+    let (unowned, procedural) = make_blend(99, BlendRadiusLaw::constant(17.0).unwrap());
     insert_test_procedural_surface(&mut ir, unowned, procedural);
     let (definition, _) =
         blend_feature_definition(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
@@ -1218,7 +1208,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     ir.model.procedural_surfaces.pop();
     ir.model.surfaces.pop();
 
-    let (owner, conflicting) = make_blend(2, BlendRadiusLaw::Constant { signed_radius: 7.0 });
+    let (owner, conflicting) = make_blend(2, BlendRadiusLaw::constant(7.0).unwrap());
     attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
     let (definition, _) =
         blend_feature_definition(&ir, &[output], NxBlendFamily::Edge).expect("required invariant");
@@ -1240,7 +1230,7 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
                 [None, None],
                 None,
-                BlendRadiusLaw::Constant { signed_radius: 7.0 },
+                BlendRadiusLaw::constant(7.0).unwrap(),
                 BlendCrossSection::Conic,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )

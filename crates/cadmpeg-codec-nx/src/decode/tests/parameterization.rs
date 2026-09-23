@@ -1370,9 +1370,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                         })
                     }),
                     Some(spine_curve.clone()),
-                    BlendRadiusLaw::Constant {
-                        signed_radius: radius,
-                    },
+                    BlendRadiusLaw::constant(radius).unwrap(),
                     BlendCrossSection::Circular,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
