@@ -396,18 +396,6 @@ pub fn admit_revolution_axis(
     ))
 }
 
-fn admit_revolution_cache(
-    cache: &CacheContract<RevisionSurfaceForm>,
-) -> Result<(), ProceduralGeometryError> {
-    if cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
-        Ok(())
-    } else {
-        Err(ProceduralGeometryError::Payload(
-            "revolution cache form is invalid",
-        ))
-    }
-}
-
 fn admit_revolution_interval(
     range: [f64; 2],
     message: &'static str,
@@ -503,86 +491,43 @@ impl RevolutionSurfaceConstruction {
         )
     }
 
-    /// Admit an angular interval, with the refusal of [`Self::try_new`].
-    pub fn admit_angular_interval(
-        range: [f64; 2],
-    ) -> Result<IncreasingParameterInterval, ProceduralGeometryError> {
-        admit_revolution_interval(
-            range,
-            "revolution angular_interval must be finite and strictly increasing",
-        )
-    }
-
-    /// Admit an angular parameter interval, with the refusal of
-    /// [`Self::try_new`].
-    pub fn admit_angular_parameter_interval(
-        range: [f64; 2],
-    ) -> Result<IncreasingParameterInterval, ProceduralGeometryError> {
-        admit_revolution_interval(
-            range,
-            "revolution angular_parameter_interval must be finite and strictly increasing",
-        )
-    }
-
     /// Admit the construction parameters from raw intervals. The axis types
-    /// state the axis contract. Each interval is admitted with a refusal that
-    /// names it, and [`Self::try_from_intervals`] builds the construction. A
-    /// refused cache form is reported before a refused interval.
+    /// state the axis contract. A refused cache form is reported first, then
+    /// each refused interval with a refusal that names it.
     pub fn try_new(
         directrix: CurveId,
-        axis: (FinitePoint3, UnitVector3),
+        (axis_origin, axis_direction): (FinitePoint3, UnitVector3),
         angular_interval: [f64; 2],
         angular_parameter_interval: Option<[f64; 2]>,
         parameter_interval: Option<[f64; 2]>,
         transposed: bool,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let intervals = Self::admit_angular_interval(angular_interval).and_then(|angular| {
-            Ok((
-                angular,
-                angular_parameter_interval
-                    .map(Self::admit_angular_parameter_interval)
-                    .transpose()?,
-                parameter_interval
-                    .map(|range| {
-                        admit_revolution_interval(
-                            range,
-                            "revolution parameter_interval must be finite and strictly increasing",
-                        )
-                    })
-                    .transpose()?,
-            ))
-        });
-        match intervals {
-            Ok((angular, angular_parameter, parameter)) => Self::try_from_intervals(
-                directrix,
-                axis,
-                angular,
-                angular_parameter,
-                parameter,
-                transposed,
-                cache,
-            ),
-            Err(interval_refusal) => {
-                admit_revolution_cache(&cache)?;
-                Err(interval_refusal)
-            }
+        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
+            return Err(ProceduralGeometryError::Payload(
+                "revolution cache form is invalid",
+            ));
         }
-    }
-
-    /// Admit the construction parameters from admitted intervals. The axis
-    /// and interval types state their contracts; only the cache form is
-    /// checked here.
-    pub fn try_from_intervals(
-        directrix: CurveId,
-        (axis_origin, axis_direction): (FinitePoint3, UnitVector3),
-        angular_interval: IncreasingParameterInterval,
-        angular_parameter_interval: Option<IncreasingParameterInterval>,
-        parameter_interval: Option<IncreasingParameterInterval>,
-        transposed: bool,
-        cache: CacheContract<RevisionSurfaceForm>,
-    ) -> Result<Self, ProceduralGeometryError> {
-        admit_revolution_cache(&cache)?;
+        let angular_interval = admit_revolution_interval(
+            angular_interval,
+            "revolution angular_interval must be finite and strictly increasing",
+        )?;
+        let angular_parameter_interval = angular_parameter_interval
+            .map(|range| {
+                admit_revolution_interval(
+                    range,
+                    "revolution angular_parameter_interval must be finite and strictly increasing",
+                )
+            })
+            .transpose()?;
+        let parameter_interval = parameter_interval
+            .map(|range| {
+                admit_revolution_interval(
+                    range,
+                    "revolution parameter_interval must be finite and strictly increasing",
+                )
+            })
+            .transpose()?;
         Ok(Self {
             directrix,
             axis_origin,
