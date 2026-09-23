@@ -1316,10 +1316,9 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                         spheres
                             .iter()
                             .filter(|sphere| {
-                                b2_sphere_geometry(sphere).is_some_and(|geometry| {
-                                    pcurve_endpoints_match(pcurve, &points, |[u, v]| {
-                                        cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                                    })
+                                let geometry = b2_sphere_geometry(sphere);
+                                pcurve_endpoints_match(pcurve, &points, |[u, v]| {
+                                    cadmpeg_ir::eval::surface_point(&geometry, u, v)
                                 })
                             })
                             .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
@@ -1521,7 +1520,7 @@ fn support_points(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point;
-                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier)?, u, v)
+                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
                 })
                 .collect()
         }
@@ -1572,7 +1571,7 @@ fn support_points(
 
 fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
     cadmpeg_ir::eval::surface_point(
-        &b2_torus_geometry(torus)?,
+        &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
     )

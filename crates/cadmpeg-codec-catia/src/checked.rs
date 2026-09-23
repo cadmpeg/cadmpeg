@@ -238,11 +238,11 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
 /// `Tolerance`, held as the admitted IR frame.
 ///
 /// Every route stores directions that carry this type's direction admission:
-/// the constant is exact, [`Self::from_units`] stores two admitted directions
-/// unchanged, and the planar routes place an admitted planar direction with
-/// its `hypot` length bit for bit. The accessors therefore return admitted
-/// directions without a second test, and the conversion into the IR frame is
-/// total.
+/// the constant is exact, [`Self::right_handed`] stores two admitted
+/// directions unchanged, and the planar routes place an admitted planar
+/// direction with its `hypot` length bit for bit. The accessors therefore
+/// return admitted directions without a second test, and the conversion into
+/// the IR frame is total.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct UnitFrame3<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>(
     cadmpeg_ir::units::OrthonormalFrame3,
@@ -259,13 +259,17 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
         PhantomData,
     );
 
-    /// Admits two admitted directions that are perpendicular by the IR frame
-    /// measurement.
-    pub(crate) fn from_units(
+    /// Admits the frame of `axis` and `reference` when the admitted
+    /// `binormal` completes them to a right-handed frame by the IR
+    /// right-handed frame route: `reference × binormal` equals `axis` within
+    /// `1e-12` by `measure`.
+    pub(crate) fn right_handed(
         axis: UnitVector3<Tolerance, Measurement>,
         reference: UnitVector3<Tolerance, Measurement>,
+        binormal: UnitVector3<Tolerance, Measurement>,
+        measure: cadmpeg_ir::units::CrossDeviation,
     ) -> Option<Self> {
-        cadmpeg_ir::units::OrthonormalFrame3::from_units(axis.0, reference.0)
+        cadmpeg_ir::units::OrthonormalFrame3::right_handed(axis.0, reference.0, binormal.0, measure)
             .map(|frame| Self(frame, PhantomData))
     }
 
@@ -539,10 +543,6 @@ mod tests {
                 );
             }
             assert_eq!(
-                RelaxedHypotFrame::from_units(frame.axis(), frame.reference()),
-                Some(frame)
-            );
-            assert_eq!(
                 cadmpeg_ir::units::OrthonormalFrame3::from(frame),
                 cadmpeg_ir::units::OrthonormalFrame3::from_units(
                     frame.axis().into(),
@@ -551,13 +551,34 @@ mod tests {
                 .expect("perpendicular")
             );
         }
+    }
+
+    #[test]
+    fn right_handed_frames_hold_the_directions_they_admitted() {
+        use cadmpeg_ir::units::CrossDeviation;
 
         let axis = ExactUnitVector3::new([0.0, 0.0, 1.0]).expect("unit");
+        let reference = ExactUnitVector3::new([1.0, 0.0, 0.0]).expect("unit");
+        let binormal = ExactUnitVector3::new([0.0, 1.0, 0.0]).expect("unit");
+        let reversed = ExactUnitVector3::new([0.0, -1.0, 0.0]).expect("unit");
         let tilted = ExactUnitVector3::new([1.0, 0.0, 2.0e-9]).expect("unit");
-        assert!(UnitFrame3::from_units(axis, tilted).is_none());
-        let reference = ExactUnitVector3::new([1.0, 0.0, 5.0e-10]).expect("unit");
-        let frame = UnitFrame3::from_units(axis, reference).expect("perpendicular");
-        assert_eq!((frame.axis(), frame.reference()), (axis, reference));
+        for measure in [CrossDeviation::LargestComponent, CrossDeviation::Length] {
+            let frame =
+                UnitFrame3::right_handed(axis, reference, binormal, measure).expect("right-handed");
+            assert_eq!((frame.axis(), frame.reference()), (axis, reference));
+            assert_eq!(
+                cadmpeg_ir::units::OrthonormalFrame3::from(frame),
+                cadmpeg_ir::units::OrthonormalFrame3::right_handed(
+                    axis.into(),
+                    reference.into(),
+                    binormal.into(),
+                    measure
+                )
+                .expect("right-handed")
+            );
+            assert!(UnitFrame3::right_handed(axis, reference, reversed, measure).is_none());
+            assert!(UnitFrame3::right_handed(axis, tilted, binormal, measure).is_none());
+        }
     }
 
     #[test]

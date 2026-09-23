@@ -7383,11 +7383,11 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
         .map(|(index, cone)| CatiaConsolidatedCone {
             id: format!("catia:consolidated:cone#{index}"),
             byte_offset: cone.pos as u64,
-            apex: cone.apex,
+            apex: cone.apex.get().into(),
             direction_x: cone.t1,
             direction_y: cone.t2,
             axis: cone.axis,
-            half_angle: cone.half_angle,
+            half_angle: cone.half_angle.get(),
             reference_radius: cone.reference_radius,
             angular_range: cone.angular_range,
             slant_range: cone.slant_range,
@@ -7437,7 +7437,7 @@ fn consolidated_cylinders(
             CatiaConsolidatedCylinder {
                 id: format!("catia:consolidated:cylinder#{index}"),
                 byte_offset: cylinder.pos as u64,
-                origin: cylinder.origin,
+                origin: cylinder.origin.get().into(),
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
                 v_range: cylinder.v_range,
@@ -7470,7 +7470,7 @@ fn consolidated_cylinder_groups(
                 byte_offset: embedded.pos as u64,
                 group: group.id.clone(),
                 object_id: embedded.object_id,
-                origin: embedded.cylinder.origin,
+                origin: embedded.cylinder.origin.get().into(),
                 radius: embedded.cylinder.radius,
                 u_range: embedded.cylinder.u_range,
                 v_range: embedded.cylinder.v_range,
@@ -7652,7 +7652,7 @@ fn consolidated_revolutions(
             direction_x: revolution.direction_x,
             direction_y: revolution.direction_y,
             axis: revolution.axis,
-            angular_range: revolution.angular_range,
+            angular_range: revolution.angular_range.endpoints(),
             profile_range: revolution.profile_range,
             profile_circle: resolved_profiles
                 .get(&(revolution.pos as u64))
@@ -7690,7 +7690,7 @@ fn consolidated_spheres(
         .map(|(index, sphere)| CatiaConsolidatedSphere {
             id: format!("catia:consolidated:sphere#{index}"),
             byte_offset: sphere.pos as u64,
-            center: sphere.center,
+            center: sphere.center.get().into(),
             direction_x: sphere.frame.reference(),
             direction_y: sphere.direction_y,
             axis: sphere.frame.axis(),
@@ -7708,7 +7708,7 @@ fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaC
         .map(|(index, torus)| CatiaConsolidatedTorus {
             id: format!("catia:consolidated:torus#{index}"),
             byte_offset: torus.pos as u64,
-            center: torus.center,
+            center: torus.center.get().into(),
             direction_x: torus.frame.reference(),
             direction_y: torus.direction_y,
             axis: torus.frame.axis(),
