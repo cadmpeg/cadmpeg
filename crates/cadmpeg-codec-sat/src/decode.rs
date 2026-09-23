@@ -226,11 +226,12 @@ fn build_result(
     let mut losses = Vec::new();
     let mut unresolved_tolerance = |name: &str, value: f64| {
         losses.push(SatLossCode::HeaderToleranceUnresolved.note(format!(
-            "header {name} tolerance {value} is not positive and finite; keeping the default"
+            "header {name} tolerance {value} does not yield a positive finite IR value; keeping the default"
         )));
     };
     if let Some(value) = header.linear {
-        match cadmpeg_ir::scalar::PositiveLength::new(value) {
+        let linear_mm = value * 10.0;
+        match cadmpeg_ir::scalar::PositiveLength::new(linear_mm) {
             Some(linear) => ir.tolerances.linear = linear,
             None => unresolved_tolerance("linear", value),
         }

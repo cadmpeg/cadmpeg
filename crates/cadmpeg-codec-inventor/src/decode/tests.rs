@@ -309,6 +309,22 @@ fn a_verified_acis_carrier_reports_its_band_admitted() {
 }
 
 #[test]
+fn binary_kernel_resabs_is_converted_from_centimetres() {
+    let bytes = primary_envelope_fixture_with_kernel(
+        EnvelopeDeclarations::default(),
+        &acis_sphere_kernel_stream(21_800),
+    );
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("binary ACIS sphere decodes");
+    let expected_resabs_mm = 0.000_01;
+    assert!(
+        (decoded.ir().tolerances.linear.get() - expected_resabs_mm).abs()
+            <= f64::EPSILON * expected_resabs_mm
+    );
+}
+
+#[test]
 fn an_unverified_acis_carrier_is_read_and_marked() {
     // The band is not a gate: the carrier is framed and decoded, the kernel
     // layer says which grammar was substituted, and the recovery is charged.

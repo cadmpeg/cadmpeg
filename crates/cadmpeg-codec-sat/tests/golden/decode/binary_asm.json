@@ -175,7 +175,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 9.999999999999999e-6
     },
     "units": {
       "length": "millimeter"

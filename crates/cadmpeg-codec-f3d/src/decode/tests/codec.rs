@@ -12,7 +12,11 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const EXPECTED_HEADER_LINEAR_TOLERANCE: f64 = 1.0e-5;
+const HEADER_NORMAL_TOLERANCE_RADIANS: f64 = 1.0e-10;
+const ABOVE_FLOOR_RESABS_CM: f64 = 2.0e-8;
+const BELOW_FLOOR_RESABS_CM: f64 = 5.0e-9;
+const ABOVE_FLOOR_RESABS_MM: f64 = 2.0e-7;
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -42,6 +46,21 @@ use crate::test_support::zip_test::{
 };
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+#[test]
+fn kernel_tolerance_floor_uses_millimetres() {
+    let admitted = super::super::admit_kernel_tolerances(
+        ABOVE_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .expect("the centimetre value is above the millimetre floor");
+    assert_eq!(admitted.linear.get(), ABOVE_FLOOR_RESABS_MM);
+    assert!(super::super::admit_kernel_tolerances(
+        BELOW_FLOOR_RESABS_CM,
+        HEADER_NORMAL_TOLERANCE_RADIANS,
+    )
+    .is_err());
+}
 
 const HEADER_LINEAR_TOLERANCE: f64 = 1.0e-6;
 const HEADER_ANGULAR_TOLERANCE: f64 = 1.0e-10;
@@ -604,9 +623,9 @@ fn decode_yields_metadata_and_honest_report() {
         Some("Autodesk Neutron")
     );
     // resabs/resnor were carried into tolerances.
-    assert_eq!(
-        result.ir().tolerances.linear.get(),
-        EXPECTED_HEADER_LINEAR_TOLERANCE
+    assert!(
+        (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+            <= f64::EPSILON * EXPECTED_HEADER_LINEAR_TOLERANCE
     );
     assert!(result
         .source_fidelity()

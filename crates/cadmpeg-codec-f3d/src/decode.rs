@@ -4895,13 +4895,14 @@ const MIN_ANALYTIC_LINEAR_TOLERANCE_MM: f64 = 1.0e-7;
 /// below the analytic floor cannot drive profile and region matching, so it is
 /// refused here and never floored at a comparison site.
 fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, CodecError> {
-    if resabs < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
+    let linear_mm = resabs * 10.0;
+    if linear_mm < MIN_ANALYTIC_LINEAR_TOLERANCE_MM {
         return Err(CodecError::malformed(format!(
-            "kernel header resabs {resabs} is below the analytic linear \
+            "kernel header resabs {linear_mm} mm is below the analytic linear \
              tolerance floor {MIN_ANALYTIC_LINEAR_TOLERANCE_MM} mm"
         )));
     }
-    Tolerances::new(resabs, resnor).map_err(CodecError::Malformed)
+    Tolerances::new(linear_mm, resnor).map_err(CodecError::Malformed)
 }
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.

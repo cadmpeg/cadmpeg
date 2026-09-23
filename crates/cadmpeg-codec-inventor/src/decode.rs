@@ -1837,7 +1837,7 @@ fn apply_kernel_header(
         );
     }
     if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
-        ir.tolerances = Tolerances::new(linear, angular).map_err(CodecError::Malformed)?;
+        ir.tolerances = Tolerances::new(linear * 10.0, angular).map_err(CodecError::Malformed)?;
     }
     source.attributes.insert(
         cadmpeg_core::nonblank_literal!("kernel_family"),
