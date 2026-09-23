@@ -1217,11 +1217,13 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                     .map(ParameterValue::Real)
             }
             (ParameterValue::Integer(_), ParameterValue::Real(real)) => {
-                let integer = real.get() as i64;
-                (real.get() >= i64::MIN as f64
-                    && real.get() < -(i64::MIN as f64)
-                    && integer as f64 == real.get())
-                .then_some(ParameterValue::Integer(integer))
+                let real = real.get();
+                if real < i64::MIN as f64 || real >= -(i64::MIN as f64) {
+                    None
+                } else {
+                    let integer = real as i64;
+                    (integer as f64 == real).then_some(ParameterValue::Integer(integer))
+                }
             }
             // Configuration lanes can provisionally classify an untyped scalar
             // as a length. The canonical integer wins only when the values agree.
