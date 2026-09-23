@@ -6109,35 +6109,33 @@ fn analytic_surface_axis(
 
     let (origin, direction) = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = plane_surface.origin().get();
+            let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             (origin, *normal)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = cylinder_surface.origin().get();
+            let origin = cylinder_surface.origin();
             let axis = cylinder_surface.axis();
             (origin, *axis)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = cone_surface.origin().get();
+            let origin = cone_surface.origin();
             let axis = cone_surface.axis();
             (origin, *axis)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = torus_surface.center().get();
+            let center = torus_surface.center();
             let axis = torus_surface.axis();
             (center, *axis)
         }
         _ => return None,
     };
     let length = direction.norm();
-    (origin.is_finite() && length.is_finite() && length > 0.0).then_some(
-        cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(direction.scale(1.0 / length))?,
-            reference: None,
-        },
-    )
+    (length.is_finite() && length > 0.0).then_some(cadmpeg_ir::features::RevolutionAxis {
+        origin,
+        direction: cadmpeg_ir::features::FeatureDirection3::new(direction.scale(1.0 / length))?,
+        reference: None,
+    })
 }
 
 fn resolve_sketch_axis_selection(
