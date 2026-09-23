@@ -280,7 +280,7 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
         ("empty", vec![]),
         ("just_magic", seeds::nx::just_magic()),
         ("single_part", seeds::nx::single_part_prt()?),
-        ("assembly", seeds::nx::assembly_prt()),
+        ("assembly", seeds::nx::assembly_prt()?),
     ];
 
     for (name, data) in seeds {

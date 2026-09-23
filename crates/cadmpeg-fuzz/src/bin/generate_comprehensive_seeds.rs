@@ -722,7 +722,7 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
         ("empty", vec![]),
         ("just_magic", seeds::nx::just_magic()),
         ("single_part", seeds::nx::single_part_prt()?),
-        ("assembly", seeds::nx::assembly_prt()),
+        ("assembly", seeds::nx::assembly_prt()?),
         ("topology_part", nx::topology_part_prt()?),
         ("bspline_part", nx::bspline_part_prt()?),
     ];
@@ -1029,6 +1029,60 @@ mod nx {
             assert_eq!(model.coedges.len(), 1);
             assert_eq!(model.edges.len(), 1);
             assert_eq!(model.vertices.len(), 1);
+        }
+
+        #[test]
+        fn assembly_seed_decodes_its_external_references() {
+            const ENTRY: &str = "/Root/UG_PART/ExternalReferences";
+            let bytes = cadmpeg_fuzz::seeds::nx::assembly_prt().expect("assembly seed");
+            let summary = NxCodec
+                .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+                .expect("the container passes its directory stage");
+            let entry = summary
+                .entries
+                .iter()
+                .find(|entry| entry.name == ENTRY)
+                .expect("the HEADER directory catalogues the external references");
+            assert!(entry.attributes.contains_key("file_offset"));
+            assert!(!summary
+                .entries
+                .iter()
+                .any(|entry| entry.name.starts_with("parasolid#")));
+
+            let result = NxCodec
+                .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+                .expect("the assembly decodes");
+            let nx = result
+                .ir()
+                .native
+                .namespace("nx")
+                .expect("the decode emits the nx namespace");
+            let arena = |name: &str| nx.arenas().get(name).map_or(0, Vec::len);
+            let references = nx
+                .arenas()
+                .get("external_references")
+                .expect("the string table decodes");
+            let text = |record: &cadmpeg_ir::native::NativeRecord, field: &str| {
+                record
+                    .field(field)
+                    .and_then(|value| value.as_str().map(str::to_owned))
+            };
+            assert_eq!(
+                references
+                    .iter()
+                    .map(|record| text(record, "path"))
+                    .collect::<Vec<_>>(),
+                ["child.prt", "dirA", "dirB", "extra"].map(|path| Some(path.to_owned()))
+            );
+            assert!(references
+                .iter()
+                .all(|record| text(record, "source_entry").as_deref() == Some(ENTRY)));
+            assert_eq!(arena("external_reference_indexed_records"), 2);
+            assert_eq!(arena("external_reference_empty_records"), 1);
+            assert_eq!(arena("external_reference_records"), 1);
+            assert_eq!(arena("external_reference_record_string_uses"), 4);
+            assert_eq!(arena("external_reference_record_children"), 1);
+            assert_eq!(arena("external_reference_tail_reference_pairs"), 1);
         }
 
         #[test]
