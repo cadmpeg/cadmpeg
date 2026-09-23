@@ -929,7 +929,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
 
     let rolling = |fields: Fields| {
         CacheContract::from_form(Some(Box::new(RollingBallConstruction {
-            definition_index: 0,
+            revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
             sides: Box::new([side(fields), side(admitted)]),
             slice: curve(),
             slice_range: fields.slice_range,
@@ -997,6 +997,11 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
     assert!(variable_wire(admitted).is_ok());
     assert!(blend_new(admitted).is_ok());
     assert!(blend_wire(admitted).is_ok());
+    let blend = ProceduralSurfaceDefinition::Blend(blend_new(admitted).unwrap());
+    assert_positive_revision_lane(
+        &serde_json::to_value(&blend).unwrap(),
+        "/cache/form/revision",
+    );
 
     // JSON itself states no infinity or NaN, so the wire cannot spell a
     // refused value; `TryFrom<…Wire>` is the conversion the deserializer

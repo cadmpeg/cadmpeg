@@ -2880,7 +2880,7 @@ fn emit_blend_surface(
             })
         });
         Box::new(RollingBallConstruction {
-            definition_index: native.definition_index,
+            revision: native.revision,
             sides: Box::new(resolved_sides),
             slice,
             slice_range: native.slice_range,

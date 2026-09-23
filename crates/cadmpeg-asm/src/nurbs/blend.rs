@@ -1485,7 +1485,7 @@ pub(super) fn full_rb_blend_spl_sur(
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
-    let definition_index = cur.take_long()?;
+    let revision = PositiveI64::new(cur.take_long()?)?;
     let sides = Box::new([
         rolling_ball_side(&mut cur, Some(table))?,
         rolling_ball_side(&mut cur, Some(table))?,
@@ -1536,7 +1536,7 @@ pub(super) fn full_rb_blend_spl_sur(
             radius,
             cross_section: BlendCrossSection::Circular,
             native: Some(Box::new(EmbeddedRollingBall {
-                definition_index,
+                revision,
                 sides,
                 slice: slice.curve,
                 slice_range: slice.parameter_range,

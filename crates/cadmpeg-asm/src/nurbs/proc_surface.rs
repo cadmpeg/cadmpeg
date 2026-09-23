@@ -519,8 +519,8 @@ pub struct EmbeddedVertexBlend {
 
 /// Embedded native rolling-ball graph before stable IR ids are assigned.
 pub struct EmbeddedRollingBall {
-    /// The subtype-table index of the record's own definition.
-    pub definition_index: i64,
+    /// The revision integer that gates the layout.
+    pub revision: PositiveI64,
     /// Two ordered embedded support sides.
     pub sides: Box<[RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>; 2]>,
     /// The embedded slice curve.
