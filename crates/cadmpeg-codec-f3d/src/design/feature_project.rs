@@ -7560,7 +7560,7 @@ fn project_hole(
     let depth = design_positive_length(parameter("HoleDepth")?)?;
     let diameter = design_positive_length(parameter("HoleDiameter")?)?;
     let tip_angle = design_angle(parameter("TipAngle")?)?;
-    if diameter.get() <= 0.0 || tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
+    if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
         return None;
     }
     let counterbore = match parameters.len() {
@@ -7568,9 +7568,7 @@ fn project_hole(
         5 => {
             let counterbore_depth = design_positive_length(parameter("CBDepth")?)?;
             let counterbore_diameter = design_positive_length(parameter("CBDiameter")?)?;
-            if counterbore_depth.get() <= 0.0
-                || counterbore_depth.get() > depth.get()
-                || counterbore_diameter.get() <= diameter.get()
+            if counterbore_depth.get() > depth.get() || counterbore_diameter.get() <= diameter.get()
             {
                 return None;
             }
