@@ -159,7 +159,7 @@ pub(super) fn project_edge(
     match edge.curve().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center().get();
-            let radius = circle_curve.radius().get();
+            let radius = circle_curve.radius();
             let center = project_point(center, origin, u_axis, v_axis);
             if !circle_contains_point(center, radius, start, tolerance)
                 || !circle_contains_point(center, radius, end, tolerance)
@@ -205,15 +205,15 @@ pub(super) fn project_edge(
             if !ellipse_contains_point(
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                ellipse_curve.major_radius(),
+                ellipse_curve.minor_radius(),
                 start,
                 tolerance,
             ) || !ellipse_contains_point(
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                ellipse_curve.major_radius(),
+                ellipse_curve.minor_radius(),
                 end,
                 tolerance,
             ) {
@@ -282,10 +282,15 @@ pub(super) fn project_edge(
     }
 }
 
-fn circle_contains_point(center: Point2, radius: f64, point: Point2, tolerance: f64) -> bool {
+fn circle_contains_point(
+    center: Point2,
+    radius: cadmpeg_ir::scalar::PositiveLength,
+    point: Point2,
+    tolerance: f64,
+) -> bool {
+    let radius = radius.get();
     let distance = (point.u - center.u).hypot(point.v - center.v);
     distance.is_finite()
-        && radius.is_finite()
         && (distance - radius.abs()).abs()
             <= tolerance.max(radius.abs() * EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9)
 }
@@ -293,16 +298,14 @@ fn circle_contains_point(center: Point2, radius: f64, point: Point2, tolerance: 
 fn ellipse_contains_point(
     center: Point2,
     major_angle: f64,
-    major_radius: f64,
-    minor_radius: f64,
+    major_radius: cadmpeg_ir::scalar::PositiveLength,
+    minor_radius: cadmpeg_ir::scalar::PositiveLength,
     point: Point2,
     tolerance: f64,
 ) -> bool {
-    if !major_radius.is_finite()
-        || !minor_radius.is_finite()
-        || major_radius.abs() <= tolerance
-        || minor_radius.abs() <= tolerance
-    {
+    let major_radius = major_radius.get();
+    let minor_radius = minor_radius.get();
+    if major_radius.abs() <= tolerance || minor_radius.abs() <= tolerance {
         return false;
     }
     let du = point.u - center.u;

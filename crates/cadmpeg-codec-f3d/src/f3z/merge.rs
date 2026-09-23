@@ -169,7 +169,7 @@ impl MergeSession<'_, '_> {
             )?;
             self.stack.pop();
             if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform.rows())?;
+                apply_occurrence_transform(&mut component_ir.model, transform)?;
             }
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
@@ -319,13 +319,9 @@ fn occurrence_key(reference: &XrefReference) -> String {
 
 fn apply_occurrence_transform(
     model: &mut Model,
-    source_rows: [[f64; 4]; 4],
+    transform: crate::records::xref::XrefPlacementTransform,
 ) -> Result<(), CodecError> {
-    if source_rows[3] != [0.0, 0.0, 0.0, 1.0] {
-        return Err(CodecError::malformed(format_args!(
-            "F3Z occurrence translation is not a finite affine transform"
-        )));
-    }
+    let source_rows = transform.rows();
     let mut rows = [source_rows[0], source_rows[1], source_rows[2]];
     for row in &mut rows {
         row[3] *= 10.0;
@@ -634,7 +630,8 @@ mod tests {
             [0.0, 0.0, 1.0, 0.0],
         ];
         let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
-        let error = apply_occurrence_transform(&mut Model::default(), source.rows()).unwrap_err();
+        let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
+        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
         assert!(error
             .to_string()
             .contains("F3Z occurrence translation is not a finite affine transform"));

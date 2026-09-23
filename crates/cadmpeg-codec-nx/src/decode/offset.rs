@@ -46,12 +46,10 @@ pub(super) fn saved_offset_carriers(
     graph: &Graph,
     offsets: &[crate::topology::OffsetSurface],
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::PositiveLength,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> BTreeMap<u32, (SurfaceId, f64)> {
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return BTreeMap::new();
-    }
+    let tolerance = tolerance.get();
     let face_surfaces = graph
         .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)

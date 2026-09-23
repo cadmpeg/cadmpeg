@@ -3006,7 +3006,7 @@ fn derive_cylindrical_pcurves(
                     &radial_control_points,
                     curve_weights.as_deref(),
                     nurbs.knots(),
-                    radius.abs(),
+                    cylinder_surface.radius(),
                 ) {
                     continue;
                 }
@@ -3313,17 +3313,16 @@ fn quadratic_nurbs_has_constant_radius(
     radial_control_points: &[cadmpeg_ir::math::Point2],
     weights: Option<&[f64]>,
     knots: &[f64],
-    radius: f64,
+    radius: cadmpeg_ir::scalar::PositiveLength,
 ) -> bool {
     if radial_control_points.len() < 3
         || radial_control_points.len().is_multiple_of(2)
         || knots.len() != radial_control_points.len() + 3
         || weights.is_some_and(|weights| weights.len() != radial_control_points.len())
-        || !radius.is_finite()
-        || radius <= 0.0
     {
         return false;
     }
+    let radius = radius.get();
     let mut runs = Vec::new();
     for knot in knots {
         if !knot.is_finite() {
@@ -6788,6 +6787,8 @@ mod tests {
     #[test]
     fn homogeneous_quadratic_identity_proves_constant_radius() {
         let radius = 2.0;
+        let checked_radius =
+            cadmpeg_ir::scalar::PositiveLength::new(radius).expect("positive radius");
         let controls = [
             cadmpeg_ir::math::Point2::new(radius, 0.0),
             cadmpeg_ir::math::Point2::new(radius, radius),
@@ -6799,7 +6800,7 @@ mod tests {
             &controls,
             Some(&weights),
             &knots,
-            radius,
+            checked_radius,
         ));
 
         let mut invalid = controls;
@@ -6808,7 +6809,7 @@ mod tests {
             &invalid,
             Some(&weights),
             &knots,
-            radius,
+            checked_radius,
         ));
     }
 

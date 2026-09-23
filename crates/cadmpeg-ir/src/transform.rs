@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
+use crate::units::UnitVector3;
 
 /// A row-major affine transform applied to two-dimensional geometry.
 ///
@@ -282,6 +283,17 @@ impl Transform {
         if !normal.is_finite() {
             return None;
         }
+        self.apply_finite_normal(normal)
+    }
+
+    /// Applies the inverse-transpose linear transform to an admitted unit
+    /// normal and normalizes the result.
+    pub fn apply_unit_normal(self, normal: UnitVector3) -> Option<Vector3> {
+        self.apply_finite_normal(*normal.as_raw())
+    }
+
+    /// The inverse-transpose map of a normal with finite components.
+    fn apply_finite_normal(self, normal: Vector3) -> Option<Vector3> {
         let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
         let determinant = linear_determinant(&matrix)?;
         let orientation = determinant.rescale(determinant.exponent())?.signum();
@@ -432,6 +444,10 @@ mod tests {
                 2.0 / 5.0_f64.sqrt(),
                 0.0
             ))
+        );
+        assert_eq!(
+            transform.apply_unit_normal(crate::units::UnitVector3::X_AXIS),
+            transform.apply_normal(Vector3::new(1.0, 0.0, 0.0))
         );
         let mut rows = transform.affine_rows();
         rows[0][0] = 0.0;

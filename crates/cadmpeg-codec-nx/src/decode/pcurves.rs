@@ -1498,7 +1498,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 surface,
                 endpoints,
                 range,
-                tolerance,
+                admitted_tolerance,
                 geometry_budget,
             )
         });
@@ -1509,7 +1509,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     [first_surface, second_surface],
                     [&first, &second],
                     range,
-                    tolerance,
+                    admitted_tolerance,
                     geometry_budget,
                 ) {
                     [first, second]
@@ -1673,7 +1673,7 @@ pub(super) fn exact_boundary_pcurve(
     surface: &SurfaceId,
     endpoints: [Point3; 2],
     range: [f64; 2],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
@@ -1695,15 +1695,11 @@ fn exact_boundary_pcurve_with_index(
     surface: &SurfaceId,
     endpoints: [Point3; 2],
     range: [f64; 2],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::NonNegativeReal,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
-    (range[0].is_finite()
-        && range[1].is_finite()
-        && range[0] < range[1]
-        && tolerance.is_finite()
-        && tolerance >= 0.0)
-        .then_some(())?;
+    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    let tolerance = tolerance.get();
     let carrier = index.surfaces(surface.as_str())?;
     if let Some(candidate) = exact_analytic_isocurve_pcurve_with_index_and_budget(
         index,
@@ -2158,7 +2154,7 @@ pub(super) fn coincident_pcurve_pair(
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
     range: [f64; 2],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
@@ -2178,17 +2174,13 @@ fn coincident_pcurve_pair_with_index(
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
     range: [f64; 2],
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::NonNegativeReal,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> bool {
-    if !range[0].is_finite()
-        || !range[1].is_finite()
-        || range[0] >= range[1]
-        || !tolerance.is_finite()
-        || tolerance < 0.0
-    {
+    if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
         return false;
     }
+    let tolerance = tolerance.get();
     let separation = |parameter| {
         if !geometry_budget.charge() {
             return None;
@@ -3318,12 +3310,13 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f6
 
 fn point_outside_nurbs_control_bounds(
     point: Point3,
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::PositiveReal,
     bounds: ([f64; 3], [f64; 3]),
 ) -> bool {
-    if !tolerance.is_finite() || tolerance < 0.0 || !point.is_finite() {
+    if !point.is_finite() {
         return false;
     }
+    let tolerance = tolerance.get();
     let coordinates = [point.x, point.y, point.z];
     let distance = (0..3)
         .map(|axis| {
@@ -3405,9 +3398,10 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             let Some(edge) = model_index.edges(edge_id.as_str()) else {
                 continue;
             };
-            let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) else {
+            let Some(edge_tolerance) = edge.tolerance else {
                 continue;
             };
+            let tolerance = edge_tolerance.get();
             if edge.curve().is_some() {
                 continue;
             }
@@ -3462,7 +3456,11 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                                     .entry((*surface).clone())
                                     .or_insert_with(|| nurbs_surface_control_bounds(nurbs));
                                 bounds.as_ref().is_some_and(|bounds| {
-                                    point_outside_nurbs_control_bounds(*point, tolerance, *bounds)
+                                    point_outside_nurbs_control_bounds(
+                                        *point,
+                                        edge_tolerance,
+                                        *bounds,
+                                    )
                                 })
                             });
                     let fits = if outside_nurbs_bounds {

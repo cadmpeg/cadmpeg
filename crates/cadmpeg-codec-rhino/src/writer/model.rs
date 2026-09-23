@@ -117,9 +117,7 @@ impl<'a> WritableObjectCurve<'a> {
         }
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
-                let axis = circle.axis();
-                let ref_direction = circle.ref_direction();
-                check_frame(curve.id.as_str(), *axis, *ref_direction, "circle")?;
+                check_frame(curve.id.as_str(), circle.frame(), "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -184,7 +182,7 @@ impl<'a> WritableFaceSurface<'a> {
                 let origin = plane.origin().get();
                 let normal = plane.normal();
                 let u_axis = plane.u_axis();
-                check_frame(surface.id.as_str(), *normal, *u_axis, "plane")?;
+                check_frame(surface.id.as_str(), plane.frame(), "plane")?;
                 Ok(Self::Plane {
                     origin,
                     normal: *normal,

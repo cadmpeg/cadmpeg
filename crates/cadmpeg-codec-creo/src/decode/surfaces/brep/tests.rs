@@ -20,10 +20,9 @@ use super::{
 
 #[test]
 fn infinite_point_cannot_match_a_finite_point() {
-    assert!(!super::points_are_geometrically_coincident(
-        Point3::new(f64::INFINITY, 0.0, 0.0),
-        Point3::new(0.0, 0.0, 0.0),
-    ));
+    assert!(
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::INFINITY, 0.0, 0.0)).is_none()
+    );
 }
 
 #[test]

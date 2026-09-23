@@ -560,7 +560,6 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame })
                 if datum_coordinate_system_is_incomplete(
-                    frame.origin(),
                     frame.x_axis(),
                     frame.y_axis(),
                     frame.z_axis(),

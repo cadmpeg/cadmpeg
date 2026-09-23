@@ -5,6 +5,7 @@ use super::{
 };
 use cadmpeg_ir::eval::nurbs_curve_point;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 /// A sweep that is a whole number of quarter turns must not gain a span from
 /// last-place noise. Expectations come from the geometry: a quarter turn is
@@ -60,8 +61,8 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
-        4.0,
-        2.0,
+        PositiveLength::new(4.0).expect("positive major radius"),
+        PositiveLength::new(2.0).expect("positive minor radius"),
         [0.0, std::f64::consts::FRAC_PI_2],
     )
     .expect("arc lanes pair")
@@ -99,7 +100,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         Point3::new(1.0, 2.0, 3.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(1.0, 0.0, 0.0),
-        2.0,
+        PositiveLength::new(2.0).expect("positive focal distance"),
         [-1.0, 3.0],
     )
     .expect("arc lanes pair")
@@ -131,7 +132,7 @@ fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
         Point3::new(0., 0., 0.),
         Vector3::new(0., 0., 1.),
         Vector3::new(1., 0., 0.),
-        1e308,
+        PositiveLength::new(1e308).expect("positive focal distance"),
         [1e-100, 2e-100],
     )
     .expect("valid quadratic NURBS")

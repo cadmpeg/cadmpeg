@@ -2,20 +2,25 @@
 
 use super::{circle_contains_point, ellipse_contains_point};
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::PositiveLength;
+
+fn length(value: f64) -> PositiveLength {
+    PositiveLength::new(value).expect("positive radius")
+}
 
 #[test]
 fn rejects_analytic_carriers_that_do_not_contain_the_edge_vertex() {
     assert!(!circle_contains_point(
         Point2::new(-35.0, -5.85),
-        1.25,
+        length(1.25),
         Point2::new(-75.0, -8.85),
         1.0e-9,
     ));
     assert!(!ellipse_contains_point(
         Point2::new(-60.0, -150.0),
         0.0,
-        7.5,
-        f64::MIN_POSITIVE,
+        length(7.5),
+        length(f64::MIN_POSITIVE),
         Point2::new(140.0, -70.5),
         1.0e-9,
     ));
@@ -25,15 +30,15 @@ fn rejects_analytic_carriers_that_do_not_contain_the_edge_vertex() {
 fn accepts_vertices_on_nondegenerate_analytic_carriers() {
     assert!(circle_contains_point(
         Point2::new(2.0, 3.0),
-        4.0,
+        length(4.0),
         Point2::new(6.0, 3.0),
         1.0e-9,
     ));
     assert!(ellipse_contains_point(
         Point2::new(2.0, 3.0),
         0.0,
-        4.0,
-        2.0,
+        length(4.0),
+        length(2.0),
         Point2::new(2.0, 5.0),
         1.0e-9,
     ));

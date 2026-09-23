@@ -9,12 +9,13 @@ const HELIX_MAX_RELATIVE_RESIDUAL: f64 = 5.0e-4;
 
 pub(super) fn fit_helix_polyline(
     points: &[Point3],
-    revolutions: f64,
+    revolutions: cadmpeg_ir::scalar::PositiveReal,
     clockwise: bool,
 ) -> Option<(Point3, Vector3, f64, f64)> {
-    if points.len() < 6 || !revolutions.is_finite() || revolutions <= 0.0 {
+    if points.len() < 6 {
         return None;
     }
+    let revolutions = revolutions.get();
     let mut parameters = Vec::with_capacity(points.len());
     parameters.push(0.0);
     for pair in points.windows(2) {
@@ -237,6 +238,10 @@ fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64
 
 #[cfg(test)]
 mod tests {
+    fn revolutions(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
+        cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive revolutions")
+    }
+
     // Four points of the exact circle of radius 5 about `(-5, 0, 0)` in the
     // plane normal to `z`. Every coordinate, the centre and the radius are
     // representable in f64, and the frame the fit builds for this axis is the
@@ -277,7 +282,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let (origin, axis, radius, rise) =
-                super::fit_helix_polyline(&points, 1.0, false).unwrap();
+                super::fit_helix_polyline(&points, revolutions(1.0), false).unwrap();
             assert!(origin.x.abs() / scale <= RELATIVE_ERROR);
             assert!(origin.y.abs() / scale <= RELATIVE_ERROR);
             assert!((axis.z - 1.0).abs() <= RELATIVE_ERROR);
@@ -299,7 +304,8 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let (origin, axis, radius, rise) = super::fit_helix_polyline(&points, 0.25, false).unwrap();
+        let (origin, axis, radius, rise) =
+            super::fit_helix_polyline(&points, revolutions(0.25), false).unwrap();
         assert!((origin.x - 10.0).abs() < 1.0e-9);
         assert!((origin.y - 20.0).abs() < 1.0e-9);
         assert!((origin.z - 30.0).abs() < 1.0e-9);
@@ -329,7 +335,8 @@ mod tests {
                 point
             })
             .collect::<Vec<_>>();
-        let (_, axis, radius, _) = super::fit_helix_polyline(&points, 0.25, false).unwrap();
+        let (_, axis, radius, _) =
+            super::fit_helix_polyline(&points, revolutions(0.25), false).unwrap();
         assert!(axis.x > 3.0e-5 && axis.x < 5.0e-5, "{axis:?}");
         assert!(axis.y < -0.999_999_99, "{axis:?}");
         assert!(axis.z.abs() < 1.0e-6, "{axis:?}");

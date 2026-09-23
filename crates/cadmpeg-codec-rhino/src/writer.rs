@@ -1704,14 +1704,13 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
 
 fn check_frame(
     id: &str,
-    normal: cadmpeg_ir::math::Vector3,
-    x: cadmpeg_ir::math::Vector3,
+    frame: cadmpeg_ir::units::OrthonormalFrame3,
     family: &str,
 ) -> Result<(), CodecError> {
+    let normal = frame.axis();
+    let x = frame.reference();
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
-    if !normal.is_finite()
-        || !x.is_finite()
-        || (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+    if (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
