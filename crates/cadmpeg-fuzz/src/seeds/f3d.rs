@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Autodesk ASM binary (SMBH) seed builders.
 
-use std::io::{Cursor, Write};
+use std::io::{self, Cursor, Write};
 
 use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
@@ -10,10 +10,17 @@ use zip::CompressionMethod;
 pub const SEED_LINEAR_TOLERANCE: f64 = 1.0e-6;
 pub const SEED_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
-pub fn push_u8_string(b: &mut Vec<u8>, s: &str) {
-    b.push(0x07);
-    b.push(s.len() as u8);
+fn push_byte_counted_string(b: &mut Vec<u8>, tag: u8, s: &str) -> io::Result<()> {
+    let len =
+        u8::try_from(s.len()).map_err(|_| io::Error::other("seed string exceeds 255 bytes"))?;
+    b.push(tag);
+    b.push(len);
     b.extend_from_slice(s.as_bytes());
+    Ok(())
+}
+
+pub fn push_u8_string(b: &mut Vec<u8>, s: &str) -> io::Result<()> {
+    push_byte_counted_string(b, 0x07, s)
 }
 
 pub fn push_tagged_f64(b: &mut Vec<u8>, v: f64) {
@@ -28,9 +35,11 @@ pub fn smbh_header_prefix() -> Vec<u8> {
     b.extend_from_slice(&7u64.to_be_bytes());
     b.extend_from_slice(&3u64.to_be_bytes());
     b.extend_from_slice(&[0u8; 7]);
-    push_u8_string(&mut b, "Autodesk Neutron");
-    push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
-    push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
+    push_u8_string(&mut b, "Autodesk Neutron").expect("fixed seed string fits one-byte length");
+    push_u8_string(&mut b, "ASM 231.6.3.65535 OSX")
+        .expect("fixed seed string fits one-byte length");
+    push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026")
+        .expect("fixed seed string fits one-byte length");
     push_tagged_f64(&mut b, 60.0);
     push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
     push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
@@ -61,16 +70,26 @@ pub fn t_vec(b: &mut Vec<u8>, p: [f64; 3]) {
     }
 }
 
-pub fn t_ident(b: &mut Vec<u8>, s: &str) {
-    b.push(0x0d);
-    b.push(s.len() as u8);
-    b.extend_from_slice(s.as_bytes());
+pub fn t_ident(b: &mut Vec<u8>, s: &str) -> io::Result<()> {
+    push_byte_counted_string(b, 0x0d, s)
 }
 
-pub fn t_subident(b: &mut Vec<u8>, s: &str) {
-    b.push(0x0e);
-    b.push(s.len() as u8);
-    b.extend_from_slice(s.as_bytes());
+#[cfg(test)]
+mod identifier_tests {
+    use super::t_ident;
+
+    #[test]
+    fn identifier_length_is_checked_before_writing() {
+        let mut bytes = Vec::new();
+        t_ident(&mut bytes, "é").expect("two-byte identifier");
+        assert_eq!(bytes, [0x0d, 2, 0xc3, 0xa9]);
+        assert!(t_ident(&mut bytes, &"x".repeat(256)).is_err());
+        assert_eq!(bytes, [0x0d, 2, 0xc3, 0xa9]);
+    }
+}
+
+pub fn t_subident(b: &mut Vec<u8>, s: &str) -> io::Result<()> {
+    push_byte_counted_string(b, 0x0e, s)
 }
 
 pub fn t_end(b: &mut Vec<u8>) {
@@ -79,11 +98,11 @@ pub fn t_end(b: &mut Vec<u8>) {
 
 pub fn synthetic_mixed_smbh() -> Vec<u8> {
     let mut r = Vec::new();
-    t_ident(&mut r, "asmheader");
-    push_u8_string(&mut r, "231.6.3.65535");
+    t_ident(&mut r, "asmheader").expect("fixed seed identifier fits one-byte length");
+    push_u8_string(&mut r, "231.6.3.65535").expect("fixed seed string fits one-byte length");
     t_end(&mut r);
 
-    t_ident(&mut r, "body");
+    t_ident(&mut r, "body").expect("fixed seed identifier fits one-byte length");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -92,7 +111,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     t_ref(&mut r, -1);
     t_end(&mut r);
 
-    t_ident(&mut r, "region");
+    t_ident(&mut r, "region").expect("fixed seed identifier fits one-byte length");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -101,7 +120,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     t_ref(&mut r, 1);
     t_end(&mut r);
 
-    t_ident(&mut r, "shell");
+    t_ident(&mut r, "shell").expect("fixed seed identifier fits one-byte length");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -113,7 +132,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     t_end(&mut r);
 
     let face = |r: &mut Vec<u8>, next: i64, first_loop: i64, surface: i64| {
-        t_ident(r, "face");
+        t_ident(r, "face").expect("fixed seed identifier fits one-byte length");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
@@ -130,7 +149,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     face(&mut r, -1, 7, 9);
 
     let lp = |r: &mut Vec<u8>, first_coedge: i64, owner_face: i64| {
-        t_ident(r, "loop");
+        t_ident(r, "loop").expect("fixed seed identifier fits one-byte length");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
@@ -142,8 +161,8 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     lp(&mut r, 10, 4);
     lp(&mut r, 13, 5);
 
-    t_subident(&mut r, "plane");
-    t_ident(&mut r, "surface");
+    t_subident(&mut r, "plane").expect("fixed seed string fits one-byte length");
+    t_ident(&mut r, "surface").expect("fixed seed identifier fits one-byte length");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -153,8 +172,8 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     r.push(0x0b);
     t_end(&mut r);
 
-    t_subident(&mut r, "spline");
-    t_ident(&mut r, "surface");
+    t_subident(&mut r, "spline").expect("fixed seed string fits one-byte length");
+    t_ident(&mut r, "surface").expect("fixed seed identifier fits one-byte length");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -164,7 +183,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
 
     let ce =
         |r: &mut Vec<u8>, next: i64, prev: i64, partner: i64, edge: i64, rev: bool, owner: i64| {
-            t_ident(r, "coedge");
+            t_ident(r, "coedge").expect("fixed seed identifier fits one-byte length");
             t_ref(r, -1);
             t_long(r, -1);
             t_ref(r, -1);
@@ -186,7 +205,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     ce(&mut r, 13, 14, -1, 20, false, 7);
 
     let edge = |r: &mut Vec<u8>, start: i64, end: i64| {
-        t_ident(r, "edge");
+        t_ident(r, "edge").expect("fixed seed identifier fits one-byte length");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
@@ -197,7 +216,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
         t_ref(r, -1);
         t_ref(r, -1);
         r.push(0x0b);
-        push_u8_string(r, "unknown");
+        push_u8_string(r, "unknown").expect("fixed seed string fits one-byte length");
         t_end(r);
     };
     edge(&mut r, 21, 22);
@@ -207,7 +226,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
     edge(&mut r, 24, 22);
 
     let vert = |r: &mut Vec<u8>, owning_edge: i64, point: i64| {
-        t_ident(r, "vertex");
+        t_ident(r, "vertex").expect("fixed seed identifier fits one-byte length");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
@@ -227,7 +246,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
         [0.0, 1.0, 0.0],
         [0.0, -1.0, 0.0],
     ] {
-        t_ident(&mut r, "point");
+        t_ident(&mut r, "point").expect("fixed seed identifier fits one-byte length");
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -236,7 +255,7 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
         t_end(&mut r);
     }
 
-    t_ident(&mut r, "delta_state");
+    t_ident(&mut r, "delta_state").expect("fixed seed identifier fits one-byte length");
     let mut out = smbh_header_prefix();
     out.extend_from_slice(&r);
     out
@@ -244,13 +263,13 @@ pub fn synthetic_mixed_smbh() -> Vec<u8> {
 
 pub fn synthetic_smbh() -> Vec<u8> {
     let mut b = smbh_header_prefix();
-    t_ident(&mut b, "body");
+    t_ident(&mut b, "body").expect("fixed seed identifier fits one-byte length");
     t_end(&mut b);
     // The active model ends on its own terminator; the history partition opens
     // with the `delta_state` record name, whose length byte `t_ident` derives
     // from the name itself.
     t_end(&mut b);
-    t_ident(&mut b, "delta_state");
+    t_ident(&mut b, "delta_state").expect("fixed seed identifier fits one-byte length");
     b.extend_from_slice(&[0u8; 16]);
     b
 }

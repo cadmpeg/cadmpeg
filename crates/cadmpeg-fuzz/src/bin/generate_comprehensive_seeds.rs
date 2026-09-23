@@ -118,12 +118,41 @@ mod sldprt {
         material.extend_from_slice(&0u32.to_le_bytes());
         material.extend_from_slice(&0x00c0c0c0u32.to_le_bytes());
         material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-        material.extend_from_slice(&[0xff, 0xfe, 0xff, name.len() as u8]);
-        for unit in name.encode_utf16() {
+        let units = name.encode_utf16().collect::<Vec<_>>();
+        let unit_count = u8::try_from(units.len())
+            .map_err(|_| std::io::Error::other("material name exceeds 255 UTF-16 units"))?;
+        material.extend_from_slice(&[0xff, 0xfe, 0xff, unit_count]);
+        for unit in units {
             material.extend_from_slice(&unit.to_le_bytes());
         }
         f.extend(make_block(0x40, "SWObjects", &material)?);
         Ok(f)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::sldprt_with_body_and_material;
+        use std::io::Read;
+
+        #[test]
+        fn material_name_length_counts_utf16_units_and_refuses_overflow() {
+            let file =
+                sldprt_with_body_and_material(&[], "é", [0, 0, 0]).expect("short material name");
+            let marker = [0x9e, 0x14, 0x01, 0x00];
+            let at = super::sldprt_with_body(&[])
+                .expect("base SLDPRT seed")
+                .len();
+            assert_eq!(&file[at..at + marker.len()], marker);
+            let name_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
+                .expect("material block name length") as usize;
+            let mut decoder = flate2::read::DeflateDecoder::new(&file[at + 24 + name_len..]);
+            let mut material = Vec::new();
+            decoder.read_to_end(&mut material).expect("material block");
+            assert!(material
+                .windows(6)
+                .any(|bytes| bytes == [0xff, 0xfe, 0xff, 1, 0xe9, 0]));
+            assert!(sldprt_with_body_and_material(&[], &"x".repeat(256), [0, 0, 0]).is_err());
+        }
     }
 
     fn display_list_payload() -> Vec<u8> {
@@ -509,8 +538,8 @@ fn generate_catia_seeds() -> Result<(), SeedError> {
             catia::zero_entity_cylinder_catpart(),
         ),
         ("zero_entity_nurbs", catia::zero_entity_nurbs_catpart()),
-        ("standard_nested", seeds::catia::standard_catpart()),
-        ("e5_circle", catia::e5_catpart()),
+        ("standard_nested", seeds::catia::standard_catpart()?),
+        ("e5_circle", catia::e5_catpart()?),
     ];
 
     for (name, data) in seeds {
@@ -600,7 +629,7 @@ mod catia {
         record
     }
 
-    pub(super) fn e5_catpart() -> Vec<u8> {
+    pub(super) fn e5_catpart() -> std::io::Result<Vec<u8>> {
         let main = e5_circle_stream();
         let surf = vec![0u8];
         let main_off = 16u32;
@@ -608,8 +637,8 @@ mod catia {
         let dir_rel = surf_off + surf.len() as u32;
         let mut dir = Vec::new();
         dir.extend_from_slice(DIR_MAGIC);
-        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32));
-        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32));
+        dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32)?);
+        dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32)?);
         dir.extend_from_slice(b"CB__END");
         let mut inner = Vec::new();
         inner.extend_from_slice(OUTER_MAGIC);
@@ -623,7 +652,7 @@ mod catia {
         file.extend_from_slice(&be32(16 + inner.len() as u32));
         file.extend_from_slice(&be32(0));
         file.extend_from_slice(&inner);
-        file
+        Ok(file)
     }
 }
 
@@ -705,7 +734,7 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 
 mod nx {
     use cadmpeg_core::CodecError;
-    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, record, single_part_prt, zlib_compress};
+    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, record, single_part_prt_with_partition};
 
     fn put_ref(rec: &mut [u8], at: usize, value: u16) {
         rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
@@ -883,23 +912,9 @@ mod nx {
     }
 
     pub(super) fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
-        prt_with_partition(&topology_partition_stream()?)
+        single_part_prt_with_partition(&topology_partition_stream()?)
     }
     pub(super) fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
-        prt_with_partition(&bspline_partition_stream()?)
-    }
-
-    fn prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
-        let mut f = single_part_prt()?;
-        let compressed = zlib_compress(stream)?;
-        let len = f.len();
-        f.truncate(len - compressed.len());
-        let blob_off = f.len() as u64;
-        let off_idx = f.len() - 16;
-        let size_idx = f.len() - 8;
-        f[off_idx..size_idx].copy_from_slice(&blob_off.to_le_bytes());
-        f[size_idx..].copy_from_slice(&(compressed.len() as u64).to_le_bytes());
-        f.extend_from_slice(&compressed);
-        Ok(f)
+        single_part_prt_with_partition(&bspline_partition_stream()?)
     }
 }
