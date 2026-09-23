@@ -112,6 +112,7 @@ impl EntryRecord {
 #[derive(Debug)]
 pub struct ArchiveSnapshot<'a> {
     root: View<'a>,
+    central_start: u64,
     entries: Vec<EntryRecord>,
     by_name: BTreeMap<String, usize>,
 }
@@ -121,8 +122,9 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn new(root: View<'a>) -> Result<Self, CodecError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
+        let archive_central_start = archive.central_directory_start();
         let central_entry_count =
-            reject_duplicate_central_names(root.window(), archive.central_directory_start())?;
+            reject_duplicate_central_names(root.window(), archive_central_start)?;
         if central_entry_count != archive.len() {
             return Err(CodecError::Malformed(
                 "ZIP central directory contains duplicate entry names".into(),
@@ -183,6 +185,7 @@ impl<'a> ArchiveSnapshot<'a> {
             .collect();
         Ok(Self {
             root,
+            central_start: archive_central_start,
             entries,
             by_name,
         })
@@ -339,7 +342,7 @@ impl<'a> ArchiveSnapshot<'a> {
 
     /// Partitions every physical archive byte by ZIP structural role.
     pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
-        physical_ledger(self.root.window(), &self.entries)
+        physical_ledger(self.root.window(), &self.entries, self.central_start)
     }
 }
 
@@ -492,16 +495,20 @@ fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: ZipS
     }
 }
 
-fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<PhysicalSpan>, CodecError> {
+fn physical_ledger(
+    bytes: &[u8],
+    entries: &[EntryRecord],
+    central_begin: u64,
+) -> Result<Vec<PhysicalSpan>, CodecError> {
     let len = bytes.len() as u64;
     let mut regions = Vec::new();
     let mut local_order = entries.iter().collect::<Vec<_>>();
     local_order.sort_by_key(|entry| entry.header_start);
-    let central_begin = entries
-        .iter()
-        .map(|entry| entry.central_start)
-        .min()
-        .unwrap_or(len);
+    if central_begin > len {
+        return Err(CodecError::Malformed(
+            "ZIP central directory begins after the archive".into(),
+        ));
+    }
 
     for (index, entry) in local_order.iter().enumerate() {
         if signature_at(bytes, entry.header_start) != Some(*b"PK\x03\x04") {
@@ -659,32 +666,37 @@ fn parse_data_descriptor(
 ) -> Result<u64, CodecError> {
     let start = entry.data_end()?;
     let has_signature = signature_at(bytes, start) == Some(*b"PK\x07\x08");
-    let values_start = start + if has_signature { 4 } else { 0 };
     let local_zip64 = u32_at(bytes, entry.header_start + 18)? == u32::MAX
         || u32_at(bytes, entry.header_start + 22)? == u32::MAX;
     let widths = if local_zip64 { [8_u64, 4] } else { [4_u64, 8] };
-    for width in widths {
-        let end = values_start + 4 + 2 * width;
-        if end > record_end {
+    for signed in [true, false] {
+        if signed && !has_signature {
             continue;
         }
-        let crc = u32_at(bytes, values_start)?;
-        let (compressed, uncompressed) = if width == 4 {
-            (
-                u64::from(u32_at(bytes, values_start + 4)?),
-                u64::from(u32_at(bytes, values_start + 8)?),
-            )
-        } else {
-            (
-                u64_at(bytes, values_start + 4)?,
-                u64_at(bytes, values_start + 12)?,
-            )
-        };
-        if crc == entry.crc32
-            && compressed == entry.compressed_size
-            && uncompressed == entry.uncompressed_size
-        {
-            return Ok(end);
+        let values_start = start + if signed { 4 } else { 0 };
+        for width in widths {
+            let end = values_start + 4 + 2 * width;
+            if end > record_end {
+                continue;
+            }
+            let crc = u32_at(bytes, values_start)?;
+            let (compressed, uncompressed) = if width == 4 {
+                (
+                    u64::from(u32_at(bytes, values_start + 4)?),
+                    u64::from(u32_at(bytes, values_start + 8)?),
+                )
+            } else {
+                (
+                    u64_at(bytes, values_start + 4)?,
+                    u64_at(bytes, values_start + 12)?,
+                )
+            };
+            if crc == entry.crc32
+                && compressed == entry.compressed_size
+                && uncompressed == entry.uncompressed_size
+            {
+                return Ok(end);
+            }
         }
     }
     Err(CodecError::malformed(format_args!(
@@ -813,7 +825,61 @@ mod tests {
     use zip::write::SimpleFileOptions;
     use zip::CompressionMethod;
 
-    use super::ArchiveSnapshot;
+    use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+
+    #[test]
+    fn empty_zip_ledger_covers_its_end_record() {
+        let bytes = zip::ZipWriter::new(Cursor::new(Vec::new()))
+            .finish()
+            .expect("empty ZIP finishes")
+            .into_inner();
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("empty ZIP fits root policy");
+        let snapshot = ArchiveSnapshot::new(root).expect("empty ZIP is valid");
+        assert!(snapshot.entries().is_empty());
+        assert_eq!(
+            snapshot
+                .physical_ledger()
+                .expect("empty ZIP has a complete physical ledger"),
+            vec![PhysicalSpan {
+                start: 0,
+                end: bytes.len() as u64,
+                role: ZipSpanRole::EndRecord,
+            }]
+        );
+    }
+
+    #[test]
+    fn descriptor_crc_equal_to_optional_signature_keeps_unsigned_layout() {
+        let signature = *b"PK\x07\x08";
+        let mut bytes = vec![0_u8; 42];
+        bytes[30..34].copy_from_slice(&signature);
+        let entry = EntryRecord {
+            name: "empty".to_owned(),
+            compression: ZipCompression::Stored,
+            crc32: u32::from_le_bytes(signature),
+            compressed_size: 0,
+            uncompressed_size: 0,
+            header_start: 0,
+            data_start: 30,
+            central_start: 42,
+            utf8_name: false,
+        };
+        assert_eq!(
+            super::parse_data_descriptor(&bytes, &entry, 42)
+                .expect("unsigned descriptor matches its central record"),
+            42
+        );
+
+        bytes.extend_from_slice(&[0; 4]);
+        bytes[34..38].copy_from_slice(&signature);
+        assert_eq!(
+            super::parse_data_descriptor(&bytes, &entry, 46)
+                .expect("signed descriptor matches its central record"),
+            46
+        );
+    }
 
     fn archive_bytes() -> Vec<u8> {
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));

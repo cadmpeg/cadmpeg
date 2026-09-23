@@ -45,10 +45,14 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(Self, View<'a>), CodecError> {
         let max = policy.limits.max_input_bytes;
         let cap = max.saturating_add(1);
-        let buffer = if let Ok(size) = reader
-            .seek(SeekFrom::End(0))
-            .and_then(|size| reader.rewind().map(|()| size))
-        {
+        let size = match reader.seek(SeekFrom::End(0)) {
+            Ok(size) => {
+                reader.rewind().map_err(CodecError::Io)?;
+                Some(size)
+            }
+            Err(_) => None,
+        };
+        let buffer = if let Some(size) = size {
             let reserve = size.min(cap);
             let reserve = usize::try_from(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve))?;
@@ -72,6 +76,9 @@ impl<'a> DecodeContext<'a> {
                 if read == 0 {
                     break;
                 }
+                buffer
+                    .try_reserve(read)
+                    .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, read as u64))?;
                 buffer.extend_from_slice(&chunk[..read]);
             }
             buffer
@@ -233,12 +240,8 @@ impl<'a> DecodeContext<'a> {
         self.charge_retained(bytes.len() as u64, operation)?;
         let mut copy = Vec::new();
         copy.try_reserve_exact(bytes.len()).map_err(|_| {
-            self.fuse(
-                ResourceFailure::AllocationFailed,
-                LimitScope::Global,
-                bytes.len() as u64,
-                operation,
-            )
+            self.budget
+                .retained_allocation_failed(bytes.len() as u64, operation)
         })?;
         copy.extend_from_slice(bytes);
         Ok(copy)
@@ -561,6 +564,38 @@ impl<'a> ExpandWriter<'_, 'a> {
 #[cfg(test)]
 mod tests {
     use super::{ByteRange, DecodeArena, DecodeContext, DecodePolicy};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    struct RewindFails(Cursor<Vec<u8>>);
+
+    impl Read for RewindFails {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.0.read(buffer)
+        }
+    }
+
+    impl Seek for RewindFails {
+        fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+            if position == SeekFrom::Start(0) {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "rewind denied",
+                ))
+            } else {
+                self.0.seek(position)
+            }
+        }
+    }
+
+    #[test]
+    fn root_reader_propagates_failed_rewind_after_a_successful_size_probe() {
+        let arena = DecodeArena::new();
+        let mut reader = RewindFails(Cursor::new(b"not empty".to_vec()));
+        assert!(matches!(
+            DecodeContext::read_root(&mut reader, &arena, &DecodePolicy::default(), false),
+            Err(crate::CodecError::Io(error)) if error.kind() == io::ErrorKind::PermissionDenied
+        ));
+    }
 
     #[test]
     fn exhausted_space_ids_refuse_registration_without_reusing_an_id() {

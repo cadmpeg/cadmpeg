@@ -358,8 +358,11 @@ impl<'a> View<'a> {
     /// Strict `from_utf16`; unpaired surrogates and a truncated window yield
     /// `None`. Does not advance on failure.
     pub fn utf16_le(&mut self, count: usize) -> Option<String> {
-        let units = self.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
-        String::from_utf16(&units).ok()
+        let mut candidate = *self;
+        let units = candidate.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        let value = String::from_utf16(&units).ok()?;
+        *self = candidate;
+        Some(value)
     }
 
     /// Decodes `count` UTF-16LE code units at `offset` and returns the string
@@ -792,5 +795,13 @@ mod tests {
         let mut view = View::over_space(b"A\0B\0", SpaceId::ROOT);
         assert_eq!(view.utf16_le(2), Some("AB".to_string()));
         assert_eq!(view.position(), 4);
+    }
+
+    #[test]
+    fn invalid_utf16_does_not_advance_the_view() {
+        let mut view = View::over_space(&[0x00, 0xd8, 0x41, 0x00], SpaceId::ROOT);
+        assert_eq!(view.utf16_le(1), None);
+        assert_eq!(view.position(), 0);
+        assert_eq!(view.u16_le(), Some(0xd800));
     }
 }
