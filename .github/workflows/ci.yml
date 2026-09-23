@@ -223,6 +223,13 @@ jobs:
           cargo check --manifest-path crates/cadmpeg-fuzz/Cargo.toml \
             --all-targets --keep-going
 
+      - name: Fuzz crate tests
+        # Runs the library and seed-generator tests, including the seed
+        # decode tests that fail when a reader change stops a seed reaching
+        # its decoder. Every harness under `fuzz_targets/` declares
+        # `test = false`, so this builds and runs no harness.
+        run: cargo test -q --manifest-path crates/cadmpeg-fuzz/Cargo.toml
+
       - name: Single-codec CLI feature gate
         # Per-codec optional deps must keep a one-feature binary compiling.
         run: cargo build -q -p cadmpeg --no-default-features --features sldprt
