@@ -403,12 +403,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let Some(frame) = crate::surface::prototype_cone_frame(record) else {
                     continue;
                 };
-                let Some(cone) = super::apex_cone(
-                    frame.frame().origin_point(),
-                    frame.frame().axis_vector(),
-                    frame.frame().ref_direction_vector(),
-                    frame.half_angle(),
-                ) else {
+                let Some(cone) = super::apex_cone(frame.frame(), frame.half_angle()) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
@@ -643,40 +638,30 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 if row.kind == crate::surface::SurfaceKind::Plane =>
             {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    match cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        frame.origin_point(),
-                        frame.axis_vector(),
-                        frame.ref_direction_vector(),
-                    ) {
-                        Ok(payload) => payload,
-                        Err(_) => continue,
-                    },
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+                        frame.finite_origin(),
+                        frame.orthonormal_frame(),
+                    ),
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Cylinder { frame, radius }
                 if row.kind == crate::surface::SurfaceKind::Cylinder =>
             {
+                let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(*radius) else {
+                    continue;
+                };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    match cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        frame.origin_point(),
-                        frame.axis_vector(),
-                        frame.ref_direction_vector(),
-                        *radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(_) => continue,
-                    },
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                        frame.finite_origin(),
+                        frame.orthonormal_frame(),
+                        radius,
+                    ),
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Cone {
                 frame, half_angle, ..
             } if row.kind == crate::surface::SurfaceKind::Cone => {
-                let Some(cone) = super::apex_cone(
-                    frame.origin_point(),
-                    frame.axis_vector(),
-                    frame.ref_direction_vector(),
-                    *half_angle,
-                ) else {
+                let Some(cone) = super::apex_cone(frame, *half_angle) else {
                     continue;
                 };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
@@ -686,32 +671,33 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 major_radius,
                 minor_radius,
             } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                let (Some(major_radius), Some(minor_radius)) = (
+                    cadmpeg_ir::scalar::PositiveLength::new(*major_radius),
+                    cadmpeg_ir::scalar::NonZeroLength::new(*minor_radius),
+                ) else {
+                    continue;
+                };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        frame.origin_point(),
-                        frame.axis_vector(),
-                        frame.ref_direction_vector(),
-                        *major_radius,
-                        *minor_radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(_) => continue,
-                    },
+                    cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                        frame.finite_origin(),
+                        frame.orthonormal_frame(),
+                        major_radius,
+                        minor_radius,
+                    ),
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Sphere { frame, radius }
                 if row.kind == crate::surface::SurfaceKind::TorusOrSphere =>
             {
+                let Some(radius) = cadmpeg_ir::scalar::NonZeroLength::new(*radius) else {
+                    continue;
+                };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        frame.origin_point(),
-                        frame.axis_vector(),
-                        frame.ref_direction_vector(),
-                        *radius,
-                    ) {
-                        Ok(payload) => payload,
-                        Err(_) => continue,
-                    },
+                    cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                        frame.finite_origin(),
+                        frame.orthonormal_frame(),
+                        radius,
+                    ),
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Spline(spline)

@@ -841,3 +841,43 @@ fn scalar_tail_named_marker_does_not_end_prototype_field() {
 }
 
 mod cones;
+
+#[test]
+fn positional_frames_admit_by_the_ir_orthonormal_frame_measurement() {
+    use crate::surface::PositionalFrame;
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::units::OrthonormalFrame3;
+
+    let near = 1.0 + 9.0e-10;
+    let far = 1.0 + 2.0e-9;
+    for (axis, reference) in [
+        ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        ([0.0, 0.0, near], [1.0, 0.0, 0.0]),
+        ([0.0, 0.0, far], [1.0, 0.0, 0.0]),
+        ([0.6, 0.8 * near, 0.0], [-0.8, 0.6, 0.0]),
+        ([0.0, 0.0, 1.0], [1.0, 0.0, 5.0e-10]),
+        ([0.0, 0.0, 1.0], [1.0, 0.0, 2.0e-9]),
+        ([0.0, 0.0, f64::NAN], [1.0, 0.0, 0.0]),
+    ] {
+        let admitted = OrthonormalFrame3::new(Vector3::from(axis), Vector3::from(reference));
+        let held = PositionalFrame::new([1.0, 2.0, 3.0], axis, reference);
+        assert_eq!(held.map(|frame| frame.orthonormal_frame()), admitted);
+        if let Some(frame) = held {
+            assert_eq!(frame.origin(), [1.0, 2.0, 3.0]);
+            assert_eq!(frame.axis().map(f64::to_bits), axis.map(f64::to_bits));
+            assert_eq!(
+                frame.ref_direction().map(f64::to_bits),
+                reference.map(f64::to_bits)
+            );
+            let reversed = frame.with_reversed_axis();
+            assert_eq!(
+                reversed.axis().map(f64::to_bits),
+                axis.map(|component| (-component).to_bits())
+            );
+            assert_eq!(reversed.ref_direction(), frame.ref_direction());
+        }
+    }
+    assert!(
+        PositionalFrame::new([f64::INFINITY, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]).is_none()
+    );
+}

@@ -208,33 +208,28 @@ pub(in super::super) fn transfer_positional_tori(
         else {
             continue;
         };
-        let center = frame.frame().origin_point();
-        let axis = frame.frame().axis_vector();
-        let ref_direction = frame.frame().ref_direction_vector();
+        let center = frame.frame().finite_origin();
+        let placement = frame.frame().orthonormal_frame();
+        let Some(minor_radius) = cadmpeg_ir::scalar::NonZeroLength::new(frame.minor_radius())
+        else {
+            continue;
+        };
         let geometry = if frame.major_radius() == 0.0 {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                match cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    center,
-                    axis,
-                    ref_direction,
-                    frame.minor_radius(),
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
+                cadmpeg_ir::geometry::analytic::SphereSurface::new(center, placement, minor_radius),
             ))
         } else {
+            let Some(major_radius) = cadmpeg_ir::scalar::PositiveLength::new(frame.major_radius())
+            else {
+                continue;
+            };
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                match cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                cadmpeg_ir::geometry::analytic::TorusSurface::new(
                     center,
-                    axis,
-                    ref_direction,
-                    frame.major_radius(),
-                    frame.minor_radius(),
-                ) {
-                    Ok(payload) => payload,
-                    Err(_) => continue,
-                },
+                    placement,
+                    major_radius,
+                    minor_radius,
+                ),
             ))
         };
         annotate(

@@ -25,7 +25,7 @@ const EPS_DENOMINATOR_NONZERO: f64 = 1.0e-12;
 /// Bounds every slot of a saved section conic's twelve-slot local system: the two in-plane axis
 /// lengths, their dot product, their `2x2` determinant, and the out-of-plane slots the section
 /// record holds at zero or one. This is a plane record, not the three-dimensional direction pair
-/// of [`crate::surface::valid_orthonormal_frame_directions`].
+/// of [`cadmpeg_ir::units::OrthonormalFrame3::new`].
 const EPS_SECTION_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 const EPS_PARAMETER_FULL_TURN: f64 = 1.0e-9;

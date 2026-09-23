@@ -10,8 +10,10 @@ pub(crate) mod cylinder_frame_readers;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::units::OrthonormalFrame3;
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
 use crate::layout::type24_segmented_first_coordinate_bounded_round as type24_seg;
@@ -20,8 +22,6 @@ use crate::scalar;
 use crate::vecmath::local_system_lanes;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_FRAME_UNIT: f64 = 1.0e-9;
-const EPS_ORTHONORMAL_PAIR_DOT: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_RELATIVE: f64 = 1.0e-9;
 const EPS_CYLINDER_GEOMETRY_MIN: f64 = 1.0e-12;
 const EPS_PLANE_FRAME_NONZERO: f64 = 1.0e-6;
@@ -35,37 +35,6 @@ const EPS_TORUS_FRAME_COLUMN_DOT: f64 = 1.0e-10;
 const EPS_AXIS_COMPONENT_NONZERO: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
-
-/// Whether two directions are a unit-length orthogonal pair.
-///
-/// Three other sites in this crate state a related condition and none of them can read this one.
-/// `reference.rs` takes the dot product of the normalized pair, where this function takes it of
-/// the stored pair. `FeatureSectionTransform::new` in `placement.rs` bounds the squared norm
-/// relative to itself, where this function bounds the norm absolutely.
-/// `decode/sketch/geometry.rs` gates a plane record with its own determinant term.
-///
-/// A non-finite component makes the norm
-/// `NaN` or `+inf` and the dot product `NaN` or `+-inf`, and both comparisons below are false on
-/// those values, so the pair carries its own finiteness admission.
-pub(crate) fn valid_orthonormal_frame_directions(axis: [f64; 3], ref_direction: [f64; 3]) -> bool {
-    let norm = |vector: [f64; 3]| {
-        vector
-            .into_iter()
-            .map(|component| component * component)
-            .sum::<f64>()
-            .sqrt()
-    };
-    let axis_norm = norm(axis);
-    let ref_norm = norm(ref_direction);
-    let dot = axis
-        .into_iter()
-        .zip(ref_direction)
-        .map(|(axis, reference)| axis * reference)
-        .sum::<f64>();
-    (axis_norm - 1.0).abs() <= EPS_FRAME_UNIT
-        && (ref_norm - 1.0).abs() <= EPS_FRAME_UNIT
-        && dot.abs() <= EPS_ORTHONORMAL_PAIR_DOT
-}
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -754,66 +723,52 @@ impl TabulatedCylinderFrame {
 ///
 /// The positional and legacy analytic carriers hold one of these and add their own scalars.
 /// The origin is the origin of a plane, a point on the axis of a cylinder, the apex of a cone
-/// and the center of a torus or sphere.
+/// and the center of a torus or sphere. The pair is the IR [`OrthonormalFrame3`] and is
+/// admitted by its measurement, so an analytic carrier takes the held origin and frame
+/// without a second admission.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalFrame {
-    origin: [f64; 3],
-    axis: [f64; 3],
-    ref_direction: [f64; 3],
+    origin: FinitePoint3,
+    frame: OrthonormalFrame3,
 }
 
 impl PositionalFrame {
     /// Admits a finite origin and a unit-length orthogonal direction pair.
-    ///
-    /// The origin carries its own finiteness check because no other condition reads it.
-    /// [`valid_orthonormal_frame_directions`] refuses a non-finite axis or ref direction
-    /// through the unit-length and orthogonality comparisons.
     pub(crate) fn new(origin: [f64; 3], axis: [f64; 3], ref_direction: [f64; 3]) -> Option<Self> {
-        (origin.into_iter().all(f64::is_finite)
-            && valid_orthonormal_frame_directions(axis, ref_direction))
-        .then_some(Self {
-            origin,
-            axis,
-            ref_direction,
+        Some(Self {
+            origin: FinitePoint3::new(Point3::from(origin))?,
+            frame: OrthonormalFrame3::new(Vector3::from(axis), Vector3::from(ref_direction))?,
         })
     }
 
     /// Returns the same frame with the axis directed the opposite way.
-    ///
-    /// Negating every axis component leaves the axis norm and the magnitude of its dot
-    /// product with the ref direction unchanged, so the admitted pair stays admitted and
-    /// the operation is total.
     pub(crate) fn with_reversed_axis(self) -> Self {
-        Self {
-            axis: self.axis.map(|component| -component),
-            ..self
-        }
+        let mut frame = self.frame;
+        frame.reverse_axis();
+        Self { frame, ..self }
     }
 
     /// Returns the origin.
     pub(crate) fn origin(&self) -> [f64; 3] {
-        self.origin
+        let origin = self.origin.get();
+        [origin.x, origin.y, origin.z]
     }
     /// Returns the axis.
     pub(crate) fn axis(&self) -> [f64; 3] {
-        self.axis
+        (*self.frame.axis()).into()
     }
     /// Returns the ref direction.
     pub(crate) fn ref_direction(&self) -> [f64; 3] {
-        self.ref_direction
+        (*self.frame.reference()).into()
     }
 
-    /// Returns the origin as the geometry point the carrier constructors take.
-    pub(crate) fn origin_point(&self) -> Point3 {
-        Point3::from(self.origin)
+    /// Returns the admitted origin.
+    pub(crate) fn finite_origin(&self) -> FinitePoint3 {
+        self.origin
     }
-    /// Returns the axis as the geometry vector the carrier constructors take.
-    pub(crate) fn axis_vector(&self) -> Vector3 {
-        Vector3::from(self.axis)
-    }
-    /// Returns the ref direction as the geometry vector the carrier constructors take.
-    pub(crate) fn ref_direction_vector(&self) -> Vector3 {
-        Vector3::from(self.ref_direction)
+    /// Returns the admitted direction pair, the axis first.
+    pub(crate) fn orthonormal_frame(&self) -> OrthonormalFrame3 {
+        self.frame
     }
 }
 

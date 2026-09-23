@@ -393,8 +393,9 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
 ///
 /// A carrier keeps column two as its axis and column zero as its ref direction. Column one is
 /// read only here, where it proves the stored matrix is the right-handed completion of that
-/// pair; a record whose middle column disagrees states no carrier. `handedness` is `NaN` or
-/// `+-inf` only for inputs the three orthonormality conjuncts have already refused.
+/// pair; a record whose middle column disagrees states no carrier. Each column pair is admitted
+/// by the IR orthonormal-frame measurement, the one the carrier's frame holds. `handedness` is
+/// `NaN` or `+-inf` only for inputs the three orthonormality conjuncts have already refused.
 fn valid_right_handed_local_system(first: [f64; 3], second: [f64; 3], third: [f64; 3]) -> bool {
     let cross = [
         first[1] * second[2] - first[2] * second[1],
@@ -406,9 +407,16 @@ fn valid_right_handed_local_system(first: [f64; 3], second: [f64; 3], third: [f6
         .zip(third)
         .map(|(left, right)| left * right)
         .sum::<f64>();
-    surface::valid_orthonormal_frame_directions(third, first)
-        && surface::valid_orthonormal_frame_directions(third, second)
-        && surface::valid_orthonormal_frame_directions(first, second)
+    let orthonormal = |axis: [f64; 3], reference: [f64; 3]| {
+        cadmpeg_ir::units::OrthonormalFrame3::new(
+            cadmpeg_ir::math::Vector3::from(axis),
+            cadmpeg_ir::math::Vector3::from(reference),
+        )
+        .is_some()
+    };
+    orthonormal(third, first)
+        && orthonormal(third, second)
+        && orthonormal(first, second)
         && (handedness - 1.0).abs() <= EPS_LOCAL_SYSTEM_HANDEDNESS
 }
 

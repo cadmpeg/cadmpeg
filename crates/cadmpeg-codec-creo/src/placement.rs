@@ -47,10 +47,10 @@ impl FeatureSectionTransform {
     /// `dot(axis, axis)` `NaN` or `+inf`, and `squared.is_finite()` below refuses both. The
     /// origin reaches no such test and states its own.
     ///
-    /// This is not the admission of [`crate::surface::valid_orthonormal_frame_directions`]. The
-    /// orthogonality half is the same test at the same value. The unit half bounds the squared
-    /// norm relative to itself, where that function bounds the norm absolutely, so a stored
-    /// length of `1 + d` is admitted here for `|d|` up to about half the bound there.
+    /// This is not the admission of [`cadmpeg_ir::units::OrthonormalFrame3::new`]. The
+    /// orthogonality half bounds the dot product at the same value. The unit half bounds the
+    /// squared norm relative to itself, where that admission bounds the norm absolutely, so a
+    /// stored length of `1 + d` is admitted here for `|d|` up to about half the bound there.
     pub(crate) fn new(
         definition_id: u32,
         feature_id: Option<u32>,
