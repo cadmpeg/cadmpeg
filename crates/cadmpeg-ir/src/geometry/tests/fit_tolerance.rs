@@ -275,3 +275,19 @@ fn clearing_a_curve_legacy_cache_is_total() {
     assert_eq!(slotless, before);
     assert_eq!(slotless.cache_fit_tolerance(), None);
 }
+
+#[test]
+fn a_non_negative_real_widens_to_the_fit_tolerance_it_admits() {
+    for value in [-0.0, 0.0, f64::from_bits(1), 1.0e-6, f64::MAX] {
+        let real = crate::scalar::NonNegativeReal::new(value).expect("a non-negative real");
+        let widened = FitTolerance::from(real);
+        assert_eq!(widened.get().to_bits(), value.to_bits());
+        assert_eq!(FitTolerance::try_new(value), Ok(widened));
+    }
+}
+
+#[test]
+fn the_zero_fit_tolerance_is_the_admitted_literal() {
+    assert_eq!(FitTolerance::try_new(0.0), Ok(FitTolerance::ZERO));
+    assert_eq!(FitTolerance::ZERO.get().to_bits(), 0.0_f64.to_bits());
+}

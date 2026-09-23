@@ -1441,7 +1441,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let Some(edge) = ir.model.edges.get(*edge_index) else {
             continue;
         };
-        let (supports, endpoints, range, tolerance, tolerant) = match procedural.definition() {
+        let (supports, endpoints, range, admitted_tolerance, tolerant) = match procedural
+            .definition()
+        {
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 if !context.sides().iter().all(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
@@ -1458,7 +1460,9 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     continue;
                 };
-                let Some(tolerance) = edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
+                let Some(tolerance) = edge
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::NonNegativeReal::from)
                 else {
                     continue;
                 };
@@ -1477,7 +1481,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             } => {
                 let supports = intersection.supports();
                 let endpoints = intersection.endpoints();
-                let tolerance = intersection.tolerance();
+                let tolerance = intersection.nonnegative_tolerance();
 
                 let range = if edge.start == edge.end
                     && model_index.curves(owner.as_str()).is_some_and(|curve| {
@@ -1494,6 +1498,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             }
             _ => continue,
         };
+        let tolerance = admitted_tolerance.get();
         let [first_surface, second_surface] = supports;
         let candidates = [first_surface, second_surface].map(|surface| {
             exact_boundary_pcurve_with_index(
@@ -1590,9 +1595,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             }
             [None, None] => continue,
         };
-        let Ok(fit_tolerance) = cadmpeg_ir::geometry::FitTolerance::try_new(tolerance) else {
-            continue;
-        };
+        let fit_tolerance = cadmpeg_ir::geometry::FitTolerance::from(admitted_tolerance);
         replacements.push((
             procedural.id.clone(),
             pcurves,

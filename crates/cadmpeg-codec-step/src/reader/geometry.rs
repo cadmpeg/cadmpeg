@@ -1011,8 +1011,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 )
                 .and_then(|admitted_payload| {
                     let mut definition = ProceduralCurveDefinition::Subset(admitted_payload);
-                    definition
-                        .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::try_new(0.0)?)?;
+                    definition.set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::geometry::FitTolerance::ZERO,
+                    ))?;
                     Ok(ProceduralCurve::new(
                         ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), id)),
                         definition,

@@ -46,7 +46,7 @@ struct WireCurveOrientation {
 struct WireSourceProcedural {
     construction_id: ProceduralCurveId,
     definition: ProceduralCurveDefinition,
-    cache_fit_tolerance: Option<f64>,
+    cache_fit_tolerance: Option<cadmpeg_ir::geometry::FitTolerance>,
 }
 
 struct ClosedWireMember<'a> {
@@ -123,7 +123,10 @@ fn append_oriented_wire_curve(
     curve_id: CurveId,
     geometry: CurveGeometry,
     source_pos: usize,
-    procedural: Option<(ProceduralCurveDefinition, Option<f64>)>,
+    procedural: Option<(
+        ProceduralCurveDefinition,
+        Option<cadmpeg_ir::geometry::FitTolerance>,
+    )>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
         let construction_id = ProceduralCurveId::from(
@@ -146,19 +149,16 @@ fn append_oriented_wire_curve(
             .derived(&construction_id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         let mut definition = definition;
-        let admitted = match cache_fit_tolerance
-            .map(cadmpeg_ir::geometry::LegacyCache::try_new)
-            .transpose()
-            .map_err(|error| error.to_string())
-            .and_then(|cache| match cache {
-                Some(cache) => definition
-                    .set_legacy_cache(cache)
-                    .map_err(|error| error.to_string()),
-                None => {
-                    definition.clear_legacy_cache();
-                    Ok(())
-                }
-            }) {
+        let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
+            Some(cache) => definition
+                .set_legacy_cache(cache)
+                .map_err(|error| error.to_string()),
+            None => {
+                definition.clear_legacy_cache();
+                Ok(())
+            }
+        };
+        let admitted = match cached {
             Ok(()) => Ok(ProceduralCurve::new(construction_id.clone(), definition)),
             Err(error) => Err(error),
         };
@@ -210,7 +210,7 @@ fn source_wire_procedural(ir: &CadIr, geometry: &CurveGeometry) -> Option<WireSo
         .map(|candidate| WireSourceProcedural {
             construction_id: candidate.id.clone(),
             definition: candidate.definition().clone(),
-            cache_fit_tolerance: candidate.cache_fit_tolerance(),
+            cache_fit_tolerance: candidate.definition().cache_fit_tolerance(),
         })
 }
 

@@ -201,3 +201,28 @@ fn the_surface_curve_tail_refuses_a_non_positive_revision() {
         i64::MAX
     );
 }
+
+#[test]
+fn an_admitted_revision_builds_the_tail_that_the_raw_revision_admits() {
+    let revision = crate::scalar::PositiveI64::new(23_100).expect("a positive revision");
+    let cache = || {
+        RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+            interval: [Some(0.0), Some(1.0)],
+            closed_form: 0,
+        })
+    };
+    let admitted = SurfaceCurveTail::new(
+        7,
+        revision,
+        cache(),
+        [[None; 4]; 2],
+        [Some(-1.0), Some(2.0)],
+    )
+    .expect("finite surface curve tail");
+    assert_eq!(admitted, tail());
+    assert_eq!(admitted.revision(), revision);
+    assert!(
+        SurfaceCurveTail::new(7, revision, cache(), [[None; 4]; 2], [Some(f64::NAN), None])
+            .is_err()
+    );
+}
