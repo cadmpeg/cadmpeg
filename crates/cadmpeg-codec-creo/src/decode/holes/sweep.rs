@@ -230,13 +230,11 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
         extent: LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::from(length),
         },
-        geometry: CylinderSurface::try_new(
-            frame.frame().origin_point(),
-            frame.frame().axis_vector(),
-            frame.frame().ref_direction_vector(),
-            frame.radius(),
-        )
-        .ok()?,
+        geometry: CylinderSurface::new(
+            frame.frame().finite_origin(),
+            frame.frame().orthonormal_frame(),
+            cadmpeg_ir::scalar::PositiveLength::new(frame.radius())?,
+        ),
     })
 }
 

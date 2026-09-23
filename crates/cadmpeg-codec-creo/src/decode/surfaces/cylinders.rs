@@ -112,14 +112,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             continue;
         }
         let frame = datum.frame;
-        let Ok(cylinder_surface) = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            frame.frame().origin_point(),
-            frame.frame().axis_vector(),
-            frame.frame().ref_direction_vector(),
-            frame.radius(),
-        ) else {
+        let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(frame.radius()) else {
             continue;
         };
+        let cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+            frame.frame().finite_origin(),
+            frame.frame().orthonormal_frame(),
+            radius,
+        );
         annotate(
             annotations,
             &id,
@@ -1123,12 +1123,13 @@ pub(in super::super) fn transfer_positional_cylinders(
         // carrier from the same frame. They differ in what a refusal costs:
         // the repair arm leaves the existing surface's geometry as it stands,
         // the transfer arm states no surface at all.
-        let carrier = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            frame.frame().origin_point(),
-            frame.frame().axis_vector(),
-            frame.frame().ref_direction_vector(),
-            frame.radius(),
-        );
+        let carrier = cadmpeg_ir::scalar::PositiveLength::new(frame.radius()).map(|radius| {
+            cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                frame.frame().finite_origin(),
+                frame.frame().orthonormal_frame(),
+                radius,
+            )
+        });
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
@@ -1148,8 +1149,8 @@ pub(in super::super) fn transfer_positional_cylinders(
                 {
                     surface.geometry =
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(match carrier {
-                            Ok(payload) => payload,
-                            Err(_) => continue,
+                            Some(payload) => payload,
+                            None => continue,
                         }));
                     annotate(
                         annotations,
@@ -1163,7 +1164,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             }
             continue;
         }
-        let Ok(cylinder_surface) = carrier else {
+        let Some(cylinder_surface) = carrier else {
             continue;
         };
         annotate(
@@ -1399,12 +1400,7 @@ pub(in super::super) fn transfer_positional_cones(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Some(cone_surface) = super::apex_cone(
-            frame.frame().origin_point(),
-            frame.frame().axis_vector(),
-            frame.frame().ref_direction_vector(),
-            frame.half_angle(),
-        ) else {
+        let Some(cone_surface) = super::apex_cone(frame.frame(), frame.half_angle()) else {
             continue;
         };
         annotate(
