@@ -22,6 +22,15 @@ use cadmpeg_ir::pmi::DimensionTolerance;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
 
+#[test]
+fn approximate_measurement_refuses_nonfinite_values() {
+    for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        assert!(!approximately_equal(value, 1.0));
+        assert!(!approximately_equal(1.0, value));
+        assert!(!approximately_equal(value, value));
+    }
+}
+
 fn cylinder_with_radius(radius: f64) -> Entity {
     let mut cylinder = entity("GdtCylinder");
     let mut geometry = Entity {
