@@ -185,6 +185,41 @@ fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
 }
 
 #[test]
+fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
+    use super::super::nurbs_pcurve_differential;
+    use crate::math::Point2;
+
+    let width = f64::from_bits(1_u64 << 44);
+    let result = nurbs_pcurve_differential(
+        1,
+        &[0.0, 0.0, width, width],
+        &[Point2::new(0.0, 0.0), Point2::new(width, 0.0)],
+        None,
+        width / 2.0,
+    )
+    .unwrap();
+    assert_eq!(result.point, Point2::new(width / 2.0, 0.0));
+    assert_eq!(result.tangent, Some(Point2::new(1.0, 0.0)));
+    assert_eq!(result.acceleration, Some(Point2::new(0.0, 0.0)));
+
+    let quadratic = nurbs_pcurve_differential(
+        2,
+        &[0.0, 0.0, 0.0, width, width, width],
+        &[
+            Point2::new(0.0, 0.0),
+            Point2::new(width / 2.0, 0.0),
+            Point2::new(width, 0.0),
+        ],
+        None,
+        width / 2.0,
+    )
+    .unwrap();
+    assert_eq!(quadratic.point, Point2::new(width / 2.0, 0.0));
+    assert_eq!(quadratic.tangent, Some(Point2::new(1.0, 0.0)));
+    assert_eq!(quadratic.acceleration, Some(Point2::new(0.0, 0.0)));
+}
+
+#[test]
 fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     use super::super::pcurve_uv_differential;
     use crate::geometry::pcurve::PcurveGeometry;
