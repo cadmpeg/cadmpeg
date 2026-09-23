@@ -5,6 +5,7 @@ use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::dimensions::feature_dimension_table_complete;
@@ -21,19 +22,10 @@ const EPS_SOLVER_SCALE: f64 = 1.0e-12;
 const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
-struct PositiveDistance(f64);
-
-impl PositiveDistance {
-    fn new(value: f64) -> Option<Self> {
-        (value.is_finite() && value > 0.0).then_some(Self(value))
-    }
-}
-
-#[derive(Clone, Copy)]
 enum SectionSixDistance {
-    Measured(PositiveDistance),
+    Measured(PositiveLength),
     ActiveIncomplete,
-    Inactive(Option<PositiveDistance>),
+    Inactive(Option<PositiveLength>),
 }
 
 #[derive(Clone, Copy)]
@@ -49,16 +41,16 @@ pub(in crate::decode) struct SectionFunctionSixDistance {
 impl SectionFunctionSixDistance {
     fn coordinate_distance(self) -> Option<f64> {
         match self.distance {
-            SectionSixDistance::Measured(distance) => Some(distance.0),
+            SectionSixDistance::Measured(distance) => Some(distance.get()),
             SectionSixDistance::ActiveIncomplete | SectionSixDistance::Inactive(_) => None,
         }
     }
 
     /// The distance for an equation with both endpoints resolved.
-    pub(in crate::decode) fn constraint_distance(self) -> Option<f64> {
+    pub(in crate::decode) fn constraint_distance(self) -> Option<PositiveLength> {
         match self.distance {
-            SectionSixDistance::Measured(distance) => Some(distance.0),
-            SectionSixDistance::Inactive(distance) => distance.map(|distance| distance.0),
+            SectionSixDistance::Measured(distance) => Some(distance),
+            SectionSixDistance::Inactive(distance) => distance,
             SectionSixDistance::ActiveIncomplete => None,
         }
     }
@@ -150,7 +142,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                 .ok()?;
             let radius_value =
                 reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
-            let stored_distance = radius_value.and_then(PositiveDistance::new);
+            let stored_distance = radius_value.and_then(PositiveLength::new);
             if radius_value.is_some() && stored_distance.is_none() {
                 return None;
             }
@@ -166,10 +158,10 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                 match (first_point, second_point) {
                     (Some(first), Some(second)) => {
                         let delta = [second[0] - first[0], second[1] - first[1]];
-                        let distance = PositiveDistance::new(delta[0].hypot(delta[1]))?;
-                        if stored_distance
-                            .is_some_and(|stored| !approximately_equal(stored.0, distance.0))
-                        {
+                        let distance = PositiveLength::new(delta[0].hypot(delta[1]))?;
+                        if stored_distance.is_some_and(|stored| {
+                            !approximately_equal(stored.get(), distance.get())
+                        }) {
                             return None;
                         }
                         SectionSixDistance::Measured(distance)
