@@ -3,11 +3,11 @@
 use cadmpeg_test_support::edit;
 
 use crate::decode::feature_history::axes::section_profile_ref;
+use crate::decode::holes::placement::CapOutline;
 use crate::decode::holes::placement::{
     cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines, hole_extent_and_direction,
     hole_placement,
 };
-use crate::decode::holes::placement::{CapOutline, HoleCylinder};
 use crate::decode::holes::sweep::{
     circular_sweep_cylinder_from_cap_outlines, circular_sweep_feature_definition,
     CircularSweepGeometry,
@@ -20,6 +20,7 @@ use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
 };
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -44,12 +45,13 @@ fn circular_sweep_projects_profile_direction_and_extent() {
                 draft: None,
             },
         },
-        geometry: HoleCylinder {
-            origin: Point3::new(2.0, 3.0, 4.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 1.5,
-        },
+        geometry: CylinderSurface::try_new(
+            Point3::new(2.0, 3.0, 4.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.5,
+        )
+        .expect("valid cylinder fixture"),
     };
 
     assert_eq!(
@@ -101,20 +103,25 @@ fn circular_sweep_cylinder_recovers_its_section_profile() {
         20,
     )
     .expect("valid section frame");
-    let cylinder = HoleCylinder {
-        origin: Point3::new(5.0, -14.0, 1.0),
-        axis: Vector3::new(0.0, 1.0, 0.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.5,
-    };
+    let cylinder = CylinderSurface::try_new(
+        Point3::new(5.0, -14.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        4.5,
+    )
+    .expect("valid cylinder fixture");
 
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &cylinder),
         Some(([2.0, 4.0], 4.5))
     );
-    let mut off_axis = cylinder;
-    off_axis.axis = Vector3::new(1.0, 0.0, 0.0);
-    off_axis.ref_direction = Vector3::new(0.0, 0.0, 1.0);
+    let off_axis = CylinderSurface::try_new(
+        Point3::new(5.0, -14.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        4.5,
+    )
+    .expect("valid cylinder fixture");
     assert_eq!(
         circular_section_profile_from_cylinder(&transform, &off_axis),
         None
@@ -362,10 +369,10 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             CapOutline { surface_id: 902, origin: [0.0, 0.0, 0.85], normal: [0.0, 0.0, 1.0], corners: [[-1.5, 17.5, 0.85], [1.5, 20.5, 0.85]] },
             CapOutline { surface_id: 905, origin: [0.0, 0.0, 7.35], normal: [0.0, 0.0, -1.0], corners: [[-1.5, 17.5, 7.35], [1.5, 20.5, 7.35]] },
         ]),
-        Some(HoleCylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 19.0, 0.85)
-                && axis == Vector3::new(0.0, 0.0, 1.0)
-                && radius == 1.5
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(0.0, 19.0, 0.85)
+                && *cylinder.axis() == Vector3::new(0.0, 0.0, 1.0)
+                && cylinder.radius().get() == 1.5
     ));
     assert!(hole_cylinder_from_cap_outlines([
         CapOutline {
@@ -389,16 +396,16 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ], [
             CapOutline { surface_id: 828, origin: [0.0, 4.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]] },
         ]),
-        Some(HoleCylinder { origin, axis, radius, .. })
-            if origin == Point3::new(-12.5, 4.0, 0.0)
-                && axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(-12.5, 4.0, 0.0)
+                && *cylinder.axis() == Vector3::new(0.0, -1.0, 0.0)
+                && cylinder.radius().get() == 0.75
     ));
     assert!(matches!(
         cylinder_from_single_cap_outline(CapOutline { surface_id: 46, origin: [0.0, 16.0, 0.0], normal: [0.0, 1.0, 0.0], corners: [[-4.45, 16.0, -4.45], [4.45, 16.0, 4.45]] }),
-        Some(HoleCylinder { origin, axis, radius, .. })
-            if origin == Point3::new(0.0, 16.0, 0.0)
-                && axis == Vector3::new(0.0, 1.0, 0.0)
-                && radius == 4.45
+        Some(cylinder)
+            if *cylinder.origin() == Point3::new(0.0, 16.0, 0.0)
+                && *cylinder.axis() == Vector3::new(0.0, 1.0, 0.0)
+                && cylinder.radius().get() == 4.45
     ));
 }

@@ -270,7 +270,7 @@ fn corner_envelopes_construct_dimensioned_source_cylinders() {
             .into_iter()
             .map(|(id, geometry)| (
                 id,
-                SurfaceGeometry::try_from(geometry).expect("valid hole cylinder fixture")
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry))
             ))
             .collect::<Vec<_>>(),
         vec![

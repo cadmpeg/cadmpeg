@@ -868,22 +868,15 @@ pub(in super::super) fn directed_blind_extrusion_span(
     extrusion_direction: [f64; 3],
     length: f64,
 ) -> Option<ExtrusionSpan> {
-    (length.is_finite() && length > 0.0).then_some(())?;
     let profile_direction = normalize(profile_direction)?;
     let extrusion_direction = normalize(extrusion_direction)?;
     let alignment = dot(profile_direction, extrusion_direction);
     (alignment.abs() >= 1.0 - EPS_SWEEP_EXTENT_GEOMETRY).then_some(())?;
-    Some(if alignment.is_sign_positive() {
-        ExtrusionSpan {
-            lower: 0.0,
-            upper: length,
-        }
+    if alignment.is_sign_positive() {
+        ExtrusionSpan::new(0.0, length)
     } else {
-        ExtrusionSpan {
-            lower: -length,
-            upper: 0.0,
-        }
-    })
+        ExtrusionSpan::new(-length, 0.0)
+    }
 }
 
 fn feature_id_for_section_transform(

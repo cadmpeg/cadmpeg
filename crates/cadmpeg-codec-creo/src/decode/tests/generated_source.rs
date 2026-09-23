@@ -1123,11 +1123,9 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
         .iter()
         .filter(|(id, _)| *id < 30)
         .all(|(_, geometry)| {
-            matches!(geometry, crate::decode::holes::placement::HoleCylinder { origin, axis, radius, .. }
-                if { *origin == Point3::new(1.0, 2.0, 3.0)
-                    && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && (*radius - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
-            })
+            *geometry.origin() == Point3::new(1.0, 2.0, 3.0)
+                && *geometry.axis() == Vector3::new(0.0, 0.0, 1.0)
+                && (geometry.radius().get() - 0.098).abs() < EPS_GENERATED_CYLINDER_RADIUS
         }));
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
@@ -1655,10 +1653,7 @@ fn circle_remains_a_closed_extrusion_profile() {
                 reversed,
                 seam,
                 seam,
-                ExtrusionSpan {
-                    lower: -1.0,
-                    upper: 2.0,
-                },
+                ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"),
             )[0],
             [
                 [oriented_full_turn_angles(reversed)[0], -1.0],

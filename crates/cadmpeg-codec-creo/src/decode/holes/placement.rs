@@ -4,6 +4,7 @@
 use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
 use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -14,10 +15,32 @@ const EPS_AXIS_COMPONENT: f64 = 1.0e-9;
 const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
+/// Signed offsets of an extrusion's bottom and top along the section normal.
+///
+/// The interval contains the section plane (`lower <= 0 <= upper`), is not degenerate
+/// (`lower < upper`), and has a finite length `upper - lower`, so both offsets are finite.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::decode) struct ExtrusionSpan {
-    pub(in crate::decode) lower: f64,
-    pub(in crate::decode) upper: f64,
+    lower: f64,
+    upper: f64,
+}
+
+impl ExtrusionSpan {
+    /// Admits an interval that contains the section plane and has a finite positive length.
+    pub(in crate::decode) fn new(lower: f64, upper: f64) -> Option<Self> {
+        (lower <= 0.0 && upper >= 0.0 && lower < upper && (upper - lower).is_finite())
+            .then_some(Self { lower, upper })
+    }
+
+    /// Returns the bottom offset, which is not positive.
+    pub(in crate::decode) fn lower(self) -> f64 {
+        self.lower
+    }
+
+    /// Returns the top offset, which is not negative.
+    pub(in crate::decode) fn upper(self) -> f64 {
+        self.upper
+    }
 }
 
 pub(in crate::decode) fn hole_extent_and_direction(
@@ -135,23 +158,26 @@ pub(super) fn cap_square_center_radius(
     ))
 }
 
-pub(in crate::decode) fn cylinder_from_single_cap_outline(cap: CapOutline) -> Option<HoleCylinder> {
+pub(in crate::decode) fn cylinder_from_single_cap_outline(
+    cap: CapOutline,
+) -> Option<CylinderSurface> {
     let axis = normalize(cap.normal)?;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
     let (center, radius) = cap_square_center_radius(cap.corners, aligned_axis)?;
     let mut ref_direction = [0.0; 3];
     ref_direction[aligned_axis.complement()[0].index()] = 1.0;
-    Some(HoleCylinder {
-        origin: Point3::from(center),
-        axis: Vector3::from(axis),
-        ref_direction: Vector3::from(ref_direction),
+    CylinderSurface::try_new(
+        Point3::from(center),
+        Vector3::from(axis),
+        Vector3::from(ref_direction),
         radius,
-    })
+    )
+    .ok()
 }
 
 pub(in crate::decode) fn hole_cylinder_from_cap_outlines(
     caps: [CapOutline; 2],
-) -> Option<HoleCylinder> {
+) -> Option<CylinderSurface> {
     let placement = hole_placement(caps.map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     let axis = placement.1;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
@@ -178,12 +204,13 @@ pub(in crate::decode) fn hole_cylinder_from_cap_outlines(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(HoleCylinder {
-        origin: Point3::from(centers[0]),
-        axis: Vector3::from(axis),
-        ref_direction: Vector3::from(ref_direction),
-        radius: radii[0],
-    })
+    CylinderSurface::try_new(
+        Point3::from(centers[0]),
+        Vector3::from(axis),
+        Vector3::from(ref_direction),
+        radii[0],
+    )
+    .ok()
 }
 
 pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
@@ -241,7 +268,7 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+        CylinderSurface::try_new(
             Point3::from(center),
             Vector3::from(axis),
             Vector3::from(ref_direction),
@@ -251,33 +278,15 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
     )))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(in crate::decode) struct HoleCylinder {
-    pub(in crate::decode) origin: Point3,
-    pub(in crate::decode) axis: Vector3,
-    pub(in crate::decode) ref_direction: Vector3,
-    pub(in crate::decode) radius: f64,
-}
-
-impl TryFrom<HoleCylinder> for SurfaceGeometry {
-    type Error = &'static str;
-
-    fn try_from(cylinder: HoleCylinder) -> Result<Self, Self::Error> {
-        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-            cylinder.origin,
-            cylinder.axis,
-            cylinder.ref_direction,
-            cylinder.radius,
-        )
-        .map(|surface| Self::Solved(SolvedSurfaceGeometry::Cylinder(surface)))
-    }
-}
-
+/// A solved simple hole: its entry plane, generated cylinder rows, extent and cylinder
+/// carrier. The carrier axis is the drilling direction.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::decode) struct SimpleHoleGeometry<'a> {
     pub(in crate::decode) entry_surface_id: Option<u32>,
     pub(in crate::decode) cylinder_rows: Vec<&'a crate::surface::SurfaceRow>,
-    pub(in crate::decode) direction: [f64; 3],
     pub(in crate::decode) extent: LinearTermination,
-    pub(in crate::decode) geometry: HoleCylinder,
+    pub(in crate::decode) geometry: CylinderSurface,
 }
+
+#[cfg(test)]
+mod tests;

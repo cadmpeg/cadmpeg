@@ -303,10 +303,10 @@ pub(in super::super) fn extrusion_side_uvs(
         _ => [0.0, (end[0] - start[0]).hypot(end[1] - start[1])],
     };
     [
-        [[first, span.lower], [second, span.lower]],
-        [[second, span.lower], [second, span.upper]],
-        [[first, span.upper], [second, span.upper]],
-        [[first, span.lower], [first, span.upper]],
+        [[first, span.lower()], [second, span.lower()]],
+        [[second, span.lower()], [second, span.upper()]],
+        [[first, span.upper()], [second, span.upper()]],
+        [[first, span.lower()], [first, span.upper()]],
     ]
 }
 

@@ -8,6 +8,7 @@ use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, LinearTermination, ProfileRef,
 };
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::container::ContainerScan;
@@ -17,8 +18,7 @@ use super::super::sweep::planes::{
 };
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
-    hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, HoleCylinder,
-    SimpleHoleGeometry,
+    hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, SimpleHoleGeometry,
 };
 
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -78,12 +78,11 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let (_, direction, extent) =
+    let (_, _, extent) =
         hole_placement([*first, *second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     Some(SimpleHoleGeometry {
         entry_surface_id: Some(*entry_plane),
         cylinder_rows,
-        direction,
         extent,
         geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
     })
@@ -228,23 +227,23 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
             &scan.surfaces.rows,
             cylinder_id,
         )?],
-        direction: frame.frame().axis(),
         extent: LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::from(length),
         },
-        geometry: HoleCylinder {
-            origin: frame.frame().origin_point(),
-            axis: frame.frame().axis_vector(),
-            ref_direction: frame.frame().ref_direction_vector(),
-            radius: frame.radius(),
-        },
+        geometry: CylinderSurface::try_new(
+            frame.frame().origin_point(),
+            frame.frame().axis_vector(),
+            frame.frame().ref_direction_vector(),
+            frame.radius(),
+        )
+        .ok()?,
     })
 }
 
 pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     planes: [FeatureOutlinePlane; 2],
     outlines: impl IntoIterator<Item = CapOutline>,
-) -> Option<HoleCylinder> {
+) -> Option<CylinderSurface> {
     let (_, axis, _) = hole_placement(planes)?;
     let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
     let radial = aligned_axis
@@ -269,12 +268,13 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Some(HoleCylinder {
-        origin: Point3::from(center),
-        axis: Vector3::from(axis),
-        ref_direction: Vector3::from(ref_direction),
+    CylinderSurface::try_new(
+        Point3::from(center),
+        Vector3::from(axis),
+        Vector3::from(ref_direction),
         radius,
-    })
+    )
+    .ok()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,7 +283,7 @@ pub(in crate::decode) struct CircularSweepGeometry<'a> {
     pub(in crate::decode) section_definition_id: Option<u32>,
     pub(in crate::decode) direction: [f64; 3],
     pub(in crate::decode) extent: ExtrudeExtent,
-    pub(in crate::decode) geometry: HoleCylinder,
+    pub(in crate::decode) geometry: CylinderSurface,
 }
 
 pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
@@ -560,9 +560,9 @@ pub(in crate::decode) fn extrusion_span(
         .filter(|offset| *offset > 0.0)
         .max_by(f64::total_cmp);
     match (lower, upper) {
-        (Some(lower), Some(upper)) => Some(ExtrusionSpan { lower, upper }),
-        (Some(lower), None) => Some(ExtrusionSpan { lower, upper: 0.0 }),
-        (None, Some(upper)) => Some(ExtrusionSpan { lower: 0.0, upper }),
+        (Some(lower), Some(upper)) => ExtrusionSpan::new(lower, upper),
+        (Some(lower), None) => ExtrusionSpan::new(lower, 0.0),
+        (None, Some(upper)) => ExtrusionSpan::new(0.0, upper),
         (None, None) => None,
     }
 }
@@ -574,11 +574,11 @@ pub(in crate::decode) fn extrusion_extent_and_direction(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let span = extrusion_span(profile_origin, direction, planes)?;
     let direction = normalize(direction)?;
-    if span.lower == 0.0 || span.upper == 0.0 {
-        let signed_length = if span.upper == 0.0 {
-            span.lower
+    if span.lower() == 0.0 || span.upper() == 0.0 {
+        let signed_length = if span.upper() == 0.0 {
+            span.lower()
         } else {
-            span.upper
+            span.upper()
         };
         return Some((
             ExtrudeExtent::OneSided {
@@ -587,8 +587,8 @@ pub(in crate::decode) fn extrusion_extent_and_direction(
             direction.map(|value| value * signed_length.signum()),
         ));
     }
-    let first = span.upper;
-    let second = -span.lower;
+    let first = span.upper();
+    let second = -span.lower();
     let scale = first.max(second).max(1.0);
     let extent = if (first - second).abs() <= EPS_EXTENT_AGREEMENT * scale {
         ExtrudeExtent::Symmetric {

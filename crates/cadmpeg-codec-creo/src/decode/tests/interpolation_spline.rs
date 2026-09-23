@@ -193,10 +193,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
                 reversed,
                 start,
                 end,
-                ExtrusionSpan {
-                    lower: -2.0,
-                    upper: 3.0,
-                },
+                ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
             ),
             [
                 [[2.0, 0.0], [5.0, 0.0]],
@@ -225,10 +222,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         false,
         [1.0, 0.0],
         [0.0, 1.0],
-        ExtrusionSpan {
-            lower: -2.0,
-            upper: 3.0,
-        },
+        ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
         &mut diagnostics,
     )
     .expect("spline side surface");

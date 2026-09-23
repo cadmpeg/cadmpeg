@@ -294,16 +294,11 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
             },
         }
     );
+    let cylinder_surface = sweep.geometry;
     assert!(
-        matches!(SurfaceGeometry::try_from(sweep.geometry).expect("valid hole cylinder"), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-        if {
-            let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
-            let radius = cylinder_surface.radius().get();
-            *origin == Point3::new(-12.5, -4.0, 0.0)
-                && *axis == Vector3::new(0.0, -1.0, 0.0)
-                && radius == 0.75
-        })
+        *cylinder_surface.origin() == Point3::new(-12.5, -4.0, 0.0)
+            && *cylinder_surface.axis() == Vector3::new(0.0, -1.0, 0.0)
+            && cylinder_surface.radius().get() == 0.75
     );
 
     scan.features.entity_tables[0].unmark_surface_id(831);
@@ -1355,17 +1350,11 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
     );
     assert_eq!(
         directed_blind_extrusion_span(transform.normal(), [0.0, 1.0, 0.0], 34.0),
-        Some(ExtrusionSpan {
-            lower: 0.0,
-            upper: 34.0,
-        })
+        Some(ExtrusionSpan::new(0.0, 34.0).expect("valid span fixture"))
     );
     assert_eq!(
         directed_blind_extrusion_span(transform.normal(), [0.0, -1.0, 0.0], 34.0),
-        Some(ExtrusionSpan {
-            lower: -34.0,
-            upper: 0.0,
-        })
+        Some(ExtrusionSpan::new(-34.0, 0.0).expect("valid span fixture"))
     );
     assert!(directed_blind_extrusion_span(transform.normal(), [1.0, 0.0, 0.0], 34.0).is_none());
 
@@ -1708,10 +1697,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .collect();
     assert_eq!(
         resolved_feature_extrusion_span(&scan, &ir, &definition, &transform),
-        Some(ExtrusionSpan {
-            lower: 0.0,
-            upper: 8.0,
-        })
+        Some(ExtrusionSpan::new(0.0, 8.0).expect("valid span fixture"))
     );
     scan.surfaces.rows = surface_rows;
     ir.model.surfaces = model_surfaces;
