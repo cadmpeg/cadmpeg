@@ -258,8 +258,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     assert!(parameterization.pcurves.iter().all(
         |pcurve| matches!(pcurve, PcurveGeometry::Line(line_pcurve)
                 if {
-                    let origin = line_pcurve.origin();
-        let direction = line_pcurve.direction();
+                    let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
                     origin.u == 0.0 && direction.u == 1.0
                 })
     ));
@@ -296,7 +296,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             unreachable!();
         };
         let supports = intersection.supports();
-        let tolerance = intersection.tolerance();
+        let tolerance = intersection.tolerance().get();
         *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
             supports.clone(),
             endpoints,

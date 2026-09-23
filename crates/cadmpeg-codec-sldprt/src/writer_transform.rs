@@ -114,7 +114,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
 
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
-            let placed = placed_point(*transform, point.finite_position())?;
+            let placed = placed_point(*transform, point.position())?;
             point.set_finite_position(placed);
         }
     }
@@ -238,8 +238,8 @@ fn placed_frame(
     frame: OrthonormalFrame3,
     refusal: &'static str,
 ) -> Result<OrthonormalFrame3, CodecError> {
-    let axis = placed_vector(transform, *frame.axis())?;
-    let reference = placed_vector(transform, *frame.reference())?;
+    let axis = placed_vector(transform, *frame.axis().as_raw())?;
+    let reference = placed_vector(transform, *frame.reference().as_raw())?;
     OrthonormalFrame3::new(axis, reference).ok_or_else(|| CodecError::malformed(refusal))
 }
 
@@ -261,7 +261,7 @@ fn transform_surface(
             let origin = placed_point(transform, plane_surface.origin())?;
             let frame = placed_frame(
                 transform,
-                plane_surface.frame(),
+                *plane_surface.frame(),
                 "PlaneSurface.normal/u_axis must form an orthonormal frame",
             )?;
             *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame);
@@ -270,7 +270,7 @@ fn transform_surface(
             let origin = placed_point(transform, cylinder_surface.origin())?;
             let frame = placed_frame(
                 transform,
-                cylinder_surface.frame(),
+                *cylinder_surface.frame(),
                 "CylinderSurface.axis/ref_direction must form an orthonormal frame",
             )?;
             *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
@@ -283,7 +283,7 @@ fn transform_surface(
             let origin = placed_point(transform, cone_surface.origin())?;
             let frame = placed_frame(
                 transform,
-                cone_surface.frame(),
+                *cone_surface.frame(),
                 "ConeSurface.axis/ref_direction must form an orthonormal frame",
             )?;
             *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
@@ -298,7 +298,7 @@ fn transform_surface(
             let center = placed_point(transform, sphere_surface.center())?;
             let frame = placed_frame(
                 transform,
-                sphere_surface.frame(),
+                *sphere_surface.frame(),
                 "SphereSurface.axis/ref_direction must form an orthonormal frame",
             )?;
             *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
@@ -311,7 +311,7 @@ fn transform_surface(
             let center = placed_point(transform, torus_surface.center())?;
             let frame = placed_frame(
                 transform,
-                torus_surface.frame(),
+                *torus_surface.frame(),
                 "TorusSurface.axis/ref_direction must form an orthonormal frame",
             )?;
             *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
@@ -379,7 +379,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let center = placed_point(transform, circle_curve.center())?;
             let frame = placed_frame(
                 transform,
-                circle_curve.frame(),
+                *circle_curve.frame(),
                 "CircleCurve.axis/ref_direction must form an orthonormal frame",
             )?;
             *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -392,7 +392,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let center = placed_point(transform, ellipse_curve.center())?;
             let frame = placed_frame(
                 transform,
-                ellipse_curve.frame(),
+                *ellipse_curve.frame(),
                 "EllipseCurve.axis/major_direction must form an orthonormal frame",
             )?;
             *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
@@ -434,7 +434,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let vertex = placed_point(transform, parabola_curve.vertex())?;
             let frame = placed_frame(
                 transform,
-                parabola_curve.frame(),
+                *parabola_curve.frame(),
                 "ParabolaCurve.axis/major_direction must form an orthonormal frame",
             )?;
             *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
@@ -447,7 +447,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let center = placed_point(transform, hyperbola_curve.center())?;
             let frame = placed_frame(
                 transform,
-                hyperbola_curve.frame(),
+                *hyperbola_curve.frame(),
                 "HyperbolaCurve.axis/major_direction must form an orthonormal frame",
             )?;
             *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(

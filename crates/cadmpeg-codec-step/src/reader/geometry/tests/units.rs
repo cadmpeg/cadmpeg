@@ -100,7 +100,7 @@ fn assert_unscoped_cadir_fallback_point(
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#7")
         .expect("unscoped document point");
-    assert_eq!(point.position().x, expected_x);
+    assert_eq!(point.position().get().x, expected_x);
     assert_eq!(
         result
             .report()
@@ -136,7 +136,7 @@ fn one_unscoped_unit_record_can_supply_cadir_fallback_scale() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#2")
         .expect("unscoped point");
-    assert_eq!(point.position().x, 10.0);
+    assert_eq!(point.position().get().x, 10.0);
     assert!(!result
         .report()
         .losses
@@ -163,9 +163,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#3")
         .unwrap();
-    assert_eq!(placed.position().x, 1.0);
-    assert_eq!(placed.position().y, 2.0);
-    assert_eq!(placed.position().z, 3.0);
+    assert_eq!(placed.position().get().x, 1.0);
+    assert_eq!(placed.position().get().y, 2.0);
+    assert_eq!(placed.position().get().z, 3.0);
     assert_eq!(result.ir().model.curves.len(), 9);
     assert!(result.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#45"
@@ -281,7 +281,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
-        let normal = plane_surface.normal();
+        let normal = plane_surface.frame().axis().as_raw();
                     origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
                 })
     ));
@@ -457,7 +457,7 @@ pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
         .expect("decode conversion-based units");
 
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 50.8);
+    assert_eq!(result.ir().model.points[0].position().get().x, 50.8);
     assert!((result.ir().tolerances.linear.get() - 0.0254).abs() < EPS_LINEAR_UNCERTAINTY);
 }
 
@@ -671,8 +671,8 @@ fn decode_scales_geometry_by_its_representation_context() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#8")
         .expect("inch point");
-    assert!((metric.position().x - 10.0).abs() < 1.0e-12);
-    assert!((inch.position().x - 25.4).abs() < 1.0e-12);
+    assert!((metric.position().get().x - 10.0).abs() < 1.0e-12);
+    assert!((inch.position().get().x - 25.4).abs() < 1.0e-12);
     assert!(!result
         .report()
         .losses

@@ -1042,7 +1042,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
                 .points
                 .iter()
                 .find(|point| point.id == vertex.point)
-                .map(cadmpeg_ir::topology::Point::position)
+                .map(|point| point.position().get())
         };
         let start = vertex_point(start).expect("fixture start");
         let end = vertex_point(end).expect("fixture end");

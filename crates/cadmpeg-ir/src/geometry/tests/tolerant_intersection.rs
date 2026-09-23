@@ -86,8 +86,11 @@ fn tolerant_intersection_hands_back_its_admitted_tolerance() {
         let intersection =
             TolerantIntersectionConstruction::try_new(supports(), endpoints, tolerance)
                 .expect("a finite non-negative tolerance");
-        let admitted = intersection.nonnegative_tolerance();
+        let admitted = intersection.tolerance();
         assert_eq!(admitted.get().to_bits(), tolerance.to_bits());
-        assert_eq!(admitted.get().to_bits(), intersection.tolerance().to_bits());
+        assert_eq!(
+            admitted.get().to_bits(),
+            intersection.tolerance().get().to_bits()
+        );
     }
 }

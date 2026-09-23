@@ -296,7 +296,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            entities.push(point_entity(point.position()));
+            entities.push(point_entity(point.position().get()));
         }
         entities
     };
@@ -1791,7 +1791,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         {
             continue;
         }
-        entities.push(point_entity(point.position()));
+        entities.push(point_entity(point.position().get()));
     }
     Ok(entities)
 }
@@ -2233,7 +2233,7 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         {
             continue;
         }
-        entities.push(point_entity(point.position()));
+        entities.push(point_entity(point.position().get()));
     }
     Ok(entities)
 }
@@ -3170,8 +3170,8 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
                 center,
@@ -3199,8 +3199,8 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
@@ -3230,8 +3230,8 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
+            let axis = parabola_curve.frame().axis().as_raw();
+            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
             let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
                 vertex,
@@ -3280,7 +3280,7 @@ fn oriented_curve_entity(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             // Reversing the frame axis maps p(u) to p(-u).
-            let mut frame = hyperbola_curve.frame();
+            let mut frame = *hyperbola_curve.frame();
             frame.reverse_axis();
             let reversed_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
@@ -3333,7 +3333,9 @@ fn procedural_pcurve_source_map(
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = definition_payload.parameter_interval();
+            let parameter_interval = definition_payload
+                .parameter_interval()
+                .map(IncreasingParameterInterval::endpoints);
             (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
         _ => return Ok(None),
@@ -3375,9 +3377,13 @@ fn procedural_pcurve_source_map(
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.parameter_interval();
+            let angular_interval = definition_payload.angular_interval().endpoints();
+            let angular_parameter_interval = definition_payload
+                .angular_parameter_interval()
+                .map(IncreasingParameterInterval::endpoints);
+            let parameter_interval = definition_payload
+                .parameter_interval()
+                .map(IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
             {
                 let source_interval = if line_directrix(ir, directrix) {
@@ -3392,12 +3398,13 @@ fn procedural_pcurve_source_map(
                         )
                     })?;
                 if let Some(parameter_interval) = angular_parameter_interval {
-                    v_map = affine_parameter_map(*angular_interval, parameter_interval)
-                        .ok_or_else(|| {
+                    v_map = affine_parameter_map(angular_interval, parameter_interval).ok_or_else(
+                        || {
                             CodecError::Malformed(
                                 "IGES procedural surface angular domains are invalid".into(),
                             )
-                        })?;
+                        },
+                    )?;
                 }
                 if *transposed {
                     std::mem::swap(&mut u_map, &mut v_map);
@@ -4733,9 +4740,11 @@ fn revolution_surface_entities(
     let directrix = definition_payload.directrix();
     let axis_origin = definition_payload.axis_origin();
     let axis_direction = definition_payload.axis_direction();
-    let angular_interval = definition_payload.increasing_angular_interval();
+    let angular_interval = definition_payload.angular_interval();
     let angular_parameter_interval = definition_payload.angular_parameter_interval();
-    let parameter_interval = definition_payload.parameter_interval();
+    let parameter_interval = definition_payload
+        .parameter_interval()
+        .map(IncreasingParameterInterval::endpoints);
     let transposed = definition_payload.transposed();
     let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
@@ -4848,8 +4857,8 @@ fn surface_entities(
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
                 let (normal, u_axis) = orthonormal_pair(*normal, *u_axis, "legacy plane basis")?;
                 let v_axis = normal.cross(u_axis);
@@ -4889,8 +4898,8 @@ fn surface_entities(
         SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, origin, *axis, *ref_direction)?;
@@ -4916,8 +4925,8 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -4956,8 +4965,8 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             if radius <= 0.0 {
                 return Err(CodecError::NotImplemented(
@@ -4988,8 +4997,8 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if minor_radius <= 0.0 || minor_radius >= major_radius {
@@ -5156,7 +5165,7 @@ fn point_position(ir: &CadIr, point_id: &PointId) -> Result<Point3, CodecError> 
         .points
         .iter()
         .find(|point| point.id == *point_id)
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES topology references missing point {point_id}"
@@ -5176,7 +5185,7 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
         .points
         .iter()
         .find(|point| point.id == point_id)
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
 }
 
 #[derive(Clone, Copy)]
@@ -5774,8 +5783,8 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
             let y_axis = axis.cross(reference);
@@ -5804,8 +5813,8 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
@@ -5847,8 +5856,8 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.axis();
-            let major_direction = parabola_curve.major_direction();
+            let axis = parabola_curve.frame().axis().as_raw();
+            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             if range[0] == range[1] {
                 return Err(CodecError::NotImplemented(
@@ -5878,8 +5887,8 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.axis();
-            let major_direction = hyperbola_curve.major_direction();
+            let axis = hyperbola_curve.frame().axis().as_raw();
+            let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             if range[0] == range[1] {
@@ -6151,9 +6160,12 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = point(circle_curve.center())?;
             let frame = OrthonormalFrame3::new(
-                vector(*circle_curve.axis(), "transformed circle axis")?,
                 vector(
-                    *circle_curve.ref_direction(),
+                    *circle_curve.frame().axis().as_raw(),
+                    "transformed circle axis",
+                )?,
+                vector(
+                    *circle_curve.frame().reference().as_raw(),
                     "transformed circle reference",
                 )?,
             )
@@ -6173,9 +6185,12 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = point(ellipse_curve.center())?;
             let frame = OrthonormalFrame3::new(
-                vector(*ellipse_curve.axis(), "transformed ellipse axis")?,
                 vector(
-                    *ellipse_curve.major_direction(),
+                    *ellipse_curve.frame().axis().as_raw(),
+                    "transformed ellipse axis",
+                )?,
+                vector(
+                    *ellipse_curve.frame().reference().as_raw(),
                     "transformed ellipse major",
                 )?,
             )
@@ -6197,9 +6212,12 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = point(parabola_curve.vertex())?;
             let frame = OrthonormalFrame3::new(
-                vector(*parabola_curve.axis(), "transformed parabola axis")?,
                 vector(
-                    *parabola_curve.major_direction(),
+                    *parabola_curve.frame().axis().as_raw(),
+                    "transformed parabola axis",
+                )?,
+                vector(
+                    *parabola_curve.frame().reference().as_raw(),
                     "transformed parabola major",
                 )?,
             )
@@ -6219,9 +6237,12 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = point(hyperbola_curve.center())?;
             let frame = OrthonormalFrame3::new(
-                vector(*hyperbola_curve.axis(), "transformed hyperbola axis")?,
                 vector(
-                    *hyperbola_curve.major_direction(),
+                    *hyperbola_curve.frame().axis().as_raw(),
+                    "transformed hyperbola axis",
+                )?,
+                vector(
+                    *hyperbola_curve.frame().reference().as_raw(),
                     "transformed hyperbola major",
                 )?,
             )

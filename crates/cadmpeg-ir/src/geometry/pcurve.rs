@@ -198,30 +198,18 @@ impl LinePcurve {
         Ok(Self { origin, direction })
     }
 
-    /// Return the origin.
-    #[must_use]
-    pub const fn origin(&self) -> &Point2 {
-        self.origin.as_raw()
-    }
-
-    /// Return the direction.
-    #[must_use]
-    pub const fn direction(&self) -> &Point2 {
-        self.direction.as_raw()
-    }
-
-    /// Return the admitted origin. A caller that passes it on keeps the
+    /// Borrow the admitted origin. A caller that passes it on keeps the
     /// finiteness guarantee and performs no new admission.
     #[must_use]
-    pub const fn finite_origin(&self) -> FinitePoint2 {
-        self.origin
+    pub const fn origin(&self) -> &FinitePoint2 {
+        &self.origin
     }
 
-    /// Return the admitted direction. A caller that passes it on keeps the
+    /// Borrow the admitted direction. A caller that passes it on keeps the
     /// finite nonzero guarantee and performs no new admission.
     #[must_use]
-    pub const fn nonzero_direction(&self) -> NonzeroPoint2 {
-        self.direction
+    pub const fn direction(&self) -> &NonzeroPoint2 {
+        &self.direction
     }
 }
 
@@ -1599,8 +1587,8 @@ impl PcurveGeometry {
         let isotropic = u_scale == v_scale;
         let scaled = match self {
             Self::Line(line) => Self::Line(LinePcurve::try_new(
-                scale(*line.origin()),
-                scale(*line.direction()),
+                scale(*line.origin().as_raw()),
+                scale(*line.direction().as_raw()),
             )?),
             Self::Circle(circle) if isotropic => Self::Circle(CirclePcurve::try_new(
                 scale(*circle.center()),
@@ -1734,8 +1722,8 @@ impl PcurveGeometry {
     pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
         match self {
             Self::Line(line_pcurve) => {
-                let origin = line_pcurve.origin();
-                let direction = line_pcurve.direction();
+                let origin = line_pcurve.origin().as_raw();
+                let direction = line_pcurve.direction().as_raw();
                 Some((*origin, *direction))
             }
             Self::Transformed(placed) => {

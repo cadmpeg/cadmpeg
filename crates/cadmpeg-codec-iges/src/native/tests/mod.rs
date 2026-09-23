@@ -216,9 +216,9 @@ fn decode_preserves_native_entities_and_graph() {
         "iges:entity:directory#1"
     );
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().x, 1.0);
-    assert_eq!(result.ir().model.points[0].position().y, 2.0);
-    assert_eq!(result.ir().model.points[0].position().z, 3.0);
+    assert_eq!(result.ir().model.points[0].position().get().x, 1.0);
+    assert_eq!(result.ir().model.points[0].position().get().y, 2.0);
+    assert_eq!(result.ir().model.points[0].position().get().z, 3.0);
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert!(result.report().geometry_transferred());
     assert!(!result.report().losses.iter().any(|loss| {

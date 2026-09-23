@@ -1134,7 +1134,9 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .expect("transferred freeform revolution");
     assert!(match revolution.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
-            (&matched_payload.parameter_interval(),),
+            (&matched_payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),),
             (Some([-4.0, 9.0]),)
         ),
         _ => false,

@@ -556,8 +556,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         &mut ir.model.surfaces[1].geometry
     {
         let origin = cone_surface.origin();
-        let axis = cone_surface.axis();
-        let ref_direction = cone_surface.ref_direction();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
         let radius = cone_surface.radius().get();
         let ratio = cone_surface.ratio().get();
         let half_angle = cone_surface.half_angle().get();
@@ -578,8 +578,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         &mut ir.model.surfaces[1].geometry
     {
         let origin = cone_surface.origin();
-        let axis = cone_surface.axis();
-        let ref_direction = cone_surface.ref_direction();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
         let radius = cone_surface.radius().get();
         let ratio = cone_surface.ratio().get();
         let half_angle = cone_surface.half_angle().get();
@@ -601,8 +601,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         unreachable!();
     };
     let center = sphere_surface.center();
-    let axis = sphere_surface.axis();
-    let ref_direction = sphere_surface.ref_direction();
+    let axis = sphere_surface.frame().axis().as_raw();
+    let ref_direction = sphere_surface.frame().reference().as_raw();
     let radius = sphere_surface.radius().get();
     let mut center = *center;
     center.z = 1.0;

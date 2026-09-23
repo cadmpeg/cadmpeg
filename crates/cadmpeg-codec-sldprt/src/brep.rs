@@ -183,28 +183,28 @@ impl SurfaceCarrier {
     fn frame(&self) -> Option<(Vector3, Vector3)> {
         match &self.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let normal = plane_surface.normal();
-                let u_axis = plane_surface.u_axis();
+                let normal = plane_surface.frame().axis().as_raw();
+                let u_axis = plane_surface.frame().reference().as_raw();
                 Some((*u_axis, cross(*normal, *u_axis)))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let axis = cylinder_surface.axis();
-                let ref_direction = cylinder_surface.ref_direction();
+                let axis = cylinder_surface.frame().axis().as_raw();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let axis = cone_surface.axis();
-                let ref_direction = cone_surface.ref_direction();
+                let axis = cone_surface.frame().axis().as_raw();
+                let ref_direction = cone_surface.frame().reference().as_raw();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let axis = sphere_surface.axis();
-                let ref_direction = sphere_surface.ref_direction();
+                let axis = sphere_surface.frame().axis().as_raw();
+                let ref_direction = sphere_surface.frame().reference().as_raw();
                 Some((*ref_direction, *axis))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let axis = torus_surface.axis();
-                let ref_direction = torus_surface.ref_direction();
+                let axis = torus_surface.frame().axis().as_raw();
+                let ref_direction = torus_surface.frame().reference().as_raw();
                 Some((*ref_direction, *axis))
             }
             _ => None,
@@ -605,8 +605,8 @@ mod tests {
             panic!("expected cone");
         };
         let origin = cone_surface.origin().get();
-        let axis = *cone_surface.axis();
-        let ref_direction = *cone_surface.ref_direction();
+        let axis = *cone_surface.frame().axis().as_raw();
+        let ref_direction = *cone_surface.frame().reference().as_raw();
         let radius = cone_surface.radius().get();
         let ratio = cone_surface.ratio().get();
         let half_angle = cone_surface.half_angle().get();
@@ -635,8 +635,8 @@ mod tests {
             panic!("expected torus");
         };
         let center = torus_surface.center().get();
-        let axis = *torus_surface.axis();
-        let ref_direction = *torus_surface.ref_direction();
+        let axis = *torus_surface.frame().axis().as_raw();
+        let ref_direction = *torus_surface.frame().reference().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));

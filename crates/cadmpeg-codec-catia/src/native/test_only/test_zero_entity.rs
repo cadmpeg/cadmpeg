@@ -341,7 +341,7 @@ fn validate_zero_entity_model_curve_construction(
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload)),
         ) => {
             let angle_range = helix_payload.angle_range();
-            let center = helix_payload.center();
+            let center = helix_payload.center().as_raw();
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
@@ -425,8 +425,8 @@ fn validate_zero_entity_model_curve(
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))),
         ) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             finite_point(&center)
                 && finite_vector(axis)

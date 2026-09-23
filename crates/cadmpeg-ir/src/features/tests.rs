@@ -1495,12 +1495,12 @@ fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
     let frame =
         OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap();
     assert_eq!(
-        FeatureDirection3::from(frame.unit_axis()).get(),
-        *frame.axis()
+        FeatureDirection3::from(*frame.axis()).get(),
+        *frame.axis().as_raw()
     );
     assert_eq!(
-        FeatureDirection3::from(frame.unit_reference()).get(),
-        *frame.reference()
+        FeatureDirection3::from(*frame.reference()).get(),
+        *frame.reference().as_raw()
     );
 }
 

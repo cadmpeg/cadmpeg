@@ -1856,8 +1856,8 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         matches!(revolved_section_circle(&transform, [2.0, 3.0], &axis).map(|circle| CurveGeometry::try_from(circle).expect("valid revolved circle")), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
                 if {
                     let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
                     center == Point3::new(0.0, 3.0, 0.0)
                         && *axis == Vector3::new(0.0, 1.0, 0.0)
@@ -1900,7 +1900,7 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(
         matches!(revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), &axis), Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)))
                 if {
-                    let axis = cone_surface.axis();
+                    let axis = cone_surface.frame().axis().as_raw();
         let radius = cone_surface.radius().get();
         let half_angle = cone_surface.half_angle().get();
                     axis.y == -1.0

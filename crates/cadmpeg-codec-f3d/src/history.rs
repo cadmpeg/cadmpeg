@@ -8835,7 +8835,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 return None;
             };
             let origin = cylinder_surface.origin().get();
-            let axis = *cylinder_surface.axis();
+            let axis = *cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             Some(crate::history_records::AsmHistoricalCylinder {
                 surface: stable_ref(surface.id.as_str())?,
@@ -8855,7 +8855,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 return None;
             };
             let origin = plane_surface.origin().get();
-            let normal = *plane_surface.normal();
+            let normal = *plane_surface.frame().axis().as_raw();
             Some(crate::history_records::AsmHistoricalPlane {
                 surface: stable_ref(surface.id.as_str())?,
                 origin,
@@ -8872,17 +8872,17 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             let (origin, direction) = match surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                     let origin = cylinder_surface.origin().get();
-                    let axis = *cylinder_surface.axis();
+                    let axis = *cylinder_surface.frame().axis().as_raw();
                     (origin, axis)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                     let origin = cone_surface.origin().get();
-                    let axis = *cone_surface.axis();
+                    let axis = *cone_surface.frame().axis().as_raw();
                     (origin, axis)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                     let center = torus_surface.center().get();
-                    let axis = *torus_surface.axis();
+                    let axis = *torus_surface.frame().axis().as_raw();
                     (center, axis)
                 }
                 _ => return None,
@@ -8925,12 +8925,12 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     }
                     CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                         let center = circle_curve.center().get();
-                        let axis = *circle_curve.axis();
+                        let axis = *circle_curve.frame().axis().as_raw();
                         (center, axis)
                     }
                     CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                         let center = ellipse_curve.center().get();
-                        let axis = *ellipse_curve.axis();
+                        let axis = *ellipse_curve.frame().axis().as_raw();
                         (center, axis)
                     }
                     _ => return None,
@@ -9091,7 +9091,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             .map(|point| {
                 Some(AsmHistoricalPoint {
                     point: stable_ref(point.id.as_str())?,
-                    position: point.position(),
+                    position: point.position().get(),
                 })
             })
             .collect::<Option<Vec<_>>>()?,

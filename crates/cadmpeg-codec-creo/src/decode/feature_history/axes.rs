@@ -105,21 +105,21 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                let axis = *cylinder_surface.axis();
+                let axis = *cylinder_surface.frame().axis().as_raw();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                let axis = *cone_surface.axis();
+                let axis = *cone_surface.frame().axis().as_raw();
                 axes.push((origin, axis));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                let axis = *torus_surface.axis();
+                let axis = *torus_surface.frame().axis().as_raw();
                 axes.push((center, axis));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let normal = *plane_surface.normal();
+                let normal = *plane_surface.frame().axis().as_raw();
                 plane_normals.push(normal);
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {

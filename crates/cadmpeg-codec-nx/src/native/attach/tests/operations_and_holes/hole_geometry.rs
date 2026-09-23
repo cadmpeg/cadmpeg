@@ -359,8 +359,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     let mut origin = *origin;
     origin.y = 91.0;
@@ -390,7 +390,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let ref_direction = cylinder_surface.ref_direction();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
 
     let axis = Vector3::new(0.0, -1.0, 0.0);
@@ -412,7 +412,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             unreachable!()
         };
         let center = circle_curve.center().get();
-        let ref_direction = circle_curve.ref_direction();
+        let ref_direction = circle_curve.frame().reference().as_raw();
         let radius = circle_curve.radius().get();
 
         let axis = Vector3::new(0.0, -1.0, 0.0);
@@ -443,8 +443,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 3.1;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -465,8 +465,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             unreachable!()
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
 
         let radius = 3.1;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -523,8 +523,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     let mut radius = radius;
     radius += 0.1;
@@ -539,8 +539,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     let mut center = center;
     center.y = 0.0;
@@ -557,7 +557,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let ref_direction = cylinder_surface.ref_direction();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
 
     let axis = Vector3::new(0.0, 0.0, 1.0);
@@ -636,8 +636,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 3.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -658,8 +658,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             unreachable!()
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
-        let ref_direction = circle_curve.ref_direction();
+        let axis = circle_curve.frame().axis().as_raw();
+        let ref_direction = circle_curve.frame().reference().as_raw();
 
         let radius = 3.0;
         *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -883,8 +883,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+    let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     let mut radius = radius;
     radius += 0.1;
@@ -900,8 +900,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
 
     let radius = 3.0;
     *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

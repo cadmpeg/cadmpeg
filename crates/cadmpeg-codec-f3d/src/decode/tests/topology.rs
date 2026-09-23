@@ -89,8 +89,8 @@ fn decode_builds_valid_topology_and_geometry() {
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             assert_eq!(*origin, Point3::new(0.0, 0.0, 0.0));
             assert_eq!(normal.z, 1.0);
             assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
@@ -103,7 +103,7 @@ fn decode_builds_valid_topology_and_geometry() {
         .model
         .points
         .iter()
-        .map(|p| p.position().x)
+        .map(|p| p.position().get().x)
         .collect();
     assert!(xs.contains(&10.0));
 
@@ -224,7 +224,7 @@ fn decode_transfers_isolated_vertex_wire_topology() {
     assert_eq!(result.ir().model.vertices.len(), 1);
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
@@ -528,7 +528,7 @@ fn generated_source_less_writes_wire_body_topology() {
         .model
         .points
         .iter()
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
         .collect::<Vec<_>>();
 
     let mut encoded = Vec::new();
@@ -556,7 +556,7 @@ fn generated_source_less_writes_wire_body_topology() {
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>(),
         expected_points
     );
@@ -602,7 +602,7 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     assert!(round_trip.ir().model.edges.is_empty());
     assert_eq!(round_trip.ir().model.vertices.len(), 1);
     assert_eq!(
-        round_trip.ir().model.points[0].position(),
+        round_trip.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
     );
     assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());
@@ -951,8 +951,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     ]);
     match decode_surface(&rec("cone", cyl)).unwrap().0 {
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let axis = *cylinder_surface.axis();
-            let ref_direction = *cylinder_surface.ref_direction();
+            let axis = *cylinder_surface.frame().axis().as_raw();
+            let ref_direction = *cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             assert_eq!(radius, 20.0);
             assert_eq!(axis.z, 1.0);
@@ -998,8 +998,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(inward, "negative cosine points the native normal inward");
     match geo {
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
@@ -1029,7 +1029,7 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!inward, "positive cosine keeps the outward normal");
     match geo {
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
@@ -1051,8 +1051,8 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!signed);
     match geo {
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             assert_eq!(radius, -10.0);
             assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
@@ -1077,7 +1077,7 @@ fn analytic_carrier_decode_covers_each_shape() {
     assert!(!inside_out);
     match geo {
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let ref_direction = torus_surface.ref_direction();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             assert_eq!(major_radius, 10.0);

@@ -297,7 +297,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
         panic!("generated cylinder: {:?}", surface.geometry);
     };
     let origin = cylinder_surface.origin().get();
-    let axis = *cylinder_surface.axis();
+    let axis = *cylinder_surface.frame().axis().as_raw();
     let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [1.0, 0.0, 0.0].into());
@@ -322,7 +322,7 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
         let radius = cylinder_surface.radius().get();
                     radius == 0.3125
                         && *origin == [0.0, 1.625, -1.0].into()
@@ -611,8 +611,8 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
         panic!("reconciled cylinder: {:?}", surface.geometry);
     };
     let origin = cylinder_surface.origin().get();
-    let axis = *cylinder_surface.axis();
-    let ref_direction = *cylinder_surface.ref_direction();
+    let axis = *cylinder_surface.frame().axis().as_raw();
+    let ref_direction = *cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [-12.5, 4.0, 0.0].into());
     assert_eq!(axis, [0.0, 1.0, 0.0].into());

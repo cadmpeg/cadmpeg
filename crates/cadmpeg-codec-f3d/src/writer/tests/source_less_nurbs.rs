@@ -1379,8 +1379,8 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
         panic!("unexpected extrusion carrier: {:?}", surface.geometry)
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     assert!((origin.x - 2.0).abs() < 1.0e-12);
     assert!((origin.y - 3.0).abs() < 1.0e-12);

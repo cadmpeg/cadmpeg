@@ -182,8 +182,8 @@ fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
         panic!("plane carrier geometry")
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
@@ -1517,7 +1517,7 @@ fn b2_cylinder_parser_reads_arc_length_carrier() {
     match cylinders[0].surface_geometry() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
             assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
@@ -1621,7 +1621,7 @@ fn b2_cylinder_parser_reads_implicit_axis_layout() {
     assert!(
         matches!(cylinders[0].surface_geometry(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
         if {
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             [axis.x, axis.y, axis.z] == [1.0, 0.0, 0.0]
         })
     );
@@ -1692,8 +1692,8 @@ fn b2_cylinder_parser_resolves_and_validates_partial_range_origin() {
     assert!(
         matches!(cylinders[0].surface_geometry(), SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
-                    let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+                    let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
                     [axis.x, axis.y, axis.z] == [0.0, 1.0, 0.0]
                         && [ref_direction.x, ref_direction.y, ref_direction.z] == [0.0, 0.0, 1.0]
                 })

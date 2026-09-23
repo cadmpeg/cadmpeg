@@ -2537,7 +2537,11 @@ pub(crate) fn brep_body(
         be16(&mut out, points[&point.id]);
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
-        for value in [point.position().x, point.position().y, point.position().z] {
+        for value in [
+            point.position().get().x,
+            point.position().get().y,
+            point.position().get().z,
+        ] {
             bef64(&mut out, value * length_scale);
         }
     }
@@ -3115,7 +3119,7 @@ pub(super) fn surface_values(
     let result = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             (
                 0x32,
                 vec![
@@ -3133,7 +3137,7 @@ pub(super) fn surface_values(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             (
                 0x33,
@@ -3153,7 +3157,7 @@ pub(super) fn surface_values(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -3187,7 +3191,7 @@ pub(super) fn surface_values(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
+            let axis = sphere_surface.frame().axis().as_raw();
             let radius = sphere_surface.radius().get();
             if radius < 0.0 {
                 return Err(CodecError::NotImplemented(
@@ -3213,7 +3217,7 @@ pub(super) fn surface_values(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if !(major_radius > minor_radius && minor_radius > 0.0) {
@@ -3560,8 +3564,8 @@ pub(super) fn curve_values(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let reference = *ref_direction;
             (
@@ -3582,8 +3586,8 @@ pub(super) fn curve_values(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             (
@@ -3663,23 +3667,23 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
     };
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let u_axis = plane_surface.u_axis();
+            let u_axis = plane_surface.frame().reference().as_raw();
             *u_axis
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let ref_direction = cylinder_surface.ref_direction();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             *ref_direction
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let ref_direction = cone_surface.ref_direction();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             *ref_direction
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let ref_direction = torus_surface.ref_direction();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             *ref_direction
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let ref_direction = sphere_surface.ref_direction();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             *ref_direction
         }
         SolvedSurfaceGeometry::Nurbs(_)

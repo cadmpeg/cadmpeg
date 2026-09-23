@@ -173,6 +173,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .first_mut()
             .expect("unit cube has a point")
             .position()
+            .get()
             .x += 1.0;
         let expected_model = edited.model.clone();
         let codec = StepCodec {
@@ -220,14 +221,14 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         let expected_points = expected_model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let actual_points = edited_result
             .ir()
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         assert_eq!(actual_points.len(), expected_points.len());
         let mut matched = vec![false; actual_points.len()];

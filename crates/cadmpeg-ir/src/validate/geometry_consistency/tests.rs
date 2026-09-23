@@ -758,7 +758,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     );
 
     let mut source_tolerant = unit_cube().expect("valid unit cube fixture");
-    let moved = source_tolerant.model.points[0].position();
+    let moved = source_tolerant.model.points[0].position().get();
     source_tolerant.model.points[0]
         .set_position(crate::math::Point3::new(moved.x, moved.y, moved.z + 0.015))
         .expect("a finite position is a point");
@@ -776,7 +776,7 @@ fn edge_endpoint_mismatch_is_flagged() {
 
     // Displace one corner: the point no longer lies on its edges' curves at
     // the stored parameter values.
-    let moved = ir.model.points[0].position();
+    let moved = ir.model.points[0].position().get();
     ir.model.points[0]
         .set_position(crate::math::Point3::new(moved.x, moved.y, moved.z + 1.0))
         .expect("a finite position is a point");

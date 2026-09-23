@@ -268,7 +268,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
     assert!(
         matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
         if {
-            let direction = line_pcurve.direction();
+            let direction = line_pcurve.direction().as_raw();
             direction.u.abs() < EPS_PCURVE_PARAMETERS && (direction.v - 10.0).abs() < EPS_PCURVE_PARAMETERS
         })
     );
@@ -471,7 +471,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
     assert!(
         matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
         if {
-            let direction = line_pcurve.direction();
+            let direction = line_pcurve.direction().as_raw();
             (direction.u - 10.0).abs() < EPS_PCURVE_PARAMETERS
         })
     );
@@ -539,8 +539,8 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
     assert!(
         matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
                 if {
-                    let origin = line_pcurve.origin();
-        let direction = line_pcurve.direction();
+                    let origin = line_pcurve.origin().as_raw();
+        let direction = line_pcurve.direction().as_raw();
                     (origin.u - std::f64::consts::PI).abs() < EPS_PCURVE_PARAMETERS
                         && origin.v.abs() < EPS_PCURVE_PARAMETERS
                         && direction.u.abs() < EPS_PCURVE_PARAMETERS

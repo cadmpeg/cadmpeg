@@ -3065,15 +3065,15 @@ pub(super) fn analytic_surface_offset(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
         ) if {
-            let support_normal = plane_surface.normal();
-            let support_u = plane_surface.u_axis();
-            let offset_normal = plane_surface_2.normal();
-            let offset_u = plane_surface_2.u_axis();
+            let support_normal = plane_surface.frame().axis().as_raw();
+            let support_u = plane_surface.frame().reference().as_raw();
+            let offset_normal = plane_surface_2.frame().axis().as_raw();
+            let offset_u = plane_surface_2.frame().reference().as_raw();
             support_normal == offset_normal && support_u == offset_u
         } =>
         {
             let support_origin = plane_surface.origin();
-            let support_normal = plane_surface.normal();
+            let support_normal = plane_surface.frame().axis().as_raw();
             let offset_origin = plane_surface_2.origin();
             let delta = Vector3::new(
                 offset_origin.x - support_origin.x,
@@ -3105,11 +3105,11 @@ pub(super) fn analytic_surface_offset(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
         ) if {
             let support_origin = cylinder_surface.origin();
-            let support_axis = cylinder_surface.axis();
-            let support_ref = cylinder_surface.ref_direction();
+            let support_axis = cylinder_surface.frame().axis().as_raw();
+            let support_ref = cylinder_surface.frame().reference().as_raw();
             let offset_origin = cylinder_surface_2.origin();
-            let offset_axis = cylinder_surface_2.axis();
-            let offset_ref = cylinder_surface_2.ref_direction();
+            let offset_axis = cylinder_surface_2.frame().axis().as_raw();
+            let offset_ref = cylinder_surface_2.frame().reference().as_raw();
             support_origin == offset_origin
                 && support_axis == offset_axis
                 && support_ref == offset_ref
@@ -3123,12 +3123,12 @@ pub(super) fn analytic_surface_offset(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface_2)),
         ) if {
-            let support_axis = cone_surface.axis();
-            let support_ref = cone_surface.ref_direction();
+            let support_axis = cone_surface.frame().axis().as_raw();
+            let support_ref = cone_surface.frame().reference().as_raw();
             let support_ratio = cone_surface.ratio().get();
             let support_angle = cone_surface.half_angle().get();
-            let offset_axis = cone_surface_2.axis();
-            let offset_ref = cone_surface_2.ref_direction();
+            let offset_axis = cone_surface_2.frame().axis().as_raw();
+            let offset_ref = cone_surface_2.frame().reference().as_raw();
             let offset_ratio = cone_surface_2.ratio().get();
             let offset_angle = cone_surface_2.half_angle().get();
             support_axis == offset_axis
@@ -3139,7 +3139,7 @@ pub(super) fn analytic_surface_offset(
         } =>
         {
             let support_origin = cone_surface.origin();
-            let support_axis = cone_surface.axis();
+            let support_axis = cone_surface.frame().axis().as_raw();
             let support_radius = cone_surface.radius().get();
             let support_angle = cone_surface.half_angle().get();
             let offset_origin = cone_surface_2.origin();
@@ -3185,12 +3185,12 @@ pub(super) fn analytic_surface_offset(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface_2)),
         ) if {
             let support_center = sphere_surface.center();
-            let support_axis = sphere_surface.axis();
-            let support_ref = sphere_surface.ref_direction();
+            let support_axis = sphere_surface.frame().axis().as_raw();
+            let support_ref = sphere_surface.frame().reference().as_raw();
             let support_radius = sphere_surface.radius().get();
             let offset_center = sphere_surface_2.center();
-            let offset_axis = sphere_surface_2.axis();
-            let offset_ref = sphere_surface_2.ref_direction();
+            let offset_axis = sphere_surface_2.frame().axis().as_raw();
+            let offset_ref = sphere_surface_2.frame().reference().as_raw();
             let offset_radius = sphere_surface_2.radius().get();
             support_center == offset_center
                 && support_axis == offset_axis
@@ -3207,13 +3207,13 @@ pub(super) fn analytic_surface_offset(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface_2)),
         ) if {
             let support_center = torus_surface.center();
-            let support_axis = torus_surface.axis();
-            let support_ref = torus_surface.ref_direction();
+            let support_axis = torus_surface.frame().axis().as_raw();
+            let support_ref = torus_surface.frame().reference().as_raw();
             let support_major = torus_surface.major_radius().get();
             let support_minor = torus_surface.minor_radius().get();
             let offset_center = torus_surface_2.center();
-            let offset_axis = torus_surface_2.axis();
-            let offset_ref = torus_surface_2.ref_direction();
+            let offset_axis = torus_surface_2.frame().axis().as_raw();
+            let offset_ref = torus_surface_2.frame().reference().as_raw();
             let offset_major = torus_surface_2.major_radius().get();
             let offset_minor = torus_surface_2.minor_radius().get();
             support_center == offset_center
@@ -3566,14 +3566,14 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             (center, *axis, *ref_direction, None)
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             (center, *axis, *major_direction, Some(ellipse_curve))
         }
         _ => return None,

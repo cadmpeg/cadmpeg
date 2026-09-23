@@ -169,7 +169,10 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
         else {
             panic!("expected a revolution definition");
         };
-        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+        let Some(parameter_interval) = &definition_payload_0
+            .parameter_interval()
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+        else {
             panic!("expected a revolution definition");
         };
         assert_eq!(*parameter_interval, [0.0, 1.0]);
@@ -968,17 +971,17 @@ fn assert_type120_round_trip(version: IgesVersion) {
     let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
     let source_range = surface_construction(original.ir(), &source_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => {
-                payload.parameter_interval()
-            }
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
             _ => None,
         })
         .expect("source revolution interval");
     let round_range = surface_construction(round_trip.ir(), &round_surface.id)
         .and_then(|procedural| match procedural.definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => {
-                payload.parameter_interval()
-            }
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(payload) => payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
             _ => None,
         })
         .expect("round-trip revolution interval");

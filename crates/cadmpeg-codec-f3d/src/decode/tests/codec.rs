@@ -165,7 +165,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated BinaryFile4 decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let moved = edited.model.points[0].position();
+    let moved = edited.model.points[0].position().get();
     edited.model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x + 2.5,
@@ -173,7 +173,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             moved.z,
         ))
         .expect("a finite position is a point");
-    let expected = edited.model.points[0].position();
+    let expected = edited.model.points[0].position().get();
     let edge = edited
         .model
         .edges
@@ -197,7 +197,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
-    assert_eq!(round_trip.ir().model.points[0].position(), expected);
+    assert_eq!(round_trip.ir().model.points[0].position().get(), expected);
     assert_eq!(
         round_trip
             .ir()
@@ -295,7 +295,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     let Some(SolvedCurveGeometry::Circle(circle_curve)) = carrier.geometry.solved() else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     assert!((axis.z - -1.0).abs() < 1.0e-12, "axis must be negated");
 }
 

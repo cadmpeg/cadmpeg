@@ -137,7 +137,7 @@ fn object_presentation(result: &EditableDecodeResult) -> &cadmpeg_ir::native::Na
 fn assert_point_and_retention(result: &EditableDecodeResult, record: &[u8]) {
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(
-        result.ir().model.points[0].position(),
+        result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     let presentation = object_presentation(result);

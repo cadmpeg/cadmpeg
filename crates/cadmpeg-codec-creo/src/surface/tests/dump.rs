@@ -52,8 +52,8 @@ fn decode_transfers_positional_line_extrusion_plane() {
             matches!(
                 (
                     plane_surface.origin().get(),
-                    plane_surface.normal(),
-                    plane_surface.u_axis(),
+                    plane_surface.frame().axis().as_raw(),
+                    plane_surface.frame().reference().as_raw(),
                 ),
                 (
                     cadmpeg_ir::math::Point3 {
@@ -151,8 +151,8 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
             matches!(
                 (
                     plane_surface.origin().get(),
-                    plane_surface.normal(),
-                    plane_surface.u_axis(),
+                    plane_surface.frame().axis().as_raw(),
+                    plane_surface.frame().reference().as_raw(),
                 ),
                 (
                     cadmpeg_ir::math::Point3 {
@@ -398,8 +398,8 @@ fn decode_places_complete_positional_torus() {
         matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let center = torus_surface.center();
-        let axis = torus_surface.axis();
-        let ref_direction = torus_surface.ref_direction();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
                     (center.x - 1.0).abs() < EPS_ANALYTIC_FRAME
@@ -511,8 +511,8 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
             matches!(surface.geometry, cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                         if {
                             let center = sphere_surface.center();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
                             center.x == 0.0
                                 && center.y == 0.0
@@ -1333,8 +1333,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             matches!(
                 (
                     cylinder_surface.origin().get(),
-                    cylinder_surface.axis(),
-                    cylinder_surface.ref_direction(),
+                    cylinder_surface.frame().axis().as_raw(),
+                    cylinder_surface.frame().reference().as_raw(),
                     &cylinder_surface.radius().get(),
                 ),
                 (
@@ -1353,8 +1353,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             matches!(
                 (
                     cylinder_surface.origin().get(),
-                    cylinder_surface.axis(),
-                    cylinder_surface.ref_direction(),
+                    cylinder_surface.frame().axis().as_raw(),
+                    cylinder_surface.frame().reference().as_raw(),
                     &cylinder_surface.radius().get(),
                 ),
                 (
@@ -1384,8 +1384,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                 matches!(
                     (
                         circle_curve.center().get(),
-                        circle_curve.axis(),
-                        circle_curve.ref_direction(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
                         &circle_curve.radius().get(),
                     ),
                     (
@@ -1408,8 +1408,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             matches!(
                 (
                     circle_curve.center().get(),
-                    circle_curve.axis(),
-                    circle_curve.ref_direction(),
+                    circle_curve.frame().axis().as_raw(),
+                    circle_curve.frame().reference().as_raw(),
                     &circle_curve.radius().get(),
                 ),
                 (
@@ -1450,8 +1450,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             matches!(
                 (
                     circle_curve.center().get(),
-                    circle_curve.axis(),
-                    circle_curve.ref_direction(),
+                    circle_curve.frame().axis().as_raw(),
+                    circle_curve.frame().reference().as_raw(),
                     &circle_curve.radius().get(),
                 ),
                 (
@@ -1516,8 +1516,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                 matches!(
                     (
                         circle_curve.center().get(),
-                        circle_curve.axis(),
-                        circle_curve.ref_direction(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
                         &circle_curve.radius().get(),
                     ),
                     (
@@ -1536,8 +1536,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
                 matches!(
                     (
                         circle_curve.center().get(),
-                        circle_curve.axis(),
-                        circle_curve.ref_direction(),
+                        circle_curve.frame().axis().as_raw(),
+                        circle_curve.frame().reference().as_raw(),
                         &circle_curve.radius().get(),
                     ),
                     (

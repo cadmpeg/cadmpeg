@@ -367,15 +367,15 @@ fn append_e5_planes(
         .filter_map(|surface| {
             let (axis,) = match surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                    let axis = *cylinder_surface.axis();
+                    let axis = *cylinder_surface.frame().axis().as_raw();
                     (axis,)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                    let axis = *cone_surface.axis();
+                    let axis = *cone_surface.frame().axis().as_raw();
                     (axis,)
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                    let axis = *torus_surface.axis();
+                    let axis = *torus_surface.frame().axis().as_raw();
                     (axis,)
                 }
                 _ => {
@@ -1088,7 +1088,7 @@ fn transfer_e5_topology(
         .vertex_refs
         .iter()
         .zip(&ir.model.points)
-        .map(|(reference, point)| (*reference, point.position()))
+        .map(|(reference, point)| (*reference, point.position().get()))
         .collect();
 
     let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref, refusal)
@@ -2367,8 +2367,8 @@ fn e5_boundary_curve(
     ) = (surface, native_pcurve)
     {
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         let v_axis = (*normal).cross(*u_axis);
         let center = origin
             .translated(*u_axis, center[0] * uv_scale[0])
@@ -2396,8 +2396,8 @@ fn e5_boundary_curve(
     ) = (surface, native_pcurve, pcurve)
     {
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2446,8 +2446,8 @@ fn e5_boundary_curve(
     ) = (surface, native_pcurve, pcurve)
     {
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         let v_axis = (*normal).cross(*u_axis);
         let control_points = nurbs
             .control_points()
@@ -2492,8 +2492,8 @@ fn e5_boundary_curve(
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     let span = range[1] - range[0];
     // The direction components are finite. A non-finite span times a finite
     // value is NaN or infinite, so the admission of `span_direction` refuses
@@ -2745,10 +2745,10 @@ fn e5_circle_carriers_have_same_ordered_sweep(
         return false;
     };
     let left_center = circle_curve.center().get();
-    let left_axis = circle_curve.axis();
+    let left_axis = circle_curve.frame().axis().as_raw();
     let left_radius = circle_curve.radius().get();
     let right_center = circle_curve_2.center().get();
-    let right_axis = circle_curve_2.axis();
+    let right_axis = circle_curve_2.frame().axis().as_raw();
     let right_radius = circle_curve_2.radius().get();
     if (left_center).distance(right_center) > E5_ENDPOINT_MATCH_TOLERANCE
         || (left_radius - right_radius).abs() > E5_ENDPOINT_MATCH_TOLERANCE
@@ -2797,12 +2797,12 @@ fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> 
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve_2)),
         ) => {
             let left_center = circle_curve.center().get();
-            let left_axis = circle_curve.axis();
-            let left_ref_direction = circle_curve.ref_direction();
+            let left_axis = circle_curve.frame().axis().as_raw();
+            let left_ref_direction = circle_curve.frame().reference().as_raw();
             let left_radius = circle_curve.radius().get();
             let right_center = circle_curve_2.center().get();
-            let right_axis = circle_curve_2.axis();
-            let right_ref_direction = circle_curve_2.ref_direction();
+            let right_axis = circle_curve_2.frame().axis().as_raw();
+            let right_ref_direction = circle_curve_2.frame().reference().as_raw();
             let right_radius = circle_curve_2.radius().get();
             (left_center).distance(right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
@@ -2821,13 +2821,13 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             Some((origin.translated(*axis, v), radius, *axis))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             Some((
@@ -2838,7 +2838,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
+            let axis = sphere_surface.frame().axis().as_raw();
             let radius = sphere_surface.radius().get();
             Some((
                 center.translated(*axis, radius * v.sin()),
@@ -2848,7 +2848,7 @@ fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f6
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             Some((
@@ -2865,8 +2865,8 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             let tangent = (*axis).cross(*ref_direction);
             let radial = (*ref_direction).scale(u.cos()) + tangent.scale(u.sin());
@@ -2874,8 +2874,8 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let tangent = (*axis).cross(*ref_direction);
@@ -3300,7 +3300,7 @@ mod route_tests {
         let PcurveGeometry::Line(line_pcurve) = pcurve else {
             panic!("expected reflected line pcurve");
         };
-        let direction = line_pcurve.direction();
+        let direction = line_pcurve.direction().as_raw();
         assert_eq!(*direction, Point2::new(-1.0, 0.0));
         let (curve, _) = e5_boundary_curve(
             &surface.geometry,
@@ -4268,8 +4268,8 @@ mod route_tests {
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                     if {
                         let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
                         center == Point3::new(5.0, 7.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
@@ -4293,8 +4293,8 @@ mod route_tests {
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                     if {
                         let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
                         center == Point3::new(-3.0, -3.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)

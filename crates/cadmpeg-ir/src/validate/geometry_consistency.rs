@@ -63,7 +63,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         } = procedural.definition()
         {
             let endpoints = intersection.endpoints();
-            let tolerance = intersection.tolerance();
+            let tolerance = intersection.tolerance().get();
 
             let evaluated = parameterization
                 .parameter_range()
@@ -287,7 +287,7 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
         .model
         .points
         .iter()
-        .map(|point| (point.id.as_str(), point.position()))
+        .map(|point| (point.id.as_str(), point.position().get()))
         .collect::<HashMap<_, _>>();
     ir.model
         .vertices

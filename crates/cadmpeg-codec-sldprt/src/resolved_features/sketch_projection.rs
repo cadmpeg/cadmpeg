@@ -108,7 +108,7 @@ fn project_brep(
     let points = brep
         .points
         .iter()
-        .map(|point| (&point.id, point.position()))
+        .map(|point| (&point.id, point.position().get()))
         .collect::<HashMap<_, _>>();
     let curves = brep
         .curves
@@ -123,8 +123,8 @@ fn project_brep(
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
-        let u_axis = plane_surface.u_axis();
+        let normal = plane_surface.frame().axis().as_raw();
+        let u_axis = plane_surface.frame().reference().as_raw();
         let Ok(sketch_id) = SketchId::mint(format!(
             "sldprt:model:sketch#{block_offset}:{stream_ordinal}:{face_ordinal}"
         )) else {

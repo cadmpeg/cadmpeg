@@ -553,7 +553,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         ),
         (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
     );
-    assert_eq!(model.points[1].position().x, 25.4);
+    assert_eq!(model.points[1].position().get().x, 25.4);
     assert_eq!(
         model.vertices[0]
             .tolerance
@@ -1395,7 +1395,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
             .collect::<Vec<_>>();
         assert_eq!(matching.len(), 1);
         assert_eq!(
-            matching[0].position(),
+            matching[0].position().get(),
             cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
         );
     });

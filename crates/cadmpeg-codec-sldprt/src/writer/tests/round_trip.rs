@@ -124,7 +124,7 @@ fn mutated_semantic_write_round_trips() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -132,7 +132,7 @@ fn mutated_semantic_write_round_trips() {
             moved.z + 1.0,
         ))
         .expect("a finite position is a point");
-    let expected_z = decoded.ir().model.points[0].position().z;
+    let expected_z = decoded.ir().model.points[0].position().get().z;
     let expected_bodies = decoded.ir().model.bodies.len();
     let expected_faces = decoded.ir().model.faces.len();
 
@@ -151,9 +151,12 @@ fn mutated_semantic_write_round_trips() {
     assert_eq!(round_trip.ir().model.bodies.len(), expected_bodies);
     assert_eq!(round_trip.ir().model.faces.len(), expected_faces);
     assert!(
-        floats_agree(round_trip.ir().model.points[0].position().z, expected_z),
+        floats_agree(
+            round_trip.ir().model.points[0].position().get().z,
+            expected_z
+        ),
         "mutated z drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position().z,
+        round_trip.ir().model.points[0].position().get().z,
         expected_z
     );
 }
@@ -167,7 +170,7 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let original_x = decoded.ir().model.points[0].position().x;
+    let original_x = decoded.ir().model.points[0].position().get().x;
     decoded.ir_mut().model.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
@@ -191,11 +194,11 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(
-            round_trip.ir().model.points[0].position().x,
+            round_trip.ir().model.points[0].position().get().x,
             original_x + 10.0
         ),
         "baked translation drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position().x,
+        round_trip.ir().model.points[0].position().get().x,
         original_x + 10.0
     );
 }

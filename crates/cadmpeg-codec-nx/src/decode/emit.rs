@@ -243,7 +243,7 @@ pub(super) fn emit_topology(
         .fold(BTreeMap::new(), |mut positions, point| {
             positions
                 .entry(point.id.clone())
-                .or_insert(point.position());
+                .or_insert(point.position().get());
             positions
         });
     let mut vertices = BTreeMap::new();
@@ -1214,7 +1214,7 @@ fn orient_edge_range_with_budget(
             .iter()
             .find(|candidate| candidate.id == vertex.point)?;
         Some((
-            point.position(),
+            point.position().get(),
             vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
         ))
     };

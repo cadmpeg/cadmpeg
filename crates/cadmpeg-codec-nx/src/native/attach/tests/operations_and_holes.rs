@@ -1169,7 +1169,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
                 else {
                     return None;
                 };
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
                 (components[axis] > 0.5).then_some(plane_surface)
             })
@@ -1182,8 +1182,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         });
         for (index, surface) in surfaces.into_iter().enumerate() {
             let origin = surface.origin();
-            let normal = surface.normal();
-            let u_axis = surface.u_axis();
+            let normal = surface.frame().axis().as_raw();
+            let u_axis = surface.frame().reference().as_raw();
             let mut origin = *origin;
             let coordinate = if index == 0 { 0.0 } else { dimensions[axis] };
             match axis {
@@ -1235,13 +1235,13 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
                 return None;
             };
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(plane_surface)
         })
         .expect("positive y plane");
     let origin = high_y.origin();
-    let normal = high_y.normal();
-    let u_axis = high_y.u_axis();
+    let normal = high_y.frame().axis().as_raw();
+    let u_axis = high_y.frame().reference().as_raw();
     let mut origin = *origin;
     origin.y = 10.0;
     *high_y =
@@ -1259,7 +1259,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .find(|surface| {
             matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
             if {
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 normal.x.abs() > 0.5
             })
         })
@@ -1274,8 +1274,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         unreachable!()
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     let mut origin = *origin;
     origin.x = 5.0;
     *plane_surface =

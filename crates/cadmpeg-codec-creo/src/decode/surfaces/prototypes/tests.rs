@@ -64,8 +64,8 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let origin = cone_surface.origin();
-        let axis = cone_surface.axis();
-        let ref_direction = cone_surface.ref_direction();
+        let axis = cone_surface.frame().axis().as_raw();
+        let ref_direction = cone_surface.frame().reference().as_raw();
         let half_angle = cone_surface.half_angle().get();
                     (cone_surface.radius().get() == 0.0)
                         && (cone_surface.ratio().get() == 1.0)
@@ -175,8 +175,8 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
         panic!("first instance geometry: {:?}", surface.geometry);
     };
     let center = torus_surface.center().get();
-    let axis = *torus_surface.axis();
-    let ref_direction = *torus_surface.ref_direction();
+    let axis = *torus_surface.frame().axis().as_raw();
+    let ref_direction = *torus_surface.frame().reference().as_raw();
     let major_radius = torus_surface.major_radius().get();
     let minor_radius = torus_surface.minor_radius().get();
     assert_eq!(center, [0.0, 0.0, 0.0].into());
@@ -327,8 +327,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = cylinder_surface.origin().get();
-    let axis = *cylinder_surface.axis();
-    let ref_direction = *cylinder_surface.ref_direction();
+    let axis = *cylinder_surface.frame().axis().as_raw();
+    let ref_direction = *cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     assert_eq!(origin, [0.0, 0.0, 0.0].into());
     assert_eq!(axis, [0.0, 0.0, 1.0].into());
@@ -426,8 +426,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = cone_surface.origin().get();
-    let axis = *cone_surface.axis();
-    let ref_direction = *cone_surface.ref_direction();
+    let axis = *cone_surface.frame().axis().as_raw();
+    let ref_direction = *cone_surface.frame().reference().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
@@ -495,8 +495,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         panic!("legacy surface geometry: {:?}", surface.geometry);
     };
     let origin = plane_surface.origin().get();
-    let normal = *plane_surface.normal();
-    let u_axis = *plane_surface.u_axis();
+    let normal = *plane_surface.frame().axis().as_raw();
+    let u_axis = *plane_surface.frame().reference().as_raw();
     assert_eq!(origin, [1.0, 2.0, 3.0].into());
     assert_eq!(normal, [0.0, 0.0, 1.0].into());
     assert_eq!(u_axis, [1.0, 0.0, 0.0].into());

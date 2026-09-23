@@ -1005,9 +1005,6 @@ impl IncreasingParameterInterval {
     pub const fn upper(self) -> f64 {
         self.0[1]
     }
-    pub(crate) const fn as_raw(&self) -> &[f64; 2] {
-        &self.0
-    }
 }
 
 impl TryFrom<[f64; 2]> for IncreasingParameterInterval {
@@ -1239,15 +1236,9 @@ impl Point {
         })
     }
 
-    /// Return the coordinates in the document's length unit.
+    /// Return the admitted coordinates in the document's length unit.
     #[must_use]
-    pub const fn position(&self) -> Point3 {
-        self.position.get()
-    }
-
-    /// Return the admitted coordinates.
-    #[must_use]
-    pub const fn finite_position(&self) -> FinitePoint3 {
+    pub const fn position(&self) -> FinitePoint3 {
         self.position
     }
 
@@ -1944,7 +1935,7 @@ mod tests {
         }
         let point =
             Point::new(id, Point3::new(1.0, 2.0, 3.0), None).expect("a finite position is a point");
-        assert_eq!(point.position(), Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(point.position().get(), Point3::new(1.0, 2.0, 3.0));
     }
 
     #[test]
@@ -1972,7 +1963,7 @@ mod tests {
             r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0}}"#,
         )
         .expect("a finite position reads");
-        assert_eq!(point.position(), Point3::new(1.0, 2.0, 3.0));
+        assert_eq!(point.position().get(), Point3::new(1.0, 2.0, 3.0));
         assert_eq!(
             serde_json::to_string(&point).expect("a point writes"),
             r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0}}"#
@@ -1997,7 +1988,7 @@ mod tests {
             None,
         )
         .expect("a finite position is a point");
-        let admitted = point.finite_position();
+        let admitted = point.position();
         assert_eq!(
             admitted,
             FinitePoint3::new(raw).expect("finite coordinates")
@@ -2009,8 +2000,8 @@ mod tests {
 
         let moved = FinitePoint3::new(Point3::new(1.0, -2.0, 3.5)).expect("finite coordinates");
         point.set_finite_position(moved);
-        assert_eq!(point.finite_position(), moved);
-        assert_eq!(point.position(), Point3::new(1.0, -2.0, 3.5));
+        assert_eq!(point.position(), moved);
+        assert_eq!(point.position().get(), Point3::new(1.0, -2.0, 3.5));
     }
 }
 

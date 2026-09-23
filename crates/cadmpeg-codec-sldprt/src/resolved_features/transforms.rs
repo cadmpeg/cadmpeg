@@ -316,7 +316,7 @@ pub(super) fn dimensioned_circle_surface_transforms(
             continue;
         };
         let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
         let radius = cylinder_surface.radius().get();
         let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
         if !alignment.is_finite()

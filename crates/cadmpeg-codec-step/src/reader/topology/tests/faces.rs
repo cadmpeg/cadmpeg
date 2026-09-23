@@ -50,8 +50,8 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         panic!("implicit face did not produce a plane");
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
     assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
@@ -77,7 +77,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
         panic!("base face did not produce a plane");
     };
     let origin = plane_surface.origin().get();
-    let normal = *plane_surface.normal();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(2.0, 1.5, 0.0));
 
@@ -115,7 +115,7 @@ fn implicit_face_plane_uses_poly_loop_orientation_and_rejects_non_planar_points(
     else {
         panic!("reversed face did not produce a plane");
     };
-    let normal = *plane_surface.normal();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, -1.0));
 
     let non_planar = source.replace(
@@ -316,7 +316,7 @@ fn implicit_face_plane_uses_all_coplanar_poly_loops() {
         panic!("implicit face did not produce a plane");
     };
     let origin = plane_surface.origin().get();
-    let normal = *plane_surface.normal();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(origin, Point3::new(17.0 / 6.0, 17.0 / 6.0, 0.0));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -458,7 +458,7 @@ fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved() else {
         panic!("implicit face did not produce a plane");
     };
-    let normal = *plane_surface.normal();
+    let normal = *plane_surface.frame().axis().as_raw();
     assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         decoded.ir().model.faces[0].sense,

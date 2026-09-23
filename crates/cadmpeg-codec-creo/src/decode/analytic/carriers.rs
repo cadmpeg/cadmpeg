@@ -42,7 +42,7 @@ fn existing_plane_agrees_with_topology(
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some(
                 agreed_plane(&[
                     PlaneEquation {
@@ -347,7 +347,7 @@ pub(in crate::decode) fn placed_carriers(
                 &surface.geometry
             {
                 let origin = plane_surface.origin().get();
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -460,7 +460,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some(CarrierEquation::Plane(PlaneEquation {
                 origin: [origin.x, origin.y, origin.z],
                 normal: [normal.x, normal.y, normal.z],
@@ -468,8 +468,8 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             Some(CarrierEquation::Cylinder(CylinderEquation {
                 origin: [origin.x, origin.y, origin.z],
@@ -480,7 +480,7 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let ref_direction = sphere_surface.ref_direction();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             Some(CarrierEquation::Sphere(SphereEquation {
                 center: [center.x, center.y, center.z],
@@ -490,8 +490,8 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -506,8 +506,8 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             Some(CarrierEquation::Torus(TorusEquation {

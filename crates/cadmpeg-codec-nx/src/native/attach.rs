@@ -5903,7 +5903,7 @@ fn block_placement(
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
+        let normal = plane_surface.frame().axis().as_raw();
         let normal = canonical_normal(*normal, angular_tolerance)?;
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
         let existing = bands
@@ -7411,7 +7411,7 @@ fn circular_loop_geometry(
             return None;
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
+        let axis = circle_curve.frame().axis().as_raw();
         let radius = circle_curve.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
@@ -7489,7 +7489,7 @@ fn cylindrical_face_witnesses(
             continue;
         };
         let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.axis();
+        let axis = cylinder_surface.frame().axis().as_raw();
         let radius = cylinder_surface.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
@@ -7601,7 +7601,7 @@ fn plane_annulus_witness(
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.normal();
+        let normal = plane_surface.frame().axis().as_raw();
         let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
             continue;
         };
@@ -7832,7 +7832,7 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
                 continue;
             };
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
                 continue;
             };
@@ -8044,7 +8044,7 @@ fn simple_hole_chamfers(
                 continue;
             };
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let half_angle = cone_surface.half_angle().get();
             if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
                 return BTreeMap::new();

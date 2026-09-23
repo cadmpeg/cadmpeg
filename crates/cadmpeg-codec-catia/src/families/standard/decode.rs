@@ -87,7 +87,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             return false;
         };
         let center = torus_surface.center().get();
-        let axis = torus_surface.axis();
+        let axis = torus_surface.frame().axis().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
         let offset = point.vector_from(center);
@@ -116,7 +116,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             return None;
         };
         let center = torus_surface.center().get();
-        let axis = torus_surface.axis();
+        let axis = torus_surface.frame().axis().as_raw();
         let major_radius = torus_surface.major_radius().get();
         let minor_radius = torus_surface.minor_radius().get();
         if !expected_sweep.is_finite()
@@ -198,7 +198,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position()))
+        .map(|point| (point.id.clone(), point.position().get()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -627,7 +627,7 @@ fn refine_consolidated_analytic_surfaces(
         let replacement = match surface.as_ref() {
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) => {
                 let origin = cylinder_surface.origin().get();
-                let axis = cylinder_surface.axis();
+                let axis = cylinder_surface.frame().axis().as_raw();
                 let radius = cylinder_surface.radius().get();
                 exactly_one(cylinders.iter().filter(|cylinder| {
                     same_point(origin, cylinder.origin.get().into())
@@ -644,7 +644,7 @@ fn refine_consolidated_analytic_surfaces(
                 } =>
             {
                 let origin = cone_surface.origin().get();
-                let axis = cone_surface.axis();
+                let axis = cone_surface.frame().axis().as_raw();
                 let half_angle = cone_surface.half_angle().get();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(origin, cone.apex.get().into())
@@ -685,7 +685,7 @@ fn refine_consolidated_analytic_surfaces(
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))) => {
                 let center = torus_surface.center().get();
-                let axis = torus_surface.axis();
+                let axis = torus_surface.frame().axis().as_raw();
                 let major_radius = torus_surface.major_radius().get();
                 let minor_radius = torus_surface.minor_radius().get();
                 exactly_one(tori.iter().filter(|torus| {
@@ -829,7 +829,7 @@ mod consolidated_analytic_refinement_tests {
         assert!(
             matches!(surfaces[0], Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)))
             if {
-                let ref_direction = cylinder_surface.ref_direction();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
                 *ref_direction == Vector3::new(0.0, 1.0, 0.0)
             })
         );
@@ -3760,7 +3760,7 @@ fn standard_limit_curve_bindings(
                 .filter_map(|(point, value)| {
                     standard_limit_curve_point_parameter(
                         curve,
-                        value.position(),
+                        value.position().get(),
                         VERTEX_MATCH_TOLERANCE,
                     )
                     .map(|parameter| (point, parameter))
@@ -3781,7 +3781,7 @@ fn standard_limit_curve_bindings(
                 .iter()
                 .copied()
                 .filter(|(point, _)| {
-                    let position = ir.model.points[*point].position();
+                    let position = ir.model.points[*point].position().get();
                     support.faces.iter().all(|face| {
                         face_surface(ir, bindings, surface_indices, *face).is_some_and(|surface| {
                             matches!(
@@ -3928,9 +3928,9 @@ fn attach_standard_topology(
         .iter()
         .map(|point| {
             [
-                point.position().x as f32,
-                point.position().y as f32,
-                point.position().z as f32,
+                point.position().get().x as f32,
+                point.position().get().y as f32,
+                point.position().get().z as f32,
             ]
         })
         .collect::<Vec<_>>();
@@ -3990,7 +3990,7 @@ fn attach_standard_topology(
                             .enumerate()
                             .filter_map(|(index, point)| {
                                 point_on_standard_face(
-                                    point.position(),
+                                    point.position().get(),
                                     surface,
                                     face_bounds.as_ref().and_then(|bounds| bounds[face]),
                                 )
@@ -4220,7 +4220,7 @@ fn attach_standard_topology(
                             pair.iter().all(|point| {
                                 ir.model.points.get(*point).is_some_and(|point| {
                                     point_on_standard_face(
-                                        point.position(),
+                                        point.position().get(),
                                         &surface.geometry,
                                         face_bounds.as_ref().and_then(|bounds| bounds[*face]),
                                     )
@@ -4323,7 +4323,7 @@ fn attach_standard_topology(
                     pair.iter().all(|point| {
                         ir.model.points.get(*point).is_some_and(|point| {
                             point_on_standard_face(
-                                point.position(),
+                                point.position().get(),
                                 &surface.geometry,
                                 face_bounds.as_ref().and_then(|bounds| bounds[faces[1]]),
                             )
@@ -4355,7 +4355,7 @@ fn attach_standard_topology(
                 .model
                 .points
                 .get(*point)
-                .map(cadmpeg_ir::topology::Point::position)
+                .map(|point| point.position().get())
             else {
                 return false;
             };
@@ -4389,7 +4389,7 @@ fn attach_standard_topology(
                     .model
                     .points
                     .get(pair[0])
-                    .map(cadmpeg_ir::topology::Point::position)
+                    .map(|point| point.position().get())
                 else {
                     return false;
                 };
@@ -4397,7 +4397,7 @@ fn attach_standard_topology(
                     .model
                     .points
                     .get(pair[1])
-                    .map(cadmpeg_ir::topology::Point::position)
+                    .map(|point| point.position().get())
                 else {
                     return false;
                 };
@@ -4779,7 +4779,7 @@ fn attach_standard_topology(
                 .model
                 .points
                 .get(point)
-                .map(cadmpeg_ir::topology::Point::position)
+                .map(|point| point.position().get())
             else {
                 return false;
             };
@@ -4797,7 +4797,7 @@ fn attach_standard_topology(
             .model
             .points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let mut solver_deferred_edges = deferred_port_edges.clone();
         if let Some(ports) = missing_edge::edge_port_identities(spine) {
@@ -5135,9 +5135,9 @@ fn validate_standard_topology(
             .iter()
             .zip(&ir.model.points)
             .all(|(stored, point)| {
-                stored[0] == point.position().x
-                    && stored[1] == point.position().y
-                    && stored[2] == point.position().z
+                stored[0] == point.position().get().x
+                    && stored[1] == point.position().get().y
+                    && stored[2] == point.position().get().z
             })
     {
         return None;
@@ -5228,7 +5228,7 @@ fn standard_face_loops(
                     .iter()
                     .map(|coedge| {
                         let point_index = *point_assignment.get(coedge.start_vertex)?;
-                        Some(ir.model.points.get(point_index)?.position())
+                        Some(ir.model.points.get(point_index)?.position().get())
                     })
                     .collect::<Option<Vec<_>>>()?,
             ))
@@ -5374,8 +5374,12 @@ fn emit_standard_topology(
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
-                let start = ir.model.points[point_assignment[logical_vertices[0]]].position();
-                let end = ir.model.points[point_assignment[logical_vertices[1]]].position();
+                let start = ir.model.points[point_assignment[logical_vertices[0]]]
+                    .position()
+                    .get();
+                let end = ir.model.points[point_assignment[logical_vertices[1]]]
+                    .position()
+                    .get();
                 let edge_curve = ir.model.edges[edge_use.edge_row]
                     .curve()
                     .and_then(|id| curve_indices.get(id))
@@ -5564,7 +5568,8 @@ fn standard_native_support_endpoint_pair(
                 .copied()
                 .filter(|point| {
                     points.get(*point).is_some_and(|point| {
-                        point.position().distance_squared(expected).sqrt() <= VERTEX_MATCH_TOLERANCE
+                        point.position().get().distance_squared(expected).sqrt()
+                            <= VERTEX_MATCH_TOLERANCE
                     })
                 })
                 .collect::<Vec<_>>();
@@ -5612,11 +5617,11 @@ fn resolve_standard_endpoint_pairs(
                     ir.model
                         .points
                         .get(*start)
-                        .map(cadmpeg_ir::topology::Point::position),
+                        .map(|point| point.position().get()),
                     ir.model
                         .points
                         .get(*end)
-                        .map(cadmpeg_ir::topology::Point::position),
+                        .map(|point| point.position().get()),
                 ) {
                     let midpoint = Point3::new(
                         (start.x + end.x) * 0.5,
@@ -5690,8 +5695,8 @@ fn resolve_standard_endpoint_pairs(
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
             for &end_index in &points[left + 1..] {
-                let start_point = ir.model.points.get(start)?.position();
-                let end_point = ir.model.points.get(end_index)?.position();
+                let start_point = ir.model.points.get(start)?.position().get();
+                let end_point = ir.model.points.get(end_index)?.position().get();
                 let segment = Vector3::new(
                     end_point.x - start_point.x,
                     end_point.y - start_point.y,
@@ -5852,10 +5857,10 @@ fn standard_circle_endpoint_candidates(
         .enumerate()
         .filter_map(|(index, point)| {
             let on_circle =
-                (point.position().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
+                (point.position().get().distance_squared(center).sqrt() - radius).abs() <= 1e-3;
             let incident = faces.is_none_or(|faces| {
                 faces.into_iter().all(|(surface, bounds)| {
-                    point_on_standard_face(point.position(), surface, bounds)
+                    point_on_standard_face(point.position().get(), surface, bounds)
                 })
             });
             (on_circle && incident).then_some(index)
@@ -6146,6 +6151,7 @@ fn unique_native_identity_points(
                 .filter_map(|(index, point)| {
                     (point
                         .position()
+                        .get()
                         .distance_squared(Point3::new(
                             vertex.point[0],
                             vertex.point[1],
@@ -6171,8 +6177,8 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
         ) => {
-            let left = plane_surface.normal();
-            let right = plane_surface_2.normal();
+            let left = plane_surface.frame().axis().as_raw();
+            let right = plane_surface_2.frame().axis().as_raw();
             let direction = (*left).cross(*right);
             let norm = direction.x.hypot(direction.y).hypot(direction.z);
             (norm.is_finite() && norm != 0.0).then_some(direction)
@@ -6181,24 +6187,24 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
         ) => {
-            let normal = plane_surface.normal();
-            let axis = cylinder_surface.axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let axis = cylinder_surface.frame().axis().as_raw();
             ((*normal).dot(*axis).abs() <= ANGULAR_TOLERANCE).then_some(*axis)
         }
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
         ) => {
-            let axis = cylinder_surface_2.axis();
-            let normal = plane_surface_2.normal();
+            let axis = cylinder_surface_2.frame().axis().as_raw();
+            let normal = plane_surface_2.frame().axis().as_raw();
             ((*normal).dot(*axis).abs() <= ANGULAR_TOLERANCE).then_some(*axis)
         }
         (
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
         ) => {
-            let left_axis = cylinder_surface.axis();
-            let right_axis = cylinder_surface_2.axis();
+            let left_axis = cylinder_surface.frame().axis().as_raw();
+            let right_axis = cylinder_surface_2.frame().axis().as_raw();
             ((*left_axis).cross(*right_axis).norm() <= ANGULAR_TOLERANCE).then_some(*left_axis)
         }
         _ => None,
@@ -6221,7 +6227,7 @@ fn same_cone_generator_pair(
         return false;
     };
     let origin = cone_surface.origin().get();
-    let axis = cone_surface.axis();
+    let axis = cone_surface.frame().axis().as_raw();
     let radius = cone_surface.radius().get();
     let half_angle = cone_surface.half_angle().get();
     let tangent = half_angle.tan();
@@ -6321,7 +6327,7 @@ fn standard_face_point_membership(
                 alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
             for (point, candidate) in ir.model.points.iter().enumerate() {
                 membership[point] =
-                    point_on_standard_face(candidate.position(), &surface.geometry, bounds);
+                    point_on_standard_face(candidate.position().get(), &surface.geometry, bounds);
             }
             Some(membership)
         })
@@ -6481,16 +6487,10 @@ fn standard_nurbs_line_pair_on_face(
     ) {
         return true;
     }
-    let Some(start) = points
-        .get(pair[0])
-        .map(cadmpeg_ir::topology::Point::position)
-    else {
+    let Some(start) = points.get(pair[0]).map(|point| point.position().get()) else {
         return false;
     };
-    let Some(end) = points
-        .get(pair[1])
-        .map(cadmpeg_ir::topology::Point::position)
-    else {
+    let Some(end) = points.get(pair[1]).map(|point| point.position().get()) else {
         return false;
     };
     NURBS_LINE_FACE_SAMPLES.iter().all(|fraction| {
@@ -7038,7 +7038,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position()))
+        .map(|point| (point.id.clone(), point.position().get()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -7309,7 +7309,7 @@ fn standard_pcurve_geometry(
     ];
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface {
         let origin = cone_surface.origin().get();
-        let axis = cone_surface.axis();
+        let axis = cone_surface.frame().axis().as_raw();
         let radius = cone_surface.radius().get();
         let half_angle = cone_surface.half_angle().get();
         let tangent = half_angle.tan();
@@ -7349,14 +7349,14 @@ fn standard_pcurve_geometry(
     ) = (surface, &support.geometry)
     {
         const CIRCLE_TOLERANCE: f64 = 2e-3;
-        let normal = plane_surface.normal();
+        let normal = plane_surface.frame().axis().as_raw();
         let contained_carrier = point_on_surface(*center, surface)
             && (start.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
             && (end.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
             && edge_curve.is_none_or(|curve| {
                 matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
                                 if {
-                                    let axis = circle_curve.axis();
+                                    let axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                                     axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
                                         && (curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
@@ -7477,16 +7477,16 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let offset = point.vector_from(origin);
             let v_axis = (*normal).cross(*u_axis);
             Some(Point2::new(offset.dot(*u_axis), offset.dot(v_axis)))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
+            let axis = cylinder_surface.frame().axis().as_raw();
+            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let offset = point.vector_from(origin);
             let tangent = (*axis).cross(*ref_direction);
             Some(Point2::new(
@@ -7496,8 +7496,8 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
+            let axis = cone_surface.frame().axis().as_raw();
+            let ref_direction = cone_surface.frame().reference().as_raw();
             let ratio = cone_surface.ratio().get();
             let offset = point.vector_from(origin);
             let tangent = (*axis).cross(*ref_direction);
@@ -7508,8 +7508,8 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
+            let axis = sphere_surface.frame().axis().as_raw();
+            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             let offset = point.vector_from(center);
             let tangent = (*axis).cross(*ref_direction);
@@ -7520,8 +7520,8 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
+            let axis = torus_surface.frame().axis().as_raw();
+            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let offset = point.vector_from(center);
             let tangent = (*axis).cross(*ref_direction);
@@ -7568,12 +7568,12 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
     let residual = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             point.vector_from(origin).dot(*normal).abs()
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             let axial = point.vector_from(origin).dot(*axis);
             let radial = (point.vector_from(origin) - axis.scale(axial)).norm();
@@ -7581,7 +7581,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let axial = point.vector_from(origin).dot(*axis);
@@ -7595,7 +7595,7 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let axial = point.vector_from(center).dot(*axis);
@@ -7631,8 +7631,8 @@ fn standard_spline_line(
         return None;
     };
     let start_point = ir.model.points.get(points[0])?;
-    let start = start_point.position();
-    let end = ir.model.points.get(points[1])?.position();
+    let start = start_point.position().get();
+    let end = ir.model.points.get(points[1])?.position().get();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7651,8 +7651,8 @@ fn standard_spline_line(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
         ) => {
-            let left_normal = plane_surface.normal();
-            let right_normal = plane_surface_2.normal();
+            let left_normal = plane_surface.frame().axis().as_raw();
+            let right_normal = plane_surface_2.frame().axis().as_raw();
             let intersection = (*left_normal).cross(*right_normal);
             intersection
                 .unit_nonzero()
@@ -7662,7 +7662,7 @@ fn standard_spline_line(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)),
         ) if { support.faces[0] == support.faces[1] } => {
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             direction.cross(*axis).norm() <= TOLERANCE
         }
         (
@@ -7670,7 +7670,7 @@ fn standard_spline_line(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)),
         ) if { support.faces[0] == support.faces[1] } => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let tangent = half_angle.tan();
@@ -7689,7 +7689,7 @@ fn standard_spline_line(
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::new(
-                start_point.finite_position(),
+                start_point.position(),
                 cadmpeg_ir::units::UnitVector3::new(direction)?,
             ),
         )),
@@ -7719,7 +7719,7 @@ fn standard_spline_circle(
                 let center = sphere_surface.center().get();
                 let radius = sphere_surface.radius().get();
                 let origin = plane_surface.origin().get();
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 (center, radius, origin, *normal)
             }
             (
@@ -7727,7 +7727,7 @@ fn standard_spline_circle(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface_2)),
             ) => {
                 let origin = plane_surface_2.origin();
-                let normal = plane_surface_2.normal();
+                let normal = plane_surface_2.frame().axis().as_raw();
                 let center = sphere_surface_2.center();
                 let radius = sphere_surface_2.radius().get();
                 (*center, radius, *origin, *normal)
@@ -7748,8 +7748,8 @@ fn standard_spline_circle(
     }
     let section_center = sphere_center.translated(axis, -signed_distance);
     let section_radius = section_radius_squared.sqrt();
-    let start = ir.model.points.get(points[0])?.position();
-    let end = ir.model.points.get(points[1])?.position();
+    let start = ir.model.points.get(points[0])?.position().get();
+    let end = ir.model.points.get(points[1])?.position().get();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7791,10 +7791,10 @@ fn standard_spline_cylinder_plane(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
                 let cylinder_origin = cylinder_surface.origin();
-                let axis = cylinder_surface.axis();
+                let axis = cylinder_surface.frame().axis().as_raw();
                 let radius = cylinder_surface.radius().get();
                 let plane_origin = plane_surface.origin();
-                let plane_normal = plane_surface.normal();
+                let plane_normal = plane_surface.frame().axis().as_raw();
                 (
                     *axis,
                     *cylinder_origin,
@@ -7808,9 +7808,9 @@ fn standard_spline_cylinder_plane(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
             ) => {
                 let plane_origin = plane_surface_2.origin();
-                let plane_normal = plane_surface_2.normal();
+                let plane_normal = plane_surface_2.frame().axis().as_raw();
                 let cylinder_origin = cylinder_surface_2.origin();
-                let axis = cylinder_surface_2.axis();
+                let axis = cylinder_surface_2.frame().axis().as_raw();
                 let radius = cylinder_surface_2.radius().get();
                 (
                     *axis,
@@ -7838,8 +7838,8 @@ fn standard_spline_cylinder_plane(
         return None;
     }
     let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
-    let start = ir.model.points.get(points[0])?.position();
-    let end = ir.model.points.get(points[1])?.position();
+    let start = ir.model.points.get(points[0])?.position().get();
+    let end = ir.model.points.get(points[1])?.position().get();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -7918,10 +7918,10 @@ fn standard_spline_perpendicular_cylinders(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
             ) => {
                 let origin = cylinder_surface.origin().get();
-                let axis = cylinder_surface.axis();
+                let axis = cylinder_surface.frame().axis().as_raw();
                 let radius = cylinder_surface.radius().get();
                 let second_origin = cylinder_surface_2.origin();
-                let second_axis = cylinder_surface_2.axis();
+                let second_axis = cylinder_surface_2.frame().axis().as_raw();
                 let second_radius = cylinder_surface_2.radius().get();
                 (
                     *axis,
@@ -7964,8 +7964,8 @@ fn standard_spline_perpendicular_cylinders(
         (first_center.y + second_center.y) * 0.5,
         (first_center.z + second_center.z) * 0.5,
     );
-    let start = ir.model.points.get(points[0])?.position();
-    let end = ir.model.points.get(points[1])?.position();
+    let start = ir.model.points.get(points[0])?.position().get();
+    let end = ir.model.points.get(points[1])?.position().get();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
         || !point_on_surface(end, &left.geometry)
@@ -8039,8 +8039,8 @@ fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Opt
     let (center, first, second, first_radius, second_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
-            let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             (
                 center,
@@ -8052,8 +8052,8 @@ fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Opt
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.axis();
-            let major_direction = ellipse_curve.major_direction();
+            let axis = ellipse_curve.frame().axis().as_raw();
+            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             (
@@ -8186,8 +8186,8 @@ fn build_standard_edge_curve(
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start_point = &ir.model.points[points[0]];
-            let start = start_point.position();
-            let end = ir.model.points[points[1]].position();
+            let start = start_point.position().get();
+            let end = ir.model.points[points[1]].position().get();
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
@@ -8203,7 +8203,7 @@ fn build_standard_edge_curve(
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(
-                        start_point.finite_position(),
+                        start_point.position(),
                         direction,
                     ),
                 )),
@@ -8211,8 +8211,8 @@ fn build_standard_edge_curve(
             )
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
-            let start = ir.model.points[points[0]].position();
-            let end = ir.model.points[points[1]].position();
+            let start = ir.model.points[points[0]].position().get();
+            let end = ir.model.points[points[1]].position().get();
             let mut axes: Vec<Vector3> = support
                 .faces
                 .iter()
@@ -8397,8 +8397,8 @@ fn build_standard_edge_curve(
         )
     {
         let endpoints = [
-            ir.model.points[points[0]].position(),
-            ir.model.points[points[1]].position(),
+            ir.model.points[points[0]].position().get(),
+            ir.model.points[points[1]].position().get(),
         ];
         if let Some(witness) = native_support.and_then(standard_native_support_witness) {
             param_range = standard_oriented_analytic_curve_parameter_range(
@@ -8715,7 +8715,7 @@ fn standard_circle_pair_solution_is_simple(
             .model
             .points
             .get(pair[0])
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
         else {
             return false;
         };
@@ -8723,7 +8723,7 @@ fn standard_circle_pair_solution_is_simple(
             .model
             .points
             .get(pair[1])
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
         else {
             return false;
         };
@@ -8806,7 +8806,7 @@ impl StandardLinePairConstraint {
     ) -> Self {
         let points = points
             .iter()
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
             .collect::<Vec<_>>();
         let edge_roles = supports
             .iter()
@@ -9032,7 +9032,7 @@ fn standard_line_pair_solution_is_simple(
 ) -> bool {
     let point_positions = points
         .iter()
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
         .collect::<Vec<_>>();
     let segments = supports
         .iter()
@@ -9256,8 +9256,8 @@ fn standard_circle_param_range(
             ref_direction,
             start,
             end,
-            line_pcurve.finite_origin(),
-            line_pcurve.nonzero_direction().into(),
+            *line_pcurve.origin(),
+            (*line_pcurve.direction()).into(),
         )
     });
     let range = ranges.next()?;
@@ -9485,12 +9485,12 @@ fn circle_axis_from_carrier(
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             close_length(center.vector_from(origin).dot(*normal), 0.0).then_some(*normal)
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.axis();
+            let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             let offset = center.vector_from(origin);
             let axial = offset.dot(*axis);
@@ -9500,7 +9500,7 @@ fn circle_axis_from_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.axis();
+            let axis = cone_surface.frame().axis().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let offset = center.vector_from(origin);
@@ -9523,7 +9523,7 @@ fn circle_axis_from_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let torus_center = torus_surface.center();
-            let axis = torus_surface.axis();
+            let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let offset = center.vector_from(*torus_center);
@@ -9668,7 +9668,7 @@ fn plane_for_face(
     match &surface.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.normal();
+            let normal = plane_surface.frame().axis().as_raw();
             Some((origin, *normal))
         }
         _ => None,

@@ -256,22 +256,22 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     .expect("torus meridian");
     assert!(matches!(sphere_pcurve, PcurveGeometry::Line(line_pcurve)
         if {
-            let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
             (origin.v - std::f64::consts::FRAC_PI_6).abs() < EPS_PCURVE_PARAMETERS
                 && direction.u == 1.0
                 && direction.v == 0.0
         }));
     assert!(matches!(torus_pcurve, PcurveGeometry::Line(line_pcurve)
         if {
-            let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
             origin.u.abs() < EPS_PCURVE_PARAMETERS && direction.u == 0.0 && direction.v == 1.0
         }));
     assert!(matches!(cone_pcurve, PcurveGeometry::Line(line_pcurve)
         if {
-            let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
             (origin.v - 1.0).abs() < EPS_PCURVE_PARAMETERS && direction.u == 1.0 && direction.v == 0.0
         }));
     for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
@@ -537,8 +537,8 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
             NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         ), Some(PcurveGeometry::Line(line_pcurve))
                 if {
-                    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+                    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
                     origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
                 }));
 }

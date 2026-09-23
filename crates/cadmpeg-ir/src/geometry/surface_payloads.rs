@@ -610,36 +610,20 @@ impl RevolutionSurfaceConstruction {
     pub fn axis_direction(&self) -> &Vector3 {
         self.axis_direction.as_raw()
     }
-    /// Return the angular interval.
-    pub fn angular_interval(&self) -> &[f64; 2] {
-        self.angular_interval.as_raw()
-    }
-    /// Return the angular parameter interval.
-    pub fn angular_parameter_interval(&self) -> Option<[f64; 2]> {
-        self.angular_parameter_interval
-            .map(IncreasingParameterInterval::endpoints)
-    }
-    /// Return the parameter interval.
-    pub fn parameter_interval(&self) -> Option<[f64; 2]> {
-        self.parameter_interval
-            .map(IncreasingParameterInterval::endpoints)
-    }
     /// Return the admitted angular interval. A caller that passes it on
     /// keeps the finite strictly increasing guarantee and performs no new
     /// admission.
-    pub const fn increasing_angular_interval(&self) -> IncreasingParameterInterval {
+    pub const fn angular_interval(&self) -> IncreasingParameterInterval {
         self.angular_interval
     }
     /// Return the admitted angular parameter interval, with the guarantee of
-    /// [`Self::increasing_angular_interval`].
-    pub const fn increasing_angular_parameter_interval(
-        &self,
-    ) -> Option<IncreasingParameterInterval> {
+    /// [`Self::angular_interval`].
+    pub const fn angular_parameter_interval(&self) -> Option<IncreasingParameterInterval> {
         self.angular_parameter_interval
     }
     /// Return the admitted parameter interval, with the guarantee of
-    /// [`Self::increasing_angular_interval`].
-    pub const fn increasing_parameter_interval(&self) -> Option<IncreasingParameterInterval> {
+    /// [`Self::angular_interval`].
+    pub const fn parameter_interval(&self) -> Option<IncreasingParameterInterval> {
         self.parameter_interval
     }
     /// Return the transposed.

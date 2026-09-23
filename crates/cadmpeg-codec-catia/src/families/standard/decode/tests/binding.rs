@@ -777,7 +777,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     assert!(membership[0].iter().enumerate().all(|(point, cached)| {
         *cached
             == point_on_standard_face(
-                ir.model.points[point].position(),
+                ir.model.points[point].position().get(),
                 &ir.model.surfaces[0].geometry,
                 None,
             )
@@ -1172,8 +1172,8 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) if {
-            let axis = circle_curve.axis();
-    let ref_direction = circle_curve.ref_direction();
+            let axis = circle_curve.frame().axis().as_raw();
+    let ref_direction = circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
             *axis == Vector3::new(0.0, 0.0, 1.0)
                 && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
@@ -1549,8 +1549,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus chart line");
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(
         *direction,
@@ -1564,8 +1564,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         Point3::new(7.0, 0.0, 0.0),
         Point3::new(0.0, 7.0, 0.0),
-        line_pcurve.finite_origin(),
-        line_pcurve.nonzero_direction().into(),
+        *line_pcurve.origin(),
+        (*line_pcurve.direction()).into(),
     )
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -1608,8 +1608,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected torus meridian chart line");
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     let long_sweep = std::f64::consts::FRAC_PI_2 - std::f64::consts::TAU;
     assert_eq!(*origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
@@ -1622,8 +1622,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         start,
         end,
-        line_pcurve.finite_origin(),
-        line_pcurve.nonzero_direction().into(),
+        *line_pcurve.origin(),
+        (*line_pcurve.direction()).into(),
     )
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);
@@ -1672,8 +1672,8 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     let PcurveGeometry::Line(line_pcurve) = geometry else {
         panic!("expected line pcurve");
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     assert!(origin.u.abs() < 1.0e-12);
     assert!((origin.v - latitude).abs() < 1.0e-12);
     assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);

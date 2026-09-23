@@ -185,7 +185,7 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
                 return false;
             };
             let center = circle_curve.center().get();
-            let axis = circle_curve.axis();
+            let axis = circle_curve.frame().axis().as_raw();
             let axis = [axis.x, axis.y, axis.z];
             let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
                 ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)

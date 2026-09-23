@@ -241,7 +241,7 @@ fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
     let point_id = &index.vertices(id.as_str())?.point;
     index
         .points(point_id.as_str())
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -444,9 +444,13 @@ fn procedural_pcurve_parameter_map(
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.parameter_interval();
+            let angular_interval = definition_payload.angular_interval().endpoints();
+            let angular_parameter_interval = definition_payload
+                .angular_parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
+            let parameter_interval = definition_payload
+                .parameter_interval()
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
             let transposed = definition_payload.transposed();
             {
                 let directrix_map = if line_directrix(ir, directrix) {
@@ -458,7 +462,7 @@ fn procedural_pcurve_parameter_map(
                 };
                 let angular_map = match angular_parameter_interval {
                     Some(parameter_interval) => {
-                        affine_parameter_map(parameter_interval, *angular_interval)?
+                        affine_parameter_map(parameter_interval, angular_interval)?
                     }
                     None => (1.0, 0.0),
                 };
@@ -852,7 +856,7 @@ fn linear_boundary_geometry(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.normal();
+    let normal = plane_surface.frame().axis().as_raw();
     let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
     let model_plane = (origin, *normal);
     if items.iter().any(|item| {
@@ -1368,7 +1372,7 @@ fn surface_parameter_bounds(
                 .map(RecordBounds::get)
                 .map(|bounds| [bounds[0], bounds[1], Some(0.0), Some(1.0)]),
             ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-                let angular_interval = definition_payload.angular_interval();
+                let angular_interval = definition_payload.angular_interval().endpoints();
                 procedural
                     .record_bounds()
                     .map(RecordBounds::get)

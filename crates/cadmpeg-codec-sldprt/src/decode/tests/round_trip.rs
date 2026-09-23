@@ -71,7 +71,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         .model
         .points
         .iter()
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
         .collect();
 
     for (rows, apply) in motions {
@@ -91,9 +91,9 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             let expected = apply(*reference_point);
             assert!(
                 decoded.ir().model.points.iter().any(|point| {
-                    (point.position().x - expected.x).abs() < 1.0e-9
-                        && (point.position().y - expected.y).abs() < 1.0e-9
-                        && (point.position().z - expected.z).abs() < 1.0e-9
+                    (point.position().get().x - expected.x).abs() < 1.0e-9
+                        && (point.position().get().y - expected.y).abs() < 1.0e-9
+                        && (point.position().get().z - expected.z).abs() < 1.0e-9
                 }),
                 "rigid motion not preserved for point {reference_point:?}"
             );

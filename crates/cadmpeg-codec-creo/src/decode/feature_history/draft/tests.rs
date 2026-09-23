@@ -54,8 +54,8 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     match &mut ir.model.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.y = 2.0;
             *plane_surface =

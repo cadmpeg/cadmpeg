@@ -344,7 +344,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
             .model
             .points
             .iter()
-            .any(|point| point.position() == Point3::new(5.0, 6.0, 7.0)));
+            .any(|point| point.position().get() == Point3::new(5.0, 6.0, 7.0)));
         assert!(decoded
             .ir()
             .model

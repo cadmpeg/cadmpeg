@@ -241,8 +241,8 @@ fn cylinder_frame_agrees_with_model(
         );
     };
     let origin = cylinder_surface.origin().get();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
         normalize(frame.frame().axis()),

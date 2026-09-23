@@ -320,8 +320,8 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         panic!("expected an exact placed circular offset carrier");
     };
     let center = circle_curve.center().get();
-    let axis = *circle_curve.axis();
-    let ref_direction = *circle_curve.ref_direction();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
@@ -381,7 +381,7 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:end")
         .expect("placed line offset end point");
-    assert!(end.position().distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(end.position().get().distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -413,8 +413,8 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         panic!("expected an exact reflected circular offset carrier");
     };
     let center = circle_curve.center().get();
-    let axis = *circle_curve.axis();
-    let ref_direction = *circle_curve.ref_direction();
+    let axis = *circle_curve.frame().axis().as_raw();
+    let ref_direction = *circle_curve.frame().reference().as_raw();
     let radius = circle_curve.radius().get();
     assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
@@ -427,7 +427,7 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .iter()
         .find(|point| point.id.as_str() == "iges:model:point#D3:start")
         .expect("reflected offset start point");
-    assert!(start.position().distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(start.position().get().distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -466,7 +466,7 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         })
         .expect("offset start point");
     assert_eq!(
-        start.position(),
+        start.position().get(),
         cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0)
     );
     assert!(result.report().losses.is_empty());

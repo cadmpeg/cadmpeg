@@ -814,7 +814,7 @@ mod tests {
             panic!("expected exact plane-cylinder circle");
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.axis();
+        let axis = circle_curve.frame().axis().as_raw();
         let radius = circle_curve.radius().get();
         assert_eq!(center, Point3::new(0.0, 0.0, 4.0));
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));

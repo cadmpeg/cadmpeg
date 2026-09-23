@@ -59,8 +59,9 @@ fn placed_offset_source(
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().transformed(transform)?;
             let frame = OrthonormalFrame3::new(
-                unit_vector(transform.apply_vector(*circle_curve.axis())?)?.scale(orientation),
-                unit_vector(transform.apply_vector(*circle_curve.ref_direction())?)?,
+                unit_vector(transform.apply_vector(*circle_curve.frame().axis().as_raw())?)?
+                    .scale(orientation),
+                unit_vector(transform.apply_vector(*circle_curve.frame().reference().as_raw())?)?,
             )?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
@@ -183,7 +184,7 @@ fn source_parameter_range(
             .points
             .iter()
             .find(|item| item.id == point_id)
-            .map(cadmpeg_ir::topology::Point::position)
+            .map(|point| point.position().get())
     };
     let candidates = ir
         .model
@@ -446,11 +447,11 @@ pub(super) fn project(
                     }
                     SolvedCurveGeometry::Circle(circle_curve)
                         if {
-                            let axis = circle_curve.axis();
+                            let axis = circle_curve.frame().axis().as_raw();
                             normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
-                        let axis = circle_curve.axis();
+                        let axis = circle_curve.frame().axis().as_raw();
                         let radius = circle_curve.radius().get();
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
@@ -466,7 +467,7 @@ pub(super) fn project(
                                 .map(|radius| {
                                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                                         circle_curve.center(),
-                                        circle_curve.frame(),
+                                        *circle_curve.frame(),
                                         radius,
                                     )
                                 }),

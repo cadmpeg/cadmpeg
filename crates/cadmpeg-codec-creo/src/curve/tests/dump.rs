@@ -1216,7 +1216,7 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
         panic!("placed helix");
     };
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -1248,7 +1248,7 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
     else {
         panic!("placed helix");
     };
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();

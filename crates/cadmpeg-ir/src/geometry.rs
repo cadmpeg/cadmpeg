@@ -2304,16 +2304,10 @@ impl HelixCurveConstruction {
         self.angle_range.as_raw()
     }
 
-    /// Return the center.
+    /// Borrow the admitted center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
-    }
-
-    /// Return the admitted center.
-    #[must_use]
-    pub const fn finite_center(&self) -> FinitePoint3 {
-        self.center
+    pub const fn center(&self) -> &FinitePoint3 {
+        &self.center
     }
 
     /// Return the major.
@@ -6706,15 +6700,9 @@ impl TolerantIntersectionConstruction {
         &self.endpoints
     }
 
-    /// Return the tolerance.
-    #[must_use]
-    pub const fn tolerance(&self) -> f64 {
-        self.tolerance.get()
-    }
-
     /// Return the admitted tolerance.
     #[must_use]
-    pub const fn nonnegative_tolerance(&self) -> NonNegativeReal {
+    pub const fn tolerance(&self) -> NonNegativeReal {
         self.tolerance
     }
 }

@@ -112,7 +112,7 @@ fn semantic_decode_applies_delegated_nmi_factor() {
         .unwrap();
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let point = &result.ir().model.points[0].position();
+    let point = &result.ir().model.points[0].position().get();
     for (actual, expected) in [
         (point.x, 1_852_000.0),
         (point.y, 3_704_000.0),

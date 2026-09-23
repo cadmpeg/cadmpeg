@@ -650,9 +650,9 @@ fn analytic_rolling_ball_surface(
     ) = (first, second)
     {
         let first_origin = plane_surface.origin();
-        let first_normal = plane_surface.normal();
+        let first_normal = plane_surface.frame().axis().as_raw();
         let second_origin = plane_surface_2.origin();
-        let second_normal = plane_surface_2.normal();
+        let second_normal = plane_surface_2.frame().axis().as_raw();
         let (origin, axis) = linear_nurbs_spine(spine)?;
         let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * radius;
         let first_normal = first_normal.unit()?;
@@ -697,9 +697,9 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
             ) => {
                 let plane_origin = plane_surface.origin().get();
-                let plane_normal = *plane_surface.normal();
+                let plane_normal = *plane_surface.frame().axis().as_raw();
                 let cylinder_origin = cylinder_surface.origin().get();
-                let cylinder_axis = *cylinder_surface.axis();
+                let cylinder_axis = *cylinder_surface.frame().axis().as_raw();
                 let cylinder_radius = cylinder_surface.radius().get();
                 (
                     plane_origin,
@@ -714,10 +714,10 @@ fn analytic_rolling_ball_surface(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
             ) => {
                 let cylinder_origin = cylinder_surface_2.origin().get();
-                let cylinder_axis = *cylinder_surface_2.axis();
+                let cylinder_axis = *cylinder_surface_2.frame().axis().as_raw();
                 let cylinder_radius = cylinder_surface_2.radius().get();
                 let plane_origin = plane_surface_2.origin().get();
-                let plane_normal = *plane_surface_2.normal();
+                let plane_normal = *plane_surface_2.frame().axis().as_raw();
                 (
                     plane_origin,
                     plane_normal,

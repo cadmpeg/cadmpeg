@@ -337,8 +337,8 @@ fn analytic_reversal_preserves_finite_coefficients_at_extreme_parameters() {
     let PcurveGeometry::Line(reversed) = reversed else {
         panic!("expected line")
     };
-    assert_eq!(*reversed.origin(), Point2::new(1.2e308, 0.0));
-    assert_eq!(*reversed.direction(), Point2::new(-0.5, 0.0));
+    assert_eq!(*reversed.origin().as_raw(), Point2::new(1.2e308, 0.0));
+    assert_eq!(*reversed.direction().as_raw(), Point2::new(-0.5, 0.0));
     for curve in [
         PcurveGeometry::Hyperbola(
             HyperbolaPcurve::try_new(

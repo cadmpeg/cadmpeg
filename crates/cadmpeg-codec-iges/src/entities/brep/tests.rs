@@ -355,7 +355,7 @@ fn decode_applies_manifold_solid_placement_at_body_scope_once() {
         .points
         .iter()
         .filter(|point| point.id.as_str().starts_with("iges:model:point#D55:"))
-        .map(cadmpeg_ir::topology::Point::position)
+        .map(|point| point.position().get())
         .collect::<Vec<_>>();
     assert!(points.contains(&cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)));
     assert!(points.contains(&cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)));

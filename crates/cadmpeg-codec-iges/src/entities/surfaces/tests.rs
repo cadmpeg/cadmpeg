@@ -563,7 +563,10 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         panic!("expected an exact revolution definition");
     };
     let directrix = definition_payload_0.directrix();
-    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+    let Some(parameter_interval) = &definition_payload_0
+        .parameter_interval()
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         panic!("expected an exact revolution definition");
     };
     assert_eq!(directrix.as_str(), "iges:model:curve#D3");
@@ -681,12 +684,15 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
             panic!("expected an exact revolution definition");
         };
         let directrix = definition_payload_0.directrix();
-        let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+        let Some(parameter_interval) = &definition_payload_0
+            .parameter_interval()
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+        else {
             panic!("expected an exact revolution definition");
         };
-        let angular_interval = definition_payload_0.angular_interval();
+        let angular_interval = definition_payload_0.angular_interval().endpoints();
         assert_eq!(directrix.as_str(), "iges:model:curve#D3");
-        assert_eq!(*angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
+        assert_eq!(angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
         let directrix_geometry = &result
             .ir()
             .model
@@ -776,7 +782,10 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     else {
         panic!("expected bounded trimmed revolution");
     };
-    let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
+    let Some(parameter_interval) = &definition_payload_0
+        .parameter_interval()
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         panic!("expected bounded trimmed revolution");
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);
@@ -1209,8 +1218,8 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         panic!("expected a plane carrier");
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert_eq!(*origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 2.0));
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));

@@ -1433,7 +1433,7 @@ pub(in crate::decode) fn circle_parameters(
         return None;
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.axis();
+    let axis = circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
     Some((
         [center.x, center.y, center.z],

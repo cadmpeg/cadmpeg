@@ -159,7 +159,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
         .unwrap();
     assert_eq!(decoded.ir().model.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0].position(),
+        decoded.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }

@@ -274,7 +274,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
                 let origin = plane_surface.origin().get();
-                let normal = plane_surface.normal();
+                let normal = plane_surface.frame().axis().as_raw();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],
@@ -290,7 +290,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             ) => {
                 let origin = plane_surface_2.origin();
-                let normal = plane_surface_2.normal();
+                let normal = plane_surface_2.frame().axis().as_raw();
                 let plane = PlaneEquation {
                     origin: [origin.x, origin.y, origin.z],
                     normal: [normal.x, normal.y, normal.z],

@@ -626,7 +626,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -690,7 +690,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,
@@ -786,7 +786,7 @@ fn semantic_writer_preserves_display_list_geometry() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position();
+    let moved = decoded.ir_mut().model.points[0].position().get();
     decoded.ir_mut().model.points[0]
         .set_position(cadmpeg_ir::math::Point3::new(
             moved.x,

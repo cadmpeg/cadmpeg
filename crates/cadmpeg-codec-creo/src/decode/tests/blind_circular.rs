@@ -297,7 +297,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     let cylinder_surface = sweep.geometry;
     assert!(
         *cylinder_surface.origin() == Point3::new(-12.5, -4.0, 0.0)
-            && *cylinder_surface.axis() == Vector3::new(0.0, -1.0, 0.0)
+            && *cylinder_surface.frame().axis().as_raw() == Vector3::new(0.0, -1.0, 0.0)
             && cylinder_surface.radius().get() == 0.75
     );
 
@@ -756,8 +756,8 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     }) = ir.model.surfaces.first_mut()
     {
         let origin = cylinder_surface.origin();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
 
         let radius = 0.75;
         *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(

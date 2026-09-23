@@ -1754,7 +1754,7 @@ fn append_resolved_consolidated_surface_curves(
         .model
         .points
         .iter()
-        .map(|point| (point.id.clone(), point.position()))
+        .map(|point| (point.id.clone(), point.position().get()))
         .collect::<HashMap<_, _>>();
     let vertex_positions = ir
         .model
@@ -2877,14 +2877,14 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
         return false;
     };
     let left_origin = cone_surface.origin();
-    let left_axis = cone_surface.axis();
-    let left_reference = cone_surface.ref_direction();
+    let left_axis = cone_surface.frame().axis().as_raw();
+    let left_reference = cone_surface.frame().reference().as_raw();
     let left_radius = cone_surface.radius().get();
     let left_ratio = cone_surface.ratio().get();
     let left_angle = cone_surface.half_angle().get();
     let right_origin = cone_surface_2.origin();
-    let right_axis = cone_surface_2.axis();
-    let right_reference = cone_surface_2.ref_direction();
+    let right_axis = cone_surface_2.frame().axis().as_raw();
+    let right_reference = cone_surface_2.frame().reference().as_raw();
     let right_radius = cone_surface_2.radius().get();
     let right_ratio = cone_surface_2.ratio().get();
     let right_angle = cone_surface_2.half_angle().get();
@@ -2946,7 +2946,7 @@ fn rechart_equivalent_surface_pcurve(
         return Ok(None);
     };
     let source_origin = cone_surface.origin();
-    let source_axis = cone_surface.axis();
+    let source_axis = cone_surface.frame().axis().as_raw();
     let target_origin = cone_surface_2.origin();
     if !same_surface_locus(source, target) {
         return Ok(None);
@@ -2959,8 +2959,8 @@ fn rechart_equivalent_surface_pcurve(
     }
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
-            let origin = line_pcurve.origin();
-            let direction = line_pcurve.direction();
+            let origin = line_pcurve.origin().as_raw();
+            let direction = line_pcurve.direction().as_raw();
             let shifted_v = origin.v + v_shift;
             if !shifted_v.is_finite() {
                 return Err(RechartFailure::NonFinite);
@@ -3198,8 +3198,14 @@ mod tests {
             ir.model.shells[0].wire_edges(),
             [ir.model.edges[0].id.clone()]
         );
-        assert_eq!(ir.model.points[1].position(), Point3::new(2.0, 3.0, 5.0));
-        assert_eq!(ir.model.points[0].position(), Point3::new(7.0, 11.0, 13.0));
+        assert_eq!(
+            ir.model.points[1].position().get(),
+            Point3::new(2.0, 3.0, 5.0)
+        );
+        assert_eq!(
+            ir.model.points[0].position().get(),
+            Point3::new(7.0, 11.0, 13.0)
+        );
         ir.finalize();
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -3253,8 +3259,8 @@ mod tests {
         let expected_start = Point3::new(1.0, -0.4, -0.2);
         let expected_end = Point3::new(1.0, 7.4, 10.2);
         for (actual, expected) in [
-            (ir.model.points[1].position(), expected_start),
-            (ir.model.points[0].position(), expected_end),
+            (ir.model.points[1].position().get(), expected_start),
+            (ir.model.points[0].position().get(), expected_end),
         ] {
             assert!((actual.x - expected.x).abs() < 1.0e-12);
             assert!((actual.y - expected.y).abs() < 1.0e-12);
@@ -4174,8 +4180,8 @@ mod tests {
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
                     let center = sphere_surface.center().get();
-        let axis = sphere_surface.axis();
-        let ref_direction = sphere_surface.ref_direction();
+        let axis = sphere_surface.frame().axis().as_raw();
+        let ref_direction = sphere_surface.frame().reference().as_raw();
                     (sphere_surface.radius().get() == 5.0)
                         && (center == Point3::new(1.0, 2.0, 3.0)
                             && *axis == Vector3::new(0.0, 0.0, 1.0)
@@ -4194,8 +4200,8 @@ mod tests {
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
                     let center = torus_surface.center().get();
-        let axis = torus_surface.axis();
-        let ref_direction = torus_surface.ref_direction();
+        let axis = torus_surface.frame().axis().as_raw();
+        let ref_direction = torus_surface.frame().reference().as_raw();
                     (torus_surface.major_radius().get() == 7.0)
                         && (torus_surface.minor_radius().get() == 2.0)
                         && (center == Point3::new(1.0, 2.0, 3.0)
@@ -4215,8 +4221,8 @@ mod tests {
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.axis();
-        let ref_direction = cylinder_surface.ref_direction();
+        let axis = cylinder_surface.frame().axis().as_raw();
+        let ref_direction = cylinder_surface.frame().reference().as_raw();
                     (cylinder_surface.radius().get() == 4.0)
                         && (origin == Point3::new(0.0, 0.0, 0.0)
                             && *axis == Vector3::new(0.0, 1.0, 0.0)

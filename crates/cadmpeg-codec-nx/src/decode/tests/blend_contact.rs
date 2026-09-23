@@ -737,8 +737,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         unreachable!()
     };
     let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
     let mut origin = *origin;
     origin.y = 1.0;
@@ -781,8 +781,8 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         unreachable!()
     };
     let origin = plane_surface.origin();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     let mut origin = *origin;
     origin.x += 1.0;
     *plane_surface =
@@ -1491,8 +1491,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             &mut carrier.geometry
         {
             let origin = plane_surface.origin();
-            let normal = plane_surface.normal();
-            let u_axis = plane_surface.u_axis();
+            let normal = plane_surface.frame().axis().as_raw();
+            let u_axis = plane_surface.frame().reference().as_raw();
             let mut origin = *origin;
             origin.x += 1.0e12;
             origin.y += 1.0e12;

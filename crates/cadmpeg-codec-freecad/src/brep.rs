@@ -7145,7 +7145,7 @@ pub(crate) mod tests {
             geometry,
             cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
             if {
-                let axis = *cone.axis();
+                let axis = *cone.frame().axis().as_raw();
                 cone.half_angle().get() == -0.715_584_993_317_674_8
                     && cone.radius().get() == 5.0
                     && (axis.x, axis.y, axis.z) == (0.0, 0.0, -1.0)

@@ -143,7 +143,7 @@ fn decode_retains_generated_helix_construction() {
         panic!("expected helix construction")
     };
     let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center();
+    let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
     let minor = helix_payload.minor();
     let pitch = helix_payload.pitch();
@@ -1539,7 +1539,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     assert!(
         matches!(supports[0], SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))
             if {
-                let axis = cone_surface.axis();
+                let axis = cone_surface.frame().axis().as_raw();
         let half_angle = cone_surface.half_angle().get();
                 (cone_surface.radius().get() == 10.0)
                     && (cone_surface.ratio().get() == 0.4)

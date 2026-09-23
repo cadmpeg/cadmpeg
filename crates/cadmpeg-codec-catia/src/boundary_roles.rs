@@ -155,8 +155,8 @@ pub(crate) fn classify_planar_boundaries(
         return unspecified();
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     let Some(normal) = normal.unit() else {
         return unspecified();
     };

@@ -66,7 +66,7 @@ impl PlaneSurface {
     ///     Vector3::new(1.0, 0.0, 0.0),
     /// )
     /// .expect("orthonormal frame and finite origin");
-    /// let moved = PlaneSurface::new(plane.origin(), plane.frame());
+    /// let moved = PlaneSurface::new(plane.origin(), *plane.frame());
     /// assert_eq!(moved, plane);
     /// ```
     ///
@@ -102,20 +102,8 @@ impl PlaneSurface {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the normal.
-    #[must_use]
-    pub const fn normal(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the u axis.
-    #[must_use]
-    pub const fn u_axis(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 }
 
@@ -123,8 +111,8 @@ impl From<PlaneSurface> for PlaneSurfaceWire {
     fn from(value: PlaneSurface) -> Self {
         Self {
             origin: value.origin().get(),
-            normal: *value.normal(),
-            u_axis: *value.u_axis(),
+            normal: *value.frame().axis().as_raw(),
+            u_axis: *value.frame().reference().as_raw(),
         }
     }
 }
@@ -177,7 +165,7 @@ impl CylinderSurface {
     ///     2.0,
     /// )
     /// .expect("orthonormal frame, finite origin and positive radius");
-    /// let wider = CylinderSurface::new(cylinder.origin(), cylinder.frame(), 4.0);
+    /// let wider = CylinderSurface::new(cylinder.origin(), *cylinder.frame(), 4.0);
     /// ```
     ///
     /// An admitted one does:
@@ -196,7 +184,7 @@ impl CylinderSurface {
     /// .expect("orthonormal frame, finite origin and positive radius");
     /// let wider = CylinderSurface::new(
     ///     cylinder.origin(),
-    ///     cylinder.frame(),
+    ///     *cylinder.frame(),
     ///     PositiveLength::new(4.0).expect("positive finite"),
     /// );
     /// assert_eq!(wider.radius().get(), 4.0);
@@ -237,20 +225,8 @@ impl CylinderSurface {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the ref direction.
-    #[must_use]
-    pub const fn ref_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the radius.
@@ -264,8 +240,8 @@ impl From<CylinderSurface> for CylinderSurfaceWire {
     fn from(value: CylinderSurface) -> Self {
         Self {
             origin: value.origin().get(),
-            axis: *value.axis(),
-            ref_direction: *value.ref_direction(),
+            axis: *value.frame().axis().as_raw(),
+            ref_direction: *value.frame().reference().as_raw(),
             radius: value.radius().get(),
         }
     }
@@ -330,7 +306,7 @@ impl ConeSurface {
     /// .expect("orthonormal frame, finite origin and admitted dimensions");
     /// let sharpened = ConeSurface::new(
     ///     cone.origin(),
-    ///     cone.frame(),
+    ///     *cone.frame(),
     ///     NonNegativeLength::new(0.0).expect("zero is a valid cone radius"),
     ///     cone.ratio(),
     ///     cone.half_angle(),
@@ -383,20 +359,8 @@ impl ConeSurface {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the ref direction.
-    #[must_use]
-    pub const fn ref_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the cross-section radius at the origin. Zero is a valid cone
@@ -455,8 +419,8 @@ impl From<ConeSurface> for ConeSurfaceWire {
     fn from(value: ConeSurface) -> Self {
         Self {
             origin: value.origin().get(),
-            axis: *value.axis(),
-            ref_direction: *value.ref_direction(),
+            axis: *value.frame().axis().as_raw(),
+            ref_direction: *value.frame().reference().as_raw(),
             radius: value.radius().get(),
             ratio: value.ratio().get(),
             half_angle: value.half_angle().get(),
@@ -520,7 +484,7 @@ impl SphereSurface {
     ///     -2.0,
     /// )
     /// .expect("orthonormal frame, finite center and nonzero radius");
-    /// let moved = SphereSurface::new(sphere.center(), sphere.frame(), sphere.radius());
+    /// let moved = SphereSurface::new(sphere.center(), *sphere.frame(), sphere.radius());
     /// assert_eq!(moved, sphere);
     /// assert_eq!(moved.radius().get(), -2.0);
     /// ```
@@ -581,20 +545,8 @@ impl SphereSurface {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the ref direction.
-    #[must_use]
-    pub const fn ref_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the radius. A sphere radius is signed and nonzero, so the type
@@ -609,8 +561,8 @@ impl From<SphereSurface> for SphereSurfaceWire {
     fn from(value: SphereSurface) -> Self {
         Self {
             center: value.center().get(),
-            axis: *value.axis(),
-            ref_direction: *value.ref_direction(),
+            axis: *value.frame().axis().as_raw(),
+            ref_direction: *value.frame().reference().as_raw(),
             radius: value.radius().get(),
         }
     }
@@ -671,7 +623,7 @@ impl TorusSurface {
     /// .expect("orthonormal frame, finite center and admitted radii");
     /// let swapped = TorusSurface::new(
     ///     torus.center(),
-    ///     torus.frame(),
+    ///     *torus.frame(),
     ///     torus.minor_radius(),
     ///     torus.major_radius(),
     /// );
@@ -693,7 +645,7 @@ impl TorusSurface {
     /// .expect("orthonormal frame, finite center and admitted radii");
     /// let moved = TorusSurface::new(
     ///     torus.center(),
-    ///     torus.frame(),
+    ///     *torus.frame(),
     ///     torus.major_radius(),
     ///     torus.minor_radius(),
     /// );
@@ -740,20 +692,8 @@ impl TorusSurface {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the ref direction.
-    #[must_use]
-    pub const fn ref_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the major radius.
@@ -774,8 +714,8 @@ impl From<TorusSurface> for TorusSurfaceWire {
     fn from(value: TorusSurface) -> Self {
         Self {
             center: value.center().get(),
-            axis: *value.axis(),
-            ref_direction: *value.ref_direction(),
+            axis: *value.frame().axis().as_raw(),
+            ref_direction: *value.frame().reference().as_raw(),
             major_radius: value.major_radius().get(),
             minor_radius: value.minor_radius().get(),
         }
@@ -836,8 +776,8 @@ impl LineCurve {
     ///     Vector3::new(1.0, 0.0, 0.0),
     /// )
     /// .expect("orthonormal frame and finite origin");
-    /// let axis_line = LineCurve::new(plane.origin(), plane.frame().unit_axis());
-    /// assert_eq!(axis_line.direction().as_raw(), plane.normal());
+    /// let axis_line = LineCurve::new(plane.origin(), *plane.frame().axis());
+    /// assert_eq!(axis_line.direction().as_raw(), plane.frame().axis().as_raw());
     /// ```
     ///
     /// A raw direction has no way in:
@@ -935,7 +875,7 @@ impl CircleCurve {
     /// .expect("orthonormal frame, finite center and positive radius");
     /// let wider = CircleCurve::new(
     ///     circle.center(),
-    ///     circle.frame(),
+    ///     *circle.frame(),
     ///     PositiveLength::new(4.0).expect("positive finite"),
     /// );
     /// assert_eq!(wider.radius().get(), 4.0);
@@ -977,20 +917,8 @@ impl CircleCurve {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the ref direction.
-    #[must_use]
-    pub const fn ref_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the radius.
@@ -1004,8 +932,8 @@ impl From<CircleCurve> for CircleCurveWire {
     fn from(value: CircleCurve) -> Self {
         Self {
             center: value.center().get(),
-            axis: *value.axis(),
-            ref_direction: *value.ref_direction(),
+            axis: *value.frame().axis().as_raw(),
+            ref_direction: *value.frame().reference().as_raw(),
             radius: value.radius().get(),
         }
     }
@@ -1070,7 +998,7 @@ impl EllipseCurve {
     /// .expect("orthonormal frame, finite center and ordered radii");
     /// let moved = EllipseCurve::try_from_parts(
     ///     ellipse.center(),
-    ///     ellipse.frame(),
+    ///     *ellipse.frame(),
     ///     ellipse.major_radius(),
     ///     ellipse.minor_radius(),
     /// )
@@ -1095,7 +1023,7 @@ impl EllipseCurve {
     /// .expect("orthonormal frame, finite center and ordered radii");
     /// assert!(EllipseCurve::try_from_parts(
     ///     ellipse.center(),
-    ///     ellipse.frame(),
+    ///     *ellipse.frame(),
     ///     ellipse.minor_radius(),
     ///     ellipse.major_radius(),
     /// )
@@ -1144,20 +1072,8 @@ impl EllipseCurve {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the major direction.
-    #[must_use]
-    pub const fn major_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the major radius.
@@ -1177,8 +1093,8 @@ impl From<EllipseCurve> for EllipseCurveWire {
     fn from(value: EllipseCurve) -> Self {
         Self {
             center: value.center().get(),
-            axis: *value.axis(),
-            major_direction: *value.major_direction(),
+            axis: *value.frame().axis().as_raw(),
+            major_direction: *value.frame().reference().as_raw(),
             major_radius: value.major_radius().get(),
             minor_radius: value.minor_radius().get(),
         }
@@ -1241,7 +1157,7 @@ impl ParabolaCurve {
     /// .expect("orthonormal frame, finite vertex and positive focal distance");
     /// let moved = ParabolaCurve::new(
     ///     parabola.vertex(),
-    ///     parabola.frame(),
+    ///     *parabola.frame(),
     ///     parabola.focal_distance(),
     /// );
     /// assert_eq!(moved, parabola);
@@ -1282,20 +1198,8 @@ impl ParabolaCurve {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the major direction.
-    #[must_use]
-    pub const fn major_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the focal distance.
@@ -1309,8 +1213,8 @@ impl From<ParabolaCurve> for ParabolaCurveWire {
     fn from(value: ParabolaCurve) -> Self {
         Self {
             vertex: value.vertex().get(),
-            axis: *value.axis(),
-            major_direction: *value.major_direction(),
+            axis: *value.frame().axis().as_raw(),
+            major_direction: *value.frame().reference().as_raw(),
             focal_distance: value.focal_distance().get(),
         }
     }
@@ -1383,7 +1287,7 @@ impl HyperbolaCurve {
     /// .expect("orthonormal frame, finite center and positive radii");
     /// let moved = HyperbolaCurve::new(
     ///     hyperbola.center(),
-    ///     hyperbola.frame(),
+    ///     *hyperbola.frame(),
     ///     hyperbola.major_radius(),
     ///     hyperbola.minor_radius(),
     /// );
@@ -1431,20 +1335,8 @@ impl HyperbolaCurve {
 
     /// Return the frame.
     #[must_use]
-    pub const fn frame(&self) -> OrthonormalFrame3 {
-        self.frame
-    }
-
-    /// Return the axis.
-    #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.frame.axis()
-    }
-
-    /// Return the major direction.
-    #[must_use]
-    pub const fn major_direction(&self) -> &Vector3 {
-        self.frame.reference()
+    pub const fn frame(&self) -> &OrthonormalFrame3 {
+        &self.frame
     }
 
     /// Return the major radius.
@@ -1464,8 +1356,8 @@ impl From<HyperbolaCurve> for HyperbolaCurveWire {
     fn from(value: HyperbolaCurve) -> Self {
         Self {
             center: value.center().get(),
-            axis: *value.axis(),
-            major_direction: *value.major_direction(),
+            axis: *value.frame().axis().as_raw(),
+            major_direction: *value.frame().reference().as_raw(),
             major_radius: value.major_radius().get(),
             minor_radius: value.minor_radius().get(),
         }

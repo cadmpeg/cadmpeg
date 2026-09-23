@@ -592,7 +592,7 @@ mod tests {
     fn detects_changes_in_all_document_dimensions() {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        let moved = right.model.points[0].position();
+        let moved = right.model.points[0].position().get();
         right.model.points[0]
             .set_position(crate::math::Point3::new(moved.x + 1.0, moved.y, moved.z))
             .expect("a finite position is a point");
@@ -651,7 +651,7 @@ mod tests {
         ir.model
             .points
             .iter()
-            .position(|point| point.position().x.abs() >= 1.0)
+            .position(|point| point.position().get().x.abs() >= 1.0)
             .expect("the cube fixture places points away from the origin")
     }
 
@@ -662,14 +662,14 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let before = right.model.points[index].position().x;
+        let before = right.model.points[index].position().get().x;
         let after = f64::from_bits(before.to_bits() + 1);
         assert_ne!(
             before.to_bits(),
             after.to_bits(),
             "the coordinate must move, or this test proves nothing"
         );
-        let moved = right.model.points[index].position();
+        let moved = right.model.points[index].position().get();
         right.model.points[index]
             .set_position(crate::math::Point3::new(after, moved.y, moved.z))
             .expect("a finite position is a point");
@@ -707,7 +707,7 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let point = right.model.points[index].position();
+        let point = right.model.points[index].position().get();
         right.model.points[index]
             .set_position(crate::math::Point3::new(
                 point.x.mul_add(1.0e-6, point.x),

@@ -82,11 +82,11 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
     let reference = Vector3::new(1.0, 0.0, 0.0);
 
     let plane = PlaneSurface::try_new(point, axis, reference).unwrap();
-    assert_eq!(PlaneSurface::new(plane.origin(), plane.frame()), plane);
+    assert_eq!(PlaneSurface::new(plane.origin(), *plane.frame()), plane);
 
     let cylinder = CylinderSurface::try_new(point, axis, reference, 2.0).unwrap();
     assert_eq!(
-        CylinderSurface::new(cylinder.origin(), cylinder.frame(), cylinder.radius()),
+        CylinderSurface::new(cylinder.origin(), *cylinder.frame(), cylinder.radius()),
         cylinder
     );
 
@@ -94,7 +94,7 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
     assert_eq!(
         ConeSurface::new(
             cone.origin(),
-            cone.frame(),
+            *cone.frame(),
             cone.radius(),
             cone.ratio(),
             cone.half_angle(),
@@ -104,7 +104,7 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
 
     let sphere = SphereSurface::try_new(point, axis, reference, -4.0).unwrap();
     assert_eq!(
-        SphereSurface::new(sphere.center(), sphere.frame(), sphere.radius()),
+        SphereSurface::new(sphere.center(), *sphere.frame(), sphere.radius()),
         sphere
     );
 
@@ -112,7 +112,7 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
     assert_eq!(
         TorusSurface::new(
             torus.center(),
-            torus.frame(),
+            *torus.frame(),
             torus.major_radius(),
             torus.minor_radius(),
         ),
@@ -121,13 +121,13 @@ fn analytic_surfaces_rebuild_from_their_checked_getters() {
 
     for (rebuilt, original) in [
         (
-            serde_json::to_value(PlaneSurface::new(plane.origin(), plane.frame())).unwrap(),
+            serde_json::to_value(PlaneSurface::new(plane.origin(), *plane.frame())).unwrap(),
             serde_json::to_value(plane).unwrap(),
         ),
         (
             serde_json::to_value(TorusSurface::new(
                 torus.center(),
-                torus.frame(),
+                *torus.frame(),
                 torus.major_radius(),
                 torus.minor_radius(),
             ))
@@ -145,14 +145,14 @@ fn a_surface_frame_hands_back_its_admitted_directions() {
     let reference = Vector3::new(1.0, 0.0, 0.0);
     let plane = PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), axis, reference).unwrap();
     let frame = plane.frame();
-    assert_eq!(frame.unit_axis().as_raw(), plane.normal());
-    assert_eq!(frame.unit_reference().as_raw(), plane.u_axis());
+    assert_eq!(frame.axis().as_raw(), plane.frame().axis().as_raw());
     assert_eq!(
-        frame.unit_axis(),
-        crate::units::UnitVector3::new(axis).unwrap()
+        frame.reference().as_raw(),
+        plane.frame().reference().as_raw()
     );
+    assert_eq!(*frame.axis(), crate::units::UnitVector3::new(axis).unwrap());
     assert_eq!(
-        frame.unit_reference(),
+        *frame.reference(),
         crate::units::UnitVector3::new(reference).unwrap()
     );
 }
@@ -277,7 +277,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
 
     let circle = CircleCurve::try_new(point, axis, reference, 2.0).unwrap();
     assert_eq!(
-        CircleCurve::new(circle.center(), circle.frame(), circle.radius()),
+        CircleCurve::new(circle.center(), *circle.frame(), circle.radius()),
         circle
     );
 
@@ -285,7 +285,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
     assert_eq!(
         EllipseCurve::try_from_parts(
             ellipse.center(),
-            ellipse.frame(),
+            *ellipse.frame(),
             ellipse.major_radius(),
             ellipse.minor_radius(),
         )
@@ -297,7 +297,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
     assert_eq!(
         ParabolaCurve::new(
             parabola.vertex(),
-            parabola.frame(),
+            *parabola.frame(),
             parabola.focal_distance(),
         ),
         parabola
@@ -307,7 +307,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
     assert_eq!(
         HyperbolaCurve::new(
             hyperbola.center(),
-            hyperbola.frame(),
+            *hyperbola.frame(),
             hyperbola.major_radius(),
             hyperbola.minor_radius(),
         ),
@@ -321,7 +321,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
         (
             serde_json::to_value(CircleCurve::new(
                 circle.center(),
-                circle.frame(),
+                *circle.frame(),
                 circle.radius(),
             ))
             .unwrap(),
@@ -331,7 +331,7 @@ fn analytic_curves_rebuild_from_their_checked_getters() {
             serde_json::to_value(
                 EllipseCurve::try_from_parts(
                     ellipse.center(),
-                    ellipse.frame(),
+                    *ellipse.frame(),
                     ellipse.major_radius(),
                     ellipse.minor_radius(),
                 )
@@ -350,9 +350,12 @@ fn a_curve_frame_direction_builds_a_line_without_readmission() {
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let reference = Vector3::new(1.0, 0.0, 0.0);
     let circle = CircleCurve::try_new(Point3::new(1.0, 2.0, 3.0), axis, reference, 2.0).unwrap();
-    let generatrix = LineCurve::new(circle.center(), circle.frame().unit_axis());
+    let generatrix = LineCurve::new(circle.center(), *circle.frame().axis());
     assert_eq!(generatrix.origin(), circle.center());
-    assert_eq!(generatrix.direction().as_raw(), circle.axis());
+    assert_eq!(
+        generatrix.direction().as_raw(),
+        circle.frame().axis().as_raw()
+    );
     assert_eq!(
         generatrix.direction(),
         crate::units::UnitVector3::new(axis).unwrap()
@@ -381,7 +384,7 @@ fn ellipse_ordering_is_enforced_through_raw_and_checked_construction() {
     assert_eq!(
         EllipseCurve::try_from_parts(
             ellipse.center(),
-            ellipse.frame(),
+            *ellipse.frame(),
             ellipse.minor_radius(),
             ellipse.major_radius(),
         )

@@ -94,7 +94,7 @@ fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
         .fold(BTreeMap::new(), |mut positions, point| {
             positions
                 .entry(point.id.clone())
-                .or_insert(point.position());
+                .or_insert(point.position().get());
             positions
         });
     ir.model
@@ -880,8 +880,8 @@ fn reverse_analytic_pcurve_over_range(
     [start, end]: [f64; 2],
 ) -> Option<PcurveGeometry> {
     if let PcurveGeometry::Line(line) = pcurve {
-        let origin = line.origin();
-        let direction = line.direction();
+        let origin = line.origin().as_raw();
+        let direction = line.direction().as_raw();
         let reflected = cadmpeg_ir::transform::Transform::affine([
             [direction.u, direction.u, 0.0, origin.u],
             [direction.v, direction.v, 0.0, origin.v],
@@ -1473,7 +1473,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             } => {
                 let supports = intersection.supports();
                 let endpoints = intersection.endpoints();
-                let tolerance = intersection.nonnegative_tolerance();
+                let tolerance = intersection.tolerance();
 
                 let range = if edge.start == edge.end
                     && model_index.curves(owner.as_str()).is_some_and(|curve| {
@@ -2271,8 +2271,8 @@ fn boundary_curve_affine_breaks_with_index(
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     match carrier.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(_)) => Some(range.to_vec()),
         Some(SolvedSurfaceGeometry::Cylinder(_))
@@ -2335,8 +2335,8 @@ fn boundary_curve_speed_bound_with_index(
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
-    let origin = line_pcurve.origin();
-    let direction = line_pcurve.direction();
+    let origin = line_pcurve.origin().as_raw();
+    let direction = line_pcurve.direction().as_raw();
     let affine_speed = || {
         let first = decoded_surface_point_inner_with_budget(
             index,
@@ -3428,7 +3428,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             }
             let endpoint = |vertex_id: &VertexId| {
                 let point_id = &model_index.vertices(vertex_id.as_str())?.point;
-                Some(model_index.points(point_id.as_str())?.position())
+                Some(model_index.points(point_id.as_str())?.position().get())
             };
             let (Some(start), Some(end)) = (endpoint(&edge.start), endpoint(&edge.end)) else {
                 continue;
@@ -3698,7 +3698,7 @@ pub(super) fn pcurve_edge_endpoint_contract_with_index(
     let vertex = |id: &VertexId| {
         let vertex = index.vertices(id.as_str())?;
         let point = index.points(vertex.point.as_str())?;
-        Some((point.position(), vertex.tolerance))
+        Some((point.position().get(), vertex.tolerance))
     };
     let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
         (vertex(&edge.start), vertex(&edge.end))

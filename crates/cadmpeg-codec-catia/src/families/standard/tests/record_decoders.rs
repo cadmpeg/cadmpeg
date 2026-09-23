@@ -34,7 +34,7 @@ fn standard_torus_major_sign_selects_the_axis_hemisphere() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) = surface else {
         panic!("torus geometry");
     };
-    let axis = torus_surface.axis();
+    let axis = torus_surface.frame().axis().as_raw();
     let major_radius = torus_surface.major_radius().get();
     let minor_radius = torus_surface.minor_radius().get();
     assert_eq!(*axis, Vector3::new(0.0, 0.0, -1.0));
@@ -119,8 +119,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
         panic!("cylinder geometry");
     };
-    let axis = cylinder_surface.axis();
-    let ref_direction = cylinder_surface.ref_direction();
+    let axis = cylinder_surface.frame().axis().as_raw();
+    let ref_direction = cylinder_surface.frame().reference().as_raw();
     assert!((axis.norm() - 1.0).abs() < 1.0e-12);
     assert!((ref_direction.norm() - 1.0).abs() < 1.0e-12);
     assert!(axis.dot(*ref_direction).abs() < 1.0e-12);
@@ -136,8 +136,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = plane else {
         panic!("plane geometry");
     };
-    let normal = plane_surface.normal();
-    let u_axis = plane_surface.u_axis();
+    let normal = plane_surface.frame().axis().as_raw();
+    let u_axis = plane_surface.frame().reference().as_raw();
     assert!((normal.norm() - 1.0).abs() < 1.0e-12);
     assert!((u_axis.norm() - 1.0).abs() < 1.0e-12);
     assert!(normal.dot(*u_axis).abs() < 1.0e-12);
