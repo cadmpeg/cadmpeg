@@ -624,6 +624,24 @@ impl RevolutionSurfaceConstruction {
         self.parameter_interval
             .map(IncreasingParameterInterval::endpoints)
     }
+    /// Return the admitted angular interval. A caller that passes it on
+    /// keeps the finite strictly increasing guarantee and performs no new
+    /// admission.
+    pub const fn increasing_angular_interval(&self) -> IncreasingParameterInterval {
+        self.angular_interval
+    }
+    /// Return the admitted angular parameter interval, with the guarantee of
+    /// [`Self::increasing_angular_interval`].
+    pub const fn increasing_angular_parameter_interval(
+        &self,
+    ) -> Option<IncreasingParameterInterval> {
+        self.angular_parameter_interval
+    }
+    /// Return the admitted parameter interval, with the guarantee of
+    /// [`Self::increasing_angular_interval`].
+    pub const fn increasing_parameter_interval(&self) -> Option<IncreasingParameterInterval> {
+        self.parameter_interval
+    }
     /// Return the transposed.
     pub fn transposed(&self) -> &bool {
         &self.transposed

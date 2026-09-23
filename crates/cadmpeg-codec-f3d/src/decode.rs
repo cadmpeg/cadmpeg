@@ -32,7 +32,7 @@ use cadmpeg_ir::report::{
     loss::{LossCategory, LossNote, LossTaxonomy},
     Severity,
 };
-use cadmpeg_ir::units::Tolerances;
+use cadmpeg_ir::units::{Tolerances, UnitVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
@@ -384,12 +384,13 @@ fn base_feature_body_selection_is_resolved(
 fn datum_plane_frame_is_resolved(frame: cadmpeg_ir::features::FeatureDatumPlaneFrame) -> bool {
     const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
 
-    let (Some(normal), Some(u_axis)) = (frame.normal().unit(), frame.u_axis().unit()) else {
+    let (Some(normal), Some(u_axis)) = (
+        UnitVector3::normalized(frame.normal()),
+        UnitVector3::normalized(frame.u_axis()),
+    ) else {
         return false;
     };
-    normal.is_finite()
-        && u_axis.is_finite()
-        && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
+    normal.as_raw().dot(*u_axis.as_raw()).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
 }
 
 fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool {

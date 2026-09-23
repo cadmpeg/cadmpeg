@@ -11,6 +11,7 @@ use crate::geometry::SolvedCurveGeometry;
 use crate::ids::CurveId;
 use crate::math::Point3;
 use crate::math::Vector3;
+use crate::scalar::NonNegativeLength;
 use crate::CadIr;
 
 use crate::ids::ProceduralCurveId;
@@ -66,7 +67,14 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         );
         assert_eq!(differential.acceleration, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(
-            model_curve_parameter_near_point_with_tolerance(&index, &subset, expected, 1.0, 0.0, 0,),
+            model_curve_parameter_near_point_with_tolerance(
+                &index,
+                &subset,
+                expected,
+                1.0,
+                NonNegativeLength::ZERO,
+                0,
+            ),
             Some(1.0),
         );
         assert_eq!(model_curve_point_by_id(&index, &subset, 4.0), None);

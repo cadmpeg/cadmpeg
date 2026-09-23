@@ -26,7 +26,9 @@ use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
 };
-use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
+use cadmpeg_ir::topology::{
+    BodyKind, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region, Sense,
+};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -4674,15 +4676,18 @@ enum RevolutionSweep {
 }
 
 impl RevolutionSweep {
-    /// Classifies one `angular_interval`, or refuses it.
-    fn classify(start_angle: f64, terminate_angle: f64) -> Result<Self, CodecError> {
+    /// Classifies one `angular_interval`, or refuses it. The admitted interval
+    /// is finite and strictly increasing, so its sweep is positive; the sweep
+    /// overflows only when the endpoints lie far apart.
+    fn classify(angular_interval: IncreasingParameterInterval) -> Result<Self, CodecError> {
+        let [start_angle, terminate_angle] = angular_interval.endpoints();
         let sweep = terminate_angle - start_angle;
-        if !start_angle.is_finite() || !terminate_angle.is_finite() || !sweep.is_finite() {
+        if !sweep.is_finite() {
             return Err(CodecError::InvalidInput(format!(
                 "IGES Type 120 angular_interval [{start_angle}, {terminate_angle}] is not finite"
             )));
         }
-        if sweep <= 0.0 || sweep > TAU + ANGULAR_TOLERANCE {
+        if sweep > TAU + ANGULAR_TOLERANCE {
             return Err(CodecError::InvalidInput(format!(
                 "IGES Type 120 angular_interval sweep {sweep} is outside (0, {TAU} + {ANGULAR_TOLERANCE}]"
             )));
@@ -4728,7 +4733,7 @@ fn revolution_surface_entities(
     let directrix = definition_payload.directrix();
     let axis_origin = definition_payload.axis_origin();
     let axis_direction = definition_payload.axis_direction();
-    let angular_interval = definition_payload.angular_interval();
+    let angular_interval = definition_payload.increasing_angular_interval();
     let angular_parameter_interval = definition_payload.angular_parameter_interval();
     let parameter_interval = definition_payload.parameter_interval();
     let transposed = definition_payload.transposed();
@@ -4738,9 +4743,8 @@ fn revolution_surface_entities(
             "IGES Type 120 output requires the default revolution parameterization".into(),
         ));
     }
-    let [start_angle, declared_terminate_angle] = *angular_interval;
-    let terminate_angle = RevolutionSweep::classify(start_angle, declared_terminate_angle)?
-        .terminate_angle(start_angle);
+    let start_angle = angular_interval.lower();
+    let terminate_angle = RevolutionSweep::classify(angular_interval)?.terminate_angle(start_angle);
     let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
         CodecError::NotImplemented(
             "IGES Type 120 output requires a bounded generatrix parameter interval".into(),

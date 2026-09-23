@@ -30,6 +30,7 @@ use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
+use crate::scalar::{NonNegativeLength, NonNegativeReal};
 use crate::transform::Transform;
 use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
@@ -1269,7 +1270,7 @@ pub fn nurbs_surface_parameter_within_tolerance(
 }
 
 /// Find a NURBS surface parameter pair within `tolerance` using a
-/// caller-owned work slice.
+/// caller-owned work slice. A negative or non-finite tolerance finds nothing.
 pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     surface: &NurbsSurface,
     point: Point3,
@@ -1277,9 +1278,25 @@ pub fn nurbs_surface_parameter_within_tolerance_with_budget(
     tolerance: f64,
     budget: &WorkBudget<'_>,
 ) -> Option<Point2> {
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return None;
-    }
+    nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+        surface,
+        point,
+        seed,
+        NonNegativeReal::new(tolerance)?,
+        budget,
+    )
+}
+
+/// Find a NURBS surface parameter pair within an admitted `tolerance` using
+/// a caller-owned work slice.
+pub fn nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: NonNegativeReal,
+    budget: &WorkBudget<'_>,
+) -> Option<Point2> {
+    let tolerance = tolerance.get();
     let (parameters, distance) =
         solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)?;
     (distance.is_finite() && distance <= tolerance).then_some(parameters)
@@ -1614,15 +1631,26 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Option<f64> {
+    nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+        curve,
+        point,
+        NonNegativeLength::new(tolerance)?,
+        seed,
+    )
+}
+
+/// [`nurbs_curve_parameter_near_point`] with an admitted tolerance.
+fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+    curve: &NurbsCurve,
+    point: Point3,
+    tolerance: NonNegativeLength,
+    seed: f64,
+) -> Option<f64> {
+    let tolerance = tolerance.get();
     let degree = usize::try_from(curve.degree()).ok()?;
     let count = curve.control_points().len();
     let domain = nurbs_curve_parameter_domain(curve)?;
-    if degree == 0
-        || !tolerance.is_finite()
-        || tolerance < 0.0
-        || !seed.is_finite()
-        || !point.is_finite()
-    {
+    if degree == 0 || !seed.is_finite() || !point.is_finite() {
         return None;
     }
     let weights = validated_nurbs_curve_weights(curve)?;
@@ -3614,25 +3642,27 @@ fn model_native_revolution_partials(
         carrier_interval,
         false,
     )?;
-    let (angle, angular_derivative) = construction.angular_parameter_interval().map_or_else(
-        || Some((angular_parameter, 1.0)),
-        |parameter_interval| {
-            let parameter_span = parameter_interval[1] - parameter_interval[0];
-            let angular_span = angular_interval[1] - angular_interval[0];
-            if !parameter_interval.iter().all(|value| value.is_finite())
-                || parameter_span == 0.0
-                || !angular_span.is_finite()
-            {
-                return None;
-            }
-            let angular_derivative = angular_span / parameter_span;
-            Some((
-                (angular_parameter - parameter_interval[0])
-                    .mul_add(angular_derivative, angular_interval[0]),
-                angular_derivative,
-            ))
-        },
-    )?;
+    let (angle, angular_derivative) = construction
+        .increasing_angular_parameter_interval()
+        .map_or_else(
+            || Some((angular_parameter, 1.0)),
+            |parameter_interval| {
+                // The admitted interval is finite and strictly increasing, so
+                // its span is positive.
+                let parameter_interval = parameter_interval.endpoints();
+                let parameter_span = parameter_interval[1] - parameter_interval[0];
+                let angular_span = angular_interval[1] - angular_interval[0];
+                if !angular_span.is_finite() {
+                    return None;
+                }
+                let angular_derivative = angular_span / parameter_span;
+                Some((
+                    (angular_parameter - parameter_interval[0])
+                        .mul_add(angular_derivative, angular_interval[0]),
+                    angular_derivative,
+                ))
+            },
+        )?;
     let partials = model_axis_revolution_partials(
         index,
         directrix,
@@ -3786,7 +3816,7 @@ pub fn model_curve_parameter_near_point_in_index(
         curve_id,
         point,
         seed,
-        index.ir().tolerances.linear.get(),
+        NonNegativeLength::from(index.ir().tolerances.linear),
         0,
     )
 }
@@ -3803,22 +3833,23 @@ pub fn model_curve_parameter_near_point_in_index_with_tolerance(
     seed: f64,
     tolerance: f64,
 ) -> Option<f64> {
-    if !tolerance.is_finite() || tolerance < 0.0 {
-        return None;
-    }
-    model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance, 0)
+    model_curve_parameter_near_point_with_tolerance(
+        index,
+        curve_id,
+        point,
+        seed,
+        NonNegativeLength::new(tolerance)?,
+        0,
+    )
 }
 
-/// Invert a model curve with a finite nonnegative tolerance. The callers pass
-/// the document linear tolerance, the tolerance admitted by
-/// [`model_curve_parameter_near_point_in_index_with_tolerance`], or an outer
-/// level's tolerance multiplied by a finite nonnegative replica scale.
+/// Invert a model curve with an admitted tolerance.
 fn model_curve_parameter_near_point_with_tolerance(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     point: Point3,
     seed: f64,
-    tolerance: f64,
+    tolerance: NonNegativeLength,
     depth: usize,
 ) -> Option<f64> {
     if depth > 256 {
@@ -3832,10 +3863,9 @@ fn model_curve_parameter_near_point_with_tolerance(
         match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
-                let basis_tolerance = tolerance * tolerance_scale;
-                if !basis_tolerance.is_finite() {
-                    return None;
-                }
+                // The scale is a finite norm, so the admission refuses only an
+                // overflowed product.
+                let basis_tolerance = NonNegativeLength::new(tolerance.get() * tolerance_scale)?;
                 return model_curve_parameter_near_point_with_tolerance(
                     index,
                     source,
@@ -3852,8 +3882,6 @@ fn model_curve_parameter_near_point_with_tolerance(
                 {
                     let span = (end - start).abs();
                     if !seed.is_finite()
-                        || !tolerance.is_finite()
-                        || tolerance < 0.0
                         || !span.is_finite()
                         || span == 0.0
                         || seed < 0.0
@@ -3878,8 +3906,9 @@ fn model_curve_parameter_near_point_with_tolerance(
                     return (parameter.is_finite()
                         && parameter >= 0.0
                         && parameter <= span
-                        && model_curve_point_by_id(index, curve_id, parameter)
-                            .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
+                        && model_curve_point_by_id(index, curve_id, parameter).is_some_and(
+                            |evaluated| evaluated.distance(point) <= tolerance.get(),
+                        ))
                     .then_some(parameter);
                 }
             }
@@ -3900,7 +3929,9 @@ fn model_curve_parameter_near_point_with_tolerance(
         return direct_curve_parameter_near_point(cache, point, seed, tolerance);
     }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
-        return curve_parameter_near_point(&curve.geometry, point, seed, tolerance);
+        return curve.geometry.solved().and_then(|geometry| {
+            direct_curve_parameter_near_point(geometry, point, seed, tolerance)
+        });
     }
     let construction = curve.geometry.procedural_construction()?;
     let procedural = index.procedural_curves(construction.as_str())?;
@@ -3913,7 +3944,11 @@ fn model_curve_parameter_near_point_with_tolerance(
         return None;
     };
     let supports = intersection.supports();
-    let tolerance = intersection.tolerance();
+    // The intersection tolerance bounds model-space distances, so it is a
+    // length.
+    let admitted_tolerance =
+        NonNegativeLength::from_assigned_real(intersection.nonnegative_tolerance());
+    let tolerance = admitted_tolerance.get();
 
     let range = parameterization.parameter_range();
     if !seed.is_finite() || seed < range[0] || seed > range[1] {
@@ -4063,8 +4098,13 @@ fn model_curve_parameter_near_point_with_tolerance(
                     continue;
                 };
                 let isocurve_seed = varying_origin + varying_scale * seed;
-                nurbs_curve_parameter_near_point(&isocurve, point, tolerance, isocurve_seed)
-                    .map(|parameter| (parameter - varying_origin) / varying_scale)
+                nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+                    &isocurve,
+                    point,
+                    admitted_tolerance,
+                    isocurve_seed,
+                )
+                .map(|parameter| (parameter - varying_origin) / varying_scale)
             }
             _ => continue,
         };
@@ -4100,21 +4140,17 @@ fn helix_parameter_near_point(
     curve_id: &crate::ids::CurveId,
     target: Point3,
     seed: f64,
-    tolerance: f64,
+    tolerance: NonNegativeLength,
     definition: &ProceduralCurveDefinition,
 ) -> Option<f64> {
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
     let angle_range = helix_payload.angle_range();
+    let tolerance = tolerance.get();
 
     let [start, end] = *angle_range;
-    if ![seed, tolerance].into_iter().all(f64::is_finite)
-        || seed < start
-        || seed > end
-        || tolerance < 0.0
-        || !target.is_finite()
-    {
+    if !seed.is_finite() || seed < start || seed > end || !target.is_finite() {
         return None;
     }
 
@@ -4162,16 +4198,22 @@ pub(crate) fn curve_parameter_near_point(
     seed: f64,
     tolerance: f64,
 ) -> Option<f64> {
-    direct_curve_parameter_near_point(geometry.solved()?, point, seed, tolerance)
+    direct_curve_parameter_near_point(
+        geometry.solved()?,
+        point,
+        seed,
+        NonNegativeLength::new(tolerance)?,
+    )
 }
 
 fn direct_curve_parameter_near_point(
     geometry: &SolvedCurveGeometry,
     point: Point3,
     seed: f64,
-    tolerance: f64,
+    admitted_tolerance: NonNegativeLength,
 ) -> Option<f64> {
-    if !seed.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
+    let tolerance = admitted_tolerance.get();
+    if !seed.is_finite() {
         return None;
     }
     let components = |origin: Point3, axis: Vector3, reference: Vector3| -> (f64, f64, f64) {
@@ -4222,7 +4264,12 @@ fn direct_curve_parameter_near_point(
             (transverse / minor_radius).asinh()
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            nurbs_curve_parameter_near_point(curve, point, tolerance, seed)?
+            nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
+                curve,
+                point,
+                admitted_tolerance,
+                seed,
+            )?
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let (points, parameters) = polyline_samples(polyline);
@@ -4230,10 +4277,9 @@ fn direct_curve_parameter_near_point(
         }
         SolvedCurveGeometry::Transformed(placed) => {
             let (basis_point, tolerance_scale) = inverse_affine_point(*placed.transform(), point)?;
-            let basis_tolerance = tolerance * tolerance_scale;
-            if !basis_tolerance.is_finite() {
-                return None;
-            }
+            // The scale is a finite norm, so the admission refuses only an
+            // overflowed product.
+            let basis_tolerance = NonNegativeLength::new(tolerance * tolerance_scale)?;
             direct_curve_parameter_near_point(placed.basis(), basis_point, seed, basis_tolerance)?
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {

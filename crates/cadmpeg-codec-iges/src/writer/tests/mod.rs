@@ -37,6 +37,7 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::topology::Loop;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
@@ -921,16 +922,20 @@ fn generated_conic_sweep_uses_the_shared_angular_tolerance() {
 #[test]
 fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
     let start = 0.25_f64;
-    let inside = RevolutionSweep::classify(start, start + TAU + ANGULAR_TOLERANCE / 2.0)
+    let increasing = |terminate: f64| {
+        IncreasingParameterInterval::new([start, terminate]).expect("increasing angular interval")
+    };
+    let inside = RevolutionSweep::classify(increasing(start + TAU + ANGULAR_TOLERANCE / 2.0))
         .expect("a sweep within the angular tolerance of a full turn is a full turn");
     assert!(matches!(inside, RevolutionSweep::Full));
     assert_eq!(inside.terminate_angle(start), start + TAU);
 
-    let partial = RevolutionSweep::classify(start, start + TAU / 4.0).expect("partial sweep");
+    let partial = RevolutionSweep::classify(increasing(start + TAU / 4.0)).expect("partial sweep");
     assert!(matches!(partial, RevolutionSweep::Partial(_)));
     assert_eq!(partial.terminate_angle(start), start + TAU / 4.0);
 
-    let Err(error) = RevolutionSweep::classify(start, start + TAU + 2.0 * ANGULAR_TOLERANCE) else {
+    let Err(error) = RevolutionSweep::classify(increasing(start + TAU + 2.0 * ANGULAR_TOLERANCE))
+    else {
         panic!("a sweep beyond the angular tolerance of a full turn must be refused");
     };
     assert!(matches!(error, CodecError::InvalidInput(_)));

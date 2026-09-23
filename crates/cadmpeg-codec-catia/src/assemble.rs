@@ -17,6 +17,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -260,16 +261,14 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     ref_direction: Vector3,
     start: Point3,
     end: Point3,
-    pcurve_origin: Point2,
-    pcurve_direction: Point2,
+    pcurve_origin: FinitePoint2,
+    pcurve_direction: FinitePoint2,
 ) -> Option<[f64; 2]> {
     if !center.is_finite()
         || !start.is_finite()
         || !end.is_finite()
         || !axis.is_finite()
         || !ref_direction.is_finite()
-        || !pcurve_origin.is_finite()
-        || !pcurve_direction.is_finite()
         || !radius.is_finite()
         || radius <= 0.0
     {
@@ -307,6 +306,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     if !long_end.is_finite() {
         return None;
     }
+    let (pcurve_origin, pcurve_direction) = (pcurve_origin.as_raw(), pcurve_direction.as_raw());
     let midpoint_uv = Point2::new(
         pcurve_origin.u + 0.5 * pcurve_direction.u,
         pcurve_origin.v + 0.5 * pcurve_direction.v,
@@ -818,6 +818,7 @@ mod route_tests {
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -888,8 +889,8 @@ mod route_tests {
             Vector3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
             Point3::new(sweep.cos(), sweep.sin(), 0.0),
-            Point2::new(1.0, 0.0),
-            Point2::new(0.0, sweep),
+            FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
+            FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction"),
         )
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
@@ -913,8 +914,8 @@ mod route_tests {
                 Vector3::new(1.0, 0.0, 0.0),
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
-                Point2::new(1.0, 0.0),
-                Point2::new(0.0, 1.0),
+                FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
+                FinitePoint2::new(Point2::new(0.0, 1.0)).expect("finite pcurve direction"),
             )
         };
         let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
