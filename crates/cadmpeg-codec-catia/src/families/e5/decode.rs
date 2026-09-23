@@ -2495,12 +2495,14 @@ fn e5_boundary_curve(
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
     let span = range[1] - range[0];
-    let (Some(start_uv), true, Some(span_direction)) = (
+    // The direction components are finite. A non-finite span times a finite
+    // value is NaN or infinite, so the admission of `span_direction` refuses
+    // every non-finite span.
+    let (Some(start_uv), Some(span_direction)) = (
         FinitePoint2::new(Point2::new(
             origin.u + range[0] * direction.u,
             origin.v + range[0] * direction.v,
         )),
-        span.is_finite(),
         FinitePoint2::new(Point2::new(span * direction.u, span * direction.v)),
     ) else {
         return None;
