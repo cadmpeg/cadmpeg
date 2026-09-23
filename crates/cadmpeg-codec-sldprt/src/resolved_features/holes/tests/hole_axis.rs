@@ -839,7 +839,8 @@ fn hole_topology_uses_exact_cylinder_spans() {
 fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
     let placement = |x, y, axis| HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, 0.0)).unwrap(),
-        axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis)
+            .expect("each seeded axis is a unit coordinate direction"),
     };
     let x_axis = Vector3::new(1.0, 0.0, 0.0);
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
@@ -1004,7 +1005,8 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
     };
     let placement = |origin, axis| HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
-        axis: cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(axis)
+            .expect("each candidate axis is a unit coordinate direction"),
     };
     let mut horizontal = model_hole();
     horizontal.id = FeatureId::mint("synthetic:test:id#horizontal").expect("identity grammar");
