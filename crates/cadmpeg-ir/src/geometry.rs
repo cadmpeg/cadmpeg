@@ -1251,6 +1251,9 @@ const fn clear_revision_form_tolerance<P>(
 pub struct FitTolerance(f64);
 
 impl FitTolerance {
+    /// A zero fit tolerance.
+    pub const ZERO: Self = Self(0.0);
+
     /// Admit a finite, non-negative fit tolerance.
     pub fn try_new(value: f64) -> Result<Self, CacheContractError> {
         if value.is_finite() && value >= 0.0 {
@@ -1278,6 +1281,13 @@ impl TryFrom<f64> for FitTolerance {
 impl From<FitTolerance> for f64 {
     fn from(value: FitTolerance) -> Self {
         value.get()
+    }
+}
+
+/// A fit tolerance admits exactly the finite, non-negative values.
+impl From<NonNegativeReal> for FitTolerance {
+    fn from(value: NonNegativeReal) -> Self {
+        Self(value.get())
     }
 }
 
@@ -6742,6 +6752,12 @@ impl TolerantIntersectionConstruction {
     pub const fn tolerance(&self) -> f64 {
         self.tolerance.get()
     }
+
+    /// Return the admitted tolerance.
+    #[must_use]
+    pub const fn nonnegative_tolerance(&self) -> NonNegativeReal {
+        self.tolerance
+    }
 }
 
 /// Complete neutral parameterization of one topology-bounded intersection.
@@ -7052,9 +7068,9 @@ impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
     type Error = &'static str;
 
     fn try_from(wire: SurfaceCurveTailWire) -> Result<Self, Self::Error> {
-        Self::try_new(
+        Self::new(
             wire.extension,
-            wire.revision.get(),
+            wire.revision,
             wire.cache,
             wire.support_bounds,
             wire.solved_range,
@@ -7073,6 +7089,18 @@ impl SurfaceCurveTail {
     ) -> Result<Self, &'static str> {
         let revision =
             PositiveI64::new(revision).ok_or("surface curve tail revision must be positive")?;
+        Self::new(extension, revision, cache, support_bounds, solved_range)
+    }
+
+    /// Admit a cache-first surface-curve tail around an admitted revision
+    /// whose remaining scalars are all finite.
+    pub fn new(
+        extension: i64,
+        revision: PositiveI64,
+        cache: RevisionCacheForm<CacheFirstCurveParameterization>,
+        support_bounds: [[Option<f64>; 4]; 2],
+        solved_range: [Option<f64>; 2],
+    ) -> Result<Self, &'static str> {
         let tail = Self {
             extension,
             revision,

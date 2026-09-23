@@ -1935,6 +1935,11 @@ impl PcurveInlineForm {
         Ok(())
     }
 
+    /// Replace the fit tolerance with an admitted one.
+    pub fn set_admitted_fit_tolerance(&mut self, value: FitTolerance) {
+        self.fit_tolerance = value;
+    }
+
     /// Directed native parameter interval.
     #[must_use]
     pub const fn parameter_range(&self) -> [f64; 2] {
@@ -2022,6 +2027,11 @@ impl PcurveGeneralForm {
     pub fn set_fit_tolerance(&mut self, value: Option<f64>) -> Result<(), CacheContractError> {
         self.fit_tolerance = value.map(FitTolerance::try_new).transpose()?;
         Ok(())
+    }
+
+    /// Replace the fit tolerance with an admitted one, or clear it.
+    pub fn set_admitted_fit_tolerance(&mut self, value: Option<FitTolerance>) {
+        self.fit_tolerance = value;
     }
 
     /// Directed native parameter interval.

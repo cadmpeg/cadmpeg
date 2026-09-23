@@ -228,3 +228,30 @@ fn pcurve_metadata_states_its_source_and_denies_the_other_arm_s_keys() {
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
+
+#[test]
+fn pcurve_admitted_fit_tolerance_replaces_the_value_that_the_raw_setter_admits() {
+    use crate::geometry::FitTolerance;
+
+    let mut inline =
+        PcurveInlineForm::try_new(false, [false; 4], [1.0, 0.0], 2.0).expect("inline metadata");
+    let mut general =
+        PcurveGeneralForm::try_new(None, Some([1.0, 0.0]), Some(2.0)).expect("general metadata");
+    let mut raw_inline = inline.clone();
+    let mut raw_general = general.clone();
+    for value in [0.0, 0.0025, 1.0e3] {
+        let admitted = FitTolerance::try_new(value).expect("a finite non-negative tolerance");
+        inline.set_admitted_fit_tolerance(admitted);
+        general.set_admitted_fit_tolerance(Some(admitted));
+        raw_inline
+            .set_fit_tolerance(value)
+            .expect("the raw setter admits the value");
+        raw_general
+            .set_fit_tolerance(Some(value))
+            .expect("the raw setter admits the value");
+        assert_eq!(inline, raw_inline);
+        assert_eq!(general, raw_general);
+    }
+    general.set_admitted_fit_tolerance(None);
+    assert_eq!(general.fit_tolerance(), None);
+}

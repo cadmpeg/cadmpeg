@@ -954,23 +954,21 @@ pub(super) fn try_decode_geometry(
                         .get(&pcurve)
                         .and_then(|index| ir.model.pcurves.get_mut(*index))
                     {
-                        let fit_tolerance = decoded_tolerance(surface_curve.state.tolerance())
-                            .map(cadmpeg_ir::scalar::PositiveReal::get);
+                        let fit_tolerance =
+                            decoded_tolerance(surface_curve.state.tolerance()).map(|tolerance| {
+                                cadmpeg_ir::geometry::FitTolerance::from(
+                                    cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
+                                )
+                            });
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
                                 form: metadata,
-                            } => {
-                                metadata
-                                    .set_fit_tolerance(fit_tolerance)
-                                    .map_err(CodecError::malformed)?;
-                            }
+                            } => metadata.set_admitted_fit_tolerance(fit_tolerance),
                             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
                                 form: inline,
                             } => {
                                 if let Some(fit_tolerance) = fit_tolerance {
-                                    inline
-                                        .set_fit_tolerance(fit_tolerance)
-                                        .map_err(CodecError::malformed)?;
+                                    inline.set_admitted_fit_tolerance(fit_tolerance);
                                 }
                             }
                         }

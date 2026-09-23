@@ -78,3 +78,16 @@ fn tolerant_intersection_wire_retains_flat_fields_and_rejects_invalid_admission(
     invalid["parameter_range"] = json!([1.0, 1.0]);
     assert!(serde_json::from_value::<TolerantIntersectionParameterization>(invalid).is_err());
 }
+
+#[test]
+fn tolerant_intersection_hands_back_its_admitted_tolerance() {
+    let endpoints = [Point3::new(0.0, 0.0, 0.0); 2];
+    for tolerance in [-0.0, 0.0, 1.0e-5, f64::MAX] {
+        let intersection =
+            TolerantIntersectionConstruction::try_new(supports(), endpoints, tolerance)
+                .expect("a finite non-negative tolerance");
+        let admitted = intersection.nonnegative_tolerance();
+        assert_eq!(admitted.get().to_bits(), tolerance.to_bits());
+        assert_eq!(admitted.get().to_bits(), intersection.tolerance().to_bits());
+    }
+}
