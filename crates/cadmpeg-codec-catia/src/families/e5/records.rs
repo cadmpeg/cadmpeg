@@ -729,11 +729,7 @@ fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    let radius = radius.get();
-    if radius <= 0.0 {
-        return None;
-    }
-    Some((geometry, radius))
+    Some((geometry, radius.get()))
 }
 
 fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
@@ -748,11 +744,11 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
 fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14)?;
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
-    if !(major_radius > 0.0 && minor_radius > 0.0) {
+    let minor_radius = minor_radius.get();
+    if minor_radius <= 0.0 {
         return None;
     }
-    Some((geometry, major_radius, minor_radius))
+    Some((geometry, major_radius.get(), minor_radius))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

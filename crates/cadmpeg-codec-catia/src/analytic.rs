@@ -60,15 +60,14 @@ pub(crate) fn sphere_angular_ranges_are_valid(
 /// and positions `c` itself). The axis is `u × v` normalised and the
 /// zero-azimuth reference is `u` normalised; both fail on a degenerate frame.
 ///
-/// The returned radius is finite but otherwise unvalidated: callers apply
-/// their own magnitude guard.
+/// The returned radius is the carrier's admitted positive radius.
 pub(crate) fn cylinder_uvr(
     c: &mut Cursor,
     origin: FinitePoint3,
-) -> Option<(SurfaceGeometry, FiniteReal)> {
+) -> Option<(SurfaceGeometry, PositiveLength)> {
     let u = c.vector3()?.get();
     let v = c.vector3()?.get();
-    let radius = c.f64()?;
+    let radius = PositiveLength::new(c.f64()?.get())?;
     let axis = UnitVector3::normalized(u.cross(v))?;
     let ref_direction = UnitVector3::normalized(u)?;
     Some((
@@ -76,7 +75,7 @@ pub(crate) fn cylinder_uvr(
             cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                 origin,
                 OrthonormalFrame3::from_units(axis, ref_direction)?,
-                PositiveLength::new(radius.get())?,
+                radius,
             ),
         )),
         radius,
@@ -123,22 +122,25 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, 
 /// the reference direction follows the center, a 24-byte block separates it
 /// from the axis, and the two radii follow the axis.
 ///
-/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus)`] together with the major and
-/// minor radii so callers can apply their own guard. Both are finite.
-pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, FiniteReal)> {
+/// Returns the built [`SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus)`] together with the
+/// carrier's admitted radii, a positive major radius and a nonzero minor
+/// radius, so callers can apply their own guard.
+pub(crate) fn torus_ozrr(
+    c: &mut Cursor,
+) -> Option<(SurfaceGeometry, PositiveLength, NonZeroLength)> {
     let center = c.point3()?;
     let ref_direction = c.unit3()?;
     c.skip(24)?;
     let axis = c.unit3()?;
-    let major_radius = c.f64()?;
-    let minor_radius = c.f64()?;
+    let major_radius = PositiveLength::new(c.f64()?.get())?;
+    let minor_radius = NonZeroLength::new(c.f64()?.get())?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
             cadmpeg_ir::geometry::analytic::TorusSurface::new(
                 center,
                 OrthonormalFrame3::from_units(axis, ref_direction)?,
-                PositiveLength::new(major_radius.get())?,
-                NonZeroLength::new(minor_radius.get())?,
+                major_radius,
+                minor_radius,
             ),
         )),
         major_radius,
