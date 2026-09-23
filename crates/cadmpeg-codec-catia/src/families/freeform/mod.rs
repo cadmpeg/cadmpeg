@@ -129,9 +129,9 @@ pub(super) fn append_consolidated_revolutions(
             center_offset.z - axis.z * axis_coordinate,
         );
         let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
-        let profile_plane_contains_axis =
-            (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
-                <= EPS_TORUS_FRAME;
+        // The profile plane contains the axis: the record's right-handed
+        // frame admission holds the profile-circle normal perpendicular to
+        // the axis within 2e-12.
         let radial_follows_profile_reference = major_radius > 0.0
             && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
                 .abs()
@@ -139,15 +139,13 @@ pub(super) fn append_consolidated_revolutions(
                 - 1.0)
                 .abs()
                 <= EPS_TORUS_FRAME;
-        let torus_geometry = (major_radius > 0.0
-            && major_radius.is_finite()
-            && profile_plane_contains_axis
-            && radial_follows_profile_reference)
-            .then(|| {
+        let torus_geometry = PositiveLength::new(major_radius)
+            .filter(|_| radial_follows_profile_reference)
+            .and_then(|major_radius| {
                 let ref_direction = Vector3::new(
-                    radial.x / major_radius,
-                    radial.y / major_radius,
-                    radial.z / major_radius,
+                    radial.x / major_radius.get(),
+                    radial.y / major_radius.get(),
+                    radial.z / major_radius.get(),
                 );
                 let torus_center = Point3::new(
                     center.x - radial.x,
@@ -161,12 +159,11 @@ pub(super) fn append_consolidated_revolutions(
                             revolution.axis.into(),
                             cadmpeg_ir::units::UnitVector3::new(ref_direction)?,
                         )?,
-                        PositiveLength::new(major_radius)?,
+                        major_radius,
                         NonZeroLength::from(profile.radius),
                     ),
                 )))
-            })
-            .flatten();
+            });
         annotate(
             annotations,
             &surface,
@@ -4203,6 +4200,52 @@ mod tests {
                 crate::families::b2::records::b2_cones_from_records(&bytes, &records).is_empty()
             );
         }
+    }
+
+    #[test]
+    fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_axis_test() {
+        // A right-handed frame whose profile-circle normal deviates from the
+        // axis cross product by 0.9e-12 in each component. The record's
+        // frame admission holds it, and the normal meets the axis at about
+        // 1.56e-12, above 1e-12.
+        let (a, b) = (std::f64::consts::FRAC_1_SQRT_2, 1.0 / 3.0_f64.sqrt());
+        let deviation = 0.9e-12;
+        let axis = [b, b, b];
+        let direction_y = [a, -a, 0.0];
+        let direction_x = [
+            -a * b + deviation,
+            -a * b + deviation,
+            2.0 * a * b + deviation,
+        ];
+        let normal_meets_axis =
+            direction_x[0] * axis[0] + direction_x[1] * axis[1] + direction_x[2] * axis[2];
+        assert!(normal_meets_axis > 1.0e-12 && normal_meets_axis < 2.0e-12);
+
+        let mut bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let frame_start = bytes.len() - 0xae + 3;
+        let frame = [[0.0; 3], direction_x, direction_y, axis].concat();
+        for (index, value) in frame.into_iter().enumerate() {
+            let at = frame_start + 8 * index;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        assert_eq!(resolved.len(), 1);
+
+        let bindings = super::append_consolidated_revolutions(
+            &mut CadIr::empty(),
+            &mut AnnotationBuilder::default(),
+            &resolved,
+        );
+        let [binding] = bindings.as_slice() else {
+            panic!("the admitted revolution converts to one torus");
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &binding.geometry else {
+            panic!("the conversion is a torus");
+        };
+        assert!((torus.major_radius().get() - 4.0).abs() <= 1.0e-9);
+        assert_eq!(torus.minor_radius().get(), 3.0);
     }
 
     #[test]
