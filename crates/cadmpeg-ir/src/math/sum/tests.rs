@@ -5,6 +5,24 @@ use super::{
 };
 
 #[test]
+fn zero_ratio_still_refuses_nonfinite_inputs() {
+    assert_eq!(super::scaled_ratio_products(0.0, 1.0, [f64::NAN]), None);
+    assert_eq!(
+        super::scaled_ratio_products(1.0, 0.0, [f64::INFINITY]),
+        None
+    );
+    assert_eq!(super::scaled_ratio_products(f64::NAN, 0.0, [1.0]), None);
+    assert_eq!(super::scaled_ratio_products(0.0, 1.0, [2.0]), Some([0.0]));
+}
+
+#[test]
+fn scaled_value_retains_a_finite_result_with_a_large_frame_shift() {
+    let high = scaled_finite(f64::MAX).expect("finite value");
+    let frame = scaled_finite(0.5).expect("finite frame").exponent;
+    assert_eq!(high.scaled_by(frame), f64::MAX);
+}
+
+#[test]
 fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_range() {
     // The two ends `scaled_finite` reaches: the smallest positive subnormal and
     // the largest finite magnitude.

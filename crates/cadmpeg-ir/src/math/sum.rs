@@ -135,7 +135,11 @@ impl ScaledValue {
 
     /// The value, rescaled into the frame whose exponent is `scale_exponent`.
     pub(crate) fn scaled_by(self, scale_exponent: ScaledExponent) -> f64 {
-        self.sign * self.mantissa * 2.0_f64.powi(self.exponent.difference(scale_exponent))
+        super::scale_power_of_two(
+            self.sign * self.mantissa,
+            self.exponent.difference(scale_exponent),
+        )
+        .unwrap_or(self.sign * f64::INFINITY)
     }
     pub(crate) fn finite(self) -> Option<f64> {
         super::scale_power_of_two(self.sign * self.mantissa, self.exponent.0)
@@ -399,6 +403,12 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
     denominator: f64,
     factors: [f64; N],
 ) -> Option<[f64; N]> {
+    if !value.is_finite()
+        || !denominator.is_finite()
+        || factors.iter().any(|factor| !factor.is_finite())
+    {
+        return None;
+    }
     if value == 0.0 || denominator == 0.0 {
         return Some([0.0; N]);
     }

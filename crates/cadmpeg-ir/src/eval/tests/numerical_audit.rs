@@ -3,6 +3,16 @@ use crate::math::Point3;
 use crate::transform::Transform;
 
 #[test]
+fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
+    let knots = [0.0, 1.0];
+    assert_eq!(super::super::bspline_span(&knots, usize::MAX, 1, 0.5), None);
+    assert_eq!(
+        super::super::bspline_span(&knots, usize::MAX - 1, usize::MAX, 0.5),
+        None
+    );
+}
+
+#[test]
 fn numerical_audit_inverse_point_uses_scale_safe_affine_inverse() {
     let scale = 1.0e110;
     let matrix = Transform::affine([

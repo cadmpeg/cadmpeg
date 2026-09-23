@@ -44,28 +44,73 @@ pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option
     if determinant <= f64::EPSILON * du_squared * dv_squared {
         return None;
     }
-    let residual_scale = residual.x.abs().max(residual.y.abs()).max(residual.z.abs());
-    if residual_scale == 0.0 {
+    if residual.x == 0.0 && residual.y == 0.0 && residual.z == 0.0 {
         return Some((0.0, 0.0));
     }
-    let residual = Vector3::new(
-        residual.x / residual_scale,
-        residual.y / residual_scale,
-        residual.z / residual_scale,
-    );
-    let du_residual = du.dot(residual);
-    let dv_residual = dv.dot(residual);
-    let u = super::multiply_divide(
-        (dv_squared * du_residual - mixed * dv_residual) / determinant,
-        residual_scale,
-        du_scale,
-    )?;
-    let v = super::multiply_divide(
-        (du_squared * dv_residual - mixed * du_residual) / determinant,
-        residual_scale,
-        dv_scale,
-    )?;
-    (u.is_finite() && v.is_finite()).then_some((u, v))
+    let fast = (|| {
+        let residual_components = [residual.x, residual.y, residual.z];
+        let du_components = [du.x, du.y, du.z];
+        let dv_components = [dv.x, dv.y, dv.z];
+        let du_residual = super::sum::fast_dot(
+            du_components,
+            residual_components,
+            std::array::from_fn(|index| du_components[index] * residual_components[index]),
+        )?;
+        let dv_residual = super::sum::fast_dot(
+            dv_components,
+            residual_components,
+            std::array::from_fn(|index| dv_components[index] * residual_components[index]),
+        )?;
+        let u_numerator = super::sum::fast_dot(
+            [dv_squared, -mixed],
+            [du_residual, dv_residual],
+            [dv_squared * du_residual, -mixed * dv_residual],
+        )?;
+        let v_numerator = super::sum::fast_dot(
+            [du_squared, -mixed],
+            [dv_residual, du_residual],
+            [du_squared * dv_residual, -mixed * du_residual],
+        )?;
+        let u_denominator = determinant * du_scale;
+        let v_denominator = determinant * dv_scale;
+        if !u_denominator.is_normal() || !v_denominator.is_normal() {
+            return None;
+        }
+        let u = u_numerator / u_denominator;
+        let v = v_numerator / v_denominator;
+        let safe_result =
+            |value: f64, numerator: f64| value.is_normal() || (value == 0.0 && numerator == 0.0);
+        (safe_result(u, u_numerator) && safe_result(v, v_numerator)).then_some((u, v))
+    })();
+    if let Some(step) = fast {
+        return Some(step);
+    }
+
+    let mut u_numerator = super::sum::ExactSignedSum::default();
+    let mut v_numerator = super::sum::ExactSignedSum::default();
+    for (u, v, r) in [
+        (du.x, dv.x, residual.x),
+        (du.y, dv.y, residual.y),
+        (du.z, dv.z, residual.z),
+    ] {
+        u_numerator.add_factors([dv_squared, u, r]);
+        u_numerator.add_factors([-mixed, v, r]);
+        v_numerator.add_factors([du_squared, v, r]);
+        v_numerator.add_factors([-mixed, u, r]);
+    }
+    let mut u_denominator = super::sum::ExactSignedSum::default();
+    u_denominator.add_product(determinant, du_scale);
+    let mut v_denominator = super::sum::ExactSignedSum::default();
+    v_denominator.add_product(determinant, dv_scale);
+    let u_denominator = u_denominator.finish()?;
+    let v_denominator = v_denominator.finish()?;
+    let u = u_numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(u_denominator))?;
+    let v = v_numerator
+        .finish()
+        .map_or(Some(0.0), |value| value.quotient(v_denominator))?;
+    Some((u, v))
 }
 
 #[cfg(test)]
@@ -85,6 +130,25 @@ mod tests {
             assert_eq!(super::least_squares_step(du, dv, dv), Some((0.0, 1.0)));
             assert_eq!(super::least_squares_step(du, du, dv), None);
         }
+    }
+
+    #[test]
+    fn least_squares_preserves_independent_residual_components() {
+        let tiny = Vector3::new(1.0e-200, 0.0, 0.0);
+        let huge = Vector3::new(0.0, 1.0e200, 0.0);
+        let residual = Vector3::new(tiny.x, huge.y, 0.0);
+        assert_eq!(
+            super::least_squares_step(tiny, huge, residual),
+            Some((1.0, 1.0))
+        );
+
+        let smallest = Vector3::new(f64::from_bits(1), 0.0, 0.0);
+        let unit = Vector3::new(0.0, 1.0, 0.0);
+        let residual = Vector3::new(smallest.x, unit.y, 0.0);
+        assert_eq!(
+            super::least_squares_step(smallest, unit, residual),
+            Some((1.0, 1.0))
+        );
     }
 
     #[test]
